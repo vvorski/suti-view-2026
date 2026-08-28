@@ -25,10 +25,10 @@
 import { MAX_DB, MIN_DB, type AudioFrame } from './audio.ts'
 
 /** Log-spaced band edges in Hz. Twelve bands is enough to tell timbre apart. */
-const BAND_EDGES = [
+export const BAND_EDGES = [
   60, 100, 160, 250, 400, 600, 900, 1400, 2200, 3400, 5200, 8000, 12000,
 ] as const
-const N_BANDS = BAND_EDGES.length - 1
+export const N_BANDS = BAND_EDGES.length - 1
 
 /** Feature frames per second. Foote-style analysis wants ~10 Hz, not 60. */
 const FEATURE_HZ = 10
@@ -57,8 +57,15 @@ export interface Features {
 
 const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v)
 
-/** Log-band magnitudes, L2-normalised so the vector describes timbre not volume. */
-function bandVector(frame: AudioFrame, out: Float32Array): void {
+/**
+ * Log-band magnitudes, L2-normalised so the vector describes timbre not volume.
+ *
+ * Exported because slow.ts builds its own, much longer history out of exactly
+ * this vector. Two independent implementations of it would be two things to
+ * keep in step, and the mean-centring below is subtle enough that the second
+ * copy would eventually lose it — see the comment inside.
+ */
+export function bandVector(frame: AudioFrame, out: Float32Array): void {
   const binHz = frame.sampleRate / (frame.binCount * 2)
 
   for (let b = 0; b < N_BANDS; b++) {

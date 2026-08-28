@@ -75,6 +75,12 @@ export interface Hud {
   cycleAtmosphericView(direction: 1 | -1): void
   /** Step the geometric layer's programme forward (1) or back (-1), wrapping. */
   cycleGeometricView(direction: 1 | -1): void
+  /** Adopt a change decided elsewhere (see director.ts) — updates the stored
+   *  preference and the dial so the HUD keeps showing the truth, without
+   *  reporting it as a manual change. */
+  adopt(next: { geoColour?: GeoColour; atmosphericView?: AtmosphericViewName }): void
+  /** Whether the user has the autopilot switched on. */
+  autopilot(): boolean
 }
 
 interface Handlers {
@@ -85,6 +91,9 @@ interface Handlers {
   /** 0-1. */
   onMix(mix: number): void
   onMapping(name: MappingName): void
+  /** Fired on every change the user makes by hand, so the autopilot can get
+   *  out of the way. Not fired for `adopt`. */
+  onManualChange(): void
 }
 
 const MAPPING_LABELS: Record<MappingName, string> = {
@@ -285,6 +294,8 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
   btnBar.className = 'hud-btns'
   scrim.appendChild(btnBar)
 
+  const manual = (): void => handlers.onManualChange()
+
   function mkButton(label: string, onTap: () => void): HTMLButtonElement {
     const b = document.createElement('button')
     b.type = 'button'
@@ -344,6 +355,7 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
       prefs.geoColour = clampGeoColour({ ...prefs.geoColour, [key]: input.valueAsNumber / 100 })
       handlers.onGeoColour(prefs.geoColour)
       paintRgb()
+      manual()
     })
     // Persist on release only — dragging a slider fires continuously and there
     // is no reason to write localStorage at that rate.
@@ -377,6 +389,7 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
         prefs.geometricView = k as GeometricViewName
         savePrefs(prefs)
         handlers.onGeometricView(prefs.geometricView)
+        manual()
       },
       labels: [],
       r: 0,
@@ -392,6 +405,7 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
         prefs.mergeMode = k as MergeModeName
         savePrefs(prefs)
         handlers.onMergeMode(prefs.mergeMode)
+        manual()
       },
       labels: [],
       r: 0,
@@ -407,6 +421,7 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
         prefs.atmosphericView = k as AtmosphericViewName
         savePrefs(prefs)
         handlers.onAtmosphericView(prefs.atmosphericView)
+        manual()
       },
       labels: [],
       r: 0,
@@ -425,6 +440,15 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
   const rgbBtn = mkButton('colour', () => {
     rgbPanel.classList.toggle('open')
     paintButtons()
+  })
+
+  const autoBtn = mkButton('auto', () => {
+    prefs.autopilot = !prefs.autopilot
+    savePrefs(prefs)
+    paintButtons()
+    // Toggling it on is not a manual change to *what is on screen*, so it does
+    // not suspend — switching it on and then waiting three minutes for it to
+    // do anything would read as broken.
   })
 
   const mapBtn = mkButton('mapping', () => {
@@ -635,6 +659,8 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     const open = rgbPanel.classList.contains('open')
     rgbBtn.setAttribute('aria-pressed', String(open))
     rgbBtn.setAttribute('aria-expanded', String(open))
+    autoBtn.querySelector('b')!.textContent = prefs.autopilot ? 'on' : 'off'
+    autoBtn.setAttribute('aria-pressed', String(prefs.autopilot))
     mapBtn.querySelector('b')!.textContent = MAPPING_LABELS[prefs.mapping]
     statsBtn.querySelector('b')!.textContent = prefs.showStats ? 'on' : 'off'
     statsBtn.setAttribute('aria-pressed', String(prefs.showStats))
@@ -689,6 +715,7 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
       prefs.mix = Math.max(0, Math.min(1, t))
       handlers.onMix(prefs.mix)
       paintMix()
+      manual()
     }
     hit.addEventListener('pointerdown', (e) => {
       e.stopPropagation()
@@ -800,6 +827,28 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
       const b = bandNamed('atmospheric')
       b.rot = restingRot(b)
       paintBands()
+    },
+
+    autopilot: () => prefs.autopilot,
+
+    adopt(next) {
+      if (next.geoColour) {
+        prefs.geoColour = next.geoColour
+        handlers.onGeoColour(prefs.geoColour)
+      }
+      if (next.atmosphericView) {
+        prefs.atmosphericView = next.atmosphericView
+        handlers.onAtmosphericView(prefs.atmosphericView)
+        bandNamed('atmospheric').rot = restingRot(bandNamed('atmospheric'))
+      }
+      savePrefs(prefs)
+      // Only repaint what is visible; the HUD is closed most of the time and
+      // setOpen re-reads everything from prefs anyway.
+      if (open) {
+        paintBands()
+        paintRgb()
+        paintButtons()
+      }
     },
 
     cycleGeometricView(direction) {

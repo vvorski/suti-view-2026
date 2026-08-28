@@ -15,7 +15,9 @@ import { DEFAULT_MERGE_MODE, DEFAULT_MIX, isMergeModeName, type MergeModeName } 
 import { checkWebGL, keepAwake, waitForStart } from './permission-gate'
 import { loadPrefs, type Prefs } from './prefs'
 import { applyReleaseTone } from './release-tone'
+import { Director } from './director'
 import { createVisualiser } from './scene'
+import { SlowAnalysis } from './slow'
 import { startShake } from './shake'
 import { mountVersionHud } from './version'
 import {
@@ -45,6 +47,7 @@ function resolvePrefs(): Prefs {
     mergeMode: DEFAULT_MERGE_MODE,
     mix: DEFAULT_MIX,
     mapping: DEFAULT_MAPPING,
+    autopilot: true,
     showStats: false,
   })
 
@@ -58,6 +61,7 @@ function resolvePrefs(): Prefs {
   const merge = query.get('merge')
   const mix = query.get('mix')
   const mapping = query.get('mapping')
+  const auto = query.get('auto')
 
   return {
     geometricView: isGeometricViewName(geometric) ? geometric : stored.geometricView,
@@ -66,6 +70,7 @@ function resolvePrefs(): Prefs {
     mergeMode: isMergeModeName(merge) ? merge : stored.mergeMode,
     mix: mix !== null && !Number.isNaN(Number(mix)) ? Math.min(1, Math.max(0, Number(mix) / 100)) : stored.mix,
     mapping: mapping && mapping in MAPPINGS ? (mapping as MappingName) : stored.mapping,
+    autopilot: auto === null ? stored.autopilot : auto !== '0' && auto !== 'off',
     showStats: query.has('debug') || stored.showStats,
   }
 }
@@ -109,6 +114,13 @@ async function main(): Promise<void> {
   })
   let mapping: Mapping = MAPPINGS[prefs.mapping]()
 
+  // The minutes tier and the thing that acts on it. Kept out of `mapping` on
+  // purpose: a mapping swap throws away several seconds of envelope state,
+  // which is the right call for a fast tier and exactly the wrong one for a
+  // five-minute buffer.
+  const slow = new SlowAnalysis()
+  const director = new Director()
+
   const panel = createHud(prefs, {
     onGeometricView: (name: GeometricViewName) => visualiser.setGeometricView(name),
     onGeoColour: (colour) => visualiser.setGeoColour(colour),
@@ -121,6 +133,7 @@ async function main(): Promise<void> {
     onMapping: (name: MappingName) => {
       mapping = MAPPINGS[name]()
     },
+    onManualChange: () => director.suspend(),
   })
 
   bindGestures({
@@ -148,6 +161,19 @@ async function main(): Promise<void> {
       // Any disturbance tumbles the picture; a hard shake re-rolls the seed —
       // the same action the space bar and a vertical swipe already perform, so
       // shaking the phone is a third way in rather than a new behaviour.
+      // Structure and flavour over minutes. Fed the fast tier's output as
+      // well as the frame: transient, roughness and level are already computed
+      // and tuned, and a second copy would be a second set of constants to
+      // keep in step.
+      const character = slow.update(audio, params)
+      if (panel.autopilot()) {
+        const next = director.update(character, audio.dt, {
+          geoColour: prefs.geoColour,
+          atmosphericView: prefs.atmosphericView,
+        })
+        if (next) panel.adopt(next)
+      }
+
       const tumble = shake.frame(audio.dt)
       visualiser.setTumble(tumble)
       if (shake.takeStrong()) visualiser.randomise()

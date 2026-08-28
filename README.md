@@ -275,6 +275,53 @@ Refusal is not a failure: `startShake` returns a sensor that reports "still"
 forever, so callers need no branch and the visualiser is fully usable without
 it.
 
+## The minutes tier
+
+Everything above reacts inside a second, and until recently nothing in the app
+had a memory longer than six of them. `slow.ts` is the part that does. It runs
+at 2 Hz off the same frames, and five minutes of history is 600 × 12 floats —
+28.8 KB, which is why the obvious objection (a self-similarity matrix is
+enormous) never arises: the matrix is never built.
+
+It reports two things. **Structure** — novelty at 4 s, 15 s and 60 s scales,
+whether the present resembles somewhere we have already been, and how long the
+current section has run. **Flavour** — four named axes (`bright`, `noisy`,
+`dense`, `rhythmic`) plus a coarse BPM, each smoothed over tens of seconds.
+
+**None of it is a uniform**, and that is the design. A minutes-scale number
+read by a shader every frame becomes *motion* — a drift nothing on screen
+explains, which is the worst kind of motion there is. So the slow tier reports,
+`director.ts` decides, and decisions are applied through the same setters the
+HUD calls. It is an autopilot on the existing controls, not a second bus into
+the shaders — which means it can be switched off (the `auto` button), it shows
+up correctly in the HUD, and it cannot fight the user.
+
+Three rules keep it restrained. It **never fights the user**: any manual change
+suspends it for three minutes. It **never arrives unannounced**: a change only
+lands on a section boundary, so a new palette coincides with the music changing
+instead of turning up mid-phrase — this is the single thing that separates
+"it's listening" from "it's drifting". And it **never flickers**: every
+categorical decision has a dead band and has to hold its answer for 30 seconds.
+
+Two things worth knowing about the novelty measure. It uses the mean vector of
+each half-window rather than all pairs, which is not an approximation dressed
+up — expanding Foote's within-minus-across contrast for mean vectors gives
+exactly `|mA − mB|² / 2`, the squared distance between the halves' centroids,
+linear in the window instead of quadratic. And it is **deliberately blind to a
+pure change of spectral tilt**, because the vectors are L2-normalised and a
+tilt change is nearly a scalar multiple. Tilt is already reported as `bright`;
+novelty answers "did the energy move to different bands".
+
+`pnpm probe:slow` runs a synthetic five-section arrangement — intro, build,
+drop, breakdown, outro, with the outro made of the same material as the intro —
+and prints the whole Character track plus every decision. This is not optional
+the way a visual check is optional: a five-minute buffer takes five minutes to
+say anything, and you cannot hold ninety seconds of behaviour in your head well
+enough to judge it. It caught four real bugs on its first run, including an
+ambient passage reporting 80% rhythmic with a confident BPM, and one apparent
+bug that was not one — see the note in the probe about what L2 normalisation
+removes.
+
 ## Tuning the mapping
 
 Two tools, because judging this by eye alone does not work — a dark screen looks

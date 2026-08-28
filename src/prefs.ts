@@ -28,6 +28,8 @@ export interface Prefs {
   /** 0-1. Universal opacity: 0 is pure atmosphere, 1 is the full blend. */
   mix: number
   mapping: MappingName
+  /** Let the slow tier choose colour and programme. See director.ts. */
+  autopilot: boolean
   showStats: boolean
 }
 
@@ -69,6 +71,8 @@ export function loadPrefs(fallback: Prefs): Prefs {
           : fallback.mix,
       mapping:
         parsed.mapping && parsed.mapping in MAPPINGS ? parsed.mapping : fallback.mapping,
+      autopilot:
+        typeof parsed.autopilot === 'boolean' ? parsed.autopilot : fallback.autopilot,
       showStats:
         typeof parsed.showStats === 'boolean' ? parsed.showStats : fallback.showStats,
     }

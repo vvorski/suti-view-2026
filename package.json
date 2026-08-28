@@ -11,6 +11,7 @@
     "lint": "eslint .",
     "probe": "node --experimental-strip-types scripts/probe-mapping.ts",
     "probe:shake": "node --experimental-strip-types scripts/probe-shake.ts",
+    "probe:slow": "node --experimental-strip-types scripts/probe-slow.ts",
     "format": "prettier --write .",
     "deploy": "./deploy/deploy.sh"
   },
