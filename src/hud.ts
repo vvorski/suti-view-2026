@@ -65,6 +65,24 @@ const TAP_SLOP_PX = 12
 /** Half-width of a band's grab zone, in px. */
 const GRAB_PX = 24
 
+/** The mapping fan sweeps directly out to the chip's right, not up or down,
+ *  because up and down are exactly where its neighbours in the same button
+ *  column already are — the chip stack is a single vertical line, so any
+ *  sweep with much vertical component lands an option on top of the chip
+ *  above or below it rather than beside the one that opened the fan. */
+const FAN_A0 = -45 * DEG
+const FAN_A1 = 45 * DEG
+/** Centre-to-option radius for the fan, in screen px (fixed, unlike the dial
+ *  bands' viewport-scaled radii, because the chip itself is a fixed CSS
+ *  size). Chosen so both gaps clear by roughly a thumb's slop: adjacent 48px
+ *  option circles (FAN_OPT_R*2) stay about 17px apart, and the nearest
+ *  option clears the chip above/below in the column by about 10px. */
+const FAN_R = 85
+/** Radius of a fan option circle. Equal to GRAB_PX, this file's established
+ *  thumb-safe half-width, so the visible circle doubles as its own hit
+ *  target rather than needing a separate invisible one like the bands do. */
+const FAN_OPT_R = GRAB_PX
+
 export interface Hud {
   /** Call every frame with the current state; only does work while visible. */
   update(
@@ -100,6 +118,15 @@ const MAPPING_LABELS: Record<MappingName, string> = {
   relative: 'Relative',
   'speech-band': 'Absolute',
   'auto-normalised': 'Normalised',
+}
+
+/** Three-letter codes for the same three values, used wherever the full
+ *  MAPPING_LABELS text won't fit — the mapping chip itself and its fan's
+ *  option circles, both under 50px across. */
+const MAPPING_SHORT: Record<MappingName, string> = {
+  relative: 'REL',
+  'speech-band': 'ABS',
+  'auto-normalised': 'NOR',
 }
 
 const CSS = `
@@ -171,19 +198,47 @@ const CSS = `
   font: 600 19px "Chakra Petch", ui-sans-serif, system-ui, sans-serif;
   letter-spacing: 0; color: #f0eeff; font-variant-numeric: tabular-nums;
 }
-.hud-btn2 {
+/* Circular so the four read as one family of chips instead of a button list.
+   Two short lines fit inside — an identity glyph and the live value — because
+   the original span+b markup already carried both; only the shape changed.
+   Sized a hair over GRAB_PX*2 (48px, the band hit zone's diameter and this
+   file's established thumb-safe minimum) to leave room for the second line. */
+.hud-chip {
   appearance: none; cursor: pointer;
-  width: 6.5rem; padding: 0.35rem 0.5rem;
-  display: flex; flex-direction: column; gap: 0.15rem;
+  width: 3.25rem; height: 3.25rem; padding: 0;
+  border-radius: 50%;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 0.05rem;
   background: rgba(12,12,26,0.85);
   border: 1px solid rgba(44,41,71,0.9);
-  border-radius: 3px;
   font: 400 8px ui-monospace, SFMono-Regular, Menlo, monospace;
-  letter-spacing: 0.1em; text-transform: uppercase;
-  color: #8a86a4;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  color: #8a86a4; text-align: center; line-height: 1.1;
 }
-.hud-btn2[aria-pressed='true'] { background: rgba(26,24,48,0.9); border-color: #9d9bf0; }
-.hud-btn2 b { font-weight: 400; color: #9d9bf0; }
+.hud-chip[aria-pressed='true'] { background: rgba(26,24,48,0.9); border-color: #9d9bf0; }
+.hud-chip b { font-weight: 400; color: #9d9bf0; display: block; }
+.hud-chip[aria-pressed='true'] b { color: #f0eeff; }
+/* The colour chip's value line is a swatch, not text — "100/100/100" does not
+   fit in a 52px circle, and a dot of the actual colour reads faster than the
+   digits ever did. */
+.hud-chip b.hud-chip-swatch {
+  width: 14px; height: 14px; margin: 0 auto; border-radius: 50%;
+  border: 1px solid rgba(0,0,0,0.45);
+}
+
+/* The mapping chip's fan: three circular options drawn into the dial svg
+   (not HTML) so their position can be derived the same way everything else
+   in the dial is — polar coordinates around a centre, here the chip's own
+   centre instead of the wedge hinge. */
+.hud-fan-stem { stroke: rgba(169,166,232,0.22); stroke-width: 1; }
+.hud-fan-opt { fill: rgba(12,12,26,0.94); stroke: rgba(44,41,71,0.9); stroke-width: 1.2; }
+.hud-fan-opt.on { fill: rgba(26,24,48,0.96); stroke: #9d9bf0; stroke-width: 1.6; }
+.hud-fan-label {
+  font: 500 8px "Chakra Petch", ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  fill: #8a86a4; text-anchor: middle; dominant-baseline: middle;
+}
+.hud-fan-label.on { fill: #f0eeff; }
 
 /* Channel intensities for the geometric layer. A panel rather than a dial
    band: three values that move together are not a list you turn through, and
@@ -296,12 +351,16 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
 
   const manual = (): void => handlers.onManualChange()
 
-  function mkButton(label: string, onTap: () => void): HTMLButtonElement {
+  // `glyph` is what's visible — short enough to sit on one line inside a
+  // 52px circle — and `name` is the full word, kept as the accessible name
+  // so shrinking the chip doesn't also shrink what a screen reader says.
+  function mkButton(name: string, glyph: string, onTap: () => void): HTMLButtonElement {
     const b = document.createElement('button')
     b.type = 'button'
-    b.className = 'hud-btn2'
+    b.className = 'hud-chip'
+    b.setAttribute('aria-label', name)
     b.innerHTML = '<span></span><b></b>'
-    b.querySelector('span')!.textContent = label
+    b.querySelector('span')!.textContent = glyph
     b.addEventListener('pointerup', (e) => {
       e.stopPropagation()
       onTap()
@@ -437,12 +496,35 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
   let mixArc: SVGPathElement | null = null
   let mixKnob: SVGCircleElement | null = null
 
-  const rgbBtn = mkButton('colour', () => {
-    rgbPanel.classList.toggle('open')
+  // The mapping fan. Rebuilt each layout pass like the bands and the mix arc
+  // are, then just repositioned and shown/hidden by paintMapFan() — except
+  // its geometry is anchored to the mapping chip's own screen position
+  // (an HTML element outside the dial) rather than to the dial's centre.
+  const mapFanStems: SVGLineElement[] = []
+  const mapFanOpts: SVGCircleElement[] = []
+  const mapFanLabels: SVGTextElement[] = []
+
+  // Only one popup — the mapping fan, or a colour panel — is ever open at
+  // once. Each opener decides its own open/closed state from what it was
+  // before acting, then unconditionally closes the other; that's what lets
+  // a second tap on the same chip close it while a tap on any other chip
+  // always closes both and only reopens the one that was tapped.
+  let mapFanOpen = false
+
+  const rgbBtn = mkButton('Geometric layer colour', 'RGB', () => {
+    const wasOpen = rgbPanel.classList.contains('open')
+    closeMapFan()
+    rgbPanel.classList.toggle('open', !wasOpen)
     paintButtons()
   })
+  // The colour chip's value is a swatch dot, not text — see the CSS comment
+  // on .hud-chip-swatch for why.
+  const rgbSwatch = rgbBtn.querySelector('b')!
+  rgbSwatch.classList.add('hud-chip-swatch')
 
-  const autoBtn = mkButton('auto', () => {
+  const autoBtn = mkButton('Autopilot', 'AUTO', () => {
+    rgbPanel.classList.remove('open')
+    closeMapFan()
     prefs.autopilot = !prefs.autopilot
     savePrefs(prefs)
     paintButtons()
@@ -451,21 +533,29 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     // do anything would read as broken.
   })
 
-  const mapBtn = mkButton('mapping', () => {
-    const i = mappingKeys.indexOf(prefs.mapping)
-    prefs.mapping = mappingKeys[(i + 1) % mappingKeys.length]
-    savePrefs(prefs)
-    handlers.onMapping(prefs.mapping)
+  const mapBtn = mkButton('Mapping', 'MAP', () => {
+    const wasOpen = mapFanOpen
+    rgbPanel.classList.remove('open')
+    mapFanOpen = !wasOpen
+    paintMapFan()
     paintButtons()
   })
 
-  const statsBtn = mkButton('numbers', () => {
+  const statsBtn = mkButton('Numeric readout', 'NUM', () => {
+    rgbPanel.classList.remove('open')
+    closeMapFan()
     prefs.showStats = !prefs.showStats
     stats.hidden = !prefs.showStats
     if (!prefs.showStats) stats.textContent = ''
     savePrefs(prefs)
     paintButtons()
   })
+
+  function closeMapFan(): void {
+    if (!mapFanOpen) return
+    mapFanOpen = false
+    paintMapFan()
+  }
 
   const polar = (r: number, a: number): [number, number] => [
     cx + r * Math.cos(a),
@@ -603,10 +693,87 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     bindMixDrag(mixHit)
     svg.appendChild(mixHit)
 
+    // The mapping fan, added last of all so it draws above everything else
+    // in the dial — it has to, since it can be opened while the fan sits
+    // over band labels near the chip's corner of the screen.
+    mapFanStems.length = 0
+    mapFanOpts.length = 0
+    mapFanLabels.length = 0
+    mappingKeys.forEach((k) => {
+      const stem = el('line', { class: 'hud-fan-stem' })
+      svg.appendChild(stem)
+      mapFanStems.push(stem)
+
+      const opt = el('circle', { class: 'hud-fan-opt btn', r: FAN_OPT_R })
+      opt.setAttribute('aria-label', MAPPING_LABELS[k])
+      opt.addEventListener('pointerup', (e) => {
+        e.stopPropagation()
+        prefs.mapping = k
+        savePrefs(prefs)
+        handlers.onMapping(prefs.mapping)
+        mapFanOpen = false
+        paintMapFan()
+        paintButtons()
+      })
+      svg.appendChild(opt)
+      mapFanOpts.push(opt)
+
+      const label = el('text', { class: 'hud-fan-label' })
+      label.textContent = MAPPING_SHORT[k]
+      svg.appendChild(label)
+      mapFanLabels.push(label)
+    })
+
     paintBands()
     paintMix()
     paintRgb()
     paintButtons()
+    paintMapFan()
+  }
+
+  /** The mapping chip's centre, in the svg's own coordinate space — the same
+   *  client-rect-to-local conversion localAngle() does for pointer events,
+   *  just for an element's position instead of an event's. */
+  function mapFanCenter(): [number, number] {
+    const svgRect = svg.getBoundingClientRect()
+    const chipRect = mapBtn.getBoundingClientRect()
+    return [
+      chipRect.left + chipRect.width / 2 - svgRect.left,
+      chipRect.top + chipRect.height / 2 - svgRect.top,
+    ]
+  }
+
+  function paintMapFan(): void {
+    const [fx, fy] = mapFanCenter()
+    mappingKeys.forEach((k, i) => {
+      const a = FAN_A0 + (i * (FAN_A1 - FAN_A0)) / (mappingKeys.length - 1)
+      // Not polar() — that's centred on the wedge hinge (cx,cy), and this
+      // fan is centred on the chip (fx,fy) instead.
+      const x = fx + FAN_R * Math.cos(a)
+      const y = fy + FAN_R * Math.sin(a)
+      const stem = mapFanStems[i]
+      stem.setAttribute('x1', String(fx))
+      stem.setAttribute('y1', String(fy))
+      stem.setAttribute('x2', String(x))
+      stem.setAttribute('y2', String(y))
+      stem.setAttribute('opacity', mapFanOpen ? '1' : '0')
+
+      const opt = mapFanOpts[i]
+      opt.setAttribute('cx', String(x))
+      opt.setAttribute('cy', String(y))
+      opt.setAttribute('opacity', mapFanOpen ? '1' : '0')
+      opt.classList.toggle('on', k === prefs.mapping)
+      // Invisible when closed must also mean untappable — opacity alone
+      // would leave three 48px targets sitting live over whatever else is
+      // underneath them.
+      opt.style.pointerEvents = mapFanOpen ? 'auto' : 'none'
+
+      const label = mapFanLabels[i]
+      label.setAttribute('x', String(x))
+      label.setAttribute('y', String(y))
+      label.setAttribute('opacity', mapFanOpen ? '1' : '0')
+      label.classList.toggle('on', k === prefs.mapping)
+    })
   }
 
   function paintBands(): void {
@@ -647,12 +814,9 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
       if (s.input.valueAsNumber !== pct) s.input.value = String(pct)
       s.out.textContent = String(pct)
     }
-    swatch.style.setProperty(
-      '--swatch',
-      `rgb(${Math.round(c.r * 255)} ${Math.round(c.g * 255)} ${Math.round(c.b * 255)})`,
-    )
-    rgbBtn.querySelector('b')!.textContent =
-      `${Math.round(c.r * 100)}/${Math.round(c.g * 100)}/${Math.round(c.b * 100)}`
+    const rgbCss = `rgb(${Math.round(c.r * 255)} ${Math.round(c.g * 255)} ${Math.round(c.b * 255)})`
+    swatch.style.setProperty('--swatch', rgbCss)
+    rgbSwatch.style.background = rgbCss
   }
 
   function paintButtons(): void {
@@ -661,7 +825,8 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     rgbBtn.setAttribute('aria-expanded', String(open))
     autoBtn.querySelector('b')!.textContent = prefs.autopilot ? 'on' : 'off'
     autoBtn.setAttribute('aria-pressed', String(prefs.autopilot))
-    mapBtn.querySelector('b')!.textContent = MAPPING_LABELS[prefs.mapping]
+    mapBtn.querySelector('b')!.textContent = MAPPING_SHORT[prefs.mapping]
+    mapBtn.setAttribute('aria-expanded', String(mapFanOpen))
     statsBtn.querySelector('b')!.textContent = prefs.showStats ? 'on' : 'off'
     statsBtn.setAttribute('aria-pressed', String(prefs.showStats))
   }
@@ -755,9 +920,10 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
       paintRgb()
       paintButtons()
     } else {
-      // The panel is a mode; leaving it open across a close would mean the HUD
+      // Both are modes; leaving either open across a close would mean the HUD
       // reopens showing something the last tap did not ask for.
       rgbPanel.classList.remove('open')
+      closeMapFan()
       stats.textContent = ''
     }
   }
