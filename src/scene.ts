@@ -37,6 +37,7 @@ import { type GeoColour } from './geo-colour'
 import { MERGE_MODES, type MergeModeName } from './merge-modes'
 import type { VisualParams } from './mapping'
 import { createRippleState, MAX_RIPPLES, updateRipples } from './ripples'
+import type { TumbleState } from './shake'
 import compositeFrag from './shaders/composite.frag.glsl?raw'
 import vertexShader from './shaders/fullscreen.vert.glsl?raw'
 import {
@@ -112,6 +113,8 @@ export interface Visualiser {
   setMergeMode(mode: MergeModeName): void
   /** Recolour the geometric layer. Cheap: a uniform, not a recompile. */
   setGeoColour(colour: GeoColour): void
+  /** How far the device has been knocked about. See shake.ts. */
+  setTumble(t: TumbleState): void
   /** 0-1. */
   setMix(mix: number): void
   /** Re-roll the seed each view spends on whatever it doesn't get from audio. */
@@ -246,6 +249,9 @@ export function createVisualiser(
     uGeoColour: {
       value: new Vector3(options.geoColour.r, options.geoColour.g, options.geoColour.b),
     },
+    // (angle, offsetX, offsetY, overscan) — at rest this is the identity, so
+    // a device with no accelerometer costs one unused uniform and nothing else.
+    uTumble: { value: new Vector4(0, 0, 0, 0) },
   }
   const compositeMaterial = new ShaderMaterial({
     vertexShader,
@@ -452,6 +458,10 @@ export function createVisualiser(
 
     setMergeMode(mode) {
       compositeUniforms.uMode.value = MERGE_MODES[mode].index
+    },
+
+    setTumble(t) {
+      compositeUniforms.uTumble.value.set(t.angle, t.offsetX, t.offsetY, t.zoom)
     },
 
     setGeoColour(colour) {

@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "probe": "node --experimental-strip-types scripts/probe-mapping.ts",
+    "probe:shake": "node --experimental-strip-types scripts/probe-shake.ts",
     "format": "prettier --write .",
     "deploy": "./deploy/deploy.sh"
   },

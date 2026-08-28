@@ -16,6 +16,7 @@ import { checkWebGL, keepAwake, waitForStart } from './permission-gate'
 import { loadPrefs, type Prefs } from './prefs'
 import { applyReleaseTone } from './release-tone'
 import { createVisualiser } from './scene'
+import { startShake } from './shake'
 import { mountVersionHud } from './version'
 import {
   DEFAULT_ATMOSPHERIC_VIEW,
@@ -94,8 +95,10 @@ async function main(): Promise<void> {
 
   const prefs = resolvePrefs()
 
-  const source = await waitForStart({ gate, button, error })
+  const { source, motion } = await waitForStart({ gate, button, error })
   void keepAwake()
+
+  const shake = startShake(motion)
 
   const visualiser = createVisualiser(canvas, {
     geometricView: prefs.geometricView,
@@ -141,8 +144,16 @@ async function main(): Promise<void> {
     if (document.visibilityState === 'visible') {
       const audio = source.frame()
       const params = mapping.update(audio)
+
+      // Any disturbance tumbles the picture; a hard shake re-rolls the seed —
+      // the same action the space bar and a vertical swipe already perform, so
+      // shaking the phone is a third way in rather than a new behaviour.
+      const tumble = shake.frame(audio.dt)
+      visualiser.setTumble(tumble)
+      if (shake.takeStrong()) visualiser.randomise()
+
       visualiser.render(params, audio.freq)
-      panel.update(params, visualiser.stats())
+      panel.update(params, { ...visualiser.stats(), disturb: tumble.disturb })
     }
     requestAnimationFrame(frame)
   }
@@ -151,6 +162,7 @@ async function main(): Promise<void> {
   window.addEventListener('pagehide', () => {
     running = false
     visualiser.dispose()
+    shake.close()
     source.close()
   })
 }

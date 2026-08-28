@@ -228,6 +228,53 @@ Two details that look arbitrary and are not:
   A hard edge reads as "that's the whole list"; a fade reads as a strip
   continuing past the window, which is what it is.
 
+## The phone as an input
+
+Shaking the device does two different things depending on how hard, because a
+single threshold would make a physical object behave like a switch.
+
+**Any disturbance tumbles the picture.** Rotation and drift, kicked by the
+actual measured motion and sprung back to rest. There is no threshold to cross:
+walking with the phone shows faintly, picking it up off a table shows clearly,
+and it settles on its own afterwards. Both axes are under-damped harmonic
+oscillators rather than decays — a decay slides back to centre and stops, which
+reads as an animation playing, while a spring overshoots and settles, which
+reads as something with weight being disturbed.
+
+The rotation spring's damping ratio is 0.4 rather than the prettier 0.25 for a
+specific reason: its natural frequency is about 2 Hz, and so is walking. At
+0.25 the resonant gain is 2×, so carrying the phone in a hand would slowly wind
+the image up to its cap.
+
+**A hard, deliberate shake re-rolls the seed** — the same thing the space bar
+and a vertical swipe already do. This one has to be earned, and the interesting
+part is telling a shake from a knock. Peak acceleration cannot: putting a phone
+down hard clears any bar a real shake clears. So it counts oscillations
+instead. The magnitude has to cross 18 m/s², fall back below 7, and do that
+three times inside 1.2 seconds. An impact gives one crossing, its rebound gives
+a second; three means the phone is being shaken.
+
+The tumble is applied in the composite pass, not per view, so every programme
+inherits it — including ones written later — and both layers move as one
+picture rather than the geometry shearing off its own atmosphere. The transform
+scales up by a small overscan before drifting, because the render targets clamp
+at their edges and a rotation without it smears the outermost row of pixels
+across the corner it exposed.
+
+Everything but the event listener is a pure function of samples and `dt`, which
+is what makes `pnpm probe:shake` possible — a phone is the only thing that
+produces real accelerometer data and the one device you cannot comfortably
+debug while waving it around. The probe's most important row is the last one: a
+knock and its rebound must tumble the image and must *not* re-roll the seed.
+
+iOS 13+ gates the accelerometer behind a permission call that must happen
+inside a live user gesture, the same rule the microphone has. Both are
+therefore started from the tap-to-start button, and the motion request is
+issued *before* awaiting the microphone — awaiting first spends the gesture.
+Refusal is not a failure: `startShake` returns a sensor that reports "still"
+forever, so callers need no branch and the visualiser is fully usable without
+it.
+
 ## Tuning the mapping
 
 Two tools, because judging this by eye alone does not work — a dark screen looks
@@ -299,6 +346,7 @@ main.ts            picks a mapping, owns the rAF loop
  ├─ permission-gate.ts   tap-to-start overlay, WebGL check, wake lock
  ├─ audio.ts             getUserMedia -> AnalyserNode -> AudioFrame
  ├─ mapping.ts           AudioFrame -> VisualParams   <- the swappable part
+ ├─ shake.ts             devicemotion -> TumbleState + a hard-shake edge
  └─ scene.ts             Three.js fullscreen quad + shaders/
 ```
 

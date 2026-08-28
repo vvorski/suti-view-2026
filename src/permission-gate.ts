@@ -8,6 +8,7 @@
  */
 
 import { startMicrophone, type AudioSource } from './audio'
+import { requestMotionAccess } from './shake'
 
 interface GateElements {
   gate: HTMLElement
@@ -77,6 +78,13 @@ export async function keepAwake(): Promise<void> {
   await acquire()
 }
 
+/** What the start gesture bought us. */
+export interface Started {
+  source: AudioSource
+  /** False when the device has no accelerometer, or access was refused. */
+  motion: boolean
+}
+
 /**
  * Resolves once the user has tapped and the microphone is live.
  *
@@ -84,11 +92,17 @@ export async function keepAwake(): Promise<void> {
  * because on mobile the usual fix (grant the permission, plug in a headset) is
  * something they do and then retry, not something a reload helps with.
  */
-export function waitForStart(els: GateElements): Promise<AudioSource> {
+export function waitForStart(els: GateElements): Promise<Started> {
   return new Promise((resolve) => {
     const onClick = async () => {
       els.button.disabled = true
       els.error.textContent = ''
+
+      // Started before the await, not after: iOS gates the accelerometer
+      // behind the same live-user-gesture rule as getUserMedia, and awaiting
+      // the microphone first spends the gesture. Both calls are made
+      // synchronously inside the handler and only then awaited.
+      const motion = requestMotionAccess()
 
       try {
         const source = await startMicrophone()
@@ -101,7 +115,9 @@ export function waitForStart(els: GateElements): Promise<AudioSource> {
           els.gate.hidden = true
         }, 600)
 
-        resolve(source)
+        // Motion is optional, so its answer is awaited here rather than
+        // being allowed to hold up or fail the start.
+        resolve({ source, motion: await motion })
       } catch (err) {
         els.error.textContent = explain(err)
         els.button.disabled = false

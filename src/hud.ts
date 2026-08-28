@@ -67,7 +67,10 @@ const GRAB_PX = 24
 
 export interface Hud {
   /** Call every frame with the current state; only does work while visible. */
-  update(params: VisualParams, stats: { frameMs: number; pixelRatio: number }): void
+  update(
+    params: VisualParams,
+    stats: { frameMs: number; pixelRatio: number; disturb?: number },
+  ): void
   /** Step the atmospheric layer's programme forward (1) or back (-1), wrapping. */
   cycleAtmosphericView(direction: 1 | -1): void
   /** Step the geometric layer's programme forward (1) or back (-1), wrapping. */
@@ -781,6 +784,10 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
         `surge ${bar(p.surge)} ${p.surge.toFixed(2)}`,
         `novel ${bar(p.novelty)} ${p.novelty.toFixed(2)}`,
         `rough ${bar(p.roughness)} ${p.roughness.toFixed(2)}`,
+        // Only when there is a sensor. On a laptop the line would read 0.00
+        // forever and say nothing; on a phone it is the only way to see what
+        // the shake thresholds are actually being fed.
+        ...(s.disturb === undefined ? [] : [`shake ${bar(s.disturb)} ${s.disturb.toFixed(2)}`]),
       ].join('\n')
     },
 

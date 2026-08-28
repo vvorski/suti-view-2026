@@ -17,6 +17,13 @@ uniform int uMode;  // 0 normal, 1 add, 2 screen, 3 multiply, 4 overlay, 5 diffe
 // applied here rather than inside each view. See geo-colour.ts.
 uniform vec3 uGeoColour;
 
+// Physical disturbance of the device, as (angle, offsetX, offsetY, overscan).
+// Applied here rather than in each view so every programme tumbles, including
+// ones written later, and so both layers move as one picture — transforming
+// them separately would shear the geometry off its own atmosphere. See
+// shake.ts.
+uniform vec4 uTumble;
+
 vec3 overlayBlend(vec3 base, vec3 top) {
   vec3 lo = 2.0 * base * top;
   vec3 hi = 1.0 - 2.0 * (1.0 - base) * (1.0 - top);
@@ -24,8 +31,18 @@ vec3 overlayBlend(vec3 base, vec3 top) {
 }
 
 void main() {
-  vec3 base = texture2D(uAtmosphere, vUv).rgb;
-  vec3 top = texture2D(uGeometry, vUv).rgb * uGeoColour;
+  // Rotate about the centre, scale up by the overscan, then drift. The
+  // overscan is what keeps the rotated corners inside the source: without it
+  // the render targets clamp at their edges and a tumble smears the outermost
+  // row of pixels across the corner it exposed.
+  vec2 p = vUv - 0.5;
+  float c = cos(uTumble.x);
+  float s = sin(uTumble.x);
+  p = vec2(c * p.x - s * p.y, s * p.x + c * p.y) / (1.0 + uTumble.w);
+  vec2 uv = clamp(p + uTumble.yz + 0.5, 0.0, 1.0);
+
+  vec3 base = texture2D(uAtmosphere, uv).rgb;
+  vec3 top = texture2D(uGeometry, uv).rgb * uGeoColour;
 
   vec3 blended;
   if (uMode == 1) blended = base + top;
