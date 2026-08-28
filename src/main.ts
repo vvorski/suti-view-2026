@@ -12,6 +12,7 @@ import { bindGestures } from './gestures'
 import { MAPPINGS, type Mapping, type MappingName } from './mapping'
 import { DEFAULT_MERGE_MODE, DEFAULT_MIX, isMergeModeName, type MergeModeName } from './merge-modes'
 import { checkWebGL, keepAwake, waitForStart } from './permission-gate'
+import { applyReleaseTone } from './release-tone'
 import { createVisualiser } from './scene'
 import { mountVersionHud } from './version'
 import {
@@ -79,6 +80,7 @@ async function main(): Promise<void> {
   }
 
   mountVersionHud()
+  applyReleaseTone(__BUILD_NUMBER__)
 
   if (!checkWebGL()) {
     fail('This browser does not support WebGL2, which this page needs to draw.')
