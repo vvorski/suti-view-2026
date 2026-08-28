@@ -83,6 +83,44 @@ const FAN_R = 85
  *  target rather than needing a separate invisible one like the bands do. */
 const FAN_OPT_R = GRAB_PX
 
+/** The colour rings' sweep, relative to the colour chip's own centre — same
+ *  convention as FAN_A0/FAN_A1 (0 points due right, positive is clockwise
+ *  since screen y grows downward), and for the same reason: the chip's
+ *  neighbours in the column (the mix readout above, AUTO below) sit at
+ *  roughly ±90°, so the sweep stays clear of both by keeping well inside
+ *  that. Wider than the fan's own ±45° because a 0-100 drag needs an arc
+ *  long enough to resolve a value along, not just three fixed stops. */
+const RING_A0 = -50 * DEG
+const RING_A1 = 50 * DEG
+/** Innermost ring's radius, in screen px anchored to the colour chip (fixed,
+ *  like FAN_R, not viewport-scaled like the dial bands — the chip itself is
+ *  a fixed CSS size). The chip is a 26px-radius circle; a ring's own hit
+ *  zone reaches GRAB_PX further in than its drawn radius, so anything closer
+ *  than about 26 + GRAB_PX would let the ring's grab arc reach onto the chip
+ *  itself. 60 clears that by a working margin. */
+const RING_R_INNER = 60
+/** Spacing between adjacent rings' radii. Each ring's hit zone is GRAB_PX*2
+ *  (48px) wide; less than that and neighbouring rings' invisible grab arcs
+ *  would overlap, so a drag meant for one ring could get captured by the
+ *  next one in. The extra 8px on top is a clear gap between them, not load-
+ *  bearing but cheap insurance against a fat-fingered tap landing exactly on
+ *  the seam. */
+const RING_PITCH = 56
+/** How far past a ring's 0% end (RING_A0) its numeric label sits, outside
+ *  the angular span every ring's track occupies — so a label never draws
+ *  over any ring's own arc, whichever channel or radius it belongs to,
+ *  regardless of that channel's current value. */
+const LABEL_OFFSET = 12 * DEG
+/** How far beyond its own ring's radius a label sits. Checked on screen at
+ *  320×568: at RING_R_INNER with no padding, B's label lands almost exactly
+ *  on the mix readout sitting directly above the chip in the column — the
+ *  innermost ring is simply too close to the chip for angle alone to clear
+ *  a same-column neighbour, since at radius 60 the whole ring's vertical
+ *  reach is ±60px and the readout is only ~56px above centre. Pushing every
+ *  label's radius out by this much clears that case with margin and, being
+ *  uniform across all three, keeps their radial spacing consistent too. */
+const LABEL_PAD = 26
+
 export interface Hud {
   /** Call every frame with the current state; only does work while visible. */
   update(
@@ -240,45 +278,34 @@ const CSS = `
 }
 .hud-fan-label.on { fill: #f0eeff; }
 
-/* Channel intensities for the geometric layer. A panel rather than a dial
-   band: three values that move together are not a list you turn through, and
-   the space of useful settings includes every desaturated and channel-killed
-   combination a preset list would have to enumerate. */
+/* The colour chip's popup used to be this panel: three linear sliders, one
+   per channel. The sliders are gone — the popup is now three concentric
+   rings drawn straight into the dial svg, anchored to this chip the same way
+   the mapping fan is anchored to that one (see colourCenter() and
+   paintColourPopup()). What is left of the panel is just the composite
+   swatch: a single-glance check that the three channels haven't combined
+   into something unexpected, kept because the exact per-channel numbers now
+   live on the rings and their labels instead of in a per-row <output>. */
 .hud-rgb {
-  width: 10.5rem; padding: 0.6rem 0.7rem 0.7rem;
-  display: none; flex-direction: column; gap: 0.45rem;
-  background: rgba(12,12,26,0.94);
-  border: 1px solid rgba(44,41,71,0.9);
-  border-radius: 3px;
+  width: 3.25rem; padding: 0;
+  display: none;
   pointer-events: auto;
 }
-.hud-rgb.open { display: flex; }
-.hud-rgb label {
-  display: grid; grid-template-columns: 0.9rem 1fr 1.9rem; align-items: center; gap: 0.4rem;
-  font: 400 9px ui-monospace, SFMono-Regular, Menlo, monospace;
-  letter-spacing: 0.1em; text-transform: uppercase; color: #8a86a4;
-}
-.hud-rgb output { color: #f0eeff; text-align: right; font-variant-numeric: tabular-nums; }
-.hud-rgb input {
-  appearance: none; -webkit-appearance: none;
-  width: 100%; height: 18px; background: none; cursor: pointer;
-}
-.hud-rgb input::-webkit-slider-runnable-track {
-  height: 3px; border-radius: 2px; background: var(--track);
-}
-.hud-rgb input::-moz-range-track { height: 3px; border-radius: 2px; background: var(--track); }
-.hud-rgb input::-webkit-slider-thumb {
-  -webkit-appearance: none; width: 14px; height: 14px; margin-top: -5.5px;
-  border-radius: 50%; background: var(--chan); border: 1px solid rgba(0,0,0,0.5);
-}
-.hud-rgb input::-moz-range-thumb {
-  width: 14px; height: 14px; border-radius: 50%;
-  background: var(--chan); border: 1px solid rgba(0,0,0,0.5);
-}
-.hud-rgb input:focus-visible { outline: 1px solid #9d9bf0; outline-offset: 3px; }
+.hud-rgb.open { display: block; }
 .hud-swatch {
-  height: 4px; border-radius: 2px; margin-top: 0.15rem;
+  height: 4px; border-radius: 2px;
   background: var(--swatch, #fff);
+}
+
+/* The three colour rings: the same track/fill/knob idiom as the mix arc,
+   times three, concentric around the colour chip instead of the wedge hinge.
+   Fill stroke colour is set per-channel inline (the tint from CHANNELS),
+   since it varies per ring in a way a shared class can't express. */
+.hud-ring-fill { fill: none; stroke-linecap: round; }
+.hud-ring-label {
+  font: 500 9px "Chakra Petch", ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  text-anchor: middle; dominant-baseline: middle;
 }
 
 .hud-stats {
@@ -379,51 +406,22 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
   // swallowed by a band's 48px grab zone.
   const rgbPanel = document.createElement('div')
   rgbPanel.className = 'hud-rgb'
-  rgbPanel.setAttribute('role', 'group')
-  rgbPanel.setAttribute('aria-label', 'Geometric layer channel intensity')
   // A tap inside the panel must not reach the scrim, which closes the HUD.
+  // Nothing in here is interactive any more — it's just the composite swatch
+  // below — but the swatch is thin, and a mis-tap on the sliver of panel
+  // around it shouldn't close the HUD out from under a colour change either.
   rgbPanel.addEventListener('pointerup', (e) => e.stopPropagation())
   rgbPanel.addEventListener('pointerdown', (e) => e.stopPropagation())
   btnBar.appendChild(rgbPanel)
 
+  // Per-channel identity used by both the (now gone) sliders' replacement —
+  // the colour rings — and paintRgb()'s swatch. Order is R, G, B throughout,
+  // which is also the rings' outer-to-inner order (see ringRadius()).
   const CHANNELS = [
     { key: 'r' as const, label: 'R', tint: '#ff4d5e' },
     { key: 'g' as const, label: 'G', tint: '#4dff8f' },
     { key: 'b' as const, label: 'B', tint: '#5c8bff' },
   ]
-
-  const sliders = CHANNELS.map(({ key, label, tint }) => {
-    const row = document.createElement('label')
-    const name = document.createElement('span')
-    name.textContent = label
-    const input = document.createElement('input')
-    input.type = 'range'
-    input.min = '0'
-    input.max = '100'
-    input.step = '1'
-    input.style.setProperty('--chan', tint)
-    // The track shows the channel running from black to its own full value, so
-    // the control looks like what it does.
-    input.style.setProperty('--track', `linear-gradient(90deg, #0b0b16, ${tint})`)
-    input.setAttribute('aria-label', `${label} intensity`)
-    const out = document.createElement('output')
-    row.append(name, input, out)
-    rgbPanel.appendChild(row)
-
-    input.addEventListener('input', () => {
-      prefs.geoColour = clampGeoColour({ ...prefs.geoColour, [key]: input.valueAsNumber / 100 })
-      handlers.onGeoColour(prefs.geoColour)
-      paintRgb()
-      manual()
-    })
-    // Persist on release only — dragging a slider fires continuously and there
-    // is no reason to write localStorage at that rate.
-    const commit = (): void => savePrefs(prefs)
-    input.addEventListener('change', commit)
-    input.addEventListener('pointerup', commit)
-
-    return { key, input, out }
-  })
 
   const swatch = document.createElement('div')
   swatch.className = 'hud-swatch'
@@ -504,6 +502,16 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
   const mapFanOpts: SVGCircleElement[] = []
   const mapFanLabels: SVGTextElement[] = []
 
+  // The colour rings, one array per element kind, indexed like CHANNELS
+  // (0=R, 1=G, 2=B — R outermost, B innermost; see ringRadius()). Same
+  // rebuild-then-reposition split as the mapping fan above, anchored to the
+  // colour chip's own screen position instead of the dial's centre.
+  const colourTracks: SVGPathElement[] = []
+  const colourFills: SVGPathElement[] = []
+  const colourKnobs: SVGCircleElement[] = []
+  const colourLabels: SVGTextElement[] = []
+  const colourHits: SVGPathElement[] = []
+
   // Only one popup — the mapping fan, or a colour panel — is ever open at
   // once. Each opener decides its own open/closed state from what it was
   // before acting, then unconditionally closes the other; that's what lets
@@ -516,6 +524,7 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     closeMapFan()
     rgbPanel.classList.toggle('open', !wasOpen)
     paintButtons()
+    paintColourPopup()
   })
   // The colour chip's value is a swatch dot, not text — see the CSS comment
   // on .hud-chip-swatch for why.
@@ -523,7 +532,7 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
   rgbSwatch.classList.add('hud-chip-swatch')
 
   const autoBtn = mkButton('Autopilot', 'AUTO', () => {
-    rgbPanel.classList.remove('open')
+    closeColourPopup()
     closeMapFan()
     prefs.autopilot = !prefs.autopilot
     savePrefs(prefs)
@@ -535,14 +544,14 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
 
   const mapBtn = mkButton('Mapping', 'MAP', () => {
     const wasOpen = mapFanOpen
-    rgbPanel.classList.remove('open')
+    closeColourPopup()
     mapFanOpen = !wasOpen
     paintMapFan()
     paintButtons()
   })
 
   const statsBtn = mkButton('Numeric readout', 'NUM', () => {
-    rgbPanel.classList.remove('open')
+    closeColourPopup()
     closeMapFan()
     prefs.showStats = !prefs.showStats
     stats.hidden = !prefs.showStats
@@ -557,15 +566,34 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     paintMapFan()
   }
 
-  const polar = (r: number, a: number): [number, number] => [
-    cx + r * Math.cos(a),
-    cy + r * Math.sin(a),
-  ]
+  // The colour popup's open/closed state lives on rgbPanel's own class,
+  // unlike mapFanOpen which has to be a closure variable — the mapping fan
+  // is pure svg with nothing surviving build()'s teardown to hold a flag on,
+  // but rgbPanel is an ordinary DOM node outside the svg, so its class
+  // already survives resize the same way mapFanOpen is made to.
+  function closeColourPopup(): void {
+    if (!rgbPanel.classList.contains('open')) return
+    rgbPanel.classList.remove('open')
+    paintColourPopup()
+  }
 
-  function arcPath(r: number, a0: number, a1: number): string {
-    const [x0, y0] = polar(r, a0)
-    const [x1, y1] = polar(r, a1)
+  /** Position on a circle of radius r about (ox,oy). polar()/arcPath() are
+   *  this centred on the wedge hinge (cx,cy); the colour rings need the same
+   *  arithmetic centred on the colour chip instead, so it's generalised here
+   *  and polar()/arcPath() become the cx,cy special case of it. */
+  const polarAt = (ox: number, oy: number, r: number, a: number): [number, number] => [
+    ox + r * Math.cos(a),
+    oy + r * Math.sin(a),
+  ]
+  const polar = (r: number, a: number): [number, number] => polarAt(cx, cy, r, a)
+
+  function arcAt(ox: number, oy: number, r: number, a0: number, a1: number): string {
+    const [x0, y0] = polarAt(ox, oy, r, a0)
+    const [x1, y1] = polarAt(ox, oy, r, a1)
     return `M${x0} ${y0}A${r} ${r} 0 ${a1 - a0 > Math.PI ? 1 : 0} 1 ${x1} ${y1}`
+  }
+  function arcPath(r: number, a0: number, a1: number): string {
+    return arcAt(cx, cy, r, a0, a1)
   }
 
   /** Rotation that puts the currently-selected key under the notch. */
@@ -724,11 +752,68 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
       mapFanLabels.push(label)
     })
 
+    // The colour rings, added last of all — after the mapping fan, even —
+    // so that if a phone is somehow narrow enough for the two popups'
+    // territory to touch, whichever is open draws on top. They never are
+    // both open at once (see closeColourPopup()/closeMapFan()), so in
+    // practice this only matters for z-order over the dial bands beneath.
+    colourTracks.length = 0
+    colourFills.length = 0
+    colourKnobs.length = 0
+    colourLabels.length = 0
+    colourHits.length = 0
+    CHANNELS.forEach(({ key, label, tint }) => {
+      const track = el('path', { class: 'hud-track', 'stroke-width': 8 })
+      svg.appendChild(track)
+      colourTracks.push(track)
+
+      const fill = el('path', { class: 'hud-ring-fill', 'stroke-width': 8, stroke: tint })
+      svg.appendChild(fill)
+      colourFills.push(fill)
+
+      const knob = el('circle', { r: 6, class: 'hud-ring-knob' })
+      knob.style.fill = tint
+      svg.appendChild(knob)
+      colourKnobs.push(knob)
+
+      const lbl = el('text', { class: 'hud-ring-label' })
+      lbl.style.fill = tint
+      svg.appendChild(lbl)
+      colourLabels.push(lbl)
+
+      const hit = el('path', {
+        class: 'hit',
+        fill: 'none',
+        stroke: 'transparent',
+        'stroke-width': GRAB_PX * 2,
+      })
+      hit.setAttribute('aria-label', `${label} intensity`)
+      svg.appendChild(hit)
+      colourHits.push(hit)
+
+      bindArcDrag(
+        hit,
+        colourCenter,
+        RING_A0,
+        RING_A1,
+        (t) => {
+          prefs.geoColour = clampGeoColour({ ...prefs.geoColour, [key]: t })
+          handlers.onGeoColour(prefs.geoColour)
+          paintColourPopup()
+          paintRgb()
+          manual()
+        },
+        // Persist once at the end, same as every other dragged control here.
+        () => savePrefs(prefs),
+      )
+    })
+
     paintBands()
     paintMix()
     paintRgb()
     paintButtons()
     paintMapFan()
+    paintColourPopup()
   }
 
   /** The mapping chip's centre, in the svg's own coordinate space — the same
@@ -776,6 +861,73 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     })
   }
 
+  /** The colour chip's centre, in the svg's own coordinate space — the same
+   *  conversion mapFanCenter() does for the mapping chip. */
+  function colourCenter(): [number, number] {
+    const svgRect = svg.getBoundingClientRect()
+    const chipRect = rgbBtn.getBoundingClientRect()
+    return [
+      chipRect.left + chipRect.width / 2 - svgRect.left,
+      chipRect.top + chipRect.height / 2 - svgRect.top,
+    ]
+  }
+
+  /** Radius of the i'th channel's ring (i indexes CHANNELS: 0=R, 1=G, 2=B).
+   *  R outermost, B innermost, in CHANNELS' own order. Checked on screen at
+   *  320×568 rather than picked blind: with R biggest, the popup reads as
+   *  one shape shrinking inward rather than three arcs of equal weight
+   *  competing for attention, and R is the ring a thumb reaches first
+   *  without crossing the other two — which matches it usually being the
+   *  first channel a warm/cool push touches. Nesting by CHANNELS' existing
+   *  order also means no separate ordering has to be invented or kept in
+   *  sync with it. Computed rather than stored, like everything else
+   *  paintColourPopup() draws, so there is one definition of the layout. */
+  function ringRadius(i: number): number {
+    return RING_R_INNER + (CHANNELS.length - 1 - i) * RING_PITCH
+  }
+
+  function paintColourPopup(): void {
+    const open = rgbPanel.classList.contains('open')
+    const [fx, fy] = colourCenter()
+    const c = prefs.geoColour
+    CHANNELS.forEach(({ key, label }, i) => {
+      const r = ringRadius(i)
+      const value = c[key]
+      const valueAngle = RING_A0 + value * (RING_A1 - RING_A0)
+
+      colourTracks[i].setAttribute('d', arcAt(fx, fy, r, RING_A0, RING_A1))
+      colourTracks[i].setAttribute('opacity', open ? '1' : '0')
+
+      colourFills[i].setAttribute(
+        'd',
+        arcAt(fx, fy, r, RING_A0, Math.max(RING_A0 + 0.001, valueAngle)),
+      )
+      colourFills[i].setAttribute('opacity', open ? '1' : '0')
+
+      const [kx, ky] = polarAt(fx, fy, r, valueAngle)
+      colourKnobs[i].setAttribute('cx', String(kx))
+      colourKnobs[i].setAttribute('cy', String(ky))
+      colourKnobs[i].setAttribute('opacity', open ? '1' : '0')
+
+      // Anchored past RING_A0, outside every ring's own arc — see
+      // LABEL_OFFSET — so the text never sits over a track or fill
+      // regardless of this or any other channel's current value.
+      const [lx, ly] = polarAt(fx, fy, r + LABEL_PAD, RING_A0 - LABEL_OFFSET)
+      const lbl = colourLabels[i]
+      lbl.setAttribute('x', String(lx))
+      lbl.setAttribute('y', String(ly))
+      lbl.textContent = `${label} ${Math.round(value * 100)}`
+      lbl.setAttribute('opacity', open ? '1' : '0')
+
+      colourHits[i].setAttribute('d', arcAt(fx, fy, r, RING_A0, RING_A1))
+      // Invisible when closed must also mean untappable, exactly like the
+      // mapping fan's options — these hit zones are wider than the fan's
+      // and sit over at least as much of the dial, so it matters at least
+      // as much here.
+      colourHits[i].style.pointerEvents = open ? 'auto' : 'none'
+    })
+  }
+
   function paintBands(): void {
     for (const b of bands) {
       const sel = b.current()
@@ -805,15 +957,12 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     mixRead.querySelector('b')!.textContent = `${Math.round(prefs.mix * 100)}%`
   }
 
+  // The per-channel exact values now live on the rings themselves
+  // (paintColourPopup()'s labels); this only paints the composite preview —
+  // the swatch bar and the chip's own dot — which is why it no longer needs
+  // to know about individual channels.
   function paintRgb(): void {
     const c = prefs.geoColour
-    for (const s of sliders) {
-      const pct = Math.round(c[s.key] * 100)
-      // Only write the input when it disagrees, so this is safe to call from
-      // paint paths while a drag is in flight.
-      if (s.input.valueAsNumber !== pct) s.input.value = String(pct)
-      s.out.textContent = String(pct)
-    }
     const rgbCss = `rgb(${Math.round(c.r * 255)} ${Math.round(c.g * 255)} ${Math.round(c.b * 255)})`
     swatch.style.setProperty('--swatch', rgbCss)
     rgbSwatch.style.background = rgbCss
@@ -831,10 +980,66 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     statsBtn.setAttribute('aria-pressed', String(prefs.showStats))
   }
 
-  /** Pointer position in the SVG's own coordinate space (which is CSS pixels). */
-  function localAngle(e: PointerEvent): number {
+  /** Pointer position as an angle about (ox,oy), in the svg's own coordinate
+   *  space (which is CSS pixels). localAngle() is the cx,cy special case of
+   *  this, used by the bands, which are always about the wedge hinge. */
+  function angleFrom(e: PointerEvent, ox: number, oy: number): number {
     const r = svg.getBoundingClientRect()
-    return Math.atan2(e.clientY - r.top - cy, e.clientX - r.left - cx)
+    return Math.atan2(e.clientY - r.top - oy, e.clientX - r.left - ox)
+  }
+  function localAngle(e: PointerEvent): number {
+    return angleFrom(e, cx, cy)
+  }
+
+  /** Where an angle falls along the arc from a0 to a1, as 0-1, clamped to the
+   *  arc's own ends. Built on delta() rather than the naive
+   *  "(deg-a0)/(a1-a0)" so it survives a0/a1 straddling the 0/360 wrap —
+   *  which the mix arc's own SWEEP_A/SWEEP_B never do, but the colour rings'
+   *  chip-relative angles can, depending where the chip lands on screen.
+   *  Shared by bindMixDrag and the colour rings' drag binder so a drag turns
+   *  into a value the same way everywhere in this file. */
+  function angleToUnit(a: number, a0: number, a1: number): number {
+    const t = delta(a, a0) / delta(a1, a0)
+    return Math.max(0, Math.min(1, t))
+  }
+
+  /** Binds a drag on `hit` to a 0-1 value along the arc from a0 to a1 about
+   *  whatever point `origin()` currently reports — a function rather than a
+   *  fixed pair because the colour rings' centre moves with the chip's own
+   *  layout, re-read on every event rather than cached, the same as every
+   *  other paint path in this file. `apply` gets the live value on every
+   *  move; `onCommit` fires once, on release, which is where persistence
+   *  belongs (see the comment on the old sliders' `commit`, above). */
+  function bindArcDrag(
+    hit: SVGPathElement,
+    origin: () => [number, number],
+    a0: number,
+    a1: number,
+    apply: (t: number) => void,
+    onCommit: () => void,
+  ): void {
+    let active = false
+    const set = (e: PointerEvent): void => {
+      const [ox, oy] = origin()
+      apply(angleToUnit(angleFrom(e, ox, oy), a0, a1))
+    }
+    hit.addEventListener('pointerdown', (e) => {
+      e.stopPropagation()
+      hit.setPointerCapture(e.pointerId)
+      active = true
+      set(e)
+    })
+    hit.addEventListener('pointermove', (e) => {
+      if (active && hit.hasPointerCapture(e.pointerId)) set(e)
+    })
+    const end = (e: PointerEvent): void => {
+      if (!active) return
+      active = false
+      e.stopPropagation()
+      onCommit()
+    }
+    hit.addEventListener('pointerup', end)
+    hit.addEventListener('pointercancel', end)
   }
 
   function bindBandDrag(hit: SVGPathElement, b: Band<string>): void {
@@ -873,34 +1078,21 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
   }
 
   function bindMixDrag(hit: SVGPathElement): void {
-    let active = false
-    const set = (e: PointerEvent) => {
-      const deg = ((localAngle(e) / DEG) % 360 + 360) % 360
-      const t = (deg - SWEEP_A) / (SWEEP_B - SWEEP_A)
-      prefs.mix = Math.max(0, Math.min(1, t))
-      handlers.onMix(prefs.mix)
-      paintMix()
-      manual()
-    }
-    hit.addEventListener('pointerdown', (e) => {
-      e.stopPropagation()
-      hit.setPointerCapture(e.pointerId)
-      active = true
-      set(e)
-    })
-    hit.addEventListener('pointermove', (e) => {
-      if (active && hit.hasPointerCapture(e.pointerId)) set(e)
-    })
-    const end = (e: PointerEvent) => {
-      if (!active) return
-      active = false
-      e.stopPropagation()
+    bindArcDrag(
+      hit,
+      () => [cx, cy],
+      SWEEP_A * DEG,
+      SWEEP_B * DEG,
+      (t) => {
+        prefs.mix = t
+        handlers.onMix(prefs.mix)
+        paintMix()
+        manual()
+      },
       // Persist once at the end — a drag fires many events a second and there
       // is no reason to write localStorage that often.
-      savePrefs(prefs)
-    }
-    hit.addEventListener('pointerup', end)
-    hit.addEventListener('pointercancel', end)
+      () => savePrefs(prefs),
+    )
   }
 
   build()
@@ -919,10 +1111,11 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
       paintMix()
       paintRgb()
       paintButtons()
+      paintColourPopup()
     } else {
       // Both are modes; leaving either open across a close would mean the HUD
       // reopens showing something the last tap did not ask for.
-      rgbPanel.classList.remove('open')
+      closeColourPopup()
       closeMapFan()
       stats.textContent = ''
     }
@@ -1014,6 +1207,7 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
         paintBands()
         paintRgb()
         paintButtons()
+        paintColourPopup()
       }
     },
 
