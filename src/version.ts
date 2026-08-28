@@ -15,13 +15,16 @@ const CSS = `
 #version-hud {
   position: fixed;
   left: calc(0.6rem + env(safe-area-inset-left, 0px));
-  bottom: calc(0.6rem + env(safe-area-inset-bottom, 0px));
+  top: calc(0.6rem + env(safe-area-inset-top, 0px));
   z-index: 40;
   display: flex;
   align-items: center;
   gap: 0.3rem;
-  font: 400 11px ui-monospace, SFMono-Regular, Menlo, monospace;
-  color: #4d5566;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(5, 6, 10, 0.55);
+  font: 500 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #9aa3b8;
 }
 #version-hud button {
   appearance: none;
@@ -29,16 +32,16 @@ const CSS = `
   background: transparent;
   color: inherit;
   font: inherit;
-  font-size: 13px;
+  font-size: 14px;
   cursor: pointer;
-  padding: 0.1rem 0.35rem;
+  padding: 0.1rem 0.3rem;
   line-height: 1;
-  opacity: 0.85;
+  opacity: 0.9;
   transition: color 160ms ease;
 }
 #version-hud button:hover,
 #version-hud button:focus-visible {
-  color: #cfd3dd;
+  color: #f2f4f8;
 }
 `
 
