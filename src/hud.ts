@@ -3,9 +3,16 @@
  *
  * A 120° wedge hinged just outside the bottom-right corner of the screen —
  * where the thumb actually pivots from. One arc band per control, stacked
- * outward: geometric, its RGB filter, atmospheric, merge mode. Swipe along a
- * band to turn it; whatever settles under the notch is selected. The innermost
- * arc is the mix.
+ * outward: geometric layer, merge mode, atmospheric layer. Swipe along a band
+ * to turn it; whatever settles under the notch is selected. The innermost arc
+ * is the mix.
+ *
+ * The band order is the compositing order, read outward: the two layers with
+ * the mode that combines them physically between them. An earlier version put
+ * a colour chooser in that middle slot and exiled merge inward past the
+ * atmospheric band, which broke the one thing the stack is meant to say. The
+ * geometric layer's colour is not a per-layer programme at all — it is a gain
+ * on a finished layer — so it belongs on a button, not on a dial band.
  *
  * This replaced a bottom-sheet list of cards. The list worked, but it took the
  * whole screen to change one value, which meant you could never see the thing
@@ -18,7 +25,7 @@
  * every rotation.
  */
 
-import { GEO_FILTERS, type GeoFilterName } from './geo-filters'
+import { clampGeoColour, type GeoColour } from './geo-colour'
 import type { MappingName, VisualParams } from './mapping'
 import { MERGE_MODES, type MergeModeName } from './merge-modes'
 import { savePrefs, type Prefs } from './prefs'
@@ -45,14 +52,13 @@ const PITCH = 26 * DEG
 const CUTOFF = 40 * DEG
 
 /** Band radii and the mix arc, as fractions of the screen's short edge — the
- *  wedge has to stay a thumb's reach whatever the phone. Four bands now, so
- *  they sit closer together than three did; the inner one still clears the
- *  mix arc by more than a finger's width. */
+ *  wedge has to stay a thumb's reach whatever the phone. Three bands, in
+ *  compositing order outward-in: geometric, how they merge, atmospheric. The
+ *  innermost band still clears the mix arc by more than a finger's width. */
 const R_GEO = 0.88
-const R_FILTER = 0.73
-const R_ATM = 0.58
-const R_MRG = 0.43
-const R_MIX = 0.28
+const R_MRG = 0.72
+const R_ATM = 0.56
+const R_MIX = 0.30
 
 /** How far a pointer may stray and still count as a tap rather than a drag. */
 const TAP_SLOP_PX = 12
@@ -70,7 +76,7 @@ export interface Hud {
 
 interface Handlers {
   onGeometricView(name: GeometricViewName): void
-  onGeoFilter(name: GeoFilterName): void
+  onGeoColour(colour: GeoColour): void
   onAtmosphericView(name: AtmosphericViewName): void
   onMergeMode(mode: MergeModeName): void
   /** 0-1. */
@@ -119,33 +125,39 @@ const CSS = `
 }
 .hud-item.on { fill: #f0eeff; }
 
-.hud-cap {
-  font: 400 8px ui-monospace, SFMono-Regular, Menlo, monospace;
-  letter-spacing: 0.14em; text-transform: uppercase;
-  fill: #5d5a78; dominant-baseline: middle;
-}
-
 .hud-selector { fill: rgba(169,166,232,0.13); stroke: rgba(169,166,232,0.85); stroke-width: 1.4; }
 .hud-tip { fill: rgba(169,166,232,0.85); }
 
 .hud-mix-ring { fill: none; stroke: rgba(29,28,51,0.9); }
 .hud-mix-arc  { fill: none; stroke: #9d9bf0; stroke-linecap: round; }
 .hud-mix-knob { fill: #9d9bf0; }
-.hud-pct {
-  font: 600 19px "Chakra Petch", ui-sans-serif, system-ui, sans-serif;
-  fill: #f0eeff; dominant-baseline: middle;
-  font-variant-numeric: tabular-nums;
-}
 
-/* The two toggles are HTML rather than SVG, and sit after the dial in the DOM
-   so they render above it. Inside the SVG they would fall within a band's grab
+/* The toggles are HTML rather than SVG, and sit after the dial in the DOM so
+   they render above it. Inside the SVG they would fall within a band's grab
    zone — the invisible arcs are 48px wide — and the band would swallow the
-   tap. Stacked at the left edge, clear of where the faded band labels reach. */
+   tap. Stacked at the left edge, clear of where the faded band labels reach.
+
+   Everything in this corner lives in this one column: the mix readout, the
+   colour panel, and the buttons. They were three absolutely-positioned things
+   at hand-tuned offsets from the bottom, which held only for as long as the
+   count and heights did — adding a third button put it on top of the mix
+   readout, and opening the colour panel covered the button that opened it.
+   A flex column cannot have that bug. */
 .hud-btns {
   position: absolute;
   left: calc(0.75rem + env(safe-area-inset-left, 0px));
   bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
-  display: flex; flex-direction: column; gap: 0.5rem;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 0.5rem;
+}
+
+.hud-mixread {
+  display: flex; align-items: baseline; gap: 0.4rem;
+  font: 400 8px ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.14em; text-transform: uppercase; color: #5d5a78;
+}
+.hud-mixread b {
+  font: 600 19px "Chakra Petch", ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: 0; color: #f0eeff; font-variant-numeric: tabular-nums;
 }
 .hud-btn2 {
   appearance: none; cursor: pointer;
@@ -160,6 +172,47 @@ const CSS = `
 }
 .hud-btn2[aria-pressed='true'] { background: rgba(26,24,48,0.9); border-color: #9d9bf0; }
 .hud-btn2 b { font-weight: 400; color: #9d9bf0; }
+
+/* Channel intensities for the geometric layer. A panel rather than a dial
+   band: three values that move together are not a list you turn through, and
+   the space of useful settings includes every desaturated and channel-killed
+   combination a preset list would have to enumerate. */
+.hud-rgb {
+  width: 10.5rem; padding: 0.6rem 0.7rem 0.7rem;
+  display: none; flex-direction: column; gap: 0.45rem;
+  background: rgba(12,12,26,0.94);
+  border: 1px solid rgba(44,41,71,0.9);
+  border-radius: 3px;
+  pointer-events: auto;
+}
+.hud-rgb.open { display: flex; }
+.hud-rgb label {
+  display: grid; grid-template-columns: 0.9rem 1fr 1.9rem; align-items: center; gap: 0.4rem;
+  font: 400 9px ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.1em; text-transform: uppercase; color: #8a86a4;
+}
+.hud-rgb output { color: #f0eeff; text-align: right; font-variant-numeric: tabular-nums; }
+.hud-rgb input {
+  appearance: none; -webkit-appearance: none;
+  width: 100%; height: 18px; background: none; cursor: pointer;
+}
+.hud-rgb input::-webkit-slider-runnable-track {
+  height: 3px; border-radius: 2px; background: var(--track);
+}
+.hud-rgb input::-moz-range-track { height: 3px; border-radius: 2px; background: var(--track); }
+.hud-rgb input::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 14px; height: 14px; margin-top: -5.5px;
+  border-radius: 50%; background: var(--chan); border: 1px solid rgba(0,0,0,0.5);
+}
+.hud-rgb input::-moz-range-thumb {
+  width: 14px; height: 14px; border-radius: 50%;
+  background: var(--chan); border: 1px solid rgba(0,0,0,0.5);
+}
+.hud-rgb input:focus-visible { outline: 1px solid #9d9bf0; outline-offset: 3px; }
+.hud-swatch {
+  height: 4px; border-radius: 2px; margin-top: 0.15rem;
+  background: var(--swatch, #fff);
+}
 
 .hud-stats {
   position: absolute; margin: 0;
@@ -243,10 +296,68 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     return b
   }
 
+  const mixRead = document.createElement('div')
+  mixRead.className = 'hud-mixread'
+  mixRead.innerHTML = '<span>mix</span><b></b>'
+  btnBar.appendChild(mixRead)
+
+  // Appended to btnBar before any button, so it sits directly above the button
+  // that opens it. After the SVG in the DOM is what keeps it from being
+  // swallowed by a band's 48px grab zone.
+  const rgbPanel = document.createElement('div')
+  rgbPanel.className = 'hud-rgb'
+  rgbPanel.setAttribute('role', 'group')
+  rgbPanel.setAttribute('aria-label', 'Geometric layer channel intensity')
+  // A tap inside the panel must not reach the scrim, which closes the HUD.
+  rgbPanel.addEventListener('pointerup', (e) => e.stopPropagation())
+  rgbPanel.addEventListener('pointerdown', (e) => e.stopPropagation())
+  btnBar.appendChild(rgbPanel)
+
+  const CHANNELS = [
+    { key: 'r' as const, label: 'R', tint: '#ff4d5e' },
+    { key: 'g' as const, label: 'G', tint: '#4dff8f' },
+    { key: 'b' as const, label: 'B', tint: '#5c8bff' },
+  ]
+
+  const sliders = CHANNELS.map(({ key, label, tint }) => {
+    const row = document.createElement('label')
+    const name = document.createElement('span')
+    name.textContent = label
+    const input = document.createElement('input')
+    input.type = 'range'
+    input.min = '0'
+    input.max = '100'
+    input.step = '1'
+    input.style.setProperty('--chan', tint)
+    // The track shows the channel running from black to its own full value, so
+    // the control looks like what it does.
+    input.style.setProperty('--track', `linear-gradient(90deg, #0b0b16, ${tint})`)
+    input.setAttribute('aria-label', `${label} intensity`)
+    const out = document.createElement('output')
+    row.append(name, input, out)
+    rgbPanel.appendChild(row)
+
+    input.addEventListener('input', () => {
+      prefs.geoColour = clampGeoColour({ ...prefs.geoColour, [key]: input.valueAsNumber / 100 })
+      handlers.onGeoColour(prefs.geoColour)
+      paintRgb()
+    })
+    // Persist on release only — dragging a slider fires continuously and there
+    // is no reason to write localStorage at that rate.
+    const commit = (): void => savePrefs(prefs)
+    input.addEventListener('change', commit)
+    input.addEventListener('pointerup', commit)
+
+    return { key, input, out }
+  })
+
+  const swatch = document.createElement('div')
+  swatch.className = 'hud-swatch'
+  rgbPanel.appendChild(swatch)
+
   document.body.appendChild(scrim)
 
   const geometricKeys = Object.keys(GEOMETRIC_VIEWS) as GeometricViewName[]
-  const filterKeys = Object.keys(GEO_FILTERS) as GeoFilterName[]
   const atmosphericKeys = Object.keys(ATMOSPHERIC_VIEWS) as AtmosphericViewName[]
   const mergeKeys = Object.keys(MERGE_MODES) as MergeModeName[]
   const mappingKeys = Object.keys(MAPPING_LABELS) as MappingName[]
@@ -268,16 +379,16 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
       r: 0,
     },
     {
-      name: 'filter',
-      keys: filterKeys,
-      radius: R_FILTER,
+      name: 'merge',
+      keys: mergeKeys,
+      radius: R_MRG,
       rot: 0,
-      label: (k) => GEO_FILTERS[k as GeoFilterName].label,
-      current: () => prefs.geoFilter,
+      label: (k) => MERGE_MODES[k as MergeModeName].label,
+      current: () => prefs.mergeMode,
       commit: (k) => {
-        prefs.geoFilter = k as GeoFilterName
+        prefs.mergeMode = k as MergeModeName
         savePrefs(prefs)
-        handlers.onGeoFilter(prefs.geoFilter)
+        handlers.onMergeMode(prefs.mergeMode)
       },
       labels: [],
       r: 0,
@@ -297,22 +408,9 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
       labels: [],
       r: 0,
     },
-    {
-      name: 'merge',
-      keys: mergeKeys,
-      radius: R_MRG,
-      rot: 0,
-      label: (k) => MERGE_MODES[k as MergeModeName].label,
-      current: () => prefs.mergeMode,
-      commit: (k) => {
-        prefs.mergeMode = k as MergeModeName
-        savePrefs(prefs)
-        handlers.onMergeMode(prefs.mergeMode)
-      },
-      labels: [],
-      r: 0,
-    },
   ]
+
+  const bandNamed = (name: string): Band<string> => bands.find((b) => b.name === name)!
 
   // Live geometry, recomputed on resize.
   let cx = 0
@@ -320,7 +418,11 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
   let mixR = 0
   let mixArc: SVGPathElement | null = null
   let mixKnob: SVGCircleElement | null = null
-  let pctText: SVGTextElement | null = null
+
+  const rgbBtn = mkButton('colour', () => {
+    rgbPanel.classList.toggle('open')
+    paintButtons()
+  })
 
   const mapBtn = mkButton('mapping', () => {
     const i = mappingKeys.indexOf(prefs.mapping)
@@ -408,7 +510,7 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
 
     // The selector: a trapezoid crossing every band at the notch.
     {
-      const r0 = base * R_MRG - base * 0.05
+      const r0 = base * R_ATM - base * 0.05
       const r1 = base * R_GEO + base * 0.05
       const w0 = 26
       const w1 = 40
@@ -449,13 +551,6 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     mixKnob = el('circle', { r: 8, class: 'hud-mix-knob' })
     svg.appendChild(mixKnob)
 
-    // The mix readout sits at the left edge, past where any band label reaches.
-    const cap = el('text', { x: 14, y: h - 128, class: 'hud-cap' })
-    cap.textContent = 'MIX'
-    svg.appendChild(cap)
-    pctText = el('text', { x: 14, y: h - 106, class: 'hud-pct' })
-    svg.appendChild(pctText)
-
     // Invisible thick arcs are the actual grab targets. Added last so they sit
     // above the painted bands, and stroke-only so taps elsewhere fall through
     // to the scrim and close the HUD.
@@ -483,6 +578,7 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
 
     paintBands()
     paintMix()
+    paintRgb()
     paintButtons()
   }
 
@@ -505,17 +601,37 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
   }
 
   function paintMix(): void {
-    if (!mixArc || !mixKnob || !pctText) return
+    if (!mixArc || !mixKnob) return
     const a0 = SWEEP_A * DEG
     const a1 = a0 + prefs.mix * (SWEEP_B - SWEEP_A) * DEG
     mixArc.setAttribute('d', arcPath(mixR, a0, Math.max(a0 + 0.001, a1)))
     const [kx, ky] = polar(mixR, a1)
     mixKnob.setAttribute('cx', String(kx))
     mixKnob.setAttribute('cy', String(ky))
-    pctText.textContent = `${Math.round(prefs.mix * 100)}%`
+    mixRead.querySelector('b')!.textContent = `${Math.round(prefs.mix * 100)}%`
+  }
+
+  function paintRgb(): void {
+    const c = prefs.geoColour
+    for (const s of sliders) {
+      const pct = Math.round(c[s.key] * 100)
+      // Only write the input when it disagrees, so this is safe to call from
+      // paint paths while a drag is in flight.
+      if (s.input.valueAsNumber !== pct) s.input.value = String(pct)
+      s.out.textContent = String(pct)
+    }
+    swatch.style.setProperty(
+      '--swatch',
+      `rgb(${Math.round(c.r * 255)} ${Math.round(c.g * 255)} ${Math.round(c.b * 255)})`,
+    )
+    rgbBtn.querySelector('b')!.textContent =
+      `${Math.round(c.r * 100)}/${Math.round(c.g * 100)}/${Math.round(c.b * 100)}`
   }
 
   function paintButtons(): void {
+    const open = rgbPanel.classList.contains('open')
+    rgbBtn.setAttribute('aria-pressed', String(open))
+    rgbBtn.setAttribute('aria-expanded', String(open))
     mapBtn.querySelector('b')!.textContent = MAPPING_LABELS[prefs.mapping]
     statsBtn.querySelector('b')!.textContent = prefs.showStats ? 'on' : 'off'
     statsBtn.setAttribute('aria-pressed', String(prefs.showStats))
@@ -606,8 +722,12 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
       for (const b of bands) b.rot = restingRot(b)
       paintBands()
       paintMix()
+      paintRgb()
       paintButtons()
     } else {
+      // The panel is a mode; leaving it open across a close would mean the HUD
+      // reopens showing something the last tap did not ask for.
+      rgbPanel.classList.remove('open')
       stats.textContent = ''
     }
   }
@@ -670,7 +790,7 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
       prefs.atmosphericView = next
       savePrefs(prefs)
       handlers.onAtmosphericView(next)
-      const b = bands[2]
+      const b = bandNamed('atmospheric')
       b.rot = restingRot(b)
       paintBands()
     },
@@ -681,7 +801,7 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
       prefs.geometricView = next
       savePrefs(prefs)
       handlers.onGeometricView(next)
-      const b = bands[0]
+      const b = bandNamed('geometric')
       b.rot = restingRot(b)
       paintBands()
     },

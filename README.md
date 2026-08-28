@@ -45,13 +45,20 @@ pixel size derived from `uResolution` rather than `fwidth()`, since derivatives
 need an extension in GLSL ES 1.00 and one pixel here is exactly
 `1/min(resolution)` — that being what the coordinates were divided by.
 
-All of its colour comes from an **RGB filter** applied to the finished layer in
-the composite pass (`geo-filters.ts`), picked on its own HUD band. Keeping
-shape and colour separate means a filter change is instant rather than a shader
-recompile, every geometric view gets colour without repeating a palette, and
-the geometry can be held out of the atmospheric layer's hue range so the two
-never fight for the same colour. `Spectrum` is the exception that earns the
-interface: it recomputes its gains each frame from the spectral tilt.
+All of its colour comes from three **RGB channel gains** applied to the
+finished layer in the composite pass (`geo-colour.ts`), set from a panel behind
+the HUD's colour button. Keeping shape and colour separate means a colour
+change is a uniform write rather than a shader recompile, every geometric view
+gets colour without repeating a palette, and the geometry can be held out of
+the atmospheric layer's hue range so the two never fight for the same colour.
+
+Three continuous gains rather than a list of named colours, for two reasons.
+The whole space is reachable — including the desaturated and channel-killed
+settings a preset list would have to enumerate one at a time — and, more to the
+point, the dial band a palette was occupying belongs to the merge mode. The
+HUD's bands read outward as the compositing order: geometric layer, how the two
+combine, atmospheric layer. Colour is a gain on a finished layer, not a
+programme selection, so it is a button.
 
 On the atmospheric side, **Spectrogram** is the one view here that is literally
 readable: radius is time into the past, angle is log frequency, so a sustained

@@ -14,8 +14,8 @@ uniform sampler2D uGeometry;
 uniform float uMix; // 0-1
 uniform int uMode;  // 0 normal, 1 add, 2 screen, 3 multiply, 4 overlay, 5 difference
 // The geometric layer is drawn in white; all of its colour is this gain,
-// applied here rather than inside each view. See geo-filters.ts.
-uniform vec3 uGeoFilter;
+// applied here rather than inside each view. See geo-colour.ts.
+uniform vec3 uGeoColour;
 
 vec3 overlayBlend(vec3 base, vec3 top) {
   vec3 lo = 2.0 * base * top;
@@ -25,7 +25,7 @@ vec3 overlayBlend(vec3 base, vec3 top) {
 
 void main() {
   vec3 base = texture2D(uAtmosphere, vUv).rgb;
-  vec3 top = texture2D(uGeometry, vUv).rgb * uGeoFilter;
+  vec3 top = texture2D(uGeometry, vUv).rgb * uGeoColour;
 
   vec3 blended;
   if (uMode == 1) blended = base + top;

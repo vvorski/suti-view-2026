@@ -16,7 +16,7 @@
 // Reads uRipples (see ripples.ts), so every front is a real transient.
 //
 // Like the rest of this layer it draws hard-edged white only; colour is an RGB
-// filter applied to the finished layer (see geo-filters.ts).
+// filter applied to the finished layer (see geo-colour.ts).
 
 varying vec2 vUv;
 

@@ -8,7 +8,7 @@
  * returning null.
  */
 
-import { isGeoFilterName, type GeoFilterName } from './geo-filters'
+import { clampGeoColour, isGeoColour, type GeoColour } from './geo-colour'
 import { MAPPINGS, type MappingName } from './mapping'
 import { isMergeModeName, type MergeModeName } from './merge-modes'
 import {
@@ -22,7 +22,7 @@ const STORE_KEY = 'suti-view:prefs'
 
 export interface Prefs {
   geometricView: GeometricViewName
-  geoFilter: GeoFilterName
+  geoColour: GeoColour
   atmosphericView: AtmosphericViewName
   mergeMode: MergeModeName
   /** 0-1. Universal opacity: 0 is pure atmosphere, 1 is the full blend. */
@@ -50,7 +50,13 @@ export function loadPrefs(fallback: Prefs): Prefs {
     const parsed = JSON.parse(raw) as Partial<Prefs>
     return {
       geometricView: pick(parsed.geometricView, isGeometricViewName, fallback.geometricView),
-      geoFilter: pick(parsed.geoFilter, isGeoFilterName, fallback.geoFilter),
+      // Was a named-palette string until the colour became three channel
+      // gains. An old string simply fails isGeoColour and falls back to white,
+      // which is the right answer for a stored value that no longer means
+      // anything — no migration table for a preference nobody will miss.
+      geoColour: isGeoColour(parsed.geoColour)
+        ? clampGeoColour(parsed.geoColour)
+        : fallback.geoColour,
       atmosphericView: pick(
         parsed.atmosphericView,
         isAtmosphericViewName,

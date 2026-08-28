@@ -17,7 +17,7 @@
 //
 // Like Circles, this draws hard-edged white geometry: no gaussian falloffs, no
 // per-shard hue. Colour is applied to the whole layer afterwards as an RGB
-// filter (see geo-filters.ts), so shape and colour stay separate concerns.
+// filter (see geo-colour.ts), so shape and colour stay separate concerns.
 
 varying vec2 vUv;
 

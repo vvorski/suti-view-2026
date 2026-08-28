@@ -29,7 +29,7 @@
 //
 //   White, not coloured. Everything here is monochrome; colour is applied to
 //   the whole layer afterwards as an RGB filter (see composite.frag.glsl and
-//   geo-filters.ts). Keeping shape and colour separate means a filter change
+//   geo-colour.ts). Keeping shape and colour separate means a colour change
 //   is instant and total, and means the geometry never fights the atmospheric
 //   layer's palette for the same hue.
 
