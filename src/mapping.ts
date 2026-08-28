@@ -14,6 +14,11 @@
  */
 
 import type { AudioFrame } from './audio'
+// Explicit .ts extension: Vite does not need it, but Node's ESM resolver does,
+// and `pnpm probe` runs this file directly under --experimental-strip-types.
+// Type-only imports are erased before Node ever sees them, so only real value
+// imports need this.
+import { StructureAnalysis } from './features.ts'
 
 export interface VisualParams {
   /** Overall drive, 0-1. The shader's master intensity. */
@@ -38,6 +43,18 @@ export interface VisualParams {
   breakdown: number
   /** Re-entry after a breakdown, 0-1. Brief, and much larger than a beat. */
   surge: number
+  /**
+   * Structural novelty, 0-1 — a sustained change in the character of the sound
+   * rather than a single hit. Section boundaries, a new instrument, the drop.
+   * See `features.ts`; this is the only signal here with a memory longer than
+   * a couple of seconds.
+   */
+  novelty: number
+  /**
+   * Spectral roughness, 0-1, from the 1/f exponent. Low is dark and smooth,
+   * high is bright and noisy. Very slow by design — it describes timbre.
+   */
+  roughness: number
 }
 
 export interface Mapping {
@@ -162,6 +179,8 @@ interface Common {
   tilt: number
   breakdown: number
   surge: number
+  novelty: number
+  roughness: number
 }
 
 class CommonAnalysis {
@@ -179,6 +198,7 @@ class CommonAnalysis {
   // beats. Anything faster fires on every kick pattern.
   private readonly breakEnv = new Envelope(0.3, 0.5)
   private readonly surgeEnv = new Envelope(0.02, 0.6)
+  private readonly structure = new StructureAnalysis()
   private prevBreak = 0
 
   update(frame: AudioFrame): Common {
@@ -216,7 +236,9 @@ class CommonAnalysis {
 
     const transient = this.transientEnv.push(this.flux.update(frame, dt), dt)
 
-    return { raw, norm, transient, tilt, breakdown, surge }
+    const { novelty, roughness } = this.structure.update(frame)
+
+    return { raw, norm, transient, tilt, breakdown, surge, novelty, roughness }
   }
 }
 
@@ -266,6 +288,8 @@ export function relativeMapping(): Mapping {
         tilt: c.tilt,
         breakdown: c.breakdown,
         surge: c.surge,
+        novelty: c.novelty,
+        roughness: c.roughness,
       }
     },
   }
@@ -314,6 +338,8 @@ export function speechBandMapping(): Mapping {
         tilt: c.tilt,
         breakdown: c.breakdown,
         surge: c.surge,
+        novelty: c.novelty,
+        roughness: c.roughness,
       }
     },
   }
@@ -360,6 +386,8 @@ export function autoNormalisedMapping(): Mapping {
         tilt: c.tilt,
         breakdown: c.breakdown,
         surge: c.surge,
+        novelty: c.novelty,
+        roughness: c.roughness,
       }
     },
   }

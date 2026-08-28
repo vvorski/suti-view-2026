@@ -14,6 +14,7 @@ import {
   OrthographicCamera,
   PlaneGeometry,
   RedFormat,
+  RepeatWrapping,
   Scene,
   ShaderMaterial,
   UnsignedByteType,
@@ -25,8 +26,26 @@ import type { VisualParams } from './mapping'
 import fragmentShader from './shaders/visualiser.frag.glsl?raw'
 import vertexShader from './shaders/visualiser.vert.glsl?raw'
 
-/** Texels in the spectrum texture. 128 is plenty — the shader reads it smoothly. */
+/** Texels in the instantaneous spectrum texture. 128 reads smoothly. */
 const SPECTRUM_SIZE = 128
+
+/**
+ * Rolling spectrogram uploaded to the GPU: one column per time slot, one row
+ * per log-spaced frequency band.
+ *
+ * This is the answer to "can the GPU process the sound". It cannot usefully do
+ * the FFT — the browser's AnalyserNode already does that in native code, and
+ * moving it to a fragment shader would be slower and far more complex. What the
+ * GPU can do that the CPU cannot is hold the *history* and read all of it, for
+ * every pixel, every frame. 256x64 texels is 16 KB; sampling it costs one
+ * texture fetch. Reconstructing the same thing on the CPU per pixel is not
+ * remotely possible.
+ *
+ * 256 columns at HISTORY_HZ gives ~8.5 seconds — long enough to see a phrase.
+ */
+const HISTORY_W = 256
+const HISTORY_H = 64
+const HISTORY_HZ = 30
 
 /**
  * Pixel-ratio ladder for the adaptive resolution scaler.
@@ -90,6 +109,33 @@ export function createVisualiser(canvas: HTMLCanvasElement): Visualiser {
   spectrumTexture.wrapT = ClampToEdgeWrapping
   spectrumTexture.needsUpdate = true
 
+  // Log-spaced bin ranges for the history rows, precomputed once. Linear rows
+  // would spend most of the texture on the top two octaves, where music has
+  // least going on.
+  const historyBins: Array<[number, number]> = []
+  {
+    const maxBin = SPECTRUM_SIZE
+    for (let r = 0; r < HISTORY_H; r++) {
+      const f0 = Math.pow(maxBin, r / HISTORY_H)
+      const f1 = Math.pow(maxBin, (r + 1) / HISTORY_H)
+      historyBins.push([Math.floor(f0), Math.max(Math.floor(f0) + 1, Math.ceil(f1))])
+    }
+  }
+
+  const historyData = new Uint8Array(HISTORY_W * HISTORY_H)
+  const historyTexture = new DataTexture(
+    historyData,
+    HISTORY_W,
+    HISTORY_H,
+    RedFormat,
+    UnsignedByteType,
+  )
+  historyTexture.minFilter = LinearFilter
+  historyTexture.magFilter = LinearFilter
+  historyTexture.wrapS = RepeatWrapping // time wraps: it is a ring buffer
+  historyTexture.wrapT = ClampToEdgeWrapping
+  historyTexture.needsUpdate = true
+
   const uniforms = {
     uResolution: { value: new Vector2(1, 1) },
     uTime: { value: 0 },
@@ -102,7 +148,13 @@ export function createVisualiser(canvas: HTMLCanvasElement): Visualiser {
     uTilt: { value: 0.5 },
     uBreak: { value: 0 },
     uSurge: { value: 0 },
+    uNovelty: { value: 0 },
+    uRoughness: { value: 0.5 },
     uSpectrum: { value: spectrumTexture },
+    uHistory: { value: historyTexture },
+    // Where "now" sits in the ring buffer, 0-1. The shader walks backwards from
+    // here to read into the past.
+    uHistoryHead: { value: 0 },
   }
 
   const material = new ShaderMaterial({ vertexShader, fragmentShader, uniforms })
@@ -117,6 +169,8 @@ export function createVisualiser(canvas: HTMLCanvasElement): Visualiser {
   let elapsed = 0
   let frameMs = 16.7
   let sinceChange = 0
+  let historyHead = 0
+  let historyAccum = 0
   let contextLost = false
 
   const onContextLost = (event: Event) => {
@@ -188,6 +242,25 @@ export function createVisualiser(canvas: HTMLCanvasElement): Visualiser {
       frameMs += (dt * 1000 - frameMs) * 0.05
       adapt(dt)
 
+      // Advance the rolling spectrogram at a fixed rate rather than once per
+      // rendered frame, so the time axis means the same thing regardless of
+      // frame rate — and so the visible history length does not change when the
+      // resolution scaler moves.
+      historyAccum += dt
+      if (historyAccum >= 1 / HISTORY_HZ) {
+        historyAccum %= 1 / HISTORY_HZ
+        for (let r = 0; r < HISTORY_H; r++) {
+          const [b0, b1] = historyBins[r]
+          let peak = 0
+          for (let b = b0; b < b1 && b < SPECTRUM_SIZE; b++) {
+            if (spectrumData[b] > peak) peak = spectrumData[b]
+          }
+          historyData[r * HISTORY_W + historyHead] = peak
+        }
+        historyHead = (historyHead + 1) % HISTORY_W
+        historyTexture.needsUpdate = true
+      }
+
       // A break stalls the motion rather than merely dimming it.
       const churn =
         0.06 + params.level * 0.95 + params.transient * 0.6 + params.surge * 1.5
@@ -203,6 +276,9 @@ export function createVisualiser(canvas: HTMLCanvasElement): Visualiser {
       uniforms.uTilt.value = params.tilt
       uniforms.uBreak.value = params.breakdown
       uniforms.uSurge.value = params.surge
+      uniforms.uNovelty.value = params.novelty
+      uniforms.uRoughness.value = params.roughness
+      uniforms.uHistoryHead.value = historyHead / HISTORY_W
 
       renderer.render(scene, camera)
     },
@@ -217,6 +293,7 @@ export function createVisualiser(canvas: HTMLCanvasElement): Visualiser {
       geometry.dispose()
       material.dispose()
       spectrumTexture.dispose()
+      historyTexture.dispose()
       renderer.dispose()
     },
   }

@@ -1,11 +1,15 @@
 // Nocturnal field: domain-warped fractal noise, lit from within by whatever the
 // microphone is hearing.
 //
-// Three things drive it, on deliberately different timescales:
+// Everything drives it on a deliberately different timescale:
 //
-//   uFlow      motion, integrated from level — quiet coasts, loud churns
-//   uTilt      colour, from spectral balance, smoothed over ~2.5s
-//   uBreak     structure, when the sound drops below its own recent norm
+//   uTransient  ~0.2s   ripples struck outward from the centre
+//   uFlow       ~0.3s   motion, integrated from level — quiet coasts, loud churns
+//   uBreak      ~0.5s   the sound dropping below its own recent norm
+//   uTilt       ~2.5s   colour, from spectral balance
+//   uRoughness  ~2s     fractal character, from the spectrum's 1/f exponent
+//   uNovelty    ~10s    structural boundaries, via self-similarity
+//   uHistory    ~8.5s   the last few seconds, as a polar spectrogram
 //
 // The separation is the point. Colour that chased every transient would strobe;
 // motion that ignored them would feel dead. So onsets go to shape, spectral
@@ -24,7 +28,13 @@ uniform float uTransient; // 0-1, decays in ~0.16s
 uniform float uTilt;      // 0 = bass-heavy, 1 = treble-heavy; slow
 uniform float uBreak;     // 0-1, sound dropped below its recent norm
 uniform float uSurge;     // 0-1, re-entry after a break
+uniform float uNovelty;   // 0-1, structural boundary (see features.ts)
+uniform float uRoughness; // 0-1, from the spectrum's 1/f exponent
 uniform sampler2D uSpectrum;
+uniform sampler2D uHistory;   // rolling spectrogram: x = time, y = log frequency
+uniform float uHistoryHead;   // where "now" is in the ring buffer, 0-1
+
+const float PI = 3.14159265;
 
 // --- value noise -------------------------------------------------------------
 
@@ -52,17 +62,28 @@ float noise(vec2 p) {
 // mid-range phone, which is not a trade worth making at this size. This runs
 // three times per pixel (twice for the warp, once for the field) and is by far
 // the dominant cost in the shader.
-float fbm(vec2 p) {
+//
+// `gain` is how much each successive octave contributes: 0.5 is classic pink
+// fbm, lower is smooth and blobby, higher is rough and detailed. It is driven
+// by the measured 1/f exponent of the audio, so the visual field's fractal
+// character tracks the sound's. Dark smooth music renders as smooth structure;
+// bright noisy music renders as fine detail. That correspondence is the whole
+// reason for measuring the spectral slope at all.
+float fbm(vec2 p, float gain) {
   float sum = 0.0;
   float amp = 0.5;
+  float norm = 0.0;
   mat2 rot = mat2(0.8, 0.6, -0.6, 0.8); // rotate between octaves to break axis alignment
 
   for (int i = 0; i < 4; i++) {
     sum += amp * noise(p);
+    norm += amp;
     p = rot * p * 2.02;
-    amp *= 0.5;
+    amp *= gain;
   }
-  return sum;
+  // Normalised so changing `gain` alters texture without also changing overall
+  // brightness — otherwise roughness would read as a volume change.
+  return sum / norm;
 }
 
 // --- palette -----------------------------------------------------------------
@@ -106,15 +127,17 @@ void main() {
   vec2 drift = vec2(uTime * 0.012, uTime * -0.008); // never fully still
   vec2 p = uv * 1.6 + drift;
 
+  float gain = 0.34 + 0.30 * uRoughness;
+
   vec2 warp = vec2(
-    fbm(p + vec2(0.0, uFlow * 0.35)),
-    fbm(p + vec2(5.2, 1.3) - vec2(uFlow * 0.28, 0.0))
+    fbm(p + vec2(0.0, uFlow * 0.35), gain),
+    fbm(p + vec2(5.2, 1.3) - vec2(uFlow * 0.28, 0.0), gain)
   );
 
   // Warp strength tracks the low end, so bass thickens and curls the structure
   // rather than only brightening it.
   float warpAmount = 0.45 + 1.30 * uLow + 0.55 * uLevel;
-  float field = fbm(p + warp * warpAmount + vec2(uFlow * 0.18, 0.0));
+  float field = fbm(p + warp * warpAmount + vec2(uFlow * 0.18, 0.0), gain);
 
   // --- spectral rings ------------------------------------------------------
   // The scalar bands say how much; the spectrum texture says what shape. Map
@@ -123,6 +146,22 @@ void main() {
   float specSample = texture2D(uSpectrum, vec2(clamp(radius * 0.85, 0.0, 1.0), 0.5)).r;
   float rings = sin(radius * 34.0 - uFlow * 1.4 + angle * 0.5) * 0.5 + 0.5;
   field += rings * specSample * (0.06 + 0.30 * uHigh);
+
+  // --- history: a polar spectrogram ---------------------------------------
+  // Radius is time into the past, angle is log frequency. The last ~8 seconds
+  // are on screen at once, so a beat becomes a shell expanding outward and a
+  // section of the track becomes a visible band of texture. This is what the
+  // rolling GPU texture buys: every pixel reads a different moment of history
+  // in a single fetch, which no amount of CPU work could reproduce per frame.
+  float age = clamp((radius - 0.12) / 1.05, 0.0, 1.0);
+  float freqAxis = fract(angle / (2.0 * PI) + 0.5);
+  // Walk backwards from the write head, wrapping — the texture repeats in x.
+  float pastX = uHistoryHead - age;
+  float past = texture2D(uHistory, vec2(pastX, freqAxis)).r;
+
+  // Fades with age so the present stays dominant and old material becomes a
+  // texture rather than competing for attention.
+  field += past * (1.0 - age) * (0.20 + 0.45 * uLevel);
 
   // --- transients ----------------------------------------------------------
   // An onset pushes a ripple outward from the centre instead of flashing the
@@ -134,10 +173,15 @@ void main() {
   // --- shading -------------------------------------------------------------
   float energy = clamp(uLevel * 1.05 + uTransient * 0.35 + uSurge * 0.5, 0.0, 1.0);
 
+  // A structural boundary rotates the palette rather than flashing it. The
+  // colour arrives somewhere new and stays there, which is what a section
+  // change feels like; a flash would just read as another beat.
+  float tilt = clamp(uTilt + uNovelty * 0.35, 0.0, 1.0);
+
   // Contrast opens up with energy: near-silence is a flat, almost featureless
   // dark, and structure resolves as sound arrives.
   float t = clamp((field - 0.5) * (1.1 + 2.3 * energy) + 0.5, 0.0, 1.0);
-  vec3 col = palette(t, energy, uTilt);
+  vec3 col = palette(t, energy, tilt);
 
   // A dim core that swells with the mids — the eye needs somewhere to rest.
   col += vec3(0.10, 0.14, 0.20) * uMid * exp(-radius * 2.6);

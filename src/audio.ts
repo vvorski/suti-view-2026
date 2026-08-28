@@ -30,6 +30,16 @@ export interface AudioSource {
 const FFT_SIZE = 2048
 
 /**
+ * The dB window the analyser maps onto 0-255.
+ *
+ * Exported because `features.ts` has to invert it. `getByteFrequencyData`
+ * returns values that are already linear in decibels, not in magnitude, and any
+ * analysis that forgets this ends up taking a logarithm of a logarithm.
+ */
+export const MIN_DB = -95
+export const MAX_DB = -10
+
+/**
  * Ask for the microphone and wire up an AnalyserNode.
  *
  * MUST be called from inside a user-gesture handler: iOS Safari will hand back
@@ -61,8 +71,8 @@ export async function startMicrophone(): Promise<AudioSource> {
   // series read as lag rather than smoothness. Onset detection in particular
   // wants the raw frame-to-frame difference — that is the signal.
   analyser.smoothingTimeConstant = 0.3
-  analyser.minDecibels = -95
-  analyser.maxDecibels = -10
+  analyser.minDecibels = MIN_DB
+  analyser.maxDecibels = MAX_DB
 
   ctx.createMediaStreamSource(stream).connect(analyser)
   // Deliberately not connected to ctx.destination: routing the mic to the

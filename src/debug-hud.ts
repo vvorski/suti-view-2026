@@ -50,6 +50,8 @@ export function createHud(mappingName: string): Hud {
         `tilt  ${bar(p.tilt)} ${p.tilt.toFixed(3)}`,
         `break ${bar(p.breakdown)} ${p.breakdown.toFixed(3)}`,
         `surge ${bar(p.surge)} ${p.surge.toFixed(3)}`,
+        `novel ${bar(p.novelty)} ${p.novelty.toFixed(3)}`,
+        `rough ${bar(p.roughness)} ${p.roughness.toFixed(3)}`,
       ].join('\n')
     },
   }

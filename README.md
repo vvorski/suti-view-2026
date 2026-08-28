@@ -134,6 +134,85 @@ is mistaken for a drop.
 It is also gated on the recent norm being audible at all, without which a silent
 room reads as one continuous breakdown.
 
+## Longer-timescale analysis
+
+`mapping.ts` reacts within a second. That covers beats and breaks and nothing
+else — it cannot tell a verse from a build, because it never looks further back
+than its own envelopes. `features.ts` is the memory.
+
+### Structural novelty — Foote, made causal
+
+[Foote's self-similarity novelty](https://www.audiolabs-erlangen.de/resources/MIR/FMP/C4/C4S4_NoveltySegmentation.html)
+is the standard method: build a self-similarity matrix over timbre features and
+convolve a Gaussian-tapered checkerboard kernel down its diagonal. Homogeneous
+sections form blocks; a boundary between two of them looks like a checkerboard,
+so peaks in the convolution are section boundaries.
+
+That kernel is centred, which means it needs half a window of **future** audio —
+about a second of lag before the visuals could react to a change that has
+already happened. So the kernel here is evaluated with the boundary at _now_:
+the most recent half-window against the one before it. Same +1/−1 quadrant
+structure, just causal. It gives up refining a boundary after the fact, which is
+meaningless live, and buys back the entire lag.
+
+**Mean-variance normalisation is not optional**, and skipping it is a silent
+failure. Log magnitudes are all positive and sit in a narrow range, so the cosine
+similarity between _any_ two frames is ~0.9 and cannot discriminate. Measured
+novelty peaked at 0.13 on a bass-led → treble-led section change — something you
+could not miss by ear. Centring the vectors turns the dot product into a
+correlation spanning −1..1:
+
+|                                   | before | after    |
+| --------------------------------- | ------ | -------- |
+| section change, constant loudness | 0.13   | **0.84** |
+| steady 120 bpm beat               | 0.00   | **0.00** |
+
+The second row matters as much as the first: beats must not read as structure.
+
+### Fractal character — the 1/f exponent
+
+Voss and Clarke showed musical audio power follows roughly 1/f — pink noise. The
+exponent β is a real timbral descriptor: steep means energy concentrated low,
+dark and smooth; shallow means energy spread up the spectrum, bright and noisy.
+
+Since the shader is _already_ built on fractal noise, β drives the fbm octave
+gain directly — the audio's spectral self-similarity sets the visual's. Dark
+smooth music renders as smooth structure, bright noisy music as fine detail.
+
+The trap here cost a rewrite. `getByteFrequencyData` returns values already
+linear in **decibels**, not magnitude, so the obvious `log(byte/255)` is a
+second logarithm on top of the first. Regressing dB against log-frequency
+instead, with β = −slope/10, recovery of a known exponent improved from 0.06 to
+0.5 units of output per unit of β:
+
+```
+beta   roughness      (0 = white, 1 = pink, 2 = brown)
+0.0      1.000
+1.0      0.584        <- where music mostly lives, mid-range
+2.0      0.078
+```
+
+## Feeding audio to the GPU
+
+Yes — and the useful part is not what you would expect.
+
+**Not the FFT.** The browser's `AnalyserNode` already does that in native code;
+reimplementing it as a fragment-shader butterfly would be slower, far more
+complex, and WebGL2 has no compute shaders to do it properly. (WebGPU does, and
+would be the route if this ever needed genuine DSP on the GPU.)
+
+**The history.** What the GPU can do that the CPU cannot is hold the last few
+seconds of spectrum and let _every pixel read a different moment of it_, every
+frame, in a single texture fetch. `scene.ts` maintains a 256×64 rolling
+spectrogram — time on x, log frequency on y, 16 KB, one column written every
+33 ms for ~8.5 seconds of history. The shader renders it as a **polar
+spectrogram**: radius is time into the past, angle is frequency. A beat becomes
+a shell expanding outward; a section becomes a visible band of texture.
+
+Reconstructing that per-pixel on the CPU is not merely slow, it is not possible
+at frame rate. That asymmetry is the whole argument for putting audio on the
+GPU.
+
 ## Design notes
 
 The visual brief came from a reference recording — a quiet phone capture, no

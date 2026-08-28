@@ -18,7 +18,7 @@
  * that *is* close to a pass/fail is the beat test: break must stay at 0.
  */
 
-import type { AudioFrame } from '../src/audio.ts'
+import { MAX_DB, MIN_DB, type AudioFrame } from '../src/audio.ts'
 import { MAPPINGS, type MappingName } from '../src/mapping.ts'
 
 const SAMPLE_RATE = 48000
@@ -129,4 +129,85 @@ console.log('\nBass-heavy -> treble-heavy at t=4s (tilt should glide, not jump)\
       rows.push(`${t.toFixed(1).padStart(4)}s  tilt ${p.tilt.toFixed(3)}`)
   }
   console.log(rows.join('\n'))
+}
+
+// --- structural novelty ------------------------------------------------------
+// A section boundary is a sustained change in *character*, not in volume. The
+// test keeps loudness constant across the change so anything that fires is
+// responding to timbre, which is the whole point of L2-normalising the feature
+// vectors.
+
+console.log('\nSection change at t=8s, constant loudness (novelty should spike):\n')
+{
+  const m = MAPPINGS.relative()
+  const rows: string[] = []
+  for (let i = 0; i < 16 * FPS; i++) {
+    const t = i / FPS
+    // Same total energy, redistributed: bass-led section -> treble-led section.
+    const p = m.update(t < 8 ? frame(150, 70, 25) : frame(25, 70, 150))
+    if (i % Math.round(1 * FPS) === 0) {
+      rows.push(
+        `${t.toFixed(0).padStart(3)}s  novelty ${p.novelty.toFixed(3)}  ` +
+          `roughness ${p.roughness.toFixed(3)}  break ${p.breakdown.toFixed(2)}`,
+      )
+    }
+  }
+  console.log(rows.join('\n'))
+}
+
+console.log('\nSteady 120bpm beat, no section change (novelty must stay low):\n')
+{
+  const m = MAPPINGS.relative()
+  let peak = 0
+  for (let i = 0; i < 20 * FPS; i++) {
+    const hit = (i / FPS) % 0.5 < 0.06
+    const p = m.update(frame(hit ? 170 : 20, hit ? 120 : 45, hit ? 90 : 40))
+    if (i > 6 * FPS) peak = Math.max(peak, p.novelty)
+  }
+  console.log(
+    `  novelty peak ${peak.toFixed(3)}   <- beats alone must not read as structure`,
+  )
+}
+
+// --- does the 1/f estimator recover a known exponent? ------------------------
+// The flat-band frames above cannot calibrate this: they have no spectral shape,
+// so every one of them looks like the same shallow slope. Synthesise real power
+// laws instead — magnitude proportional to f^(-beta/2) — and check that the
+// measured roughness is monotonic in beta and uses most of its range.
+//
+// beta ~= 1 is pink noise, which is where music mostly lives (Voss & Clarke).
+
+function powerLawFrame(beta: number): AudioFrame {
+  const freq = new Uint8Array(BINS)
+  for (let i = 1; i < BINS; i++) {
+    const hz = i * BIN_HZ
+    if (hz < 40 || hz > 12000) continue
+    // Byte values are already a dB-like scale in the real AnalyserNode, but the
+    // estimator only cares about the log-log tilt, so a direct power law is the
+    // honest test of whether it recovers the exponent.
+    // Bytes must be generated the way the AnalyserNode generates them —
+    // linear in dB — or this tests the wrong thing entirely.
+    const db = -32 - 10 * beta * Math.log10(hz / 1000)
+    freq[i] = Math.max(
+      0,
+      Math.min(255, Math.round(((db - MIN_DB) / (MAX_DB - MIN_DB)) * 255)),
+    )
+  }
+  return {
+    freq,
+    time: new Uint8Array(BINS),
+    binCount: BINS,
+    sampleRate: SAMPLE_RATE,
+    dt: 1 / FPS,
+  }
+}
+
+console.log('\n1/f exponent recovery (beta 0 = white, 1 = pink, 2 = brown):\n')
+console.log('  beta   roughness')
+for (const beta of [0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0]) {
+  const m = MAPPINGS.relative()
+  const f = powerLawFrame(beta)
+  let p = m.update(f)
+  for (let i = 0; i < 14 * FPS; i++) p = m.update(f)
+  console.log(`  ${beta.toFixed(1)}      ${p.roughness.toFixed(3)}`)
 }
