@@ -15,6 +15,12 @@ panel — two layers, a merge mode, a mix, audio mapping, and a live readout.
 Choices persist. Audio never leaves the device: no recording, no upload, no
 backend.
 
+A deploy does not reload anyone who already has the page open — there is no
+service worker or polling, nothing watching for a new build. The small `v123
+⟳` in the bottom-left corner is how to tell: it's the git commit count at
+build time, so it only ever moves forward, and the button next to it is the
+one-tap fix for a stale tab.
+
 ## Two layers, composited
 
 The screen is two independently-chosen views, rendered to their own off-screen

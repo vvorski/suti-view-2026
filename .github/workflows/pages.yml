@@ -29,6 +29,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # vite.config.ts shells out to `git rev-list --count HEAD` for the
+          # on-screen build number — needs full history, not the default
+          # shallow clone, or it undercounts (and would disagree with the
+          # locally-built Cloudflare deploy of the same commit).
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v4
 

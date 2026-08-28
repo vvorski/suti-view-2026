@@ -13,6 +13,7 @@ import { MAPPINGS, type Mapping, type MappingName } from './mapping'
 import { DEFAULT_MERGE_MODE, DEFAULT_MIX, isMergeModeName, type MergeModeName } from './merge-modes'
 import { checkWebGL, keepAwake, waitForStart } from './permission-gate'
 import { createVisualiser } from './scene'
+import { mountVersionHud } from './version'
 import {
   DEFAULT_ATMOSPHERIC_VIEW,
   DEFAULT_GEOMETRIC_VIEW,
@@ -76,6 +77,8 @@ async function main(): Promise<void> {
   ) {
     throw new Error('missing required elements in index.html')
   }
+
+  mountVersionHud()
 
   if (!checkWebGL()) {
     fail('This browser does not support WebGL2, which this page needs to draw.')
