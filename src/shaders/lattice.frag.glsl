@@ -22,6 +22,14 @@
 // The fountain-and-drain is the audio's job: energy enters at the rim and
 // travels inward as the history shells advance, so what you are looking at down
 // the tunnel is literally the last eight seconds of sound.
+//
+// The shape itself is not fixed. Symmetry order, node density, tunnel depth,
+// and a permanent spiral twist are all drawn from the seed (uSeed), which
+// re-rolls on request and, on its own, at a real structural boundary in the
+// music — so a section change is a genuinely different lattice, not just a
+// different colour on the same one. The twist also breathes continuously via
+// the flow clock, so the shape keeps moving even through a long stretch where
+// nothing structural happens.
 
 varying vec2 vUv;
 
@@ -45,9 +53,6 @@ uniform vec4 uSeed; // re-rolled on demand; see scene.ts
 
 const float PI = 3.14159265;
 const float TAU = 6.28318531;
-
-/** Lattice shells per unit of log-radius. Higher is a denser, deeper tunnel. */
-const float DEPTH = 2.4;
 
 float hash(vec2 p) {
   p = fract(p * vec2(127.1, 311.7));
@@ -79,11 +84,35 @@ void main() {
   // Seed spin re-orients which screen direction each petal points at.
   float angle = atan(uv.y, uv.x) + uSeed.z * TAU;
 
-  // Rotational symmetry order and nodes-per-sector both come from the seed:
-  // one lattice reads as a dense honeycomb, the next as six wide spokes, and
-  // nothing about the audio mapping has to change for that variety to exist.
+  // Rotational symmetry order, nodes-per-sector, and tunnel density all come
+  // from the seed: one lattice reads as a dense honeycomb, the next as six
+  // wide spokes, and nothing about the audio mapping has to change for that
+  // variety to exist. The seed re-rolls on request (space bar, double-tap,
+  // double-click) and, on its own, whenever the music crosses a real
+  // structural boundary (see scene.ts) — a section change is a different
+  // lattice, not just a different colour.
   float SYMMETRY = 4.0 + floor(uSeed.y * 6.0); // 4..9
   float ACROSS = 3.0 + floor(uSeed.w * 4.0); // 3..6
+  // Shells per unit of log-radius. Higher is a denser, deeper tunnel. The
+  // slow sine on top is a permanent breath, independent of any reshape, so
+  // the tunnel is never perfectly still even through a long unchanging
+  // stretch of the track.
+  float DEPTH = 1.6 + 1.6 * fract(uSeed.x * 2.3 + uSeed.z * 0.7) + 0.18 * sin(uFlow * 0.07);
+
+  // --- log-polar depth ------------------------------------------------------
+  // log(radius) turns "scale" into "distance", so a fixed step is a constant
+  // zoom factor and the lattice can repeat forever without ever landing on a
+  // boundary. Drift moves the whole structure inward: the drain.
+  float depth = log(radius) * DEPTH - uFlow * 0.30;
+
+  // A permanent spiral: how far the grid winds per unit of depth is set by
+  // the seed, so some reshapes are tightly coiled and others stay
+  // architectural and straight, and it breathes gently over time via uFlow so
+  // the shape keeps moving even between reshapes. Applied before the fold, so
+  // it warps which direction each shell's grid points rather than just
+  // rotating the whole image (uSeed.z already does that, once, above).
+  float twist = (fract(uSeed.y * 7.3 + uSeed.w * 1.9) - 0.5) * 2.4;
+  angle += depth * twist * (0.16 + 0.06 * sin(uFlow * 0.11));
 
   // --- kaleidoscopic fold ---------------------------------------------------
   // Mirror within each sector rather than merely repeating: mirroring produces
@@ -92,11 +121,6 @@ void main() {
   float sector = TAU / SYMMETRY;
   float folded = abs(mod(angle + sector * 0.5, sector) - sector * 0.5);
 
-  // --- log-polar depth ------------------------------------------------------
-  // log(radius) turns "scale" into "distance", so a fixed step is a constant
-  // zoom factor and the lattice can repeat forever without ever landing on a
-  // boundary. Drift moves the whole structure inward: the drain.
-  float depth = log(radius) * DEPTH - uFlow * 0.30;
   float shell = floor(depth);
   float withinShell = fract(depth);
 

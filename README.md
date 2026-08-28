@@ -96,6 +96,18 @@ muddy brown. Complementaries have to be **assigned to opposing elements** — no
 against filament — and never blended. Colour is now chosen by rotating a hue
 with saturation pinned high, so it stays electric wherever the audio pushes it.
 
+**The shape isn't fixed either.** Symmetry order, node density, tunnel depth,
+and a spiral twist are all drawn from the seed — the same one colour and spin
+come from — so a reshape (space bar, double-tap, or a real structural
+boundary in the music) is a genuinely different lattice, not a recoloured
+version of the same one. The twist also breathes continuously via the flow
+clock, on top of whatever the current reshape set it to, so the tunnel keeps
+moving even through a long stretch where nothing structural happens. The
+automatic reshape uses the same rising-edge-plus-cooldown trigger as Circles'
+ripples (see below) — `novelty` crossing a threshold, gated by an 8-second
+cooldown so the boundary's own decay tail can't retrigger it — reusing the
+one signal this project already has for "the track just changed."
+
 ## Running it
 
 ```bash
@@ -134,14 +146,22 @@ already on.
 Space bar, double-tap, or double-click re-rolls a `uSeed` uniform that each
 view spends on whatever it doesn't already get from the music — Field gets a
 new patch of noise, a spin, and a hue rotation; Lattice gets a new hue, a new
-rotational symmetry order (4 to 9), a new node density, and a spin. It is
-deliberately not routed through the control panel's own tap-to-open listener:
-distinguishing a single tap from the first half of a double tap would mean
-holding every single tap for the double-tap window before opening the panel,
-which defeats the whole point of using `pointerup` there. The two listeners
-just watch the same events independently, so a double-tap flashes the panel
-briefly open-then-closed on its way past — a fair trade for keeping every
-ordinary single tap instant.
+rotational symmetry order (4 to 9), a new node density, a new tunnel depth,
+and a new spiral twist. It is deliberately not routed through the control
+panel's own tap-to-open listener: distinguishing a single tap from the first
+half of a double tap would mean holding every single tap for the double-tap
+window before opening the panel, which defeats the whole point of using
+`pointerup` there. The two listeners just watch the same events
+independently, so a double-tap flashes the panel briefly open-then-closed on
+its way past — a fair trade for keeping every ordinary single tap instant.
+
+A horizontal **swipe** steps the atmospheric layer forward or back (left for
+the next one, right for the previous). Double-click turned out to be a poor
+fit for "change what's showing" specifically — small, easy to miss on a
+phone, and it visually collides with the panel it also has to coexist with —
+where swiping between things is a gesture people already have. The panel's
+own tap-to-open listener checks the pointerdown-to-pointerup distance, so a
+swipe never also pops it open underneath.
 
 `pnpm probe` runs the mappings over synthetic frames in Node — no browser, no
 microphone — and prints their response curves. It exists because you cannot

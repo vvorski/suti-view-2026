@@ -89,6 +89,10 @@ function savePrefs(prefs: Prefs): void {
 export interface ControlPanel {
   /** Call every frame with the current state; only does work while visible. */
   update(params: VisualParams, stats: { frameMs: number; pixelRatio: number }): void
+  /** Step the atmospheric layer's programme forward (1) or back (-1), wrapping. */
+  cycleAtmosphericView(direction: 1 | -1): void
+  /** Step the geometric layer's programme forward (1) or back (-1), wrapping. */
+  cycleGeometricView(direction: 1 | -1): void
 }
 
 interface Handlers {
@@ -272,13 +276,12 @@ export function createControlPanel(prefs: Prefs, handlers: Handlers): ControlPan
     panel.appendChild(el)
   }
 
-  group<GeometricViewName>(
+  const geometricKeys = Object.keys(GEOMETRIC_VIEWS) as GeometricViewName[]
+  const atmosphericKeys = Object.keys(ATMOSPHERIC_VIEWS) as AtmosphericViewName[]
+
+  const geometricSync = group<GeometricViewName>(
     'Geometric',
-    (Object.keys(GEOMETRIC_VIEWS) as GeometricViewName[]).map((k) => [
-      k,
-      GEOMETRIC_VIEWS[k].label,
-      GEOMETRIC_VIEWS[k].description,
-    ]),
+    geometricKeys.map((k) => [k, GEOMETRIC_VIEWS[k].label, GEOMETRIC_VIEWS[k].description]),
     () => prefs.geometricView,
     (k) => {
       prefs.geometricView = k
@@ -287,13 +290,9 @@ export function createControlPanel(prefs: Prefs, handlers: Handlers): ControlPan
     },
   )
 
-  group<AtmosphericViewName>(
+  const atmosphericSync = group<AtmosphericViewName>(
     'Atmospheric',
-    (Object.keys(ATMOSPHERIC_VIEWS) as AtmosphericViewName[]).map((k) => [
-      k,
-      ATMOSPHERIC_VIEWS[k].label,
-      ATMOSPHERIC_VIEWS[k].description,
-    ]),
+    atmosphericKeys.map((k) => [k, ATMOSPHERIC_VIEWS[k].label, ATMOSPHERIC_VIEWS[k].description]),
     () => prefs.atmosphericView,
     (k) => {
       prefs.atmosphericView = k
@@ -301,6 +300,12 @@ export function createControlPanel(prefs: Prefs, handlers: Handlers): ControlPan
       handlers.onAtmosphericView(k)
     },
   )
+
+  /** Step through a fixed key list, wrapping. Used by cycleGeometricView/cycleAtmosphericView. */
+  function cycle<K extends string>(keys: readonly K[], current: K, direction: 1 | -1): K {
+    const i = keys.indexOf(current)
+    return keys[(i + direction + keys.length) % keys.length]
+  }
 
   select<MergeModeName>(
     'Merge mode',
@@ -395,13 +400,23 @@ export function createControlPanel(prefs: Prefs, handlers: Handlers): ControlPan
   }
 
   // Tapping the page opens the panel. Using pointerup rather than click avoids
-  // the 300ms tap delay some mobile browsers still apply, and it does not fire
-  // on a scroll or a drag.
+  // the 300ms tap delay some mobile browsers still apply. The distance check
+  // is what actually keeps it from firing on a drag or a swipe — pointerup
+  // fires at the end of those too, and gestures.ts's swipe-to-swap-view relies
+  // on this not also popping the panel open underneath it.
+  const TAP_SLOP_PX = 12
+  let downX = 0
+  let downY = 0
+  document.addEventListener('pointerdown', (e) => {
+    downX = e.clientX
+    downY = e.clientY
+  })
   document.addEventListener('pointerup', (e) => {
     if (open) return
     // Ignore taps on the start overlay, which has its own job.
     const gate = document.getElementById('gate')
     if (gate && !gate.hidden && gate.contains(e.target as Node)) return
+    if (Math.hypot(e.clientX - downX, e.clientY - downY) > TAP_SLOP_PX) return
     setOpen(true)
   })
 
@@ -442,6 +457,22 @@ export function createControlPanel(prefs: Prefs, handlers: Handlers): ControlPan
         `novel ${bar(p.novelty)} ${p.novelty.toFixed(2)}`,
         `rough ${bar(p.roughness)} ${p.roughness.toFixed(2)}`,
       ].join('\n')
+    },
+
+    cycleAtmosphericView(direction) {
+      const next = cycle(atmosphericKeys, prefs.atmosphericView, direction)
+      prefs.atmosphericView = next
+      savePrefs(prefs)
+      handlers.onAtmosphericView(next)
+      atmosphericSync()
+    },
+
+    cycleGeometricView(direction) {
+      const next = cycle(geometricKeys, prefs.geometricView, direction)
+      prefs.geometricView = next
+      savePrefs(prefs)
+      handlers.onGeometricView(next)
+      geometricSync()
     },
   }
 }

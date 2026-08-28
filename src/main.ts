@@ -8,7 +8,7 @@
  */
 
 import { createControlPanel, loadPrefs, type Prefs } from './control-panel'
-import { bindRandomiseGestures } from './gestures'
+import { bindGestures } from './gestures'
 import { MAPPINGS, type Mapping, type MappingName } from './mapping'
 import { DEFAULT_MERGE_MODE, DEFAULT_MIX, isMergeModeName, type MergeModeName } from './merge-modes'
 import { checkWebGL, keepAwake, waitForStart } from './permission-gate'
@@ -108,7 +108,10 @@ async function main(): Promise<void> {
     },
   })
 
-  bindRandomiseGestures(() => visualiser.randomise())
+  bindGestures({
+    onRandomise: () => visualiser.randomise(),
+    onSwipeAtmospheric: (direction) => panel.cycleAtmosphericView(direction),
+  })
 
   window.addEventListener('resize', visualiser.resize)
   // iOS fires resize before the viewport has settled after a rotation, so the

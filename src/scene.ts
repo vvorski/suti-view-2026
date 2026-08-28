@@ -85,6 +85,11 @@ const FAST_MS = 13.8
 /** Seconds to hold a new rung before considering another change. */
 const SETTLE = 1.5
 
+/** Novelty level a structural boundary must cross, rising, to auto-reroll the seed. */
+const STRUCTURE_THRESHOLD = 0.5
+/** Minimum seconds between automatic reshapes, so a boundary's own decay tail can't retrigger it. */
+const STRUCTURE_COOLDOWN = 8
+
 export interface VisualiserOptions {
   geometricView: GeometricViewName
   atmosphericView: AtmosphericViewName
@@ -255,6 +260,8 @@ export function createVisualiser(
   let historyAccum = 0
   let contextLost = false
   const ripples = createRippleState()
+  let lastNovelty = 0
+  let lastAutoReroll = -1000
 
   const onContextLost = (event: Event) => {
     // Without preventDefault, Three never gets the restore event. Mobile
@@ -358,6 +365,23 @@ export function createVisualiser(
       for (let i = 0; i < MAX_RIPPLES; i++) {
         uniforms.uRipples.value[i].set(ripples.slots[i * 2], ripples.slots[i * 2 + 1])
       }
+
+      // A real structural boundary re-rolls the seed on its own — same
+      // rising-edge-plus-cooldown shape as ripples.ts's transient trigger, just
+      // on `novelty` instead. Lattice spends the seed on its symmetry order,
+      // node density, tunnel depth and spiral twist, so this is what makes a
+      // section change a genuinely different shape rather than only a
+      // different colour; every other view gets a smaller version of the same
+      // "something changed" for free, since they all read the same seed.
+      if (
+        params.novelty > STRUCTURE_THRESHOLD &&
+        lastNovelty <= STRUCTURE_THRESHOLD &&
+        now - lastAutoReroll > STRUCTURE_COOLDOWN
+      ) {
+        uniforms.uSeed.value.set(Math.random(), Math.random(), Math.random(), Math.random())
+        lastAutoReroll = now
+      }
+      lastNovelty = params.novelty
 
       uniforms.uTime.value = now
       uniforms.uFlow.value = flow
