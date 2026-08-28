@@ -19,6 +19,7 @@ import {
   ShaderMaterial,
   UnsignedByteType,
   Vector2,
+  Vector4,
   WebGLRenderer,
 } from 'three'
 
@@ -75,6 +76,8 @@ export interface Visualiser {
   dispose(): void
   /** Swap the active visualiser. Recompiles a shader; not a per-frame call. */
   setView(name: ViewName): void
+  /** Re-roll the seed the current view uses for whatever it doesn't get from audio. */
+  randomise(): void
   /** Smoothed frame time in ms, and the pixel ratio currently in use. */
   stats(): { frameMs: number; pixelRatio: number }
 }
@@ -157,6 +160,12 @@ export function createVisualiser(canvas: HTMLCanvasElement, view: ViewName): Vis
     // Where "now" sits in the ring buffer, 0-1. The shader walks backwards from
     // here to read into the past.
     uHistoryHead: { value: 0 },
+    // Four free numbers, re-rolled on demand (space bar, double-tap, double
+    // click). Audio drives everything else here; this is the one thing a
+    // person gets to reach in and change directly. Each view is free to spend
+    // its four components however suits its own look — scene.ts hands them
+    // out and stays agnostic, same as with the fragment shader itself.
+    uSeed: { value: new Vector4(Math.random(), Math.random(), Math.random(), Math.random()) },
   }
 
   let material = new ShaderMaterial({
@@ -304,6 +313,10 @@ export function createVisualiser(canvas: HTMLCanvasElement, view: ViewName): Vis
       mesh.material = next
       material.dispose()
       material = next
+    },
+
+    randomise() {
+      uniforms.uSeed.value.set(Math.random(), Math.random(), Math.random(), Math.random())
     },
 
     stats: () => ({ frameMs, pixelRatio: RATIO_LADDER[rung] }),

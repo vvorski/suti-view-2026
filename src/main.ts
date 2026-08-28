@@ -8,6 +8,7 @@
  */
 
 import { createControlPanel, loadPrefs, type Prefs } from './control-panel'
+import { bindRandomiseGestures } from './gestures'
 import { MAPPINGS, type Mapping, type MappingName } from './mapping'
 import { checkWebGL, keepAwake, waitForStart } from './permission-gate'
 import { createVisualiser } from './scene'
@@ -80,6 +81,8 @@ async function main(): Promise<void> {
       mapping = MAPPINGS[name]()
     },
   })
+
+  bindRandomiseGestures(() => visualiser.randomise())
 
   window.addEventListener('resize', visualiser.resize)
   // iOS fires resize before the viewport has settled after a rotation, so the

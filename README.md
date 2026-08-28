@@ -87,6 +87,18 @@ pixel-ratio rung in use, and every parameter as a bar. That is the one that
 works in a real room, on a phone, with real sound. `?debug` opens with it
 already on.
 
+Space bar, double-tap, or double-click re-rolls a `uSeed` uniform that each
+view spends on whatever it doesn't already get from the music — Field gets a
+new patch of noise, a spin, and a hue rotation; Lattice gets a new hue, a new
+rotational symmetry order (4 to 9), a new node density, and a spin. It is
+deliberately not routed through the control panel's own tap-to-open listener:
+distinguishing a single tap from the first half of a double tap would mean
+holding every single tap for the double-tap window before opening the panel,
+which defeats the whole point of using `pointerup` there. The two listeners
+just watch the same events independently, so a double-tap flashes the panel
+briefly open-then-closed on its way past — a fair trade for keeping every
+ordinary single tap instant.
+
 `pnpm probe` runs the mappings over synthetic frames in Node — no browser, no
 microphone — and prints their response curves. It exists because you cannot
 conveniently produce a controlled −40 dB tone, a 120 bpm kick pattern and a

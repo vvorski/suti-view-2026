@@ -33,6 +33,7 @@ uniform float uRoughness; // 0-1, from the spectrum's 1/f exponent
 uniform sampler2D uSpectrum;
 uniform sampler2D uHistory;   // rolling spectrogram: x = time, y = log frequency
 uniform float uHistoryHead;   // where "now" is in the ring buffer, 0-1
+uniform vec4 uSeed;           // re-rolled on demand; see scene.ts
 
 const float PI = 3.14159265;
 
@@ -106,13 +107,29 @@ vec3 palette(float t, float energy, float tilt) {
   return mix(bass, air, tilt);
 }
 
+// Rotates a colour's hue while leaving its composition intact — the standard
+// CSS-filter hue-rotate matrix. Used for uSeed rather than the audio uniforms:
+// rotating the *whole* rendered image together is a coherent "different mood"
+// each time you ask for one, which is not the same operation as mixing two
+// colours into each other (that is what the palette() ramps are for, and
+// mixing complementaries there is exactly the mistake that muddies Lattice —
+// see lattice.frag.glsl).
+vec3 hueRotate(vec3 col, float angle) {
+  float u = cos(angle), w = sin(angle);
+  mat3 m = mat3(
+    0.299 + 0.701 * u + 0.168 * w, 0.587 - 0.587 * u + 0.330 * w, 0.114 - 0.114 * u - 0.497 * w,
+    0.299 - 0.299 * u - 0.328 * w, 0.587 + 0.413 * u + 0.035 * w, 0.114 - 0.114 * u + 0.292 * w,
+    0.299 - 0.300 * u + 1.250 * w, 0.587 - 0.588 * u - 1.050 * w, 0.114 + 0.886 * u - 0.203 * w
+  );
+  return clamp(m * col, 0.0, 1.0);
+}
+
 void main() {
   // Aspect-corrected, centred coordinates. Using the shorter side as the unit
   // keeps the composition identical in portrait and landscape.
   vec2 uv = (gl_FragCoord.xy - 0.5 * uResolution) / min(uResolution.x, uResolution.y);
 
   float radius = length(uv);
-  float angle = atan(uv.y, uv.x);
 
   // A break pulls the whole composition inward, and the surge on re-entry
   // throws it back out. This is the most legible signal on the screen because
@@ -121,11 +138,24 @@ void main() {
   uv *= zoom;
   radius *= zoom;
 
+  // Whole-composition spin from the seed. Radius-based effects (rings,
+  // ripple, vignette) do not care, but it re-orients which screen direction
+  // the polar spectrogram's frequency axis lands on, and rotates the rings'
+  // angle term — a free source of variety that costs nothing structural.
+  // Computed from the spun uv, not the original, so it actually takes effect.
+  float seedSpin = uSeed.z * 6.283185;
+  float ss = sin(seedSpin), sc = cos(seedSpin);
+  uv = mat2(sc, -ss, ss, sc) * uv;
+  float angle = atan(uv.y, uv.x);
+
   // --- domain warp ---------------------------------------------------------
   // Two fbm lookups displace the coordinates before the third reads them. This
   // is what turns bland cloud noise into something with filaments and eddies.
+  // uSeed.xy shifts where in the noise field we're reading from, so a
+  // randomise call is a genuinely different patch of filament and eddy, not a
+  // recoloured version of the same one.
   vec2 drift = vec2(uTime * 0.012, uTime * -0.008); // never fully still
-  vec2 p = uv * 1.6 + drift;
+  vec2 p = uv * 1.6 + drift + uSeed.xy * 41.0;
 
   float gain = 0.34 + 0.30 * uRoughness;
 
@@ -199,6 +229,11 @@ void main() {
   col *= 0.42 + 0.58 * energy;
   col *= 1.0 - 0.35 * uBreak;
   col += vec3(0.016, 0.019, 0.030);
+
+  // The seed's remaining component rotates the finished image's hue as a
+  // whole — a different mood on demand, without touching how the two ramps
+  // above cross-fade against the music.
+  col = hueRotate(col, uSeed.w * 6.283185);
 
   // Ordered-ish dither. Dark gradients band badly on 8-bit phone panels and
   // this is almost entirely dark gradients; a sub-LSB of noise costs nothing

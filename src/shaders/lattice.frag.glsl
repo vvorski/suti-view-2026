@@ -41,16 +41,13 @@ uniform float uRoughness;
 uniform sampler2D uSpectrum;
 uniform sampler2D uHistory;
 uniform float uHistoryHead;
+uniform vec4 uSeed; // re-rolled on demand; see scene.ts
 
 const float PI = 3.14159265;
 const float TAU = 6.28318531;
 
-/** Rotational symmetry order. Six reads as sacred geometry without looking like a snowflake. */
-const float SYMMETRY = 6.0;
 /** Lattice shells per unit of log-radius. Higher is a denser, deeper tunnel. */
 const float DEPTH = 2.4;
-/** Nodes across one symmetry sector. */
-const float ACROSS = 4.0;
 
 float hash(vec2 p) {
   p = fract(p * vec2(127.1, 311.7));
@@ -79,7 +76,14 @@ void main() {
   uv *= 1.0 + uBreak * 0.35 - uSurge * 0.28;
 
   float radius = max(length(uv), 1e-4);
-  float angle = atan(uv.y, uv.x);
+  // Seed spin re-orients which screen direction each petal points at.
+  float angle = atan(uv.y, uv.x) + uSeed.z * TAU;
+
+  // Rotational symmetry order and nodes-per-sector both come from the seed:
+  // one lattice reads as a dense honeycomb, the next as six wide spokes, and
+  // nothing about the audio mapping has to change for that variety to exist.
+  float SYMMETRY = 4.0 + floor(uSeed.y * 6.0); // 4..9
+  float ACROSS = 3.0 + floor(uSeed.w * 4.0); // 3..6
 
   // --- kaleidoscopic fold ---------------------------------------------------
   // Mirror within each sector rather than merely repeating: mirroring produces
@@ -145,7 +149,9 @@ void main() {
   // new and leaves it there, so a section change arrives as a colour rather than
   // a flash. Each shell is offset slightly, which makes depth read as a colour
   // gradient down the tunnel as well as a brightness one.
-  float baseHue = fract(0.50 + 0.42 * clamp(uTilt + uNovelty * 0.4, 0.0, 1.0) + shell * 0.035);
+  float baseHue = fract(
+    0.50 + uSeed.x + 0.42 * clamp(uTilt + uNovelty * 0.4, 0.0, 1.0) + shell * 0.035
+  );
   // Roughness — the audio's 1/f exponent — sets how far apart the two hues sit.
   // Smooth dark material keeps them close to a unified scheme; bright noisy
   // material drives them to full complementary opposition.
