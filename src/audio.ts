@@ -56,10 +56,11 @@ export async function startMicrophone(): Promise<AudioSource> {
 
   const analyser = ctx.createAnalyser()
   analyser.fftSize = FFT_SIZE
-  // Some smoothing here is free (it happens in the browser's own code), but
-  // keep it light — mapping.ts applies its own envelope, and stacking two
-  // smoothers makes the response feel laggy rather than slow.
-  analyser.smoothingTimeConstant = 0.5
+  // Kept low deliberately. This smoother is free (it runs in the browser's own
+  // code) but it stacks with the envelopes in mapping.ts, and two smoothers in
+  // series read as lag rather than smoothness. Onset detection in particular
+  // wants the raw frame-to-frame difference — that is the signal.
+  analyser.smoothingTimeConstant = 0.3
   analyser.minDecibels = -95
   analyser.maxDecibels = -10
 

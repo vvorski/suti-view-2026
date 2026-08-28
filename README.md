@@ -50,25 +50,21 @@ phone, with real sound.
 
 `pnpm probe` runs the mappings over synthetic frames in Node — no browser, no
 microphone — and prints their response curves. It exists because you cannot
-conveniently produce a controlled −40 dB tone in a kitchen, and because a
-regression here is invisible until you already dislike how something looks. It
-caught both bugs in the first pass: `level` pinned at 0.98 against a mid band of
-0.06, and `auto-normalised` capped at 0.33 on single-band material.
+conveniently produce a controlled −40 dB tone, a 120 bpm kick pattern and a
+three-second breakdown on demand in a kitchen, and because a regression here is
+invisible until you already dislike how something looks.
 
-Its second table is the useful one — the reference recording's swell-and-decay
-shape run through both mappings:
+It has found every real bug in the mapping so far, none of which were visible on
+screen:
 
-```
- t          speech-band      auto-normalised
- 2s        90 -> 0.604        90 -> 1.000
- 8s        38 -> 0.496        38 -> 0.999
-14s        16 -> 0.293        16 -> 0.994
-20s         7 -> 0.146         7 -> 0.531
-```
+- `level` pinned at 0.98 against a mid band of 0.06 — an AGC erasing the
+  dynamics the whole design rests on
+- `auto-normalised` capped at 0.33 on single-band material
+- a fixed gain leaving 4% headroom at music levels, which is what made the
+  visuals feel dead on a real phone
 
-One traces the decay; the other holds a plateau and then falls off a cliff. That
-is the whole difference between the two strategies, and it is why `speech-band`
-is the default.
+Its most useful check is the beat test, the one thing close to pass/fail: a
+120 bpm pattern must move `level` and `transient` while leaving `break` at zero.
 
 ## How it fits together
 
@@ -87,39 +83,91 @@ it works.
 
 ## Mappings
 
-Two ship. Switch with `?mapping=` in the URL, so both can be compared on a phone
-without a rebuild:
+Three ship. Switch with `?mapping=` in the URL, so they can be compared on a
+phone without a rebuild:
 
-- **`speech-band`** (default) — drive comes from 250–1600 Hz, weighted for
-  voice, with sub-bass contributing almost nothing. Suits ambient sound, rooms
-  and speech.
-- **`auto-normalised`** — each band gets its own rolling ceiling, so quiet
-  material and loud material both reach the top of the visual range. More
-  forgiving across unknown input; less faithful about what is actually loud.
+- **`relative`** (default) — `level` is how loud this moment is against the last
+  few seconds, not against an absolute scale. Self-calibrates between a quiet
+  room and a sound system, keeping headroom at both.
+- **`speech-band`** — fixed gain with soft saturation. Quiet genuinely reads as
+  quiet and a long decay traces a curve instead of being normalised away. Right
+  for ambient recording and voice; saturates on music at room volume.
+- **`auto-normalised`** — every band stretched to fill its own range. Most
+  robust against unknown material, at the cost of being unable to tell loud
+  from quiet.
 
-Both end in an asymmetric envelope: fast attack, slow release.
+**Absolute loudness turned out to be the wrong drive signal**, and this is the
+single most important thing the project learned. A gain tuned in a quiet room
+leaves 4% headroom once real music plays — everything pins near maximum and the
+visuals go inert exactly when there is most to react to:
+
+```
+byte              relative           speech-band
+  10          0.44 (+0.56)          0.18 (+0.82)
+ 100          0.44 (+0.56)          0.83 (+0.17)
+ 200          0.44 (+0.56)          0.96 (+0.04)
+```
+
+The number in brackets is the headroom, which is the room the visuals have left
+to move in. `relative` holds it constant at every input level.
+
+## What reacts to what
+
+Different signals move on deliberately different timescales. Colour that chased
+every transient would strobe; motion that ignored them would feel dead.
+
+| Signal      | Timescale | Drives                                                                                 |
+| ----------- | --------- | -------------------------------------------------------------------------------------- |
+| `transient` | ~0.16 s   | ripples struck outward from the centre                                                 |
+| `level`     | ~0.28 s   | flow speed, contrast, warp, brightness                                                 |
+| `tilt`      | ~2.5 s    | **colour** — bass-heavy runs blue→violet→magenta, treble-heavy runs midnight→teal→gold |
+| `breakdown` | ~0.5 s    | motion stalls, frame contracts, colour drains to grey                                  |
+| `surge`     | re-entry  | bloom and expansion coming out of a break                                              |
+
+**Break detection** is the part with a real constraint: it has to fire on a
+breakdown but not on the gap between two beats, and those differ only in
+duration. A 0.3 s attack on the detector separates them. Against a synthetic
+120 bpm pattern (60 ms hits, 440 ms gaps) `break` peaks at **0.000**, while
+`level` still swings 0.26–0.93 — the beats are fully visible, and none of them
+is mistaken for a drop.
+
+It is also gated on the recent norm being audible at all, without which a silent
+room reads as one continuous breakdown.
 
 ## Design notes
 
 The visual brief came from a reference recording — a quiet phone capture, no
-beat, no sub-bass, swelling over about two seconds and then decaying for
-twenty. So the visuals are built around **swell and decay rather than pulse**:
+beat, no sub-bass, swelling over about two seconds and then decaying for twenty.
+The aesthetic is still built around **swell and decay rather than pulse**, even
+though the default mapping now handles music too:
 
 - Motion runs on `uFlow`, a phase the CPU integrates from the audio level, not
   on wall-clock time. Silence coasts the field almost to a stop; sound makes it
-  churn. Only the slowest drift is time-driven, so a silent room still breathes.
+  churn; a break nearly freezes it. Only the slowest drift is time-driven, so a
+  silent room still breathes.
 - Onsets push a soft ripple out from the centre instead of flashing the frame.
-  A full-frame flash reads as a beat, and there is no beat here.
-- The palette tops out at a dim amber, never white. It is a nocturnal thing.
+  A full-frame flash reads as a beat marker; this reads as the field being
+  struck.
+- Neither palette ramp reaches white. It is a nocturnal thing.
 - Contrast opens with energy: near-silence is nearly featureless, and structure
   resolves as sound arrives.
+- A break drains the colour towards grey. Losing the hue is what makes its
+  return on re-entry worth watching.
 
 ## Performance
 
-The shader is fill-rate bound, so the single biggest lever is the pixel-ratio
-cap in `scene.ts` (currently 2 — phones report 3, which is ~9x the pixels of a
-DPR-1 pass). After that, the octave count in `fbm()`. Four octaves and three
-fbm lookups per pixel is the current budget.
+The shader is fill-rate bound — three fbm lookups per pixel, four octaves each
+— so resolution is the dominant lever by a wide margin.
+
+It is **adaptive**. A fixed cap of 2.0 measured 52 fps on a real phone, close
+enough to the edge that any added shader work would have pushed it under. Rather
+than guess a lower constant and cost sharpness on hardware that never needed it,
+the renderer measures its own frame time and walks a ladder
+(1.0 / 1.25 / 1.5 / 1.75 / 2.0), stepping down above 18.5 ms and back up below
+13.8 ms, with a 1.5 s settle between changes so it cannot oscillate. `?debug`
+shows the rung currently in use.
+
+After resolution, the octave count in `fbm()`.
 
 WebGL context loss is handled rather than treated as an error: mobile browsers
 reclaim contexts routinely when a tab is backgrounded.

@@ -29,19 +29,33 @@ import vertexShader from './shaders/visualiser.vert.glsl?raw'
 const SPECTRUM_SIZE = 128
 
 /**
- * Cap the device pixel ratio.
+ * Pixel-ratio ladder for the adaptive resolution scaler.
  *
- * A modern phone reports 3, which on a full-screen fragment shader means
- * rendering ~9x the pixels of a DPR-1 pass. This shader is fill-rate bound, so
- * that is the single biggest performance lever in the project. 2 is the point
- * where the noise still looks smooth but the frame budget holds.
+ * This shader is fill-rate bound: three fbm lookups per pixel, four octaves
+ * each. Resolution is therefore the dominant performance lever by a wide
+ * margin, and the right value is not knowable in advance — a phone reporting
+ * devicePixelRatio 3 might comfortably run 2.0 or might not manage 1.25.
+ *
+ * Measured 52fps on a real device at a fixed 2.0, which is close enough to the
+ * edge that any added shader work would have pushed it under. Rather than
+ * guessing a lower constant and giving up sharpness on hardware that never
+ * needed to, the renderer now measures itself and settles wherever it can hold
+ * frame rate.
  */
-const MAX_PIXEL_RATIO = 2
+const RATIO_LADDER = [1.0, 1.25, 1.5, 1.75, 2.0]
+
+/** Step down above this frame time (~53fps), up below that one (~72fps). */
+const SLOW_MS = 18.5
+const FAST_MS = 13.8
+/** Seconds to hold a new rung before considering another change. */
+const SETTLE = 1.5
 
 export interface Visualiser {
   render(params: VisualParams, spectrum: Uint8Array): void
   resize(): void
   dispose(): void
+  /** Smoothed frame time in ms, and the pixel ratio currently in use. */
+  stats(): { frameMs: number; pixelRatio: number }
 }
 
 export function createVisualiser(canvas: HTMLCanvasElement): Visualiser {
@@ -51,7 +65,11 @@ export function createVisualiser(canvas: HTMLCanvasElement): Visualiser {
     alpha: false,
     powerPreference: 'high-performance',
   })
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO))
+
+  // Start at the top of the ladder the device actually supports and let the
+  // scaler walk down if it cannot hold the frame rate.
+  let rung = RATIO_LADDER.length - 1
+  while (rung > 0 && RATIO_LADDER[rung] > window.devicePixelRatio) rung--
 
   const scene = new Scene()
   // Geometry is authored directly in clip space; the camera exists only because
@@ -81,6 +99,9 @@ export function createVisualiser(canvas: HTMLCanvasElement): Visualiser {
     uMid: { value: 0 },
     uHigh: { value: 0 },
     uTransient: { value: 0 },
+    uTilt: { value: 0.5 },
+    uBreak: { value: 0 },
+    uSurge: { value: 0 },
     uSpectrum: { value: spectrumTexture },
   }
 
@@ -90,10 +111,12 @@ export function createVisualiser(canvas: HTMLCanvasElement): Visualiser {
 
   // Motion clock. Integrated from the audio level rather than read from the
   // wall clock, so the field accumulates movement while there is sound and
-  // coasts to a near-stop in silence — the swell-and-decay behaviour the
-  // reference recording is all about. The floor keeps it barely alive.
+  // coasts to a near-stop in silence. A break nearly freezes it, which is a
+  // large part of why a break is legible at all.
   let flow = 0
   let elapsed = 0
+  let frameMs = 16.7
+  let sinceChange = 0
   let contextLost = false
 
   const onContextLost = (event: Event) => {
@@ -110,17 +133,35 @@ export function createVisualiser(canvas: HTMLCanvasElement): Visualiser {
   canvas.addEventListener('webglcontextlost', onContextLost)
   canvas.addEventListener('webglcontextrestored', onContextRestored)
 
-  function resize() {
-    const w = window.innerWidth
-    const h = window.innerHeight
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO))
-    renderer.setSize(w, h, false)
+  function applySize() {
+    renderer.setPixelRatio(RATIO_LADDER[rung])
+    renderer.setSize(window.innerWidth, window.innerHeight, false)
     // Uniform wants the drawing-buffer size, not the CSS size — they differ by
     // the pixel ratio, and using CSS pixels here makes the shader's aspect
     // correction subtly wrong on every retina device.
     renderer.getDrawingBufferSize(uniforms.uResolution.value)
   }
-  resize()
+  applySize()
+
+  /** Walk the ladder towards whatever rung holds the frame rate. */
+  function adapt(dt: number) {
+    sinceChange += dt
+    if (sinceChange < SETTLE) return
+
+    if (frameMs > SLOW_MS && rung > 0) {
+      rung--
+      sinceChange = 0
+      applySize()
+    } else if (
+      frameMs < FAST_MS &&
+      rung < RATIO_LADDER.length - 1 &&
+      RATIO_LADDER[rung + 1] <= window.devicePixelRatio
+    ) {
+      rung++
+      sinceChange = 0
+      applySize()
+    }
+  }
 
   return {
     render(params, spectrum) {
@@ -144,8 +185,13 @@ export function createVisualiser(canvas: HTMLCanvasElement): Visualiser {
       const now = performance.now() / 1000
       const dt = elapsed === 0 ? 1 / 60 : Math.min(now - elapsed, 1 / 15)
       elapsed = now
+      frameMs += (dt * 1000 - frameMs) * 0.05
+      adapt(dt)
 
-      flow += (0.06 + params.level * 0.85 + params.transient * 0.5) * dt
+      // A break stalls the motion rather than merely dimming it.
+      const churn =
+        0.06 + params.level * 0.95 + params.transient * 0.6 + params.surge * 1.5
+      flow += churn * (1 - 0.85 * params.breakdown) * dt
 
       uniforms.uTime.value = now
       uniforms.uFlow.value = flow
@@ -154,11 +200,16 @@ export function createVisualiser(canvas: HTMLCanvasElement): Visualiser {
       uniforms.uMid.value = params.mid
       uniforms.uHigh.value = params.high
       uniforms.uTransient.value = params.transient
+      uniforms.uTilt.value = params.tilt
+      uniforms.uBreak.value = params.breakdown
+      uniforms.uSurge.value = params.surge
 
       renderer.render(scene, camera)
     },
 
-    resize,
+    resize: applySize,
+
+    stats: () => ({ frameMs, pixelRatio: RATIO_LADDER[rung] }),
 
     dispose() {
       canvas.removeEventListener('webglcontextlost', onContextLost)

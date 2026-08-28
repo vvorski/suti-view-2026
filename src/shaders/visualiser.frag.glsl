@@ -1,11 +1,15 @@
 // Nocturnal field: domain-warped fractal noise, lit from within by whatever the
 // microphone is hearing.
 //
-// The brief was "slow swell and long decay, not pulse", so nothing here is
-// driven by raw time alone. Motion advances on uFlow, a phase the CPU
-// integrates from the audio level — quiet means the field nearly stops, loud
-// means it churns, and the transition between them is gradual. Time only drives
-// the slowest drift, so a silent room still breathes rather than freezing.
+// Three things drive it, on deliberately different timescales:
+//
+//   uFlow      motion, integrated from level — quiet coasts, loud churns
+//   uTilt      colour, from spectral balance, smoothed over ~2.5s
+//   uBreak     structure, when the sound drops below its own recent norm
+//
+// The separation is the point. Colour that chased every transient would strobe;
+// motion that ignored them would feel dead. So onsets go to shape, spectral
+// balance goes to hue, and only sustained change moves the whole composition.
 
 varying vec2 vUv;
 
@@ -16,10 +20,11 @@ uniform float uLevel;     // 0-1 overall drive
 uniform float uLow;
 uniform float uMid;
 uniform float uHigh;
-uniform float uTransient; // 0-1, decays in ~0.2s
+uniform float uTransient; // 0-1, decays in ~0.16s
+uniform float uTilt;      // 0 = bass-heavy, 1 = treble-heavy; slow
+uniform float uBreak;     // 0-1, sound dropped below its recent norm
+uniform float uSurge;     // 0-1, re-entry after a break
 uniform sampler2D uSpectrum;
-
-const float PI = 3.14159265;
 
 // --- value noise -------------------------------------------------------------
 
@@ -44,7 +49,9 @@ float noise(vec2 p) {
 }
 
 // Four octaves. Five looked marginally better and cost ~20% more fill on a
-// mid-range phone, which is not a trade worth making at this size.
+// mid-range phone, which is not a trade worth making at this size. This runs
+// three times per pixel (twice for the warp, once for the field) and is by far
+// the dominant cost in the shader.
 float fbm(vec2 p) {
   float sum = 0.0;
   float amp = 0.5;
@@ -60,19 +67,22 @@ float fbm(vec2 p) {
 
 // --- palette -----------------------------------------------------------------
 
-// Deep blue at rest, warming through teal to a dim amber as energy arrives.
-// Never reaches full white: the reference recording is a quiet nocturnal thing
-// and blowing out to white would betray it.
-vec3 palette(float t, float energy) {
-  vec3 nightBlue = vec3(0.03, 0.05, 0.12);
-  vec3 slate     = vec3(0.10, 0.20, 0.32);
-  vec3 teal      = vec3(0.16, 0.42, 0.44);
-  vec3 amber     = vec3(0.62, 0.40, 0.20);
+// Two full ramps, crossfaded by spectral tilt. Bass-heavy material runs deep
+// blue into violet and magenta; treble-heavy runs midnight into teal and gold.
+// Because uTilt is smoothed over seconds, a track moves through these rather
+// than flickering between them — a bassline and a breakdown genuinely look
+// different, but no single hi-hat changes the colour of the screen.
+//
+// Neither ramp reaches white. It is a nocturnal thing and blowing out to white
+// would betray it.
+vec3 palette(float t, float energy, float tilt) {
+  vec3 bass = mix(vec3(0.04, 0.04, 0.15), vec3(0.26, 0.11, 0.42), smoothstep(0.18, 0.68, t));
+  bass = mix(bass, vec3(0.60, 0.16, 0.40), smoothstep(0.62, 1.0, t) * energy);
 
-  vec3 c = mix(nightBlue, slate, smoothstep(0.15, 0.55, t));
-  c = mix(c, teal, smoothstep(0.45, 0.85, t) * (0.35 + 0.65 * energy));
-  c = mix(c, amber, smoothstep(0.70, 1.0, t) * energy * energy);
-  return c;
+  vec3 air = mix(vec3(0.02, 0.06, 0.13), vec3(0.10, 0.40, 0.45), smoothstep(0.18, 0.68, t));
+  air = mix(air, vec3(0.72, 0.54, 0.22), smoothstep(0.62, 1.0, t) * energy);
+
+  return mix(bass, air, tilt);
 }
 
 void main() {
@@ -82,6 +92,13 @@ void main() {
 
   float radius = length(uv);
   float angle = atan(uv.y, uv.x);
+
+  // A break pulls the whole composition inward, and the surge on re-entry
+  // throws it back out. This is the most legible signal on the screen because
+  // it moves everything at once rather than changing a shade.
+  float zoom = 1.0 + uBreak * 0.30 - uSurge * 0.22;
+  uv *= zoom;
+  radius *= zoom;
 
   // --- domain warp ---------------------------------------------------------
   // Two fbm lookups displace the coordinates before the third reads them. This
@@ -94,45 +111,49 @@ void main() {
     fbm(p + vec2(5.2, 1.3) - vec2(uFlow * 0.28, 0.0))
   );
 
-  // Warp strength tracks the low end, so bass — when there is any — thickens
-  // and curls the structure rather than just brightening it.
-  float warpAmount = 0.45 + 1.10 * uLow + 0.35 * uLevel;
+  // Warp strength tracks the low end, so bass thickens and curls the structure
+  // rather than only brightening it.
+  float warpAmount = 0.45 + 1.30 * uLow + 0.55 * uLevel;
   float field = fbm(p + warp * warpAmount + vec2(uFlow * 0.18, 0.0));
 
   // --- spectral rings ------------------------------------------------------
   // The scalar bands say how much; the spectrum texture says what shape. Map
-  // radius to frequency so the bass sits at the centre and the top end at the
-  // rim, and let the highs decide how much of it shows.
+  // radius to frequency so bass sits at the centre and the top end at the rim,
+  // and let the highs decide how much of it shows.
   float specSample = texture2D(uSpectrum, vec2(clamp(radius * 0.85, 0.0, 1.0), 0.5)).r;
   float rings = sin(radius * 34.0 - uFlow * 1.4 + angle * 0.5) * 0.5 + 0.5;
-  field += rings * specSample * (0.05 + 0.22 * uHigh);
+  field += rings * specSample * (0.06 + 0.30 * uHigh);
 
   // --- transients ----------------------------------------------------------
-  // An onset pushes a soft ripple outward from the centre instead of flashing
-  // the whole frame. Sparse broadband hits over a quiet floor was the texture
-  // of the reference, and a full-frame flash reads as a beat that isn't there.
+  // An onset pushes a ripple outward from the centre instead of flashing the
+  // frame. A full-frame flash reads as a beat marker; this reads as the field
+  // being struck.
   float ripple = sin(radius * 18.0 - uTransient * 9.0) * exp(-radius * 2.2);
-  field += ripple * uTransient * 0.30;
+  field += ripple * uTransient * 0.45;
 
   // --- shading -------------------------------------------------------------
-  float energy = clamp(uLevel * 1.15 + uTransient * 0.25, 0.0, 1.0);
+  float energy = clamp(uLevel * 1.05 + uTransient * 0.35 + uSurge * 0.5, 0.0, 1.0);
 
   // Contrast opens up with energy: near-silence is a flat, almost featureless
-  // dark, and the structure resolves as sound arrives.
-  float t = clamp((field - 0.5) * (1.1 + 1.9 * energy) + 0.5, 0.0, 1.0);
-  vec3 col = palette(t, energy);
+  // dark, and structure resolves as sound arrives.
+  float t = clamp((field - 0.5) * (1.1 + 2.3 * energy) + 0.5, 0.0, 1.0);
+  vec3 col = palette(t, energy, uTilt);
 
   // A dim core that swells with the mids — the eye needs somewhere to rest.
   col += vec3(0.10, 0.14, 0.20) * uMid * exp(-radius * 2.6);
 
-  // Vignette. Slightly tighter when quiet, so the frame closes in.
-  col *= smoothstep(1.25, 0.18, radius * (1.18 - 0.16 * energy));
+  // Vignette. Tighter when quiet, and tighter still during a break.
+  col *= smoothstep(1.25, 0.18, radius * (1.18 - 0.16 * energy + 0.30 * uBreak));
+
+  // A break drains the colour towards grey without going black. Losing the hue
+  // is what makes the return of colour on re-entry worth watching.
+  float luma = dot(col, vec3(0.2126, 0.7152, 0.0722));
+  col = mix(col, vec3(luma), uBreak * 0.72);
 
   // Overall lift, floored well above zero: never a fully black screen, which on
-  // a phone is indistinguishable from a crash. 0.30 was measured against
-  // silence and came out at roughly RGB 0.02 — technically not black, visually
-  // indistinguishable from it.
+  // a phone is indistinguishable from a crash.
   col *= 0.42 + 0.58 * energy;
+  col *= 1.0 - 0.35 * uBreak;
   col += vec3(0.016, 0.019, 0.030);
 
   // Ordered-ish dither. Dark gradients band badly on 8-bit phone panels and

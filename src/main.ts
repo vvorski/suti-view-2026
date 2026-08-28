@@ -11,8 +11,11 @@ import { MAPPINGS, type MappingName } from './mapping'
 import { checkWebGL, keepAwake, waitForStart } from './permission-gate'
 import { createVisualiser } from './scene'
 
-/** The default. Chosen to suit voice and ambient sound over music. */
-const DEFAULT_MAPPING: MappingName = 'speech-band'
+/**
+ * The default. Relative loudness, so it self-calibrates between a quiet room
+ * and a sound system instead of saturating at one end.
+ */
+const DEFAULT_MAPPING: MappingName = 'relative'
 
 function chooseMapping(): MappingName {
   const requested = new URLSearchParams(window.location.search).get('mapping')
@@ -73,7 +76,7 @@ async function main(): Promise<void> {
       const audio = source.frame()
       const params = mapping.update(audio)
       visualiser.render(params, audio.freq)
-      hud?.update(params)
+      hud?.update(params, visualiser.stats())
     }
     requestAnimationFrame(frame)
   }
