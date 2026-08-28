@@ -3,6 +3,13 @@
 A microphone-driven WebGL field, built for a phone held in the hand rather than
 a browser window on a desk.
 
+**Live:** [suti-view-2026.pages.dev](https://suti-view-2026.pages.dev) ·
+[vvorski.github.io/suti-view-2026](https://vvorski.github.io/suti-view-2026/)
+
+Both serve the same build. Cloudflare Pages is the primary target; GitHub Pages
+is there because it needs nothing but a public repo. Either works on a phone —
+the microphone requires a secure context, and both are HTTPS.
+
 Tap to begin, grant the microphone, and the page renders a domain-warped noise
 field lit by whatever it hears. Audio never leaves the device — there is no
 recording, no upload, and no backend.
@@ -119,10 +126,22 @@ reclaim contexts routinely when a tab is backgrounded.
 
 ## Deploying
 
-Cloudflare Pages, via `.github/workflows/deploy.yml` on push to `main`. Needs
-two repository secrets, both created by hand in the Cloudflare dashboard:
+Two targets, both on push to `main`.
+
+**GitHub Pages** (`.github/workflows/pages.yml`) needs no configuration at all
+beyond the repo being public — no token, no account, no dashboard.
+
+**Cloudflare Pages** (`.github/workflows/deploy.yml`) needs two repository
+secrets, both created by hand in the Cloudflare dashboard:
 
 - `CLOUDFLARE_API_TOKEN` — a token with `Pages:Edit`
 - `CLOUDFLARE_ACCOUNT_ID`
 
-`./deploy/deploy.sh` does the same thing locally.
+Until those exist that workflow fails at its last step; everything before it
+still runs, so CI remains a useful check. `./deploy/deploy.sh` deploys to
+Cloudflare from a machine with an authenticated `wrangler` session, no secrets
+required.
+
+The only difference between the two builds is `BASE_PATH`: Cloudflare serves at
+the root of its own subdomain, GitHub under `/<repo>/`. `vite.config.ts` reads
+it and defaults to `/`.

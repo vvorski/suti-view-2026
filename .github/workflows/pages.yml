@@ -1,0 +1,63 @@
+name: GitHub Pages
+
+# A second, independent home for the same build. Cloudflare Pages is the primary
+# target; this one exists because a github.io URL needs nothing but a public
+# repo — no account, no token, no dashboard visit.
+#
+# The one thing that must differ is the base path: Cloudflare serves the site at
+# the root of its own subdomain, GitHub serves it under /<repo>/. Hence
+# BASE_PATH, which vite.config.ts reads and defaults to "/".
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never cancel a Pages deploy midway — a half-published site is worse than a
+# stale one. Queue instead.
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - uses: actions/configure-pages@v5
+        id: pages
+
+      - name: Build
+        run: pnpm build
+        env:
+          # configure-pages resolves this to "/<repo>/" for a project site.
+          BASE_PATH: ${{ steps.pages.outputs.base_path }}
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

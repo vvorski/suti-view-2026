@@ -2,7 +2,7 @@
   "name": "suti-view",
   "short_name": "suti-view",
   "description": "A microphone-driven WebGL field, for phones.",
-  "start_url": "/",
+  "start_url": "./",
   "display": "fullscreen",
   "orientation": "any",
   "background_color": "#05060a",

@@ -1,6 +1,10 @@
 import { defineConfig } from 'vite'
 
 export default defineConfig({
+  // Cloudflare Pages serves this at the root of its own subdomain; GitHub Pages
+  // serves it under /<repo>/. Hardcoding either one breaks the other, so the
+  // path comes from the environment and defaults to root.
+  base: process.env.BASE_PATH ?? '/',
   server: {
     // Bind to 0.0.0.0 so the dev server is reachable from a phone on the same
     // network. Testing this on a real device is not optional — the gesture
