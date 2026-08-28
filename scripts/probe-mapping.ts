@@ -20,6 +20,7 @@
 
 import { MAX_DB, MIN_DB, type AudioFrame } from '../src/audio.ts'
 import { MAPPINGS, type MappingName } from '../src/mapping.ts'
+import { createRippleState, MAX_RIPPLES, updateRipples } from '../src/ripples.ts'
 
 const SAMPLE_RATE = 48000
 const BINS = 1024
@@ -228,4 +229,47 @@ for (const fps of [60, 30, 15, 10, 6]) {
   console.log(
     `  ${String(fps).padStart(2)} fps   level ${p.level.toFixed(3)}   low ${p.low.toFixed(3)}`,
   )
+}
+
+// --- does the Circles geometric layer spawn rings on the right events? ------
+// ripples.ts is a small edge-triggered state machine, not an envelope, so the
+// mapping-style curve-printing above doesn't fit it. What matters is whether
+// it spawns exactly when it should: on a clean threshold crossing, not twice
+// for one hit close together, and not at all during a breakdown.
+
+console.log('\nCircles ripple spawn triggers (see ripples.ts):\n')
+
+function countActive(state: ReturnType<typeof createRippleState>): number {
+  let n = 0
+  for (let i = 0; i < MAX_RIPPLES; i++) if (state.slots[i * 2] > -100) n++
+  return n
+}
+
+{
+  const s = createRippleState()
+  updateRipples(s, 0, 0.2, 0) // below threshold: no crossing yet
+  updateRipples(s, 0.05, 0.7, 0) // crosses up
+  console.log(`  single spike             -> ${countActive(s)} ripple  (want 1)`)
+}
+{
+  const s = createRippleState()
+  updateRipples(s, 0, 0.2, 0)
+  updateRipples(s, 0.05, 0.7, 0) // spawn #1
+  updateRipples(s, 0.1, 0.2, 0) // drops back below threshold
+  updateRipples(s, 0.15, 0.7, 0) // crosses up again, but only 0.10s later
+  console.log(`  two spikes, 0.10s apart  -> ${countActive(s)} ripple  (want 1, cooldown gated)`)
+}
+{
+  const s = createRippleState()
+  updateRipples(s, 0, 0.2, 0)
+  updateRipples(s, 0.05, 0.7, 0) // spawn #1
+  updateRipples(s, 0.1, 0.2, 0)
+  updateRipples(s, 0.5, 0.7, 0) // 0.45s later, past the cooldown
+  console.log(`  two spikes, 0.45s apart  -> ${countActive(s)} ripples (want 2)`)
+}
+{
+  const s = createRippleState()
+  updateRipples(s, 0, 0.2, 0.8) // deep in a breakdown
+  updateRipples(s, 0.05, 0.7, 0.8) // would cross, but the room is dropping out
+  console.log(`  spike during breakdown   -> ${countActive(s)} ripples (want 0)`)
 }

@@ -16,14 +16,38 @@
 import type { MappingName } from './mapping'
 import { MAPPINGS } from './mapping'
 import type { VisualParams } from './mapping'
-import { VIEWS, type ViewName } from './views'
+import { isMergeModeName, MERGE_MODES, type MergeModeName } from './merge-modes'
+import {
+  ATMOSPHERIC_VIEWS,
+  GEOMETRIC_VIEWS,
+  isAtmosphericViewName,
+  isGeometricViewName,
+  type AtmosphericViewName,
+  type GeometricViewName,
+} from './views'
 
 const STORE_KEY = 'suti-view:prefs'
 
 export interface Prefs {
-  view: ViewName
+  geometricView: GeometricViewName
+  atmosphericView: AtmosphericViewName
+  mergeMode: MergeModeName
+  /** 0-1. Universal opacity: 0 is pure atmosphere, 1 is the full blend. */
+  mix: number
   mapping: MappingName
   showStats: boolean
+}
+
+/** `valid` narrows `raw ?? null` rather than `raw` itself, so the ternary needs
+ *  to return that same narrowed value — returning `raw` directly does not
+ *  type-check even though it holds the same value. */
+function pick<K extends string>(
+  raw: string | undefined,
+  valid: (v: string | null) => v is K,
+  fallback: K,
+): K {
+  const v = raw ?? null
+  return valid(v) ? v : fallback
 }
 
 export function loadPrefs(fallback: Prefs): Prefs {
@@ -32,7 +56,17 @@ export function loadPrefs(fallback: Prefs): Prefs {
     if (!raw) return fallback
     const parsed = JSON.parse(raw) as Partial<Prefs>
     return {
-      view: parsed.view && parsed.view in VIEWS ? parsed.view : fallback.view,
+      geometricView: pick(parsed.geometricView, isGeometricViewName, fallback.geometricView),
+      atmosphericView: pick(
+        parsed.atmosphericView,
+        isAtmosphericViewName,
+        fallback.atmosphericView,
+      ),
+      mergeMode: pick(parsed.mergeMode, isMergeModeName, fallback.mergeMode),
+      mix:
+        typeof parsed.mix === 'number' && parsed.mix >= 0 && parsed.mix <= 1
+          ? parsed.mix
+          : fallback.mix,
       mapping:
         parsed.mapping && parsed.mapping in MAPPINGS ? parsed.mapping : fallback.mapping,
       showStats:
@@ -58,7 +92,11 @@ export interface ControlPanel {
 }
 
 interface Handlers {
-  onView(name: ViewName): void
+  onGeometricView(name: GeometricViewName): void
+  onAtmosphericView(name: AtmosphericViewName): void
+  onMergeMode(mode: MergeModeName): void
+  /** 0-1. */
+  onMix(mix: number): void
   onMapping(name: MappingName): void
 }
 
@@ -109,6 +147,31 @@ const CSS = `
 .cp-opt span { display: block; font-size: 0.76rem; color: #6a7285; margin-top: 0.12rem; }
 .cp-row { display: flex; gap: 0.6rem; align-items: center; }
 .cp-row .cp-opt { flex: 1; text-align: center; }
+.cp-select {
+  width: 100%; appearance: none; cursor: pointer; font: inherit; font-size: 0.94rem;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 11px; padding: 0.7rem 0.85rem; color: #fff;
+  margin-bottom: 1.25rem;
+}
+.cp-select option { background: #10121b; color: #fff; }
+.cp-slider-row { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1.25rem; }
+.cp-range {
+  flex: 1; appearance: none; height: 4px; border-radius: 2px;
+  background: rgba(255,255,255,0.14); outline: none;
+}
+.cp-range::-webkit-slider-thumb {
+  appearance: none; width: 17px; height: 17px; border-radius: 50%;
+  background: #fff; box-shadow: 0 0 0 5px rgba(120,160,255,0.22); cursor: pointer;
+}
+.cp-range::-moz-range-thumb {
+  width: 17px; height: 17px; border-radius: 50%; border: none;
+  background: #fff; box-shadow: 0 0 0 5px rgba(120,160,255,0.22); cursor: pointer;
+}
+.cp-mix-value {
+  font: 400 0.82rem ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #aeb5c4; min-width: 3em; text-align: right;
+}
 .cp-stats {
   font: 400 10.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
   white-space: pre; color: #77809a;
@@ -182,20 +245,105 @@ export function createControlPanel(prefs: Prefs, handlers: Handlers): ControlPan
     return sync
   }
 
-  group<ViewName>(
-    'Visualiser',
-    (Object.keys(VIEWS) as ViewName[]).map((k) => [
+  /** A native dropdown — used only for merge mode, where the choice is a
+   *  function rather than a look, and a button list would just be a long
+   *  list of words with no visual to differentiate them. */
+  function select<K extends string>(
+    title: string,
+    entries: Array<[K, string]>,
+    current: () => K,
+    pick: (k: K) => void,
+  ) {
+    const heading = document.createElement('p')
+    heading.className = 'cp-label'
+    heading.textContent = title
+    panel.appendChild(heading)
+
+    const el = document.createElement('select')
+    el.className = 'cp-select'
+    for (const [key, label] of entries) {
+      const opt = document.createElement('option')
+      opt.value = key
+      opt.textContent = label
+      el.appendChild(opt)
+    }
+    el.value = current()
+    el.addEventListener('change', () => pick(el.value as K))
+    panel.appendChild(el)
+  }
+
+  group<GeometricViewName>(
+    'Geometric',
+    (Object.keys(GEOMETRIC_VIEWS) as GeometricViewName[]).map((k) => [
       k,
-      VIEWS[k].label,
-      VIEWS[k].description,
+      GEOMETRIC_VIEWS[k].label,
+      GEOMETRIC_VIEWS[k].description,
     ]),
-    () => prefs.view,
+    () => prefs.geometricView,
     (k) => {
-      prefs.view = k
+      prefs.geometricView = k
       savePrefs(prefs)
-      handlers.onView(k)
+      handlers.onGeometricView(k)
     },
   )
+
+  group<AtmosphericViewName>(
+    'Atmospheric',
+    (Object.keys(ATMOSPHERIC_VIEWS) as AtmosphericViewName[]).map((k) => [
+      k,
+      ATMOSPHERIC_VIEWS[k].label,
+      ATMOSPHERIC_VIEWS[k].description,
+    ]),
+    () => prefs.atmosphericView,
+    (k) => {
+      prefs.atmosphericView = k
+      savePrefs(prefs)
+      handlers.onAtmosphericView(k)
+    },
+  )
+
+  select<MergeModeName>(
+    'Merge mode',
+    (Object.keys(MERGE_MODES) as MergeModeName[]).map((k) => [k, MERGE_MODES[k].label]),
+    () => prefs.mergeMode,
+    (k) => {
+      prefs.mergeMode = k
+      savePrefs(prefs)
+      handlers.onMergeMode(k)
+    },
+  )
+
+  const mixHeading = document.createElement('p')
+  mixHeading.className = 'cp-label'
+  mixHeading.textContent = 'Mix'
+  panel.appendChild(mixHeading)
+
+  const mixRow = document.createElement('div')
+  mixRow.className = 'cp-slider-row'
+  const mixRange = document.createElement('input')
+  mixRange.type = 'range'
+  mixRange.className = 'cp-range'
+  mixRange.min = '0'
+  mixRange.max = '100'
+  mixRange.step = '1'
+  mixRange.value = String(Math.round(prefs.mix * 100))
+  const mixValue = document.createElement('span')
+  mixValue.className = 'cp-mix-value'
+  mixValue.textContent = `${mixRange.value}%`
+  mixRow.appendChild(mixRange)
+  mixRow.appendChild(mixValue)
+  panel.appendChild(mixRow)
+
+  // Live update on every drag frame (cheap: it just sets a uniform), but only
+  // persist to localStorage once the drag ends — a slider fires many `input`
+  // events per second and there is no reason to write that often.
+  mixRange.addEventListener('input', () => {
+    const v = Number(mixRange.value) / 100
+    mixValue.textContent = `${mixRange.value}%`
+    prefs.mix = v
+    handlers.onMix(v)
+  })
+  mixRange.addEventListener('change', () => savePrefs(prefs))
 
   group<MappingName>(
     'Audio mapping',

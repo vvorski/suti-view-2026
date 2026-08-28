@@ -1,18 +1,26 @@
 /**
  * Bootstrap and render loop.
  *
- * Both the visualiser and the audio mapping are swappable at runtime, from the
- * control panel or from the URL. URL parameters win over stored preferences, so
- * a link can pin a specific combination without permanently changing what the
- * device remembers.
+ * The two layers, the merge mode, the mix, and the audio mapping are all
+ * swappable at runtime, from the control panel or from the URL. URL
+ * parameters win over stored preferences, so a link can pin a specific
+ * combination without permanently changing what the device remembers.
  */
 
 import { createControlPanel, loadPrefs, type Prefs } from './control-panel'
 import { bindRandomiseGestures } from './gestures'
 import { MAPPINGS, type Mapping, type MappingName } from './mapping'
+import { DEFAULT_MERGE_MODE, DEFAULT_MIX, isMergeModeName, type MergeModeName } from './merge-modes'
 import { checkWebGL, keepAwake, waitForStart } from './permission-gate'
 import { createVisualiser } from './scene'
-import { DEFAULT_VIEW, isViewName, type ViewName } from './views'
+import {
+  DEFAULT_ATMOSPHERIC_VIEW,
+  DEFAULT_GEOMETRIC_VIEW,
+  isAtmosphericViewName,
+  isGeometricViewName,
+  type AtmosphericViewName,
+  type GeometricViewName,
+} from './views'
 
 /** Relative loudness: self-calibrates between a quiet room and a sound system. */
 const DEFAULT_MAPPING: MappingName = 'relative'
@@ -26,19 +34,29 @@ function fail(message: string): void {
 
 function resolvePrefs(): Prefs {
   const stored = loadPrefs({
-    view: DEFAULT_VIEW,
+    geometricView: DEFAULT_GEOMETRIC_VIEW,
+    atmosphericView: DEFAULT_ATMOSPHERIC_VIEW,
+    mergeMode: DEFAULT_MERGE_MODE,
+    mix: DEFAULT_MIX,
     mapping: DEFAULT_MAPPING,
     showStats: false,
   })
 
   // A URL parameter is an explicit instruction for this load and overrides what
-  // the device remembers.
+  // the device remembers. `view` is kept as an alias for `atmospheric` — links
+  // shared before the two-layer split still land somewhere sensible.
   const query = new URLSearchParams(window.location.search)
-  const view = query.get('view')
+  const geometric = query.get('geometric')
+  const atmospheric = query.get('atmospheric') ?? query.get('view')
+  const merge = query.get('merge')
+  const mix = query.get('mix')
   const mapping = query.get('mapping')
 
   return {
-    view: isViewName(view) ? view : stored.view,
+    geometricView: isGeometricViewName(geometric) ? geometric : stored.geometricView,
+    atmosphericView: isAtmosphericViewName(atmospheric) ? atmospheric : stored.atmosphericView,
+    mergeMode: isMergeModeName(merge) ? merge : stored.mergeMode,
+    mix: mix !== null && !Number.isNaN(Number(mix)) ? Math.min(1, Math.max(0, Number(mix) / 100)) : stored.mix,
     mapping: mapping && mapping in MAPPINGS ? (mapping as MappingName) : stored.mapping,
     showStats: query.has('debug') || stored.showStats,
   }
@@ -69,11 +87,19 @@ async function main(): Promise<void> {
   const source = await waitForStart({ gate, button, error })
   void keepAwake()
 
-  const visualiser = createVisualiser(canvas, prefs.view)
+  const visualiser = createVisualiser(canvas, {
+    geometricView: prefs.geometricView,
+    atmosphericView: prefs.atmosphericView,
+    mergeMode: prefs.mergeMode,
+    mix: prefs.mix,
+  })
   let mapping: Mapping = MAPPINGS[prefs.mapping]()
 
   const panel = createControlPanel(prefs, {
-    onView: (name: ViewName) => visualiser.setView(name),
+    onGeometricView: (name: GeometricViewName) => visualiser.setGeometricView(name),
+    onAtmosphericView: (name: AtmosphericViewName) => visualiser.setAtmosphericView(name),
+    onMergeMode: (mode: MergeModeName) => visualiser.setMergeMode(mode),
+    onMix: (mix: number) => visualiser.setMix(mix),
     // Mappings carry several seconds of internal state (running means, feature
     // history), none of which is transferable, so switching starts a fresh one
     // rather than trying to hand the old state over.

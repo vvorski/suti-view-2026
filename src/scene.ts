@@ -1,9 +1,17 @@
 /**
- * Three.js setup for a single fullscreen fragment shader.
+ * Three.js setup for two composited fullscreen fragment shaders.
  *
- * There is no scene graph worth the name here — one quad, one material. Three
- * is carrying the WebGL state management, resize handling and context-loss
- * plumbing, not a 3D scene.
+ * There is no scene graph worth the name here — one quad, reused for three
+ * passes. Three is carrying the WebGL state management, resize handling and
+ * context-loss plumbing, not a 3D scene.
+ *
+ * The two layers — geometric and atmospheric — are picked independently and
+ * composited, not switched between. Each renders to its own off-screen
+ * target; a third pass samples both and blends them per the chosen merge
+ * mode and mix, straight to the canvas. Reusing a single mesh across all
+ * three passes (swap the material, swap the render target, render again)
+ * avoids maintaining three parallel scenes for what is structurally the same
+ * fullscreen-quad draw each time.
  */
 
 import {
@@ -21,11 +29,20 @@ import {
   Vector2,
   Vector4,
   WebGLRenderer,
+  WebGLRenderTarget,
 } from 'three'
 
+import { MERGE_MODES, type MergeModeName } from './merge-modes'
 import type { VisualParams } from './mapping'
+import { createRippleState, MAX_RIPPLES, updateRipples } from './ripples'
+import compositeFrag from './shaders/composite.frag.glsl?raw'
 import vertexShader from './shaders/fullscreen.vert.glsl?raw'
-import { VIEWS, type ViewName } from './views'
+import {
+  ATMOSPHERIC_VIEWS,
+  GEOMETRIC_VIEWS,
+  type AtmosphericViewName,
+  type GeometricViewName,
+} from './views'
 
 /** Texels in the instantaneous spectrum texture. 128 reads smoothly. */
 const SPECTRUM_SIZE = 128
@@ -51,16 +68,14 @@ const HISTORY_HZ = 30
 /**
  * Pixel-ratio ladder for the adaptive resolution scaler.
  *
- * This shader is fill-rate bound: three fbm lookups per pixel, four octaves
- * each. Resolution is therefore the dominant performance lever by a wide
- * margin, and the right value is not knowable in advance — a phone reporting
- * devicePixelRatio 3 might comfortably run 2.0 or might not manage 1.25.
- *
- * Measured 52fps on a real device at a fixed 2.0, which is close enough to the
- * edge that any added shader work would have pushed it under. Rather than
- * guessing a lower constant and giving up sharpness on hardware that never
- * needed to, the renderer now measures itself and settles wherever it can hold
- * frame rate.
+ * The atmospheric shader is fill-rate bound on its own — three fbm lookups
+ * per pixel, four octaves each — and compositing now costs two more full
+ * passes on top of it (the geometric layer, then the blend). Resolution is
+ * therefore the dominant performance lever by an even wider margin than
+ * before, and the right value is still not knowable in advance. Measuring and
+ * settling wherever the device can hold frame rate remains cheaper than
+ * guessing a lower constant and giving up sharpness that some hardware never
+ * needed to.
  */
 const RATIO_LADDER = [1.0, 1.25, 1.5, 1.75, 2.0]
 
@@ -70,19 +85,35 @@ const FAST_MS = 13.8
 /** Seconds to hold a new rung before considering another change. */
 const SETTLE = 1.5
 
+export interface VisualiserOptions {
+  geometricView: GeometricViewName
+  atmosphericView: AtmosphericViewName
+  mergeMode: MergeModeName
+  /** 0-1. Universal opacity: 0 is pure atmosphere, 1 is the full blend. */
+  mix: number
+}
+
 export interface Visualiser {
   render(params: VisualParams, spectrum: Uint8Array): void
   resize(): void
   dispose(): void
-  /** Swap the active visualiser. Recompiles a shader; not a per-frame call. */
-  setView(name: ViewName): void
-  /** Re-roll the seed the current view uses for whatever it doesn't get from audio. */
+  /** Swap the geometric layer's programme. Recompiles a shader; not a per-frame call. */
+  setGeometricView(name: GeometricViewName): void
+  /** Swap the atmospheric layer's programme. Recompiles a shader; not a per-frame call. */
+  setAtmosphericView(name: AtmosphericViewName): void
+  setMergeMode(mode: MergeModeName): void
+  /** 0-1. */
+  setMix(mix: number): void
+  /** Re-roll the seed each view spends on whatever it doesn't get from audio. */
   randomise(): void
   /** Smoothed frame time in ms, and the pixel ratio currently in use. */
   stats(): { frameMs: number; pixelRatio: number }
 }
 
-export function createVisualiser(canvas: HTMLCanvasElement, view: ViewName): Visualiser {
+export function createVisualiser(
+  canvas: HTMLCanvasElement,
+  options: VisualiserOptions,
+): Visualiser {
   const renderer = new WebGLRenderer({
     canvas,
     antialias: false, // pointless for a full-screen noise field, and not cheap
@@ -141,6 +172,10 @@ export function createVisualiser(canvas: HTMLCanvasElement, view: ViewName): Vis
   historyTexture.wrapT = ClampToEdgeWrapping
   historyTexture.needsUpdate = true
 
+  // Shared by both layers: audio state neither cares where it came from, and
+  // sharing the object (rather than duplicating it per layer) is what lets a
+  // layer swap pick up the current frame's state immediately instead of a
+  // frame of zeros.
   const uniforms = {
     uResolution: { value: new Vector2(1, 1) },
     uTime: { value: 0 },
@@ -166,15 +201,46 @@ export function createVisualiser(canvas: HTMLCanvasElement, view: ViewName): Vis
     // its four components however suits its own look — scene.ts hands them
     // out and stays agnostic, same as with the fragment shader itself.
     uSeed: { value: new Vector4(Math.random(), Math.random(), Math.random(), Math.random()) },
+    // (birthTime, birthLevel) per active ring. Only the geometric layer's
+    // event-driven views read this; see ripples.ts.
+    uRipples: {
+      value: Array.from({ length: MAX_RIPPLES }, () => new Vector2(-1000, 0)),
+    },
   }
 
-  let material = new ShaderMaterial({
+  let geometryMaterial = new ShaderMaterial({
     vertexShader,
-    fragmentShader: VIEWS[view].fragmentShader,
+    fragmentShader: GEOMETRIC_VIEWS[options.geometricView].fragmentShader,
     uniforms,
   })
+  let atmosphereMaterial = new ShaderMaterial({
+    vertexShader,
+    fragmentShader: ATMOSPHERIC_VIEWS[options.atmosphericView].fragmentShader,
+    uniforms,
+  })
+
+  const geometryTarget = new WebGLRenderTarget(1, 1, { depthBuffer: false, stencilBuffer: false })
+  const atmosphereTarget = new WebGLRenderTarget(1, 1, {
+    depthBuffer: false,
+    stencilBuffer: false,
+  })
+
+  const compositeUniforms = {
+    uAtmosphere: { value: atmosphereTarget.texture },
+    uGeometry: { value: geometryTarget.texture },
+    uMix: { value: options.mix },
+    uMode: { value: MERGE_MODES[options.mergeMode].index },
+  }
+  const compositeMaterial = new ShaderMaterial({
+    vertexShader,
+    fragmentShader: compositeFrag,
+    uniforms: compositeUniforms,
+  })
+
   const geometry = new PlaneGeometry(2, 2)
-  const mesh = new Mesh(geometry, material)
+  // One mesh, reused across all three passes below — each pass swaps its
+  // material in just before rendering.
+  const mesh = new Mesh(geometry, geometryMaterial)
   scene.add(mesh)
 
   // Motion clock. Integrated from the audio level rather than read from the
@@ -188,6 +254,7 @@ export function createVisualiser(canvas: HTMLCanvasElement, view: ViewName): Vis
   let historyHead = 0
   let historyAccum = 0
   let contextLost = false
+  const ripples = createRippleState()
 
   const onContextLost = (event: Event) => {
     // Without preventDefault, Three never gets the restore event. Mobile
@@ -203,13 +270,18 @@ export function createVisualiser(canvas: HTMLCanvasElement, view: ViewName): Vis
   canvas.addEventListener('webglcontextlost', onContextLost)
   canvas.addEventListener('webglcontextrestored', onContextRestored)
 
+  const drawSize = new Vector2()
+
   function applySize() {
     renderer.setPixelRatio(RATIO_LADDER[rung])
     renderer.setSize(window.innerWidth, window.innerHeight, false)
     // Uniform wants the drawing-buffer size, not the CSS size — they differ by
     // the pixel ratio, and using CSS pixels here makes the shader's aspect
     // correction subtly wrong on every retina device.
-    renderer.getDrawingBufferSize(uniforms.uResolution.value)
+    renderer.getDrawingBufferSize(drawSize)
+    uniforms.uResolution.value.copy(drawSize)
+    geometryTarget.setSize(drawSize.x, drawSize.y)
+    atmosphereTarget.setSize(drawSize.x, drawSize.y)
   }
   applySize()
 
@@ -282,6 +354,11 @@ export function createVisualiser(canvas: HTMLCanvasElement, view: ViewName): Vis
         0.06 + params.level * 0.95 + params.transient * 0.6 + params.surge * 1.5
       flow += churn * (1 - 0.85 * params.breakdown) * dt
 
+      updateRipples(ripples, now, params.transient, params.breakdown)
+      for (let i = 0; i < MAX_RIPPLES; i++) {
+        uniforms.uRipples.value[i].set(ripples.slots[i * 2], ripples.slots[i * 2 + 1])
+      }
+
       uniforms.uTime.value = now
       uniforms.uFlow.value = flow
       uniforms.uLevel.value = params.level
@@ -296,23 +373,52 @@ export function createVisualiser(canvas: HTMLCanvasElement, view: ViewName): Vis
       uniforms.uRoughness.value = params.roughness
       uniforms.uHistoryHead.value = historyHead / HISTORY_W
 
+      // Three passes over the same quad: geometric layer to its target,
+      // atmospheric layer to its target, then the composite reads both and
+      // paints the canvas. autoClear defaults to true, so each pass starts
+      // from a blank target — correct here since every view is a from-scratch
+      // procedural render each frame, nothing accumulates across frames.
+      mesh.material = geometryMaterial
+      renderer.setRenderTarget(geometryTarget)
+      renderer.render(scene, camera)
+
+      mesh.material = atmosphereMaterial
+      renderer.setRenderTarget(atmosphereTarget)
+      renderer.render(scene, camera)
+
+      mesh.material = compositeMaterial
+      renderer.setRenderTarget(null)
       renderer.render(scene, camera)
     },
 
     resize: applySize,
 
-    setView(name) {
-      // The uniforms object is shared by reference, so the new material picks up
-      // the current audio state immediately and the switch does not flicker
-      // through a frame of zeros.
+    setGeometricView(name) {
       const next = new ShaderMaterial({
         vertexShader,
-        fragmentShader: VIEWS[name].fragmentShader,
+        fragmentShader: GEOMETRIC_VIEWS[name].fragmentShader,
         uniforms,
       })
-      mesh.material = next
-      material.dispose()
-      material = next
+      geometryMaterial.dispose()
+      geometryMaterial = next
+    },
+
+    setAtmosphericView(name) {
+      const next = new ShaderMaterial({
+        vertexShader,
+        fragmentShader: ATMOSPHERIC_VIEWS[name].fragmentShader,
+        uniforms,
+      })
+      atmosphereMaterial.dispose()
+      atmosphereMaterial = next
+    },
+
+    setMergeMode(mode) {
+      compositeUniforms.uMode.value = MERGE_MODES[mode].index
+    },
+
+    setMix(mix) {
+      compositeUniforms.uMix.value = Math.min(1, Math.max(0, mix))
     },
 
     randomise() {
@@ -325,7 +431,11 @@ export function createVisualiser(canvas: HTMLCanvasElement, view: ViewName): Vis
       canvas.removeEventListener('webglcontextlost', onContextLost)
       canvas.removeEventListener('webglcontextrestored', onContextRestored)
       geometry.dispose()
-      material.dispose()
+      geometryMaterial.dispose()
+      atmosphereMaterial.dispose()
+      compositeMaterial.dispose()
+      geometryTarget.dispose()
+      atmosphereTarget.dispose()
       spectrumTexture.dispose()
       historyTexture.dispose()
       renderer.dispose()

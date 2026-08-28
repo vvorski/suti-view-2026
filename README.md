@@ -11,19 +11,63 @@ is there because it needs nothing but a public repo. Either works on a phone —
 the microphone requires a secure context, and both are HTTPS.
 
 Tap to begin and grant the microphone. **Tap anywhere again** for the control
-panel — visualiser, audio mapping, and a live readout. Choices persist. Audio
-never leaves the device: no recording, no upload, no backend.
+panel — two layers, a merge mode, a mix, audio mapping, and a live readout.
+Choices persist. Audio never leaves the device: no recording, no upload, no
+backend.
 
-## Visualisers
+## Two layers, composited
 
-|             |                                                                  |
-| ----------- | ---------------------------------------------------------------- |
-| **Field**   | Domain-warped fractal noise. Nocturnal, atmospheric, slow.       |
-| **Lattice** | Visionary mandala after Alex Grey. Endless, symmetric, emissive. |
+The screen is two independently-chosen views, rendered to their own off-screen
+targets and blended by a third pass:
 
-Switch from the panel, or with `?view=field` / `?view=lattice`. A view is a
-fragment shader plus a label and nothing else — they all share one uniform set
-and one vertex shader, so `scene.ts` never learns what any of them do.
+|                 |                          |                                  |
+| --------------- | ------------------------ | -------------------------------- |
+| **Geometric**   | Circles                  | discrete events — a ring per hit |
+| **Atmospheric** | Field, Lattice           | continuous fields — noise, spectrograms, envelopes |
+
+Pick each independently from the panel (or `?geometric=circles`,
+`?atmospheric=lattice`; `?view=` still works as an alias for the atmospheric
+side, for links from before the split). The **merge mode** dropdown picks how
+the geometric layer combines with the atmospheric one underneath it — Normal,
+Add, Screen, Multiply, Overlay, Difference — and the **mix** slider is a
+universal opacity on top of that, Photoshop-style: 0% is pure atmosphere,
+100% is the full blend, and the merge mode only decides what "full" looks
+like in between. Keeping mix meaningful for every mode, rather than only for
+Normal, means switching modes never requires also touching the slider to get
+back to something legible. Default is Screen at 40% — the rings glow through
+the field rather than fighting it for the same pixels.
+
+A view is still nothing but a fragment shader plus a label — `scene.ts` never
+learns what any of them do, geometric or atmospheric alike. The three-pass
+render (geometric → target, atmospheric → target, composite → canvas) is the
+real cost of the split: roughly the price of the atmospheric shader alone plus
+a cheap composite, since Circles' per-pixel cost is small next to four-octave
+fbm. The [adaptive pixel ratio](#performance) is what keeps that tenable on
+weaker phones — it was already doing this job before the split, it just has
+more to compensate for now.
+
+### Circles, and why it is a separate layer
+
+suti-view-2026 grew out of `~/dev/circles`, a video-chat app whose waiting
+room draws slow concentric rings on a fixed timer while people join — ambient
+wallpaper that never looked at what anyone was saying. Circles is the same
+shape of idea, rewritten to answer to the room: a ring is born on a
+transient crossing a threshold, not a `setInterval`, and its size and
+brightness carry the loudness of the hit that made it (`ripples.ts`).
+
+That is also why it lives in its own layer rather than folding into Field or
+Lattice. A ring is a discrete event with a start time; Field and Lattice are
+continuous fields with no notion of "an event just happened" beyond the single
+one-at-a-time ripple/pulse they already borrow from `transient`. Reproducing
+genuinely overlapping, independently-aging rings inside a continuous field
+means actually tracking events, so `scene.ts` does: it watches for a
+transient's rising edge, gated by a cooldown (a fast hi-hat pattern would
+otherwise spawn a ring on every one) and silenced during a breakdown, and
+hands the shader a small buffer of `(birth time, birth loudness)` pairs to
+draw independently. `pnpm probe` checks the trigger logic — spawns on a clean
+crossing, doesn't double-spawn on two hits close together, stays silent
+through a breakdown — since none of that is visible by staring at rings on
+screen.
 
 ### Lattice, and why it is built the way it is
 
@@ -298,8 +342,11 @@ though the default mapping now handles music too:
 
 ## Performance
 
-The shader is fill-rate bound — three fbm lookups per pixel, four octaves each
-— so resolution is the dominant lever by a wide margin.
+The atmospheric shader is fill-rate bound — three fbm lookups per pixel, four
+octaves each — so resolution is the dominant lever by a wide margin, and the
+two-layer composite (geometric pass, atmospheric pass, blend pass) makes
+resolution matter even more: the extra passes are cheap on their own, but they
+still scale with however many pixels the ladder below has chosen.
 
 It is **adaptive**. A fixed cap of 2.0 measured 52 fps on a real phone, close
 enough to the edge that any added shader work would have pushed it under. Rather
