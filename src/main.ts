@@ -7,11 +7,12 @@
  * combination without permanently changing what the device remembers.
  */
 
-import { createControlPanel, loadPrefs, type Prefs } from './control-panel'
 import { bindGestures } from './gestures'
+import { createHud } from './hud'
 import { MAPPINGS, type Mapping, type MappingName } from './mapping'
 import { DEFAULT_MERGE_MODE, DEFAULT_MIX, isMergeModeName, type MergeModeName } from './merge-modes'
 import { checkWebGL, keepAwake, waitForStart } from './permission-gate'
+import { loadPrefs, type Prefs } from './prefs'
 import { applyReleaseTone } from './release-tone'
 import { createVisualiser } from './scene'
 import { mountVersionHud } from './version'
@@ -100,7 +101,7 @@ async function main(): Promise<void> {
   })
   let mapping: Mapping = MAPPINGS[prefs.mapping]()
 
-  const panel = createControlPanel(prefs, {
+  const panel = createHud(prefs, {
     onGeometricView: (name: GeometricViewName) => visualiser.setGeometricView(name),
     onAtmosphericView: (name: AtmosphericViewName) => visualiser.setAtmosphericView(name),
     onMergeMode: (mode: MergeModeName) => visualiser.setMergeMode(mode),

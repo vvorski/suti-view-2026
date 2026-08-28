@@ -6,7 +6,7 @@
  * left for the next one, right for the previous.
  *
  * This used to be double-tap/double-click, and it did not actually work.
- * control-panel.ts's tap-to-open listener has zero delay by design — the
+ * The tap-to-open listener (now in hud.ts) has zero delay by design — the
  * panel exists specifically to open on a tap with no wait — so the first tap
  * of an intended double tap already opened the panel before a second tap
  * could ever be compared against it. By the time the second tap landed, it
@@ -48,10 +48,11 @@ export function bindGestures(handlers: GestureHandlers): void {
   })
 
   document.addEventListener('pointerup', (e) => {
-    // Ignore gestures spent operating the control panel itself. `target` is
-    // not guaranteed to be an Element (it can be the document itself), so
-    // check before reaching for `.closest`.
-    if (e.target instanceof Element && e.target.closest('.cp-scrim')) return
+    // Ignore gestures spent operating the HUD itself — turning a band is an
+    // arc, which is partly horizontal and would otherwise also read as a
+    // swipe. `target` is not guaranteed to be an Element (it can be the
+    // document itself), so check before reaching for `.closest`.
+    if (e.target instanceof Element && e.target.closest('.hud-scrim')) return
 
     const dt = performance.now() - downTime
     if (dt >= SWIPE_MAX_MS) return // too slow to be a deliberate swipe
@@ -70,7 +71,7 @@ export function bindGestures(handlers: GestureHandlers): void {
 
   window.addEventListener('keydown', (e) => {
     if (e.code !== 'Space') return
-    // A focused control-panel button treats space as "activate me"; don't
+    // A focused HUD button treats space as "activate me"; don't
     // steal that.
     const tag = (e.target as HTMLElement | null)?.tagName
     if (tag === 'BUTTON' || tag === 'INPUT' || tag === 'TEXTAREA') return

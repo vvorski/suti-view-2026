@@ -10,10 +10,10 @@ Both serve the same build. Cloudflare Pages is the primary target; GitHub Pages
 is there because it needs nothing but a public repo. Either works on a phone —
 the microphone requires a secure context, and both are HTTPS.
 
-Tap to begin and grant the microphone. **Tap anywhere again** for the control
-panel — two layers, a merge mode, a mix, audio mapping, and a live readout.
-Choices persist. Audio never leaves the device: no recording, no upload, no
-backend.
+Tap to begin and grant the microphone. **Tap anywhere again** for the HUD — a
+120° dial in the bottom-right corner carrying the two layers, the merge mode,
+the mix, audio mapping, and a live readout. Choices persist. Audio never
+leaves the device: no recording, no upload, no backend.
 
 A deploy does not reload anyone who already has the page open — there is no
 service worker or polling, nothing watching for a new build. The small `v123
@@ -31,9 +31,9 @@ targets and blended by a third pass:
 | **Geometric**   | Circles                  | discrete events — a ring per hit |
 | **Atmospheric** | Field, Lattice           | continuous fields — noise, spectrograms, envelopes |
 
-Pick each independently from the panel (or `?geometric=circles`,
+Pick each independently from the HUD (or `?geometric=circles`,
 `?atmospheric=lattice`; `?view=` still works as an alias for the atmospheric
-side, for links from before the split). The **merge mode** dropdown picks how
+side, for links from before the split). The **merge mode** band picks how
 the geometric layer combines with the atmospheric one underneath it — Normal,
 Add, Screen, Multiply, Overlay, Difference — and the **mix** slider is a
 universal opacity on top of that, Photoshop-style: 0% is pure atmosphere,
@@ -139,12 +139,41 @@ pnpm probe        # mapping behaviour, no browser required
 ./deploy/deploy.sh
 ```
 
+## The HUD
+
+Tap anywhere and a 120° wedge opens, hinged just outside the bottom-right
+corner. Three arc bands stack outward in render order — geometric,
+atmospheric, merge — and the innermost arc is the mix. Swipe along a band to
+turn it; whatever settles under the notch is what's selected. Tap outside to
+dismiss.
+
+This replaced a bottom-sheet list of cards. The list worked, but it took the
+whole screen to change one value, so you could never see the thing you were
+adjusting actually respond — which for a control surface whose entire job is
+blending two live layers is the wrong trade. A thumb also doesn't move in
+straight lines; it swings in an arc from the base joint. Laying the controls
+along that arc is what makes the whole surface reachable one-handed, and
+anchoring it to the corner is what keeps it a thumb's length away on any
+phone. Geometry is recomputed from the live viewport on every resize rather
+than baked in, because "the corner" is somewhere different on every device and
+after every rotation.
+
+Two details that look arbitrary and are not:
+
+- The **mapping and numbers toggles are HTML, not SVG**, and sit after the
+  dial in the DOM so they render above it. Inside the SVG they landed within a
+  band's grab zone — the invisible grab arcs are 48px wide, far wider than the
+  painted band — and the band swallowed the tap.
+- **Band labels fade out toward the ends of the sweep** rather than stopping.
+  A hard edge reads as "that's the whole list"; a fade reads as a strip
+  continuing past the window, which is what it is.
+
 ## Tuning the mapping
 
 Two tools, because judging this by eye alone does not work — a dark screen looks
 identical whether the mapping produces nothing or the shader is simply too dim.
 
-The **control panel** (tap anywhere) carries a live readout: frame time, the
+The **HUD** (tap anywhere) carries a live readout: frame time, the
 pixel-ratio rung in use, and every parameter as a bar. That is the one that
 works in a real room, on a phone, with real sound. `?debug` opens with it
 already on.
@@ -157,7 +186,7 @@ and a new spiral twist. A horizontal **swipe** instead steps the atmospheric
 layer forward or back (left for the next one, right for the previous).
 
 This used to be double-tap/double-click, and it did not actually work. The
-control panel's tap-to-open listener has zero delay by design — it exists
+HUD's tap-to-open listener has zero delay by design — it exists
 specifically to open on a tap with no wait — so the first tap of an intended
 double tap already opened the panel before a second tap could ever be
 compared against it, and the second tap then landed on the now-visible scrim,
