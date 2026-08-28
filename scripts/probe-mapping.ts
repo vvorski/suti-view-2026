@@ -211,3 +211,21 @@ for (const beta of [0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0]) {
   for (let i = 0; i < 14 * FPS; i++) p = m.update(f)
   console.log(`  ${beta.toFixed(1)}      ${p.roughness.toFixed(3)}`)
 }
+
+// --- low frame rate must not distort the relative mapping --------------------
+// A clamped dt that bites during normal slow running makes the running mean
+// advance more slowly than wall-clock; the instantaneous energy then sits far
+// above it and everything measured against it pins to 1.0. This is what a
+// throttled tab showed, and what a phone at 10fps would have shown too.
+
+console.log('\nSteady tone at various frame rates (level must not pin to 1.0):\n')
+for (const fps of [60, 30, 15, 10, 6]) {
+  const m = MAPPINGS.relative()
+  const dt = Math.min(1 / fps, 1 / 5)
+  const f = { ...frame(90, 80, 50), dt }
+  let p = m.update(f)
+  for (let i = 0; i < 10 * fps; i++) p = m.update(f)
+  console.log(
+    `  ${String(fps).padStart(2)} fps   level ${p.level.toFixed(3)}   low ${p.low.toFixed(3)}`,
+  )
+}

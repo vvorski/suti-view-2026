@@ -10,9 +10,47 @@ Both serve the same build. Cloudflare Pages is the primary target; GitHub Pages
 is there because it needs nothing but a public repo. Either works on a phone —
 the microphone requires a secure context, and both are HTTPS.
 
-Tap to begin, grant the microphone, and the page renders a domain-warped noise
-field lit by whatever it hears. Audio never leaves the device — there is no
-recording, no upload, and no backend.
+Tap to begin and grant the microphone. **Tap anywhere again** for the control
+panel — visualiser, audio mapping, and a live readout. Choices persist. Audio
+never leaves the device: no recording, no upload, no backend.
+
+## Visualisers
+
+|             |                                                                  |
+| ----------- | ---------------------------------------------------------------- |
+| **Field**   | Domain-warped fractal noise. Nocturnal, atmospheric, slow.       |
+| **Lattice** | Visionary mandala after Alex Grey. Endless, symmetric, emissive. |
+
+Switch from the panel, or with `?view=field` / `?view=lattice`. A view is a
+fragment shader plus a label and nothing else — they all share one uniform set
+and one vertex shader, so `scene.ts` never learns what any of them do.
+
+### Lattice, and why it is built the way it is
+
+Grey described the experience behind _Universal Mind Lattice_ (1981) as every
+being and thing appearing as a toroidal fountain and drain of self-illuminating
+energy — a cellular node, or jewel, in a network linking omnidirectionally
+without end. That is unusually literal about its geometry, so the shader
+implements the description rather than imitating the paintings:
+
+- **Endlessness** — log-polar space repeats, so shells recede toward the centre
+  forever and nothing terminates.
+- **Radial symmetry** — a mirrored kaleidoscopic fold, giving bilateral symmetry
+  inside each petal rather than a merely rotated tile.
+- **Self-illumination** — everything is additive. No surfaces, no shading, no
+  lighting model. This is what lets the palette stay that saturated.
+- **The network** — glowing nodes on a hex-packed grid, joined by thin
+  filaments. The node is the jewel; the filament is the link.
+- **The fountain and drain** — the audio. The rim is now, the centre is ~8
+  seconds ago, so the tunnel is a literal recording: a beat is a ring
+  travelling inward, a section is a stretch of differently-coloured depth.
+
+The palette bug worth recording: the first version set the colours by _mixing_ a
+cool and a warm one, which is precisely how to ruin this idiom. Mixing
+complementaries in RGB passes through grey, and the whole screen came out a
+muddy brown. Complementaries have to be **assigned to opposing elements** — node
+against filament — and never blended. Colour is now chosen by rotating a hue
+with saturation pinned high, so it stays electric wherever the audio pushes it.
 
 ## Running it
 
@@ -44,9 +82,10 @@ pnpm probe        # mapping behaviour, no browser required
 Two tools, because judging this by eye alone does not work — a dark screen looks
 identical whether the mapping produces nothing or the shader is simply too dim.
 
-`?debug` in the URL overlays a live readout: the active mapping, frame time, and
-the five parameters as bars. That is the one that works in a real room, on the
-phone, with real sound.
+The **control panel** (tap anywhere) carries a live readout: frame time, the
+pixel-ratio rung in use, and every parameter as a bar. That is the one that
+works in a real room, on a phone, with real sound. `?debug` opens with it
+already on.
 
 `pnpm probe` runs the mappings over synthetic frames in Node — no browser, no
 microphone — and prints their response curves. It exists because you cannot
@@ -63,8 +102,20 @@ screen:
 - a fixed gain leaving 4% headroom at music levels, which is what made the
   visuals feel dead on a real phone
 
-Its most useful check is the beat test, the one thing close to pass/fail: a
-120 bpm pattern must move `level` and `transient` while leaving `break` at zero.
+Two of its checks are close to pass/fail:
+
+- a 120 bpm pattern must move `level` and `transient` while leaving `break` at
+  zero
+- `level` must read the same at 6 fps as at 60 fps
+
+The second exists because of a real trap. `dt` is clamped so that returning from
+a backgrounded tab does not slam every envelope to its target at once — but the
+bound was 1/15 s, tight enough to bite during ordinary slow running. Once it
+does, the envelopes advance more slowly than wall-clock, the running mean never
+catches up to the instantaneous energy, and _everything measured against it pins
+to 1.0_. It showed up as `level`, `low`, `mid` and `high` all sitting at exactly
+1.00 in a throttled tab; a phone dropping to 10 fps would have hit the same
+wall. The bound is now 1/5 s.
 
 ## How it fits together
 

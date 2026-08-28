@@ -1,32 +1,46 @@
 /**
  * Bootstrap and render loop.
  *
- * Swapping the audio->visual mapping is a one-line change here — that is the
- * whole reason `mapping.ts` is a separate module. `?mapping=auto-normalised` in
- * the URL overrides it, so both can be compared on a phone without a rebuild.
+ * Both the visualiser and the audio mapping are swappable at runtime, from the
+ * control panel or from the URL. URL parameters win over stored preferences, so
+ * a link can pin a specific combination without permanently changing what the
+ * device remembers.
  */
 
-import { createHud } from './debug-hud'
-import { MAPPINGS, type MappingName } from './mapping'
+import { createControlPanel, loadPrefs, type Prefs } from './control-panel'
+import { MAPPINGS, type Mapping, type MappingName } from './mapping'
 import { checkWebGL, keepAwake, waitForStart } from './permission-gate'
 import { createVisualiser } from './scene'
+import { DEFAULT_VIEW, isViewName, type ViewName } from './views'
 
-/**
- * The default. Relative loudness, so it self-calibrates between a quiet room
- * and a sound system instead of saturating at one end.
- */
+/** Relative loudness: self-calibrates between a quiet room and a sound system. */
 const DEFAULT_MAPPING: MappingName = 'relative'
-
-function chooseMapping(): MappingName {
-  const requested = new URLSearchParams(window.location.search).get('mapping')
-  return requested && requested in MAPPINGS ? (requested as MappingName) : DEFAULT_MAPPING
-}
 
 function fail(message: string): void {
   const error = document.getElementById('error')
   const button = document.getElementById('start')
   if (error) error.textContent = message
   if (button instanceof HTMLButtonElement) button.disabled = true
+}
+
+function resolvePrefs(): Prefs {
+  const stored = loadPrefs({
+    view: DEFAULT_VIEW,
+    mapping: DEFAULT_MAPPING,
+    showStats: false,
+  })
+
+  // A URL parameter is an explicit instruction for this load and overrides what
+  // the device remembers.
+  const query = new URLSearchParams(window.location.search)
+  const view = query.get('view')
+  const mapping = query.get('mapping')
+
+  return {
+    view: isViewName(view) ? view : stored.view,
+    mapping: mapping && mapping in MAPPINGS ? (mapping as MappingName) : stored.mapping,
+    showStats: query.has('debug') || stored.showStats,
+  }
 }
 
 async function main(): Promise<void> {
@@ -49,15 +63,23 @@ async function main(): Promise<void> {
     return
   }
 
+  const prefs = resolvePrefs()
+
   const source = await waitForStart({ gate, button, error })
   void keepAwake()
 
-  const mappingName = chooseMapping()
-  const mapping = MAPPINGS[mappingName]()
-  const visualiser = createVisualiser(canvas)
-  const hud = new URLSearchParams(window.location.search).has('debug')
-    ? createHud(mappingName)
-    : null
+  const visualiser = createVisualiser(canvas, prefs.view)
+  let mapping: Mapping = MAPPINGS[prefs.mapping]()
+
+  const panel = createControlPanel(prefs, {
+    onView: (name: ViewName) => visualiser.setView(name),
+    // Mappings carry several seconds of internal state (running means, feature
+    // history), none of which is transferable, so switching starts a fresh one
+    // rather than trying to hand the old state over.
+    onMapping: (name: MappingName) => {
+      mapping = MAPPINGS[name]()
+    },
+  })
 
   window.addEventListener('resize', visualiser.resize)
   // iOS fires resize before the viewport has settled after a rotation, so the
@@ -76,7 +98,7 @@ async function main(): Promise<void> {
       const audio = source.frame()
       const params = mapping.update(audio)
       visualiser.render(params, audio.freq)
-      hud?.update(params, visualiser.stats())
+      panel.update(params, visualiser.stats())
     }
     requestAnimationFrame(frame)
   }

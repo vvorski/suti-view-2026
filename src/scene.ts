@@ -23,8 +23,8 @@ import {
 } from 'three'
 
 import type { VisualParams } from './mapping'
-import fragmentShader from './shaders/visualiser.frag.glsl?raw'
-import vertexShader from './shaders/visualiser.vert.glsl?raw'
+import vertexShader from './shaders/fullscreen.vert.glsl?raw'
+import { VIEWS, type ViewName } from './views'
 
 /** Texels in the instantaneous spectrum texture. 128 reads smoothly. */
 const SPECTRUM_SIZE = 128
@@ -73,11 +73,13 @@ export interface Visualiser {
   render(params: VisualParams, spectrum: Uint8Array): void
   resize(): void
   dispose(): void
+  /** Swap the active visualiser. Recompiles a shader; not a per-frame call. */
+  setView(name: ViewName): void
   /** Smoothed frame time in ms, and the pixel ratio currently in use. */
   stats(): { frameMs: number; pixelRatio: number }
 }
 
-export function createVisualiser(canvas: HTMLCanvasElement): Visualiser {
+export function createVisualiser(canvas: HTMLCanvasElement, view: ViewName): Visualiser {
   const renderer = new WebGLRenderer({
     canvas,
     antialias: false, // pointless for a full-screen noise field, and not cheap
@@ -157,9 +159,14 @@ export function createVisualiser(canvas: HTMLCanvasElement): Visualiser {
     uHistoryHead: { value: 0 },
   }
 
-  const material = new ShaderMaterial({ vertexShader, fragmentShader, uniforms })
+  let material = new ShaderMaterial({
+    vertexShader,
+    fragmentShader: VIEWS[view].fragmentShader,
+    uniforms,
+  })
   const geometry = new PlaneGeometry(2, 2)
-  scene.add(new Mesh(geometry, material))
+  const mesh = new Mesh(geometry, material)
+  scene.add(mesh)
 
   // Motion clock. Integrated from the audio level rather than read from the
   // wall clock, so the field accumulates movement while there is sound and
@@ -284,6 +291,20 @@ export function createVisualiser(canvas: HTMLCanvasElement): Visualiser {
     },
 
     resize: applySize,
+
+    setView(name) {
+      // The uniforms object is shared by reference, so the new material picks up
+      // the current audio state immediately and the switch does not flicker
+      // through a frame of zeros.
+      const next = new ShaderMaterial({
+        vertexShader,
+        fragmentShader: VIEWS[name].fragmentShader,
+        uniforms,
+      })
+      mesh.material = next
+      material.dispose()
+      material = next
+    },
 
     stats: () => ({ frameMs, pixelRatio: RATIO_LADDER[rung] }),
 

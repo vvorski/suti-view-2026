@@ -91,9 +91,18 @@ export async function startMicrophone(): Promise<AudioSource> {
       analyser.getByteTimeDomainData(time)
 
       const now = performance.now()
-      // Clamp: a backgrounded tab returns for its first frame with a dt of
-      // several seconds, which would slam every envelope to its target at once.
-      const dt = Math.min((now - last) / 1000, 1 / 15)
+      // Clamp against the multi-second dt a backgrounded tab returns with, which
+      // would slam every envelope to its target at once.
+      //
+      // The bound is 1/5 s rather than the 1/15 s it started as, because a clamp
+      // that bites during *normal* slow running is worse than no clamp at all:
+      // the envelopes then advance more slowly than wall-clock, the running mean
+      // never catches up to the instantaneous energy, and everything measured
+      // against it pins to 1.0. Observed at ~1 fps in a throttled tab, where
+      // level, low, mid and high all sat at exactly 1.00 — and a phone dropping
+      // to 10 fps would have hit the same wall. 5 fps is comfortably below any
+      // frame rate worth still rendering at.
+      const dt = Math.min((now - last) / 1000, 1 / 5)
       last = now
 
       return { freq, time, binCount, sampleRate: ctx.sampleRate, dt }
