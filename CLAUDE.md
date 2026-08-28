@@ -110,6 +110,34 @@ Read a few files before writing any.
   set as a repo secret. `./deploy/deploy.sh` from a local checkout is the
   working path. Do not "fix" the workflow by guessing at credentials.
 
+## Hard stops
+
+Four categories where you propose and wait rather than implement. Everything
+else on an approved issue is yours to build.
+
+1. **The stored preference shape.** `Prefs` in `prefs.ts` is a contract with
+   every visitor's `localStorage`. *Adding* a field is safe — `loadPrefs`
+   validates each one and falls back. Changing the type or meaning of an
+   existing field silently resets or corrupts settings for everyone who has
+   ever loaded the page, and they have no way to tell you.
+
+2. **The URL parameter shape.** `?geometric= ?atmospheric= ?view= ?rgb= ?mix=
+   ?mapping= ?auto= ?debug=`. A shared link is how this thing travels; `?view=`
+   is still carried purely as an alias for links from before the two-layer
+   split. New parameters are free. Renaming or repurposing one breaks links
+   already in the world.
+
+3. **Capture and privacy.** Anything that changes what is captured, adds a
+   network request, adds a permission prompt, or persists audio-derived data
+   anywhere. "Audio never leaves the device" is a promise made on the page.
+
+4. **A new runtime dependency.** This ships to phones over cellular. Three.js
+   is 117 KB gzipped and is the budget. Anything else is a conversation, with
+   the measured gzip size in it.
+
+A "no" to all four means implement directly and let `pnpm build` be the gate.
+Any "yes" means the work stops and becomes a proposal.
+
 ## Commands
 
 ```bash
