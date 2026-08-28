@@ -32,6 +32,32 @@
 //   geo-colour.ts). Keeping shape and colour separate means a colour change
 //   is instant and total, and means the geometry never fights the atmospheric
 //   layer's palette for the same hue.
+//
+// What makes this view *this* view, and not Drift, Chorus or Tide: the wake.
+//
+// Those three are all the same ring with the emitter moved (wandering, split
+// into several, pushed to the edge), so the one thing Circles cannot use to
+// distinguish itself is the emitter. What it has instead is the consequence of
+// never moving the emitter: every ring this view will ever draw crosses the
+// same set of radii, concentric with every other. So the frame can carry a
+// standing ladder of fine concentric rules that a front lights as it passes
+// and that fade slowly afterwards, and the frame between hits is then a record
+// of the hits — which rung is still bright says how long ago and how hard.
+//
+// That structure is available *only* here. Put the same ladder in Drift and
+// each hit crosses it from a different offset centre, so the rules light in a
+// lopsided order that reads as a smear; in Chorus three families cross it at
+// once and it is noise; in Tide the fronts cut across it at every angle. A
+// fixed origin is the precondition, and this is the view that has one.
+//
+// The trace is computed, not accumulated. There is no history buffer on this
+// layer — one pass, no ping-pong target, and no uniform to put one in — but
+// none is needed, because a front's radius is linear in its age. The instant
+// ring i crossed radius R is exactly birth + LIFESPAN * R / maxRadius, in
+// closed form, so "how long ago was this rung crossed" is subtraction. Each
+// pixel asks only about the single rule nearest to itself, which keeps the
+// whole thing inside the existing ripple loop with no nested loop over the
+// ladder.
 
 varying vec2 vUv;
 
@@ -63,6 +89,71 @@ const float OUTER_STROKE = 0.22; // of radius
 const float INNER_STROKE = 0.09; // of radius (note: of the *outer* radius)
 const float INNER_RADIUS = 0.70; // of radius
 
+// --- the wake ladder ---------------------------------------------------------
+
+// Spacing between rules, in the same units as `dist` — half the short screen
+// dimension is 1.0, so the near edge is at 0.5. 0.055 puts nine rules between
+// the centre and the near edge, some 21 px apart on a phone held upright.
+// Both sides of it were looked at: at 0.03 the rules stop resolving as
+// separate lines at arm's length and the field turns into a screen door that
+// merely gets brighter, which loses the whole point of a ladder you can count;
+// at 0.10 a front lights one rule at a time with a visible gap between, so the
+// wake reads as a blink rather than as a trail with a direction.
+const float RUNG = 0.055;
+
+// Seconds for a lit rule to fall to 1/e of its peak. This is the memory of the
+// view and the number worth arguing about. Much under a second and the lit
+// rules hug the front closely enough to be mistaken for part of the band, so
+// nothing is remembered; over about three and, during a run of hits, every
+// rule inside the frame is lit at once and the ladder records nothing because
+// it never gets dark again. 1.6 s sits at half a ring's life: by the time a
+// ring dies its trail is down to about an eighth and the rung it crossed first
+// is the dimmest thing still visible.
+const float WAKE_TAU = 1.6;
+
+// Peak brightness of a freshly crossed rule. The double band is the subject
+// and this is the field it moves through; at 0.2 the ladder is invisible once
+// the atmospheric layer is mixed underneath, and at 0.62 — measured on the
+// probe — the rules were reading as a second ring system rather than as the
+// ground the first one moves over.
+//
+// Worth being straight about a tension that no value here resolves: a rule
+// laid down at full strength *will* out-brighten the band that laid it, once
+// that band is past FADE_FROM and going out. 0.55 gives 111 in 255 against a
+// late-life band's 82. That is not an accident to be tuned away — the point of
+// a wake is that the mark outlives the event — and the hierarchy survives it
+// anyway, because the comparison is a two-pixel hairline against a band a
+// hundred pixels wide. Mass, not peak value, is what the eye ranks here.
+const float WAKE_INK = 0.55;
+
+// A fresh trace is also a *heavier* line, not only a brighter one, and the
+// rule thins back to a hairline as it fades. Opacity alone was the first
+// version and it is the wrong idiom for this layer: the source's whole
+// vocabulary is stroke weight (a ring is broad because it is far along, not
+// because it is loud), and a ladder that only dims reads as a fading glow,
+// which is the thing the header says this layer does not do. In half-widths of
+// a pixel, on top of the resting hairline's own half-pixel.
+const float WAKE_WEIGHT = 1.0;
+
+// At rest the ladder is not entirely dark: the innermost rules stay faintly
+// lit, fading out with radius, so silence shows a small graded structure
+// around the centre circle instead of one hairline in a black frame. Holding
+// the resting level flat all the way out was tried first and it is exactly the
+// "busy" failure — a full standing bullseye with nothing happening to it, and
+// worse, an outer ladder already lit is an outer ladder a passing front cannot
+// light. Confining it to the first few rules makes the centre read as the
+// source the rings come from and leaves the rest of the field dark until a hit
+// actually reaches it.
+const float REST_INK = 0.24;
+const float REST_REACH = 0.10; // radius at which the resting level is down to 1/e
+// Subtracted from the resting level so it reaches *exactly* zero at about
+// 0.30, rather than trailing off as a decreasing ramp of one- and two-in-255
+// rules all the way into the corners. Measured on the probe: without the
+// subtraction every rule on screen is faintly lit at rest, which is invisible
+// on a bright display and a full standing bullseye on a phone in a dark room —
+// and it leaves a passing front nothing dark to arrive into.
+const float REST_FLOOR = 0.012;
+
 // A hard-edged ring, antialiased over roughly one pixel.
 //
 // The pixel size is derived from uResolution rather than from fwidth(): in
@@ -87,11 +178,48 @@ void main() {
 
   float ink = 0.0;
 
+  // The one rule this pixel could possibly be on. A re-roll shifts the spacing
+  // a little, so the ladder is restructured by a change of section rather than
+  // merely re-timed — the same thing uSeed does for Drift's path and Chorus's
+  // node count.
+  float rungGap = RUNG * (0.85 + 0.30 * uSeed.w);
+  // Rounding, not flooring. floor() hands a pixel just outside a rule the
+  // *next* rule out, so every rule renders as its inner half only and the
+  // ladder comes out as a set of broken arcs — which looks enough like a
+  // deliberate effect to survive a careless glance.
+  float k = floor(dist / rungGap + 0.5);
+  float rungR = k * rungGap;
+  // A ring stops at maxRadius and dies there, so rules beyond it — the corners
+  // of a non-square frame — were never crossed by anything and never light.
+  float reached = step(rungR, maxRadius);
+  float wake = 0.0;
+
   for (int i = 0; i < MAX_RIPPLES; i++) {
     float birth = uRipples[i].x;
     float birthLevel = uRipples[i].y;
     float age = uTime - birth;
-    if (age < 0.0 || age > LIFESPAN) continue;
+    if (age < 0.0) continue;
+
+    // How long ago this ring's front crossed the rule nearest this pixel.
+    // Negative means it has not reached it yet. Dead rings count here, which
+    // is the entire point of a wake and the reason this sits *above* the
+    // LIFESPAN test rather than below it.
+    //
+    // The clamp is for the unborn slots: they sit at birthTime -1000
+    // (ripples.ts), so `since` is about a thousand seconds and exp() would be
+    // relying on underflow rather than on arithmetic. Clamped, the answer is
+    // e^-15, which is zero on every path.
+    float since = age - LIFESPAN * rungR / maxRadius;
+    if (since > 0.0) {
+      // max(), not +=. Eight overlapping traces summed pins the ladder solid
+      // white through any busy passage — Grid's fronts did exactly this — and
+      // a wake that saturates has stopped being a record of anything. The
+      // loudness floor is the same 0.3-ish one the ring opacity uses: a quiet
+      // hit leaves a fainter mark, not no mark.
+      wake = max(wake, (0.30 + 0.70 * birthLevel) * exp(-min(since, 24.0) / WAKE_TAU));
+    }
+
+    if (age > LIFESPAN) continue;
 
     float percent = age / LIFESPAN;
     // Linear, as in the source. Ease-out was an embellishment added here and
@@ -122,6 +250,16 @@ void main() {
     // turns a matched pair into a ring with a shadow.
     ink += (outer + inner) * opacity;
   }
+
+  // The ladder. Whichever is the stronger of the standing resting level and
+  // whatever a passing front left behind — added instead of maxed, and an
+  // inner rule brightens twice for one event, which puts a second bright band
+  // near the centre that nothing on screen accounts for.
+  float rest = max(REST_INK * exp(-rungR / REST_REACH) - REST_FLOOR, 0.0);
+  float trace = max(rest, wake * WAKE_INK * reached);
+  // k = 0 is the origin itself; skipping it keeps a stray dot out of the
+  // middle of the centre circle.
+  ink += k < 0.5 ? 0.0 : ring(dist, rungR, px * (0.5 + WAKE_WEIGHT * trace), px) * trace;
 
   // A crisp circle at centre, breathing with the bass, so there is something
   // to look at between hits rather than a dead patch of black. Drawn as an
