@@ -132,7 +132,13 @@ const float WAKE_INK = 0.55;
 // vocabulary is stroke weight (a ring is broad because it is far along, not
 // because it is loud), and a ladder that only dims reads as a fading glow,
 // which is the thing the header says this layer does not do. In half-widths of
-// a pixel, on top of the resting hairline's own half-pixel.
+// a pixel, on top of the resting hairline's own half-pixel — so with WAKE_INK
+// at 0.55 a fresh rule is about two pixels across and a spent one is one.
+// Below about 0.5 the widening is under a pixel and the whole idea collapses
+// back into opacity-only; above about 2 a fresh rule is wide enough to read as
+// a thin band rather than a rule, and near the centre — where the ring's own
+// inner stroke is at its px*0.5 floor — the ladder starts competing with the
+// band it is supposed to be a record of.
 const float WAKE_WEIGHT = 1.0;
 
 // At rest the ladder is not entirely dark: the innermost rules stay faintly
@@ -208,7 +214,8 @@ void main() {
     // The clamp is for the unborn slots: they sit at birthTime -1000
     // (ripples.ts), so `since` is about a thousand seconds and exp() would be
     // relying on underflow rather than on arithmetic. Clamped, the answer is
-    // e^-15, which is zero on every path.
+    // e^-15 ≈ 3e-7 — not zero, but four orders below the 1/255 the display can
+    // show, on every path.
     float since = age - LIFESPAN * rungR / maxRadius;
     if (since > 0.0) {
       // max(), not +=. Eight overlapping traces summed pins the ladder solid
@@ -252,9 +259,10 @@ void main() {
   }
 
   // The ladder. Whichever is the stronger of the standing resting level and
-  // whatever a passing front left behind — added instead of maxed, and an
-  // inner rule brightens twice for one event, which puts a second bright band
-  // near the centre that nothing on screen accounts for.
+  // whatever a passing front left behind. max(), not addition — adding them
+  // brightens an inner rule twice for one event, once for its resting glow and
+  // again for the front crossing it, which puts a second bright band near the
+  // centre that nothing on screen accounts for.
   float rest = max(REST_INK * exp(-rungR / REST_REACH) - REST_FLOOR, 0.0);
   float trace = max(rest, wake * WAKE_INK * reached);
   // k = 0 is the origin itself; skipping it keeps a stray dot out of the
