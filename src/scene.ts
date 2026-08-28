@@ -35,8 +35,8 @@ import {
 
 import { type GeoColour } from './geo-colour'
 import { MERGE_MODES, type MergeModeName } from './merge-modes'
-import type { VisualParams } from './mapping'
-import { createRippleState, MAX_RIPPLES, updateRipples } from './ripples'
+import type { VisualParams } from './engine'
+import { createRippleState, MAX_RIPPLES, updateRipples } from './engine'
 import type { TumbleState } from './shake'
 import compositeFrag from './shaders/composite.frag.glsl?raw'
 import vertexShader from './shaders/fullscreen.vert.glsl?raw'

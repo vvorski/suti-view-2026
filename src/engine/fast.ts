@@ -13,7 +13,7 @@
  * a sound system, and leaves the full range available at both.
  */
 
-import type { AudioFrame } from './audio'
+import type { AudioFrame } from './capture.ts'
 // Explicit .ts extension: Vite does not need it, but Node's ESM resolver does,
 // and `pnpm probe` runs this file directly under --experimental-strip-types.
 // Type-only imports are erased before Node ever sees them, so only real value
@@ -46,8 +46,10 @@ export interface VisualParams {
   /**
    * Structural novelty, 0-1 — a sustained change in the character of the sound
    * rather than a single hit. Section boundaries, a new instrument, the drop.
-   * See `features.ts`; this is the only signal here with a memory longer than
-   * a couple of seconds.
+   * See `features.ts`. This was documented as the longest memory in the app,
+   * which was never true — `longEnergy` below runs at τ = 4 s against
+   * novelty's 1.6 s window — and is now not even close: `slow.ts` keeps five
+   * minutes.
    */
   novelty: number
   /**

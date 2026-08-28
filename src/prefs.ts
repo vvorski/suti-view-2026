@@ -9,7 +9,7 @@
  */
 
 import { clampGeoColour, isGeoColour, type GeoColour } from './geo-colour'
-import { MAPPINGS, type MappingName } from './mapping'
+import { MAPPINGS, type MappingName } from './engine'
 import { isMergeModeName, type MergeModeName } from './merge-modes'
 import {
   isAtmosphericViewName,

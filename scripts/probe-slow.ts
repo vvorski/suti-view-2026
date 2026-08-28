@@ -16,10 +16,10 @@
  *   node --experimental-strip-types scripts/probe-slow.ts
  */
 
-import type { AudioFrame } from '../src/audio.ts'
+import type { AudioFrame } from '../src/engine/capture.ts'
 import { Director } from '../src/director.ts'
-import { MAPPINGS } from '../src/mapping.ts'
-import { SlowAnalysis } from '../src/slow.ts'
+import { MAPPINGS } from '../src/engine/fast.ts'
+import { SlowAnalysis } from '../src/engine/slow.ts'
 import type { AtmosphericViewName } from '../src/views.ts'
 import type { GeoColour } from '../src/geo-colour.ts'
 

@@ -7,7 +7,7 @@
  * handler, synchronously enough that Safari still considers the gesture live.
  */
 
-import { startMicrophone, type AudioSource } from './audio'
+import { startMicrophone, type AudioSource } from './engine'
 import { requestMotionAccess } from './shake'
 
 interface GateElements {

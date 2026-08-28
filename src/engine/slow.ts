@@ -27,9 +27,9 @@
  * the note on half-means below.
  */
 
-import { MAX_DB, MIN_DB, type AudioFrame } from './audio.ts'
+import { MAX_DB, MIN_DB, type AudioFrame } from './capture.ts'
 import { bandVector, N_BANDS } from './features.ts'
-import type { VisualParams } from './mapping.ts'
+import type { VisualParams } from './fast.ts'
 
 /** Feature frames per second. Section boundaries do not move faster than this. */
 const SLOW_HZ = 2

@@ -391,16 +391,28 @@ wall. The bound is now 1/5 s.
 ```
 main.ts            picks a mapping, owns the rAF loop
  ├─ permission-gate.ts   tap-to-start overlay, WebGL check, wake lock
- ├─ audio.ts             getUserMedia -> AnalyserNode -> AudioFrame
- ├─ mapping.ts           AudioFrame -> VisualParams   <- the swappable part
+ ├─ engine/              everything that listens; knows no screen exists
+ │   ├─ capture.ts         getUserMedia -> AnalyserNode -> AudioFrame
+ │   ├─ fast.ts            AudioFrame -> Motion      10ms-4s  <- swappable
+ │   ├─ slow.ts            AudioFrame -> Character   30s-5min
+ │   ├─ features.ts        descriptors both tiers share
+ │   └─ ripples.ts         transient -> event buffer
+ ├─ director.ts          Character -> decisions (policy, not measurement)
  ├─ shake.ts             devicemotion -> TumbleState + a hard-shake edge
  └─ scene.ts             Three.js fullscreen quad + shaders/
 ```
 
-The split between `audio.ts` and `mapping.ts` is the load-bearing one. Capture
+The split between capture and interpretation is the load-bearing one. Capture
 is fixed; the interpretation of what was captured is expected to be rewritten
 repeatedly, so it lives behind a one-method interface and nothing else knows how
 it works.
+
+`engine/` became a directory when the slow tier arrived, not before. One
+implementation behind an interface is a guess about the future; two is a fact
+about the present. `director.ts` sits deliberately *outside* it, because
+measurement and policy fail differently — a wrong measurement is a bug with a
+right answer, a wrong opinion is a taste argument — and the measurement is
+worth having with the opinions switched off.
 
 ## Mappings
 

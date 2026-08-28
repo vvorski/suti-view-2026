@@ -26,7 +26,7 @@
  */
 
 import { clampGeoColour, type GeoColour } from './geo-colour'
-import type { MappingName, VisualParams } from './mapping'
+import type { MappingName, VisualParams } from './engine'
 import { MERGE_MODES, type MergeModeName } from './merge-modes'
 import { savePrefs, type Prefs } from './prefs'
 import {

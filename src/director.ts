@@ -26,7 +26,7 @@
  */
 
 import type { GeoColour } from './geo-colour'
-import type { Character } from './slow'
+import type { Character } from './engine'
 import type { AtmosphericViewName } from './views'
 
 /** Seconds of hands-off after any manual change. Long, deliberately: this is

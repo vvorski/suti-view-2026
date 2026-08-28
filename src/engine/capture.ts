@@ -22,8 +22,6 @@ export interface AudioFrame {
 
 export interface AudioSource {
   frame(): AudioFrame
-  /** Hz covered by one bin — bin `i` is centred at `i * binHz`. */
-  readonly binHz: number
   close(): void
 }
 
@@ -84,7 +82,6 @@ export async function startMicrophone(): Promise<AudioSource> {
   let last = performance.now()
 
   return {
-    binHz: ctx.sampleRate / FFT_SIZE,
 
     frame(): AudioFrame {
       analyser.getByteFrequencyData(freq)

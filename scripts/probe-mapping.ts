@@ -18,9 +18,9 @@
  * that *is* close to a pass/fail is the beat test: break must stay at 0.
  */
 
-import { MAX_DB, MIN_DB, type AudioFrame } from '../src/audio.ts'
-import { MAPPINGS, type MappingName } from '../src/mapping.ts'
-import { createRippleState, MAX_RIPPLES, updateRipples } from '../src/ripples.ts'
+import { MAX_DB, MIN_DB, type AudioFrame } from '../src/engine/capture.ts'
+import { MAPPINGS, type MappingName } from '../src/engine/fast.ts'
+import { createRippleState, MAX_RIPPLES, updateRipples } from '../src/engine/ripples.ts'
 
 const SAMPLE_RATE = 48000
 const BINS = 1024

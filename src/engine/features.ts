@@ -22,7 +22,7 @@
  * the entire lag.
  */
 
-import { MAX_DB, MIN_DB, type AudioFrame } from './audio.ts'
+import { MAX_DB, MIN_DB, type AudioFrame } from './capture.ts'
 
 /** Log-spaced band edges in Hz. Twelve bands is enough to tell timbre apart. */
 export const BAND_EDGES = [
