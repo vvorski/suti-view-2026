@@ -8,6 +8,7 @@
  * returning null.
  */
 
+import { isGeoFilterName, type GeoFilterName } from './geo-filters'
 import { MAPPINGS, type MappingName } from './mapping'
 import { isMergeModeName, type MergeModeName } from './merge-modes'
 import {
@@ -21,6 +22,7 @@ const STORE_KEY = 'suti-view:prefs'
 
 export interface Prefs {
   geometricView: GeometricViewName
+  geoFilter: GeoFilterName
   atmosphericView: AtmosphericViewName
   mergeMode: MergeModeName
   /** 0-1. Universal opacity: 0 is pure atmosphere, 1 is the full blend. */
@@ -48,6 +50,7 @@ export function loadPrefs(fallback: Prefs): Prefs {
     const parsed = JSON.parse(raw) as Partial<Prefs>
     return {
       geometricView: pick(parsed.geometricView, isGeometricViewName, fallback.geometricView),
+      geoFilter: pick(parsed.geoFilter, isGeoFilterName, fallback.geoFilter),
       atmosphericView: pick(
         parsed.atmosphericView,
         isAtmosphericViewName,

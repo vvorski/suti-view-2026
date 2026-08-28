@@ -8,6 +8,7 @@
  */
 
 import { bindGestures } from './gestures'
+import { DEFAULT_GEO_FILTER, isGeoFilterName } from './geo-filters'
 import { createHud } from './hud'
 import { MAPPINGS, type Mapping, type MappingName } from './mapping'
 import { DEFAULT_MERGE_MODE, DEFAULT_MIX, isMergeModeName, type MergeModeName } from './merge-modes'
@@ -38,6 +39,7 @@ function fail(message: string): void {
 function resolvePrefs(): Prefs {
   const stored = loadPrefs({
     geometricView: DEFAULT_GEOMETRIC_VIEW,
+    geoFilter: DEFAULT_GEO_FILTER,
     atmosphericView: DEFAULT_ATMOSPHERIC_VIEW,
     mergeMode: DEFAULT_MERGE_MODE,
     mix: DEFAULT_MIX,
@@ -50,6 +52,7 @@ function resolvePrefs(): Prefs {
   // shared before the two-layer split still land somewhere sensible.
   const query = new URLSearchParams(window.location.search)
   const geometric = query.get('geometric')
+  const filter = query.get('filter')
   const atmospheric = query.get('atmospheric') ?? query.get('view')
   const merge = query.get('merge')
   const mix = query.get('mix')
@@ -57,6 +60,7 @@ function resolvePrefs(): Prefs {
 
   return {
     geometricView: isGeometricViewName(geometric) ? geometric : stored.geometricView,
+    geoFilter: isGeoFilterName(filter) ? filter : stored.geoFilter,
     atmosphericView: isAtmosphericViewName(atmospheric) ? atmospheric : stored.atmosphericView,
     mergeMode: isMergeModeName(merge) ? merge : stored.mergeMode,
     mix: mix !== null && !Number.isNaN(Number(mix)) ? Math.min(1, Math.max(0, Number(mix) / 100)) : stored.mix,
@@ -95,6 +99,7 @@ async function main(): Promise<void> {
 
   const visualiser = createVisualiser(canvas, {
     geometricView: prefs.geometricView,
+    geoFilter: prefs.geoFilter,
     atmosphericView: prefs.atmosphericView,
     mergeMode: prefs.mergeMode,
     mix: prefs.mix,
@@ -103,6 +108,7 @@ async function main(): Promise<void> {
 
   const panel = createHud(prefs, {
     onGeometricView: (name: GeometricViewName) => visualiser.setGeometricView(name),
+    onGeoFilter: (name) => visualiser.setGeoFilter(name),
     onAtmosphericView: (name: AtmosphericViewName) => visualiser.setAtmosphericView(name),
     onMergeMode: (mode: MergeModeName) => visualiser.setMergeMode(mode),
     onMix: (mix: number) => visualiser.setMix(mix),

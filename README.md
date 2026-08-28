@@ -37,6 +37,22 @@ outward, spinning down — and **Grid** quantises it into square wavefronts that
 light whole cells at a time. All three read the same transient buffer
 (`ripples.ts`); they differ only in what they draw with it.
 
+**The geometric layer is drawn, not lit.** Every view on it renders hard-edged
+white line work — no gaussian falloffs, no glow, no colour. Soft radial
+falloffs read as light leaking rather than as geometry, and turn to mush the
+moment they are composited over a busy field. Antialiasing is done against a
+pixel size derived from `uResolution` rather than `fwidth()`, since derivatives
+need an extension in GLSL ES 1.00 and one pixel here is exactly
+`1/min(resolution)` — that being what the coordinates were divided by.
+
+All of its colour comes from an **RGB filter** applied to the finished layer in
+the composite pass (`geo-filters.ts`), picked on its own HUD band. Keeping
+shape and colour separate means a filter change is instant rather than a shader
+recompile, every geometric view gets colour without repeating a palette, and
+the geometry can be held out of the atmospheric layer's hue range so the two
+never fight for the same colour. `Spectrum` is the exception that earns the
+interface: it recomputes its gains each frame from the spectral tilt.
+
 On the atmospheric side, **Spectrogram** is the one view here that is literally
 readable: radius is time into the past, angle is log frequency, so a sustained
 tone is a ray, a sweep is a spiral, and a phrase leaves a visible wake. It costs

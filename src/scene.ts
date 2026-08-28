@@ -27,11 +27,13 @@ import {
   ShaderMaterial,
   UnsignedByteType,
   Vector2,
+  Vector3,
   Vector4,
   WebGLRenderer,
   WebGLRenderTarget,
 } from 'three'
 
+import { filterRgb, type GeoFilterName } from './geo-filters'
 import { MERGE_MODES, type MergeModeName } from './merge-modes'
 import type { VisualParams } from './mapping'
 import { createRippleState, MAX_RIPPLES, updateRipples } from './ripples'
@@ -92,6 +94,7 @@ const STRUCTURE_COOLDOWN = 8
 
 export interface VisualiserOptions {
   geometricView: GeometricViewName
+  geoFilter: GeoFilterName
   atmosphericView: AtmosphericViewName
   mergeMode: MergeModeName
   /** 0-1. Universal opacity: 0 is pure atmosphere, 1 is the full blend. */
@@ -107,6 +110,8 @@ export interface Visualiser {
   /** Swap the atmospheric layer's programme. Recompiles a shader; not a per-frame call. */
   setAtmosphericView(name: AtmosphericViewName): void
   setMergeMode(mode: MergeModeName): void
+  /** Recolour the geometric layer. Cheap: a uniform, not a recompile. */
+  setGeoFilter(name: GeoFilterName): void
   /** 0-1. */
   setMix(mix: number): void
   /** Re-roll the seed each view spends on whatever it doesn't get from audio. */
@@ -235,6 +240,7 @@ export function createVisualiser(
     uGeometry: { value: geometryTarget.texture },
     uMix: { value: options.mix },
     uMode: { value: MERGE_MODES[options.mergeMode].index },
+    uGeoFilter: { value: new Vector3(1, 1, 1) },
   }
   const compositeMaterial = new ShaderMaterial({
     vertexShader,
@@ -253,6 +259,9 @@ export function createVisualiser(
   // coasts to a near-stop in silence. A break nearly freezes it, which is a
   // large part of why a break is legible at all.
   let flow = 0
+  // Which RGB filter the geometric layer is wearing. Held here rather than as
+  // a plain uniform because `spectrum` recomputes its gains every frame.
+  let geoFilter: GeoFilterName = options.geoFilter
   let elapsed = 0
   let frameMs = 16.7
   let sinceChange = 0
@@ -397,6 +406,10 @@ export function createVisualiser(
       uniforms.uRoughness.value = params.roughness
       uniforms.uHistoryHead.value = historyHead / HISTORY_W
 
+      // The geometric layer draws white; this is where it gets its colour.
+      const gf = filterRgb(geoFilter, params.tilt)
+      compositeUniforms.uGeoFilter.value.set(gf[0], gf[1], gf[2])
+
       // Three passes over the same quad: geometric layer to its target,
       // atmospheric layer to its target, then the composite reads both and
       // paints the canvas. autoClear defaults to true, so each pass starts
@@ -439,6 +452,10 @@ export function createVisualiser(
 
     setMergeMode(mode) {
       compositeUniforms.uMode.value = MERGE_MODES[mode].index
+    },
+
+    setGeoFilter(name) {
+      geoFilter = name
     },
 
     setMix(mix) {

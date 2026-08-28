@@ -14,6 +14,10 @@
 // The fold is done with mod() on the angle rather than a loop over K shards.
 // A loop would be O(MAX_RIPPLES * K) per pixel — 40-odd iterations on a phone
 // GPU for something a single modulo gets exactly right.
+//
+// Like Circles, this draws hard-edged white geometry: no gaussian falloffs, no
+// per-shard hue. Colour is applied to the whole layer afterwards as an RGB
+// filter (see geo-filters.ts), so shape and colour stay separate concerns.
 
 varying vec2 vUv;
 
@@ -22,7 +26,6 @@ uniform float uTime;
 uniform float uLevel;
 uniform float uLow;
 uniform float uHigh;
-uniform float uTilt;
 uniform float uBreak;
 uniform vec4 uSeed;
 
@@ -35,16 +38,12 @@ const float TAU = 6.28318530718;
 const float LIFESPAN = 2.6; // shorter than Circles: debris, not a swell
 const float FADE_FROM = 0.45;
 
-vec3 hsv2rgb(vec3 c) {
-  vec3 p = abs(fract(c.xxx + vec3(0.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0);
-  return c.z * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), c.y);
-}
-
 void main() {
   vec2 uv = (gl_FragCoord.xy - 0.5 * uResolution) / min(uResolution.x, uResolution.y);
   float dist = length(uv);
   float angle = atan(uv.y, uv.x);
   float maxRadius = 0.5 * length(uResolution) / min(uResolution.x, uResolution.y);
+  float px = 1.0 / min(uResolution.x, uResolution.y);
 
   // Symmetry order is a seed choice, so a re-roll genuinely restructures the
   // burst rather than just recolouring it. 5..10 keeps the fragments readable
@@ -52,7 +51,7 @@ void main() {
   float symmetry = 5.0 + floor(uSeed.y * 6.0);
   float sector = TAU / symmetry;
 
-  vec3 col = vec3(0.0);
+  float ink = 0.0;
 
   for (int i = 0; i < MAX_RIPPLES; i++) {
     float birth = uRipples[i].x;
@@ -77,43 +76,37 @@ void main() {
     // pixel sits from that sector's centre line — the shard's spine.
     float folded = abs(mod(a, sector) - sector * 0.5);
 
-    // Fragments narrow as they fly, which is most of what sells them as
-    // shards rather than a rotating dashed ring.
-    float halfWidth = sector * (0.30 - 0.17 * percent);
-    float across = 1.0 - smoothstep(halfWidth * 0.35, halfWidth, folded);
+    // Width is held in *screen* units, not radians. An angular half-width is
+    // the obvious way to write this and the wrong one: a constant angle spans
+    // more and more screen the further out it travels, so the first version's
+    // splinters had become solid slabs covering half the frame by the time
+    // they reached the rim. Multiplying the folded angle by the radius gives
+    // the arc distance from the shard's spine, which is what "thickness"
+    // actually means here — so a splinter stays the same width all the way out.
+    float w = 0.004 + 0.012 * birthLevel;
+    float across = 1.0 - smoothstep(0.0, px * 1.5, folded * max(dist, 1e-4) - w);
 
-    // ...and shorten, radially, around the burst's current radius. Squared by
-    // multiplication rather than pow(): pow() with a negative base is
-    // undefined in GLSL, and (dist - radius) is negative inside the front.
-    float length_ = maxRadius * (0.20 - 0.13 * percent) + 0.02;
-    float alongD = (dist - radius) / max(length_, 1e-4);
-    float along = exp(-alongD * alongD * 2.4);
+    // Radial extent: long enough to read as a splinter rather than a dash,
+    // short enough to stay a fragment. Shortens as the burst ages.
+    float length_ = maxRadius * (0.12 - 0.07 * percent) + 0.010;
+    float along = 1.0 - smoothstep(0.0, px * 1.5, abs(dist - radius) - length_);
 
     float opacity = percent > FADE_FROM
       ? 1.0 - (percent - FADE_FROM) / (1.0 - FADE_FROM)
       : 1.0;
     opacity *= 0.30 + 0.70 * birthLevel;
 
-    // A burst keeps the hue it was born with — repainting an old one would
-    // make its fade read as a colour change rather than a light going out.
-    float hue = fract(uSeed.x + uTilt * 0.35 + float(i) * 0.083);
-    vec3 shardCol = hsv2rgb(vec3(hue, 0.70, 1.0));
-
-    col += shardCol * across * along * opacity * 1.35;
-
-    // A brief flash at the origin on the frame the burst is born, so the hit
-    // itself is visible and not only its aftermath.
-    col += shardCol * exp(-dist * dist * 90.0) * exp(-age * 9.0) * birthLevel * 0.9;
+    ink += across * along * opacity;
   }
 
-  // High frequencies put a faint dusting between bursts, so silence between
-  // hits is dark but not dead.
-  col += vec3(0.22, 0.26, 0.42) * uHigh * exp(-dist * 2.2) * 0.16;
+  // A thin ring at the origin that snaps outward on the highs, so the frame is
+  // not empty between bursts.
+  float centreR = 0.010 + 0.030 * uHigh;
+  float centre = 1.0 - smoothstep(0.0, px * 1.5, abs(dist - centreR) - px);
+  ink += centre * (0.20 + 0.5 * uHigh);
 
-  // A break drains colour without erasing structure — the same treatment the
-  // atmospheric layer gives itself.
-  float luma = dot(col, vec3(0.2126, 0.7152, 0.0722));
-  col = mix(col, vec3(luma) * 0.7, uBreak * 0.8);
+  // A break thins the ink rather than draining colour — there is none here.
+  ink *= 1.0 - uBreak * 0.55;
 
-  gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
+  gl_FragColor = vec4(vec3(clamp(ink, 0.0, 1.0)), 1.0);
 }

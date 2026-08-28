@@ -14,6 +14,9 @@
 // the argument.
 //
 // Reads uRipples (see ripples.ts), so every front is a real transient.
+//
+// Like the rest of this layer it draws hard-edged white only; colour is an RGB
+// filter applied to the finished layer (see geo-filters.ts).
 
 varying vec2 vUv;
 
@@ -22,7 +25,6 @@ uniform float uTime;
 uniform float uLevel;
 uniform float uLow;
 uniform float uMid;
-uniform float uTilt;
 uniform float uBreak;
 uniform vec4 uSeed;
 
@@ -30,13 +32,8 @@ uniform vec4 uSeed;
 const int MAX_RIPPLES = 8;
 uniform vec2 uRipples[MAX_RIPPLES];
 
-const float LIFESPAN = 2.9;
+const float LIFESPAN = 2.2;
 const float FADE_FROM = 0.5;
-
-vec3 hsv2rgb(vec3 c) {
-  vec3 p = abs(fract(c.xxx + vec3(0.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0);
-  return c.z * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), c.y);
-}
 
 // Cheap per-cell hash. Only needs to look unrelated between neighbours, not
 // to be statistically sound.
@@ -61,9 +58,7 @@ void main() {
 
   float rand = hash(cell);
 
-  vec3 col = vec3(0.0);
-  float lit = 0.0;
-  float hue = fract(uSeed.x + uTilt * 0.3);
+  float ink = 0.0;
 
   for (int i = 0; i < MAX_RIPPLES; i++) {
     float birth = uRipples[i].x;
@@ -77,41 +72,43 @@ void main() {
 
     // A cell lights when the front reaches it and decays after — the front
     // has thickness so it reads as a band of cells, not a one-cell line.
-    float thickness = 1.4 + 2.2 * birthLevel;
+    float thickness = 0.55 + 0.85 * birthLevel;
     float d = abs(ring - front);
     if (d > thickness) continue;
 
+    // Squared falloff: a front should have a bright leading band and go dark
+    // quickly behind it, or eight overlapping fronts leave every cell faintly
+    // lit and the square rings stop being visible as rings at all.
     float intensity = 1.0 - d / thickness;
+    intensity *= intensity;
     // Stagger cells within the band so the front has texture rather than
     // switching on as one solid square.
-    intensity *= 0.45 + 0.55 * rand;
+    intensity *= 0.40 + 0.60 * rand;
 
     float opacity = percent > FADE_FROM
       ? 1.0 - (percent - FADE_FROM) / (1.0 - FADE_FROM)
       : 1.0;
     opacity *= 0.35 + 0.65 * birthLevel;
 
-    float amount = intensity * opacity;
-    lit += amount;
-    col += hsv2rgb(vec3(fract(hue + float(i) * 0.075 + rand * 0.06), 0.62, 1.0)) * amount;
+    // max, not sum. Summing was the bug: with eight fronts alive at once every
+    // cell reached full white and the whole screen filled in, which is exactly
+    // what this view is supposed not to do. A cell is lit by whichever front
+    // is brightest on it, so overlapping fronts cross without saturating.
+    ink = max(ink, intensity * opacity);
   }
 
-  // Inset each cell slightly so the grid reads as separate tiles with dark
-  // mortar between them, rather than a continuous field that happens to be
-  // quantised.
+  // Inset each cell with a hard edge, so the grid reads as separate tiles with
+  // dark mortar between them rather than a continuous field that happens to be
+  // quantised. A step, not a gradient — this layer is drawn, not lit.
   float inset = max(abs(within.x), abs(within.y));
-  col *= 1.0 - smoothstep(0.72, 0.96, inset);
+  ink *= 1.0 - step(0.80, inset);
 
-  // A faint standing grid, breathing with the mids, so the structure is
-  // visible between hits instead of the screen going entirely black.
-  float rule = smoothstep(0.90, 0.99, inset);
-  col += vec3(0.16, 0.19, 0.32) * rule * (0.05 + uMid * 0.22);
+  // A standing rule on the cell boundaries, breathing with the mids, so the
+  // structure is visible between hits instead of the screen going black.
+  ink += step(0.93, inset) * (0.05 + uMid * 0.22);
 
-  // Bass swells the whole field slightly from the centre outward.
-  col += vec3(0.20, 0.17, 0.34) * uLow * exp(-length(uv) * 2.6) * 0.35;
+  // A break thins the ink rather than draining colour — there is none here.
+  ink *= 1.0 - uBreak * 0.55;
 
-  float luma = dot(col, vec3(0.2126, 0.7152, 0.0722));
-  col = mix(col, vec3(luma) * 0.7, uBreak * 0.8);
-
-  gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
+  gl_FragColor = vec4(vec3(clamp(ink, 0.0, 1.0)), 1.0);
 }

@@ -2,9 +2,10 @@
  * The radial control HUD.
  *
  * A 120° wedge hinged just outside the bottom-right corner of the screen —
- * where the thumb actually pivots from. One arc band per layer, stacked
- * outward: geometric, atmospheric, merge mode. Swipe along a band to turn it;
- * whatever settles under the notch is selected. The innermost arc is the mix.
+ * where the thumb actually pivots from. One arc band per control, stacked
+ * outward: geometric, its RGB filter, atmospheric, merge mode. Swipe along a
+ * band to turn it; whatever settles under the notch is selected. The innermost
+ * arc is the mix.
  *
  * This replaced a bottom-sheet list of cards. The list worked, but it took the
  * whole screen to change one value, which meant you could never see the thing
@@ -17,6 +18,7 @@
  * every rotation.
  */
 
+import { GEO_FILTERS, type GeoFilterName } from './geo-filters'
 import type { MappingName, VisualParams } from './mapping'
 import { MERGE_MODES, type MergeModeName } from './merge-modes'
 import { savePrefs, type Prefs } from './prefs'
@@ -43,11 +45,14 @@ const PITCH = 26 * DEG
 const CUTOFF = 40 * DEG
 
 /** Band radii and the mix arc, as fractions of the screen's short edge — the
- *  wedge has to stay a thumb's reach whatever the phone. */
-const R_GEO = 0.86
-const R_ATM = 0.68
-const R_MRG = 0.5
-const R_MIX = 0.34
+ *  wedge has to stay a thumb's reach whatever the phone. Four bands now, so
+ *  they sit closer together than three did; the inner one still clears the
+ *  mix arc by more than a finger's width. */
+const R_GEO = 0.88
+const R_FILTER = 0.73
+const R_ATM = 0.58
+const R_MRG = 0.43
+const R_MIX = 0.28
 
 /** How far a pointer may stray and still count as a tap rather than a drag. */
 const TAP_SLOP_PX = 12
@@ -65,6 +70,7 @@ export interface Hud {
 
 interface Handlers {
   onGeometricView(name: GeometricViewName): void
+  onGeoFilter(name: GeoFilterName): void
   onAtmosphericView(name: AtmosphericViewName): void
   onMergeMode(mode: MergeModeName): void
   /** 0-1. */
@@ -240,6 +246,7 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
   document.body.appendChild(scrim)
 
   const geometricKeys = Object.keys(GEOMETRIC_VIEWS) as GeometricViewName[]
+  const filterKeys = Object.keys(GEO_FILTERS) as GeoFilterName[]
   const atmosphericKeys = Object.keys(ATMOSPHERIC_VIEWS) as AtmosphericViewName[]
   const mergeKeys = Object.keys(MERGE_MODES) as MergeModeName[]
   const mappingKeys = Object.keys(MAPPING_LABELS) as MappingName[]
@@ -256,6 +263,21 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
         prefs.geometricView = k as GeometricViewName
         savePrefs(prefs)
         handlers.onGeometricView(prefs.geometricView)
+      },
+      labels: [],
+      r: 0,
+    },
+    {
+      name: 'filter',
+      keys: filterKeys,
+      radius: R_FILTER,
+      rot: 0,
+      label: (k) => GEO_FILTERS[k as GeoFilterName].label,
+      current: () => prefs.geoFilter,
+      commit: (k) => {
+        prefs.geoFilter = k as GeoFilterName
+        savePrefs(prefs)
+        handlers.onGeoFilter(prefs.geoFilter)
       },
       labels: [],
       r: 0,
@@ -386,7 +408,7 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
 
     // The selector: a trapezoid crossing every band at the notch.
     {
-      const r0 = base * R_MRG - base * 0.06
+      const r0 = base * R_MRG - base * 0.05
       const r1 = base * R_GEO + base * 0.05
       const w0 = 26
       const w1 = 40
@@ -648,7 +670,7 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
       prefs.atmosphericView = next
       savePrefs(prefs)
       handlers.onAtmosphericView(next)
-      const b = bands[1]
+      const b = bands[2]
       b.rot = restingRot(b)
       paintBands()
     },
