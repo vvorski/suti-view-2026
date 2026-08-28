@@ -72,11 +72,12 @@ uniform vec4 uSeed;
 // Must match MAX_RIPPLES in ripples.ts — GLSL can't import a JS constant, and
 // a mismatch here means scene.ts uploads an array of the wrong length.
 const int MAX_RIPPLES = 8;
-// (birthTime, birthLevel) pairs. An unborn slot has birthTime far enough in
-// the past that it no longer falls out of LIFESPAN's `continue` above — the
-// wake reads dead slots too — but its birthLevel is 0, and the wake's own
-// `min(since, 24.0)` clamp caps its contribution at e^-15, so it draws
-// nothing. See the wake ladder below for where that clamp lives.
+// (birthTime, birthLevel) pairs. An unborn slot sits at birthTime -1000, and
+// it no longer falls out of the loop's LIFESPAN `continue` — the wake ladder
+// reads dead slots on purpose, so that test now sits below it rather than
+// guarding it. What neutralises an unborn slot instead is its birthLevel of
+// 0, and the wake's own `min(since, 24.0)` clamp, which caps the contribution
+// at e^-15. Both live in the ripple loop further down.
 uniform vec2 uRipples[MAX_RIPPLES];
 
 const float LIFESPAN = 3.2; // seconds from birth to vanishing at the rim
@@ -165,10 +166,10 @@ const float REST_REACH = 0.10;
 // Subtracted from the resting level so it reaches *exactly* zero at about
 // 0.30, rather than trailing off as a decreasing ramp of one- and two-in-255
 // rules all the way into the corners. Measured with a throwaway browser
-// probe: without the subtraction every rule on screen is faintly lit at
-// rest, which is invisible
-// on a bright display and a full standing bullseye on a phone in a dark room —
-// and it leaves a passing front nothing dark to arrive into.
+// probe: without the subtraction every rule on screen is faintly lit at rest,
+// which is invisible on a bright display and a full standing bullseye on a
+// phone in a dark room — and it leaves a passing front nothing dark to arrive
+// into.
 const float REST_FLOOR = 0.012;
 
 // A hard-edged ring, antialiased over roughly one pixel.

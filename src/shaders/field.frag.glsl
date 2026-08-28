@@ -208,9 +208,9 @@ void main() {
   // Displacing the lookup by noise we have already computed makes those
   // boundaries wander instead of radiate, which is the difference between
   // weather and a pie chart. 0.09 is about six rows peak to peak: much less
-  // and the rays are still recognisably straight, much more
-  // and the frequency ordering — the reason for drawing this in polar at all —
-  // stops being readable.
+  // and the rays are still recognisably straight, much more and the frequency
+  // ordering — the reason for drawing this in polar at all — stops being
+  // readable.
   freqAxis = clamp(freqAxis + (warp.x - 0.5) * 0.09, 0.0, 1.0);
 
   // Walk backwards from the write head, wrapping — the texture repeats in x.
@@ -258,11 +258,10 @@ void main() {
   // 8px neighbourhood measured 4.9% before and 3.5% after, but treat those as
   // indicative only: a throwaway browser probe cannot be made reproducible
   // here (uTime and uFlow keep advancing, so no two runs read the same patch
-  // of noise) and repeats of one build spread several points. The flat wash
-  // is obvious by eye, which is
-  // the evidence that actually settled this. Note that counting repeated RGB
-  // triples will NOT find it — the dither at the end of main() puts the flat
-  // region on several adjacent codes.
+  // of noise) and repeats of one build spread several points. The flat wash is
+  // obvious by eye, which is the evidence that actually settled this. Note that
+  // counting repeated RGB triples will NOT find it — the dither at the end of
+  // main() puts the flat region on several adjacent codes.
   //
   // Below KNEE this is exactly the straight line it replaces, and the two
   // pieces meet with the same slope, so nothing about the dark or the middle of
@@ -281,16 +280,16 @@ void main() {
 
   // --- depth ---------------------------------------------------------------
   // A second, slower deck behind the near one, for no extra noise at all.
-  // warp.x is already a full fbm evaluation
-  // of this patch, read at a different offset and drifting on uFlow * 0.35 in y
-  // while the field it displaces drifts on uFlow * 0.18 in x — two layers of
-  // the same medium moving at different rates, which is what parallax is. It
-  // was only ever used as a displacement; reading it as a second deck as well
-  // measured +1% frame time, inside the run-to-run noise. The honest version
-  // would be an independent fourth fbm, and both ways of buying a genuinely new
-  // noise layer were measured rather than assumed: at 1228x1706, four octaves
-  // cost 1.70ms/frame, a fifth octave 1.91 and a fourth fbm 1.98 — +12% and
-  // +16%. Neither is worth it when re-reading warp.x gets most of the picture.
+  // warp.x is already a full fbm evaluation of this patch, read at a different
+  // offset and drifting on uFlow * 0.35 in y while the field it displaces drifts
+  // on uFlow * 0.18 in x — two layers of the same medium moving at different
+  // rates, which is what parallax is. It was only ever used as a displacement;
+  // reading it as a second deck as well measured +1% frame time, inside the
+  // run-to-run noise. The honest version would be an independent fourth fbm, and
+  // both ways of buying a genuinely new noise layer were measured rather than
+  // assumed: at 1228x1706, four octaves cost 1.70ms/frame, a fifth octave 1.91
+  // and a fourth fbm 1.98 — +12% and +16%. Neither is worth it when re-reading
+  // warp.x gets most of the picture.
   //
   // Multiplicative rather than additive, and the factor is zero-mean, so it
   // models the dark instead of washing it — an additive haze raises the floor
