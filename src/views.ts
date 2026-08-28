@@ -19,12 +19,15 @@
  */
 
 import auroraFrag from './shaders/aurora.frag.glsl?raw'
+import chorusFrag from './shaders/chorus.frag.glsl?raw'
 import circlesFrag from './shaders/circles.frag.glsl?raw'
+import driftFrag from './shaders/drift.frag.glsl?raw'
 import fieldFrag from './shaders/field.frag.glsl?raw'
 import gridFrag from './shaders/grid.frag.glsl?raw'
 import latticeFrag from './shaders/lattice.frag.glsl?raw'
 import shardsFrag from './shaders/shards.frag.glsl?raw'
 import spectrogramFrag from './shaders/spectrogram.frag.glsl?raw'
+import tideFrag from './shaders/tide.frag.glsl?raw'
 
 export interface View {
   readonly label: string
@@ -47,6 +50,26 @@ export const GEOMETRIC_VIEWS = {
     label: 'Grid',
     description: 'Square wavefronts lighting whole cells at a time.',
     fragmentShader: gridFrag,
+  },
+  // Three variations on Circles that keep its ring and move its emitter. They
+  // sit after the three originals rather than next to Circles because the
+  // registry's order is the order the HUD offers them in, and the first three
+  // are the three different answers to "what does a hit look like" — the ones
+  // worth meeting first. These are the same answer from somewhere else.
+  drift: {
+    label: 'Drift',
+    description: "Circles' ring from a wandering origin, so families overlap off-centre.",
+    fragmentShader: driftFrag,
+  },
+  chorus: {
+    label: 'Chorus',
+    description: 'Several fixed origins in a ring; each hit fires one and their fronts cross.',
+    fragmentShader: chorusFrag,
+  },
+  tide: {
+    label: 'Tide',
+    description: 'Rings born on the frame edge, arriving as arcs that sweep inward.',
+    fragmentShader: tideFrag,
   },
 } satisfies Record<string, View>
 
