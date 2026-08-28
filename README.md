@@ -28,8 +28,21 @@ targets and blended by a third pass:
 
 |                 |                          |                                  |
 | --------------- | ------------------------ | -------------------------------- |
-| **Geometric**   | Circles                  | discrete events — a ring per hit |
-| **Atmospheric** | Field, Lattice           | continuous fields — noise, spectrograms, envelopes |
+| **Geometric**   | Circles, Shards, Grid    | discrete events — something per hit |
+| **Atmospheric** | Field, Lattice, Spectrogram, Aurora | continuous fields — noise, spectrograms, envelopes |
+
+The geometric three are three answers to "what does a hit look like": Circles
+gives it a ring, **Shards** give it a direction — angular fragments thrown
+outward, spinning down — and **Grid** quantises it into square wavefronts that
+light whole cells at a time. All three read the same transient buffer
+(`ripples.ts`); they differ only in what they draw with it.
+
+On the atmospheric side, **Spectrogram** is the one view here that is literally
+readable: radius is time into the past, angle is log frequency, so a sustained
+tone is a ray, a sweep is a spiral, and a phrase leaves a visible wake. It costs
+nothing extra to run — the ring buffer it draws was already there for Field and
+Lattice to consume. **Aurora** is the only view with a horizon rather than a
+centre, which suits a phone held upright better than anything radial.
 
 Pick each independently from the HUD (or `?geometric=circles`,
 `?atmospheric=lattice`; `?view=` still works as an alias for the atmospheric
@@ -113,6 +126,30 @@ automatic reshape uses the same rising-edge-plus-cooldown trigger as Circles'
 ripples (see below) — `novelty` crossing a threshold, gated by an 8-second
 cooldown so the boundary's own decay tail can't retrigger it — reusing the
 one signal this project already has for "the track just changed."
+
+**What populates it.** Grey's lattices aren't empty grids — bodies and eyes sit
+in them as the things the network is made of. So the lattice morphs: bare grid,
+then human figures, then eyes, then bare again, cycling slowly on the flow clock
+and jumping somewhere new on a reshape. The lattice itself recedes as the
+population comes forward, which is what makes it a morph rather than an overlay.
+
+Three things had to be got right before a figure was recognisable, and each was
+found by looking at it rather than by reasoning:
+
+- **The population needs its own grid.** At the lattice's own cell density a
+  cell is a few pixels across — right for a jewel, useless for a body. The
+  figures sit on a coarser grid laid over the same log-polar space.
+- **It must not use the lattice's coordinates.** The spiral twist shears every
+  cell, and the kaleidoscopic fold uses `abs()`, which mirrors each sector about
+  its centre line — so the first attempt drew every figure cut in half and
+  reflected. The population takes the clean pre-twist angle and a _signed_ fold
+  instead, giving one whole upright figure per sector, head pointing outward.
+- **The cell has to be square.** Log-polar is conformal, so a cell's screen
+  width and height both scale with radius and their ratio is constant — which is
+  the only reason drawing a figure in this space works at all. Picking the
+  figure grid's divisor as `DEPTH * sector` makes the cell exactly square at
+  every symmetry order and tunnel density, instead of a hand-tuned constant that
+  breaks the next time the seed changes the geometry.
 
 ## Running it
 

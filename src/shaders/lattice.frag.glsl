@@ -74,6 +74,59 @@ vec3 hsv2rgb(vec3 c) {
   return c.z * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), c.y);
 }
 
+// --- the things that live at the nodes -------------------------------------
+// The lattice used to put a featureless jewel at every crossing. These are the
+// alternatives it morphs between, and they are the reason the reference for
+// this view is Alex Grey rather than generic sacred geometry: his lattices are
+// populated — bodies and eyes sit in the grid as the things the network is
+// made of, not as decoration laid over it.
+//
+// All three are drawn as emissive line work — a bright edge plus a soft aura —
+// rather than filled silhouettes, to match everything else here.
+
+float sdSeg(vec2 p, vec2 a, vec2 b) {
+  vec2 pa = p - a;
+  vec2 ba = b - a;
+  float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+  return length(pa - ba * h);
+}
+
+// A standing figure, arms raised outward. Built from capsules; abs(p.x) gives
+// the bilateral symmetry for free and halves the distance evaluations.
+float shapeFigure(vec2 p) {
+  p.x = abs(p.x);
+  float d = length(p - vec2(0.0, 0.62)) - 0.125;                    // head
+  d = min(d, sdSeg(p, vec2(0.0, 0.44), vec2(0.0, 0.02)) - 0.085);   // torso
+  d = min(d, sdSeg(p, vec2(0.02, 0.38), vec2(0.30, 0.50)) - 0.050); // upper arm
+  d = min(d, sdSeg(p, vec2(0.30, 0.50), vec2(0.52, 0.30)) - 0.042); // forearm
+  d = min(d, sdSeg(p, vec2(0.02, 0.04), vec2(0.14, -0.34)) - 0.060); // thigh
+  d = min(d, sdSeg(p, vec2(0.14, -0.34), vec2(0.16, -0.72)) - 0.048); // shin
+
+  float edge = exp(-abs(d) * 15.0);
+  float aura = exp(-max(d, 0.0) * max(d, 0.0) * 22.0);
+
+  // Chakra points down the midline — the detail that makes it read as an
+  // energy body rather than a stick man.
+  float chakra = 0.0;
+  chakra += exp(-dot(p - vec2(0.0, 0.68), p - vec2(0.0, 0.68)) * 340.0);
+  chakra += exp(-dot(p - vec2(0.0, 0.32), p - vec2(0.0, 0.32)) * 300.0);
+  chakra += exp(-dot(p - vec2(0.0, 0.06), p - vec2(0.0, 0.06)) * 300.0);
+
+  return edge * 0.85 + aura * 0.22 + chakra * 0.8;
+}
+
+// An eye: a lens outline from two overlapping discs, plus iris and pupil.
+float shapeEye(vec2 p) {
+  float upper = length(p - vec2(0.0, -0.52)) - 0.74;
+  float lower = length(p - vec2(0.0, 0.52)) - 0.74;
+  float d = max(upper, lower);                       // intersection = lens
+
+  float outline = exp(-abs(d) * 17.0);
+  float iris = exp(-abs(length(p) - 0.17) * 20.0);
+  float pupil = exp(-dot(p, p) * 70.0);
+  return outline * 0.85 + iris * 0.55 + pupil * 0.7;
+}
+
 void main() {
   vec2 uv = (gl_FragCoord.xy - 0.5 * uResolution) / min(uResolution.x, uResolution.y);
 
@@ -147,6 +200,54 @@ void main() {
   float nodeR = length(cell) * (2.6 - 0.7 * uLow - 0.5 * past);
   float node = exp(-nodeR * nodeR * 7.0);
 
+  // --- what populates the lattice ------------------------------------------
+  // The lattice's own cells are far too small to read as anything — at these
+  // densities a cell is a few pixels across, which is right for a jewel and
+  // useless for a figure. So the population sits on its own grid, a few times
+  // coarser, laid over the same log-polar space.
+  //
+  // Drawing a recognisable figure here is only possible because a cell has a
+  // *constant* screen aspect everywhere in the image: log-polar is conformal,
+  // so a cell's screen width goes as radius*sector/ACROSS and its height as
+  // radius/DEPTH — both linear in radius, so the ratio between them never
+  // changes. Undo that ratio and a figure at the rim is the same shape as one
+  // near the drain rather than smeared by the projection. Its *size* still
+  // scales with radius, which is what makes them recede down the tunnel.
+  // The population gets its own coordinates, deliberately *not* the lattice's.
+  // Two things in the lattice's grid destroy a figure: the spiral twist shears
+  // every cell, and the fold uses abs(), which mirrors each sector about its
+  // centre line and so cuts every figure in half and reflects it. Both are
+  // right for ornament and fatal for anything meant to be recognised. So this
+  // takes the clean pre-twist angle and a *signed* fold, giving one upright,
+  // whole figure per sector, head pointing outward.
+  float figSector = TAU / SYMMETRY;
+  // Screen width per unit figX is radius*figSector, height per unit figY is
+  // radius*FIGDIV/DEPTH. Choosing FIGDIV so those match makes the figure cell
+  // square at every symmetry order and tunnel density, instead of needing a
+  // constant retuned by hand each time the seed changes the geometry. Both
+  // scale with radius, so the aspect holds and only the size recedes.
+  float FIGDIV = DEPTH * figSector;
+
+  float cleanAngle = atan(uv.y, uv.x) + uSeed.z * TAU;
+  float figX = (mod(cleanAngle + figSector * 0.5, figSector) - figSector * 0.5) / figSector;
+  float figDepth = log(radius) * (DEPTH / FIGDIV) - uFlow * 0.30 / FIGDIV;
+  float figY = fract(figDepth) - 0.5;
+
+  // The cell is square, so ±0.5 on each axis; 1.5 scales it to ±0.75, which is
+  // exactly the figure's half-height.
+  vec2 fp = vec2(figX, figY) * 1.5;
+  fp *= 1.0 - 0.12 * uLow;
+
+  // Where in the cycle the population sits: bare lattice, then figures, then
+  // eyes, then bare again. The seed sets where a reshape lands and uFlow walks
+  // it on slowly, so it drifts by itself and jumps somewhere new on a
+  // structural boundary — the same way everything else in this view behaves.
+  float morph = fract(uSeed.z * 3.7 + uSeed.y * 1.3 + uFlow * 0.010) * 3.0;
+  float wFigure = max(0.0, 1.0 - abs(morph - 1.0));
+  float wEye = max(0.0, 1.0 - abs(morph - 2.0));
+  float popAmount = wFigure + wEye;
+  float population = shapeFigure(fp) * wFigure + shapeEye(fp) * wEye;
+
   // Filaments: the links. Distance to the nearer grid axis, kept thin — the
   // fine line work is most of why this style reads as drawn rather than
   // rendered.
@@ -185,8 +286,18 @@ void main() {
   vec3 lineCol = hsv2rgb(vec3(fract(baseHue - sep * 0.5), 0.92, 1.0));
 
   vec3 col = vec3(0.0);
-  col += nodeCol * node * (0.55 + 2.2 * past + 1.5 * energy) * depthFade;
-  col += lineCol * filament * (0.22 + 0.9 * energy + 0.8 * past) * depthFade;
+  // The lattice recedes as the population comes forward — that is what makes
+  // this a morph rather than an overlay. At full figure phase the grid is
+  // still there, but as a ground the bodies stand in rather than a mesh
+  // competing with them for the same lines.
+  float recede = 1.0 - 0.55 * popAmount;
+
+  col += nodeCol * node * (0.55 + 2.2 * past + 1.5 * energy) * depthFade * recede;
+  // The population is drawn in the node colour but brighter and less tied to
+  // the spectrum — a body in the lattice is a presence, not a meter.
+  col += mix(nodeCol, vec3(1.0), 0.30) * population *
+         (1.5 + 1.1 * energy + 0.8 * past) * depthFade;
+  col += lineCol * filament * (0.22 + 0.9 * energy + 0.8 * past) * depthFade * recede;
   // Rays are a halo, not the subject. They were loud enough to flatten the
   // lattice into a bicycle wheel before this came down.
   col += lineCol * rays * (0.02 + 0.13 * uHigh) * depthFade;

@@ -18,9 +18,13 @@
  * deliberate choice from the control panel and would not be fine per frame.
  */
 
+import auroraFrag from './shaders/aurora.frag.glsl?raw'
 import circlesFrag from './shaders/circles.frag.glsl?raw'
 import fieldFrag from './shaders/field.frag.glsl?raw'
+import gridFrag from './shaders/grid.frag.glsl?raw'
 import latticeFrag from './shaders/lattice.frag.glsl?raw'
+import shardsFrag from './shaders/shards.frag.glsl?raw'
+import spectrogramFrag from './shaders/spectrogram.frag.glsl?raw'
 
 export interface View {
   readonly label: string
@@ -34,6 +38,16 @@ export const GEOMETRIC_VIEWS = {
     description: 'Rings born on a hit, fading as they reach the rim.',
     fragmentShader: circlesFrag,
   },
+  shards: {
+    label: 'Shards',
+    description: 'Angular fragments thrown outward on a hit, spinning down.',
+    fragmentShader: shardsFrag,
+  },
+  grid: {
+    label: 'Grid',
+    description: 'Square wavefronts lighting whole cells at a time.',
+    fragmentShader: gridFrag,
+  },
 } satisfies Record<string, View>
 
 export const ATMOSPHERIC_VIEWS = {
@@ -46,6 +60,16 @@ export const ATMOSPHERIC_VIEWS = {
     label: 'Lattice',
     description: 'Visionary mandala after Alex Grey. Endless, symmetric, emissive.',
     fragmentShader: latticeFrag,
+  },
+  spectrogram: {
+    label: 'Spectrogram',
+    description: 'The last 8 seconds, spiralling out. Radius is time, angle is pitch.',
+    fragmentShader: spectrogramFrag,
+  },
+  aurora: {
+    label: 'Aurora',
+    description: 'Hanging curtains of light. The only view with a horizon.',
+    fragmentShader: auroraFrag,
   },
 } satisfies Record<string, View>
 
