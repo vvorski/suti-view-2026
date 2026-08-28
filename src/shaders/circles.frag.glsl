@@ -73,7 +73,10 @@ uniform vec4 uSeed;
 // a mismatch here means scene.ts uploads an array of the wrong length.
 const int MAX_RIPPLES = 8;
 // (birthTime, birthLevel) pairs. An unborn slot has birthTime far enough in
-// the past that `age` always exceeds LIFESPAN and it contributes nothing.
+// the past that it no longer falls out of LIFESPAN's `continue` above — the
+// wake reads dead slots too — but its birthLevel is 0, and the wake's own
+// `min(since, 24.0)` clamp caps its contribution at e^-15, so it draws
+// nothing. See the wake ladder below for where that clamp lives.
 uniform vec2 uRipples[MAX_RIPPLES];
 
 const float LIFESPAN = 3.2; // seconds from birth to vanishing at the rim
@@ -113,9 +116,9 @@ const float WAKE_TAU = 1.6;
 
 // Peak brightness of a freshly crossed rule. The double band is the subject
 // and this is the field it moves through; at 0.2 the ladder is invisible once
-// the atmospheric layer is mixed underneath, and at 0.62 — measured on the
-// probe — the rules were reading as a second ring system rather than as the
-// ground the first one moves over.
+// the atmospheric layer is mixed underneath, and at 0.62, measured with a
+// throwaway browser probe, the rules were reading as a second ring system
+// rather than as the ground the first one moves over.
 //
 // Worth being straight about a tension that no value here resolves: a rule
 // laid down at full strength *will* out-brighten the band that laid it, once
@@ -151,11 +154,19 @@ const float WAKE_WEIGHT = 1.0;
 // source the rings come from and leaves the rest of the field dark until a hit
 // actually reaches it.
 const float REST_INK = 0.24;
-const float REST_REACH = 0.10; // radius at which the resting level is down to 1/e
+// Radius at which the resting level is down to 1/e. Unlike the wake, `rest`
+// is not gated by `reached` — that is only safe because it has already
+// reached exactly zero by REST_REACH * ln(REST_INK / REST_FLOOR) ~= 0.30,
+// well inside maxRadius's floor of 0.5. Past REST_REACH ~= 0.167 that stops
+// holding and the resting ladder starts lighting rungs beyond maxRadius —
+// the same phantom corner rungs the `reached` gate exists to keep the wake
+// away from.
+const float REST_REACH = 0.10;
 // Subtracted from the resting level so it reaches *exactly* zero at about
 // 0.30, rather than trailing off as a decreasing ramp of one- and two-in-255
-// rules all the way into the corners. Measured on the probe: without the
-// subtraction every rule on screen is faintly lit at rest, which is invisible
+// rules all the way into the corners. Measured with a throwaway browser
+// probe: without the subtraction every rule on screen is faintly lit at
+// rest, which is invisible
 // on a bright display and a full standing bullseye on a phone in a dark room —
 // and it leaves a passing front nothing dark to arrive into.
 const float REST_FLOOR = 0.012;
