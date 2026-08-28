@@ -202,9 +202,9 @@ void main() {
 
   // ...and then jittered by the warp field, because the axis is coarse in a way
   // that shows. scene.ts spaces its 64 rows logarithmically over 128 spectrum
-  // bins, so the lowest ten rows all read the same bin: a wedge of literally
-  // constant value, an eighth of the frame wide, with dead-straight rays down
-  // its edges where the row index steps. Displacing the lookup by noise we have
+  // bins, so the lowest nine rows read bin 1 alone and the tenth spans bins 1
+  // and 2 — ten rows sharing essentially one value, an eighth of the frame
+  // wide, with dead-straight rays down its edges where the row index steps. Displacing the lookup by noise we have
   // already computed makes those boundaries wander instead of radiate, which is
   // the difference between weather and a pie chart. 0.09 is about six rows peak
   // to peak: much less and the rays are still recognisably straight, much more
@@ -277,7 +277,8 @@ void main() {
 
   vec3 col = palette(t, energy, tilt);
 
-  // Depth, for no extra noise at all. warp.x is already a full fbm evaluation
+  // --- depth -----------------------------------------------------------------
+  // for no extra noise at all. warp.x is already a full fbm evaluation
   // of this patch, read at a different offset and drifting on uFlow * 0.35 in y
   // while the field it displaces drifts on uFlow * 0.18 in x — two layers of
   // the same medium moving at different rates, which is what parallax is. It
