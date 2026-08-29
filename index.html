@@ -50,97 +50,87 @@
       }
       /* The gate is an overlay on the running piece, not a page in front of it.
          The canvas behind is already drawing (see idleParams in main.ts), so
-         this screen's job is to stay out of its way and still be readable —
-         which is a legibility problem, not a decoration problem. Everything
-         here follows from that:
+         this screen's job is to stay out of its way and still be readable.
 
-           - no opaque background, only gradients where text needs a ground;
-           - no invented ornament, because there is real motion behind it now;
-           - one column on one left axis, weighted to the bottom so the visuals
-             own the largest empty area;
-           - exactly one filled shape, and it is the button. */
+         Stripped to Start and the code. The two paragraphs that used to sit
+         here are gone at Victor's instruction; what that removed is noted in
+         the commit, because one of them carried the promise the page makes
+         about the microphone. */
       #gate {
         position: fixed;
         inset: 0;
         display: flex;
         flex-direction: column;
+        align-items: flex-end;
         justify-content: flex-end;
-        gap: clamp(0.85rem, 2.8vh, 1.4rem);
+        gap: clamp(1rem, 3.5vh, 1.9rem);
         padding: calc(1.5rem + env(safe-area-inset-top, 0px)) 1.5rem
-          calc(1.5rem + env(safe-area-inset-bottom, 0px));
+          calc(1.75rem + env(safe-area-inset-bottom, 0px));
+        text-align: right;
         z-index: 10;
         transition: opacity 700ms ease;
-        /* Dark at the bottom where the words are, clear at the top where the
-           picture is. Without this the copy sits on whatever the visualiser
-           happens to be doing and becomes unreadable a few seconds in. */
+        /* Dark where the words are, clear where the picture is. Without this
+           the type sits on whatever the visualiser happens to be doing and
+           becomes unreadable a few seconds in. */
         background: linear-gradient(
           to bottom,
-          rgba(5, 6, 10, 0.05) 0%,
-          rgba(5, 6, 10, 0.42) 40%,
-          rgba(5, 6, 10, 0.88) 72%,
-          rgba(5, 6, 10, 0.96) 100%
+          rgba(5, 6, 10, 0.06) 0%,
+          rgba(5, 6, 10, 0.4) 42%,
+          rgba(5, 6, 10, 0.86) 74%,
+          rgba(5, 6, 10, 0.95) 100%
         );
       }
       #gate[hidden] { display: none; }
       #gate.fading { opacity: 0; pointer-events: none; }
 
-      /* Pinned to the top, away from the block at the bottom, so the middle of
-         the screen is left to the piece. */
-      .gate-head {
-        position: absolute;
-        top: calc(1.4rem + env(safe-area-inset-top, 0px));
-        left: 1.5rem;
-        right: 1.5rem;
-      }
+      /* Title and build name, right-justified and large. With the copy gone
+         these are the only type on the screen, so they carry it. */
+      .gate-head { text-align: right; }
       #gate h1 {
         font-family: 'Chakra Petch', ui-sans-serif, system-ui, sans-serif;
-        font-size: clamp(1.15rem, 5vw, 1.5rem);
+        font-size: clamp(1.7rem, 9vw, 2.6rem);
         font-weight: 600;
-        letter-spacing: 0.3em;
-        margin: 0 0 0.3rem;
+        letter-spacing: 0.24em;
+        /* Optical alignment: the tracking adds a phantom space after the last
+           glyph, which on a right-justified line is a visible indent. */
+        margin: 0 -0.24em 0.25rem 0;
         text-transform: uppercase;
-        color: #e8e6f5;
-        text-shadow: 0 1px 12px rgba(5, 6, 10, 0.9);
+        color: #eceaf8;
+        text-shadow: 0 1px 14px rgba(5, 6, 10, 0.95);
+        line-height: 1;
       }
       .gate-name {
-        font: 500 0.66rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
-        letter-spacing: 0.24em;
+        font: 500 clamp(0.95rem, 4.4vw, 1.3rem)/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+        letter-spacing: 0.2em;
+        margin-right: -0.2em;
         text-transform: uppercase;
         color: #8d88b8;
-        text-shadow: 0 1px 10px rgba(5, 6, 10, 0.9);
+        text-shadow: 0 1px 12px rgba(5, 6, 10, 0.95);
       }
 
-      /* The only filled shape on the screen. Sized by the smaller viewport
-         dimension so it stays a thumb-sized target on a phone and does not
-         become a dinner plate on a tablet. */
-      .gate-dial {
-        display: flex;
-        align-items: center;
-        gap: 1rem;
-      }
+      /* The only filled shape on the screen, so the action needs no words. */
       #start {
         appearance: none;
         cursor: pointer;
         flex: none;
-        width: min(34vw, min(19vh, 7.5rem));
+        width: min(36vw, min(20vh, 8rem));
         aspect-ratio: 1;
         border-radius: 50%;
         border: none;
         background: #9d9bf0;
         color: #05060a;
         font-family: 'Chakra Petch', ui-sans-serif, system-ui, sans-serif;
-        font-size: clamp(0.8rem, 3.2vw, 0.95rem);
+        font-size: clamp(0.82rem, 3.4vw, 1rem);
         font-weight: 700;
         letter-spacing: 0.14em;
         text-indent: 0.14em;
         text-transform: uppercase;
-        box-shadow: 0 0 0 0 rgba(157, 155, 240, 0.45);
         animation: start-pulse 3.4s ease-out infinite;
         transition: background 180ms ease, transform 180ms ease;
       }
-      /* One slow ring leaving the button. It is the only motion this screen
-         adds to what the visualiser is already doing, and it exists to say
-         which of the things on screen is the one to press. */
+      /* One slow ring leaving the button — the only motion this screen adds to
+         what the visualiser is already doing, and it exists to say which of the
+         things on screen is the one to press. */
       @keyframes start-pulse {
         0% { box-shadow: 0 0 0 0 rgba(157, 155, 240, 0.4); }
         70% { box-shadow: 0 0 0 18px rgba(157, 155, 240, 0); }
@@ -151,86 +141,49 @@
       #start:active { transform: scale(0.97); }
       #start:disabled { background: #4a4870; color: #14141f; cursor: default; animation: none; }
 
-      /* Sits beside the button and says what pressing it does. Replaces the
-         decorative tick marks, which measured nothing. */
-      .dial-note {
-        font: 400 0.72rem/1.45 ui-sans-serif, system-ui, sans-serif;
-        color: #9aa0b4;
-        max-width: 12rem;
-      }
-
-      .gate-copy {
-        position: relative;
-        display: flex;
-        flex-direction: column;
-        gap: 0.35rem;
-        max-width: 30rem;
-      }
-      .gate-copy::before {
-        content: '';
-        position: absolute;
-        left: -0.85rem;
-        top: 0.15rem;
-        bottom: 0.15rem;
-        width: 2px;
-        background: rgba(157, 155, 240, 0.35);
-      }
-      #gate p {
-        font-size: 0.72rem;
-        line-height: 1.5;
-        color: #7b8296;
-        margin: 0;
-      }
-      #gate .gate-aside { color: #5c6376; }
-
-      /* QR and share on one line with the copy's own axis. Large enough to
-         grab from across a table, quiet enough not to be the brightest thing
-         on a screen that now has a picture on it. */
-      .gate-take {
-        display: flex;
-        align-items: center;
-        gap: 0.9rem;
-      }
       .gate-qr {
-        width: 5.5rem;
-        height: 5.5rem;
+        width: clamp(5rem, 24vw, 7rem);
+        height: clamp(5rem, 24vw, 7rem);
         display: block;
-        opacity: 0.86;
+        opacity: 0.9;
       }
       .gate-qr[hidden] { display: none; }
-      .take-side { display: flex; flex-direction: column; gap: 0.35rem; align-items: flex-start; }
-      .take-cap {
-        font: 400 0.56rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
-        letter-spacing: 0.18em;
-        text-transform: uppercase;
-        color: #565d70;
-      }
-      .gate-btn {
+
+      /* Share, as an icon in the top-right corner. Circular and the same size
+         as a HUD chip, because it is the same kind of object — see the
+         no-straight-lines rule in CLAUDE.md. */
+      .gate-share {
+        position: absolute;
+        top: calc(1.1rem + env(safe-area-inset-top, 0px));
+        right: calc(1.1rem + env(safe-area-inset-right, 0px));
         appearance: none;
         cursor: pointer;
-        border: 1px solid #333950;
-        background: rgba(5, 6, 10, 0.5);
+        width: 2.9rem;
+        height: 2.9rem;
+        padding: 0;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(12, 12, 26, 0.7);
+        border: 1px solid rgba(44, 41, 71, 0.9);
         color: #b9bece;
-        font-family: 'Chakra Petch', ui-sans-serif, system-ui, sans-serif;
-        font-size: 0.72rem;
-        font-weight: 600;
-        letter-spacing: 0.16em;
-        text-indent: 0.16em;
-        text-transform: uppercase;
-        padding: 0.45rem 1rem;
         transition: border-color 160ms ease, color 160ms ease;
       }
-      .gate-btn:hover,
-      .gate-btn:focus-visible { border-color: #9d9bf0; color: #f0eeff; }
+      .gate-share:hover,
+      .gate-share:focus-visible { border-color: #9d9bf0; color: #f0eeff; }
+      .gate-share svg { width: 19px; height: 19px; display: block; }
+      /* Says "copied" without a word, for the desktop fallback path. */
+      .gate-share.done { border-color: #5fe3a1; color: #5fe3a1; }
 
       #error {
         position: relative;
         color: #d08a8a;
-        background: rgba(42, 20, 20, 0.9);
+        background: rgba(42, 20, 20, 0.92);
         padding: 0.5rem 0.7rem;
-        margin-left: -0.7rem;
         font-size: 0.76rem;
-        max-width: 30rem;
+        max-width: 22rem;
+        text-align: left;
       }
       #error:empty { display: none; }
 
@@ -244,35 +197,26 @@
     <canvas id="canvas"></canvas>
 
     <div id="gate">
+      <!-- Share, top right. An icon rather than a labelled button: the only
+           other control on this screen is Start, so there is nothing for a
+           word to disambiguate it from. -->
+      <button id="share" type="button" class="gate-share" aria-label="Share this page">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 15.5V3.4" />
+          <path d="M7.6 7.8 12 3.4l4.4 4.4" />
+          <path d="M4.8 13.4v5.4a1.8 1.8 0 0 0 1.8 1.8h10.8a1.8 1.8 0 0 0 1.8-1.8v-5.4" />
+        </svg>
+      </button>
+
       <header class="gate-head">
         <h1>suti&#8202;&middot;&#8202;view</h1>
         <div class="gate-name"><span id="release-name"></span></div>
       </header>
 
-      <div class="gate-dial">
-        <button id="start" type="button">Start</button>
-        <p class="dial-note">What you see is running already. Start lets it hear the room.</p>
-      </div>
+      <button id="start" type="button">Start</button>
 
-      <div class="gate-copy">
-        <p>
-          Listens through the microphone and renders what it hears. Nothing is
-          recorded or sent anywhere &mdash; the audio never leaves this device.
-        </p>
-        <p class="gate-aside">
-          An optional camera layer can put the visuals over the room. It stays off
-          until you turn it on, and asks you then. Video never leaves this device
-          either.
-        </p>
-      </div>
-
-      <div class="gate-take">
-        <svg id="qr" class="gate-qr" role="img" aria-label="QR code linking to this page"></svg>
-        <div class="take-side">
-          <span class="take-cap">Take it with you</span>
-          <button id="share" type="button" class="gate-btn">Share</button>
-        </div>
-      </div>
+      <svg id="qr" class="gate-qr" role="img" aria-label="QR code linking to this page"></svg>
 
       <div id="error" role="status" aria-live="polite"></div>
     </div>

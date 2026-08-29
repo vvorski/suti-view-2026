@@ -73,10 +73,14 @@ export function mountShare(): void {
   const button = document.getElementById('share') as HTMLButtonElement | null
   if (!button) return
 
-  const say = (text: string): void => {
-    button.textContent = text
+  // The button is an icon now, so feedback is a state on the icon rather than
+  // a word swapped into it — there is no text to swap.
+  const flash = (ok: boolean): void => {
+    button.classList.toggle('done', ok)
+    button.title = ok ? 'Link copied' : 'Could not copy the link'
     window.setTimeout(() => {
-      button.textContent = 'Share'
+      button.classList.remove('done')
+      button.title = ''
     }, 1600)
   }
 
@@ -100,9 +104,9 @@ export function mountShare(): void {
       }
       try {
         await navigator.clipboard.writeText(url)
-        say('Copied')
+        flash(true)
       } catch {
-        say('Copy failed')
+        flash(false)
       }
     })()
   })

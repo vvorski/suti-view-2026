@@ -16,11 +16,13 @@ import { RELEASE_NAME } from './release-name'
 const CSS = `
 #version-hud {
   position: fixed;
-  /* Top-right, and only the glyph. The release name used to live here as a
-     large pill on the left, where it was the loudest thing on the start screen
-     and sat across the title. The name now belongs to the gate's own layout
-     (see #release-name in index.html) — this is just the control. */
-  right: calc(0.6rem + env(safe-area-inset-right, 0px));
+  /* Top-left, and only the glyph.
+     The name used to live here as a large pill and is now part of the gate's
+     own layout (see #release-name in index.html). This went to the right when
+     the gate's type was left-justified; the type is right-justified now and
+     the share icon has taken that corner, so it comes back to the left. Both
+     corners are only ever going to hold one small round thing each. */
+  left: calc(0.6rem + env(safe-area-inset-left, 0px));
   top: calc(0.6rem + env(safe-area-inset-top, 0px));
   z-index: 40;
   display: flex;
