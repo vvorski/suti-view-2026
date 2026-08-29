@@ -823,3 +823,76 @@ calibrated. Also `pnpm build`, `pnpm lint`, and the on-screen check at 320×568
 and 360×640 because the HUD must show the shuffled values.
 **Hard stops** — prefs no (writes existing fields) · url no · capture **no,
 explicitly: no rung switches the camera on** · dependency no.
+
+### 16. Start reads bigger, and the disc breathes instead of ticking
+`status: ready` · added 2026-08-29
+
+**Do** — raise the Start label's type a step, and add a slow scale breathe to
+the disc on a period that does not divide into the ring's, so the two never
+settle into a repeating beat.
+**Why** — the label is at its 0.82rem floor on every phone width, and the one
+piece of motion on the screen is a single 3.4s cycle that repeats identically
+and reads as a tick rather than as something alive.
+
+**Decided**
+- What "bigger" is → **`clamp(0.95rem, 4vw, 1.15rem)`**, from
+  `clamp(0.82rem, 3.4vw, 1rem)` (`index.html:176`). **Mine**, and worth
+  knowing why it is the floor that matters: 3.4vw is 10.9px at 320 and 12.2px
+  at 360, so the middle term never wins on a phone and the label is 13.1px
+  everywhere. The new floor makes it 15.2px, about a sixth bigger, and the cap
+  only ever applies on a tablet.
+- Does this disturb entry 4 → **no.** That entry made the QR bigger than
+  Start, and it is the *disc* that is measured — `min(36vw, min(20vh, 8rem))`,
+  about 114px at 320×568, against the QR's ~154px. The label grows inside a
+  disc that does not, so the relationship entry 4 fixed is untouched. "START"
+  at 15.2px with its 0.14em tracking is about 56px wide in a 114px disc.
+- Nor the byline → the screen's rule is that exactly one thing dominates, the
+  filled disc. Louder type *inside* that disc serves the rule rather than
+  competing with it, which is not true of anything outside it.
+- CSS or a JS frame loop → **CSS, and this is not a preference.** Entry 3
+  deliberately capped the start screen's idle frame rate at build 84; driving
+  a pulse from `requestAnimationFrame` would spend exactly what that entry
+  saved. Transform and box-shadow animations are composited and cost the app's
+  loop nothing.
+- How the motion becomes non-linear without a frame loop → **two animations on
+  incommensurate periods.** The ring keeps 3.4s; the breathe runs at 5.9s, so
+  the pair returns to the same phase roughly every 200s rather than every
+  cycle. That is what stops it reading as a metronome, and it is free.
+- The breathe itself → **`scale`, 1 to 1.035, `alternate`, on a
+  `cubic-bezier(0.4, 0, 0.2, 1)`.** **Mine**: about 4px of growth on a 114px
+  disc, which is "lightly"; `alternate` mirrors the easing so it dwells at
+  both ends the way breathing does, where a 0-100% keyframe loop snaps back.
+- Use the `scale` property, not `transform: scale()` → **required, not
+  stylistic.** `#start:active` already sets `transform: scale(0.97)`
+  (`index.html:191`), and an animation on `transform` outranks it, so
+  animating that property would silently delete the press feedback. `scale` is
+  its own property and composes with the `transform` on `:active`.
+- Does the ring survive → **yes, both run.** **Mine**, and the call worth
+  disagreeing with: "the button should pulsate" could mean replacing it. They
+  do different jobs — the ring says *which* thing to press, which is its
+  stated purpose in the comment above it, and the breathe says the thing is
+  live. On a screen with one deliberate focal point, both point at the same
+  place.
+- Reduced motion → **already handled, and check it stays that way.**
+  `index.html:247` sets `#start { animation: none }`, which is the shorthand
+  and so kills both. The breathe must therefore be an `animation`, not a
+  `transition` loop, or it escapes that override.
+
+**Lands in**
+- `index.html:176` — the label's `font-size`.
+- `index.html:178` — the `animation` shorthand gains the second animation.
+- `index.html:184-188` — a `@keyframes start-breathe` beside `start-pulse`.
+- `index.html:192` — `#start:disabled` sets `animation: none`; confirm that
+  still stops both, which it does as a shorthand.
+
+**Done when** — at 320×568 the Start label renders at 15.2px against today's
+13.1px, in a disc whose diameter is unchanged and still visibly smaller than
+the QR; the disc's `scale` varies between 1 and 1.035 over 5.9s while the ring
+keeps 3.4s; pressing it still visibly depresses to 0.97; and with
+`prefers-reduced-motion: reduce` the disc is completely still.
+**Verify** — the on-screen check at 320×568 and 360×640, which is the whole of
+the evidence here: the gate is the first thing on screen and needs no probe
+page to reach. Emulate reduced motion in devtools for the last clause. Also
+`pnpm build`, `pnpm lint`.
+**Hard stops** — prefs no · url no · capture no · dependency no. All of it is
+CSS in `index.html`.
