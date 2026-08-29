@@ -139,7 +139,9 @@ export function chipPosition(index: number, n: number, chipSize: number): [numbe
   return [cx + r * Math.cos(a), cy + r * Math.sin(a)]
 }
 
-/** A tap that travels further than this is a swipe, and belongs to gestures.ts.
+/** A tap that travels further than this is a drag or a swipe, not a tap —
+ *  entry 27 removed the pointer-swipe gestures that once claimed anything
+ *  past this boundary, so it now simply marks what a tap-to-open is not.
  *  Exported so main.ts's screenshot band uses the exact same boundary rather
  *  than a second copy of the same number. */
 export const TAP_SLOP_PX = 12
@@ -199,9 +201,6 @@ export interface Hud {
       }
     },
   ): void
-  /** Step the atmospheric layer's programme forward (1) or back (-1), wrapping.
-   *  Bound to a swipe in gestures.ts via main.ts. */
-  cycleAtmosphericView(direction: 1 | -1): void
   /** Adopt a change decided elsewhere — the autopilot (director.ts) or a
    *  shake-driven shuffle (main.ts). Updates the stored preferences and the
    *  dial without itself reporting a manual change; whether the autopilot
@@ -1008,16 +1007,16 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
   const setOpen = (v: boolean): void => {
     open = v
     scrim.classList.toggle('open', v)
-    // Rebuild rather than repaint: an enum band may have been changed by a
-    // swipe gesture or the autopilot while the HUD was closed, and build()
-    // is what parks the current option back under the notch.
+    // Rebuild rather than repaint: an enum band may have been changed by the
+    // autopilot or a shake-driven shuffle while the HUD was closed, and
+    // build() is what parks the current option back under the notch.
     if (v) build()
     else stats.textContent = ''
   }
 
   // Tap the page to open. pointerup rather than click avoids the tap delay some
-  // mobile browsers still apply; the distance check keeps it from firing at the
-  // end of a swipe, which gestures.ts relies on.
+  // mobile browsers still apply; the distance check keeps it from firing at
+  // the end of a drag — turning a band, or (before entry 27) a swipe.
   let downX = 0
   let downY = 0
   document.addEventListener('pointerdown', (e) => {
@@ -1109,15 +1108,6 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
                 (s.fullscreen.error ? ` (${s.fullscreen.error})` : ''),
             ]),
       ].join('\n')
-    },
-
-    cycleAtmosphericView(direction) {
-      const i = atmosphericKeys.indexOf(prefs.atmosphericView)
-      const next = atmosphericKeys[(i + direction + atmosphericKeys.length) % atmosphericKeys.length]
-      prefs.atmosphericView = next
-      save()
-      handlers.onAtmosphericView(next)
-      if (open) build()
     },
 
     autopilot: () => prefs.autopilot,

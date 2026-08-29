@@ -1872,7 +1872,7 @@ desktop browser's download manager would hide the very collision this
 entry is about.
 
 ### 27. Swipes stop changing the picture; the shake is the gesture
-`status: ready` · added 2026-08-29
+`status: done` · added 2026-08-29 · shipped at build 119
 
 **Do** — delete both swipe gestures, leaving the shake as the only thing that
 changes what is on screen without opening the panel.
@@ -1935,6 +1935,24 @@ and the on-screen check at 320×568 and 360×640 to confirm the HUD's own drags
 still work with the exclusion gone — that is what the deleted `.hud-scrim`
 guard was protecting.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+**Build note.** Two more stale references to the deleted `gestures.ts`
+turned up in `hud.ts` beyond the ones the entry's own "Lands in" named
+(`TAP_SLOP_PX`'s comment, and the rebuild-on-adopt comment near `setOpen`)
+— fixed in the same change rather than left pointing at a file that no
+longer exists, since a comment naming a deleted file is worse than one
+naming nothing.
+
+Verified on screen via `hud-narrow.html`, after finding and discarding one
+false alarm: an early check (reusing browser state left over from an
+earlier `window.run()` call in the same page load) showed a drag missing
+its target and the panel unexpectedly closed. A clean reload and a fresh
+drag on the R band showed the real behaviour — 100 to 90, panel still
+open afterward — confirming the `.hud-scrim` guard `gestures.ts` used to
+provide has no replacement to build because nothing needed it once the
+document-level swipe listeners were gone; `hud.ts`'s own drag handling
+never depended on it. `pnpm probe:shake` unchanged, `pnpm build` and
+`pnpm lint` both clean.
 
 ### 28. The byline is too dark to read, and is the only line with no shadow
 `status: ready` · added 2026-08-29

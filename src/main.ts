@@ -7,7 +7,7 @@
  * combination without permanently changing what the device remembers.
  */
 
-import { bindGestures } from './gestures'
+import { bindKeyboard } from './keyboard'
 import { DEFAULT_GEO_COLOUR, parseGeoColour, type GeoColour } from './geo-colour'
 import { startCamera, type CameraSource } from './camera'
 import { createHud, TAP_SLOP_PX } from './hud'
@@ -680,9 +680,8 @@ async function main(): Promise<void> {
     onManualChange: () => director.suspend(),
   })
 
-  bindGestures({
+  bindKeyboard({
     onRandomise: () => visualiser.randomise(),
-    onSwipeAtmospheric: (direction) => panel.cycleAtmosphericView(direction),
   })
 
   // The screenshot band: a tap low on the screen saves the frame instead of
@@ -690,9 +689,10 @@ async function main(): Promise<void> {
   // hud.ts's own tap-to-open listener in the traversal — capture always runs
   // before bubble regardless of registration order — so stopPropagation()
   // here reaches hud.ts's bubble-phase document listener before it can also
-  // open the panel for the same tap. A swipe starting in the band needs no
-  // such guard: gestures.ts's own threshold (60px) is already far past
-  // TAP_SLOP_PX, so nothing here can satisfy both at once.
+  // open the panel for the same tap. Nothing else on the page reads a raw
+  // pointer gesture any more (entry 27 deleted the swipe handlers), so this
+  // guard is now the *only* thing standing between a tap here and the panel
+  // opening underneath it, rather than one of several competing claimants.
   {
     let bandDownX = 0
     let bandDownY = 0
@@ -710,8 +710,7 @@ async function main(): Promise<void> {
       'pointerup',
       (e) => {
         // Inert while the HUD is open: the panel owns the screen then, and a
-        // tap here is what closes it, exactly as gestures.ts already treats
-        // `.hud-scrim` as off-limits.
+        // tap here is what closes it.
         if (document.querySelector('.hud-scrim.open')) return
         if (!bandDownInBand || !inCaptureBand(e.clientY)) return
         if (Math.hypot(e.clientX - bandDownX, e.clientY - bandDownY) > TAP_SLOP_PX) return
@@ -790,9 +789,9 @@ async function main(): Promise<void> {
       // consumed below whether or not they end up acting on anything.
       // Leaving a flag set instead would mean a shake made while editing
       // fires the instant the panel closes, with no gesture anywhere near
-      // that moment. See docs/todo.md entry 20 and gestures.ts's own
-      // `.hud-scrim` exclusion, which this reuses rather than adding a
-      // second notion of "the panel is up".
+      // that moment. See docs/todo.md entry 20; reuses the same `.hud-scrim`
+      // check the capture band above uses, rather than adding a second
+      // notion of "the panel is up".
       const panelOpen = document.querySelector('.hud-scrim.open') !== null
       // Order matters: a double is also a strong, and the second shake set both
       // flags. Reading the double first means the escalation wins and the
