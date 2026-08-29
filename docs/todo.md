@@ -115,3 +115,28 @@ before Start is pressed.
 **Verify** — `pnpm build`, `pnpm lint`; watch the fps line on the gate. The
 existing probes do not cover the gate loop and are not expected to.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 4. Make the QR bigger than Start on the gate
+`status: ready` · added 2026-08-29
+
+**Do** — grow `.gate-qr` from `clamp(5rem, 24vw, 7rem)` (80px at 320) to about
+155px at 320, so the code is the largest object on the start screen.
+**Why** — at 80px the code is a footnote, and handing the link to someone in the
+room is one of the two things this screen is for. Start is the other, and it
+keeps its authority by being the filled violet disc rather than by being bigger.
+
+**Decided**
+- How big → bigger than Start, ~155px, over matching Start at ~115px and over
+  filling the width at ~272px. Deliberately reorders the hierarchy: the code
+  becomes the largest object and Start stays dominant by colour and fill.
+
+**Lands in** — `index.html`, `.gate-qr` (one `clamp`, and its twin on `height`).
+**Done when** — the QR renders at ~155px at 320×568, is still the right-hand
+column's flush edge, and the gate column still fits: there is 235px of vertical
+spare at that size, so a 75px growth leaves 160px.
+**Verify** — `pnpm build`, `pnpm lint`. Then the one that actually matters:
+rasterise the QR at the size and opacity it renders, composited on the gate's
+own background, and decode it back — bigger should not break scanning but it is
+the check every change near this control has had, and the gradient behind it
+differs at the new size. Look at it at 320×568, 360×640 and 412×915.
+**Hard stops** — prefs no · url no · capture no · dependency no.
