@@ -21,12 +21,22 @@ const CSS = `
   z-index: 40;
   display: flex;
   align-items: center;
-  gap: 0.3rem;
-  padding: 0.15rem 0.45rem;
+  gap: 0.5rem;
+  padding: 0.3rem 0.8rem;
   border-radius: 999px;
   background: rgba(5, 6, 10, 0.55);
-  font: 500 12px ui-monospace, SFMono-Regular, Menlo, monospace;
-  color: #9aa3b8;
+  /* Big, because the whole job of this is being readable at arm's length on a
+     phone you are not holding. At 12px it was a build marker you had to go
+     looking for; the name is the one thing here worth reading across a room,
+     and it is the only thing left in the chip now that the number moved to the
+     tooltip. */
+  /* Clamped rather than fixed: at a flat 1.45rem a long two-word name runs off
+     a 320px screen, and a name that has to be truncated to fit is worse than a
+     slightly smaller one. 6vw keeps the longest plausible name on the glass. */
+  font: 600 clamp(1.35rem, 7vw, 1.75rem)/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  color: #cfd6e6;
 }
 #version-hud button {
   appearance: none;
@@ -34,9 +44,12 @@ const CSS = `
   background: transparent;
   color: inherit;
   font: inherit;
-  font-size: 14px;
+  /* em, not rem: this is the green "there is a newer build" indicator, and it
+     has to grow with the name beside it. At a fixed rem it read as a stray
+     speck next to 22px text. */
+  font-size: 1.15em;
   cursor: pointer;
-  padding: 0.1rem 0.3rem;
+  padding: 0.1rem 0.2rem;
   line-height: 1;
   opacity: 0.9;
   transition: color 160ms ease;

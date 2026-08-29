@@ -123,7 +123,20 @@ When a comment justifies *not* doing something by describing what the app is
 like, that description is a dependency. Reread those comments when the thing
 they describe changes, and prefer a justification a test can hold — the reason
 this one lasted so long is that nothing anywhere asserted the behaviour it was
-reasoning about. `scripts/probe-fullscreen.ts` now does.
+reasoning about. `scripts/probe-fullscreen.ts` now does, and CI runs it.
+
+**Fullscreen is confirmed working on a real phone as of build 53.** It is not
+theoretical any more, so a change that breaks it is a regression with a witness.
+Two of the probe's checks are the ones that matter and neither is obvious from
+reading `permission-gate.ts`:
+
+- the request is made **synchronously inside the click handler**, before the
+  microphone is awaited;
+- it is made **before `requestMotionAccess()`**, which on iOS and iPadOS opens a
+  dialog that spends the gesture fullscreen needs.
+
+Both were verified to fail the probe before being relied on. Do not reorder
+those calls, and do not move the request behind an `await`.
 
 ## An enhancement must not be able to abort the thing it enhances
 
@@ -159,8 +172,12 @@ camera in it". Consecutive integers are also genuinely hard to tell apart at a
 glance across a room — an entire session went into establishing that a phone
 was showing 22 rather than 45, and a name would have settled that in a second.
 
-So `src/release-name.ts` holds `RELEASE_NAME`, and the version chip reads
-`v48 · false calm`.
+So `src/release-name.ts` holds `RELEASE_NAME`, and the chip top-left shows that
+name **and nothing else**, set large — `clamp(1.15rem, 6vw, 1.5rem)`. Big is the
+point, not decoration: the job is being readable at arm's length on a phone
+propped across a room, which a 12px build marker never was. The build number
+lives in the chip's tooltip, and the reload button beside it turns green when a
+newer build is live.
 
 - **Two words, lowercase.** Evocative, not descriptive. Descriptive names go
   stale the moment the next release touches the same thing; a name only has to
