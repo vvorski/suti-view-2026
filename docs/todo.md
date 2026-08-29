@@ -1407,3 +1407,175 @@ does pass, not by watching it happen. Exactly what the entry's own Verify
 section already flags as needing a real phone, both platforms if one is
 reachable.
 
+### 21. The shuffle's floors multiply, and the screen goes dark
+`status: ready` · added 2026-08-29
+
+**Do** — floor what a layer's brightness actually *is*, rather than flooring
+each of the two numbers that produce it.
+**Why** — a hard shake can leave the atmospheric layer at 7% brightness, and
+it persists, which is the "everything got very dark" nobody could account for.
+
+**Decided**
+- The mechanism → **two independent floors that multiply.**
+  `composite.frag.glsl:96` is `base = atmosphere * uAtmAlpha * uAtmColour`, so
+  a layer's brightness is the *product* of its opacity and its colour gain.
+  The shuffle rolls opacity in [0.35, 1] (entry 15) and each colour channel in
+  [0.2, 1] (entry 6). Either floor alone is defensible; 0.35 × 0.2 = **0.07**,
+  and there is nothing in the code that ever looks at the product.
+- Whose mistake → **entry 15's, which is to say mine.** Entry 6 refused to
+  roll opacity at all, and its stated reason was exactly this: a shuffle that
+  can hand back a black screen looks like a crash. Entry 15 overturned that
+  with a floor chosen by reasoning about opacity in isolation, next to a
+  colour floor written for a different entry, and the two were never
+  multiplied together. Recorded plainly because the next person to raise a
+  floor here needs to know which mistake to avoid.
+- Why it looked like it came from nowhere → the roll writes through to
+  `prefs`, so a single unlucky hard shake survives a reload and every
+  subsequent session. Nothing about the moment it happened is still visible
+  afterwards.
+- Fix → **a floor on the product, applied by lifting the dominant channel.**
+  Opacity's floor rises to 0.5; after a colour is rolled, its largest channel
+  is lifted to at least 0.5 if it is below. Worst case becomes 0.5 × 0.5 =
+  **0.25**, against 0.07 today. **Mine**, and lifting the *largest* channel
+  rather than scaling all three is the load-bearing detail: it preserves which
+  channel dominates, so the roll keeps the hue it chose and only gains
+  strength. Scaling all three would wash every dim roll toward grey and quietly
+  remove half the palette the shuffle exists to explore.
+- Not a floor on the composite → tempting, and wrong. The two layers combine
+  through a merge mode that can be anything, so a composite-level floor would
+  have to model every mode; the per-layer product is the quantity the shader
+  actually multiplies and the one a floor can be reasoned about.
+- Recovery, for anyone already dark → shaking again re-rolls, and since entry
+  14 the opacity bands can be dragged to 100% again, so the HUD is now a real
+  way out. That was not true when entry 6 wrote its warning.
+
+**Lands in**
+- `src/main.ts`, `shuffled()` — the `channel()`/`colour()` helpers and the
+  `SHUFFLE_EVERYTHING` alpha rolls.
+**Done when** — a hundred synthetic top-rung shuffles, run in a probe or a
+console loop, never produce a layer whose `alpha * max(r, g, b)` is below
+0.25, and the observed minimum today is around 0.07. On the phone, repeated
+hard shakes never land on a screen that reads as off.
+**Verify** — `pnpm probe:shake` unchanged (detection is untouched), `pnpm
+build`, `pnpm lint`, and the on-screen check at 320×568 and 360×640 while
+shaking hard enough to reach the top rung repeatedly.
+**Hard stops** — prefs no (existing fields, same ranges) · url no · capture no
+· dependency no.
+
+### 22. A hard shake may raise the camera
+`status: ready` · added 2026-08-29
+
+**Do** — at the top rung only, sometimes roll the passthrough level, including
+up from zero.
+**Why** — the camera is the one layer the shuffle cannot touch, so "give me
+something else entirely" can never hand back the room.
+
+**Decided**
+- **Capture hard stop → licensed by Victor, 2026-08-29.** Asked as "may a
+  shake switch the camera on? that's the capture hard stop, refused three
+  times so far", answered **"Yes — a hard shake may turn it on"**. This
+  overturns a rule stated in entries 6, 15 and 20 and repeated in `main.ts`'s
+  own comments as "not a taste call". Those comments must be corrected in the
+  same change, not left contradicting the code.
+- Which rung → **the top one only** (`SHUFFLE_EVERYTHING`, depth ≥ 0.90).
+  **Mine**: the licence was for a *hard* shake, and switching a sensor on is
+  the largest thing the shuffle can do, so it belongs where the ask is
+  unambiguous rather than where a firm-ish shake could reach it.
+- "Sometimes" → **one roll in three at that rung**, and when it rolls, a level
+  in [0, 0.6]. **Mine**: zero is included deliberately, so the same gesture
+  that can raise the camera can also put it away — `main.ts` already releases
+  the sensor outright at zero. The 0.6 cap is because passthrough at 1 leaves
+  the room and no visualiser, which is not a picture the shuffle should be
+  able to hand you.
+- **It may only raise the camera where permission already exists.** This is
+  the technical wall, not a scruple: a `devicemotion` event carries no user
+  activation, so `getUserMedia` called from the shake path has no gesture
+  behind it. Where permission was already granted the stream opens; where it
+  was not, the prompt is either suppressed or appears with nothing on screen
+  to explain it. So the roll raises from zero only when the camera has
+  already been granted — `navigator.permissions.query({ name: 'camera' })`
+  where supported, and otherwise a session flag set the first time the camera
+  came up. Everywhere else the roll skips silently and the rest of the top
+  rung proceeds.
+- Consequence worth stating → on a fresh install the camera can still only be
+  started from the HUD, by hand. The shake inherits the permission; it never
+  asks for it.
+
+**Lands in**
+- `src/main.ts`, `shuffled()` — the `SHUFFLE_EVERYTHING` block gains
+  `passthrough`, guarded by the grant test.
+- `src/main.ts:171-190` and `:596` — the comments asserting the camera is
+  never switched on by a shuffle. They are now wrong; rewrite them to say what
+  the rule became and who changed it.
+- `src/camera.ts` — nothing new, but read how `startCamera` reports failure:
+  a refused stream must leave passthrough at zero rather than at the rolled
+  value, or the HUD will show a camera that is not running.
+
+**Done when** — with camera permission already granted, repeated top-rung
+shakes eventually raise the passthrough and eventually put it back to zero,
+and the HUD's camera opacity band agrees with what is on screen each time.
+With permission never granted, no number of shakes produces a permission
+prompt or a non-zero passthrough.
+**Verify** — on the phone, both with permission granted and in a fresh profile
+where it is not, because the whole entry turns on that distinction and a
+desktop browser's permission model is not the one that matters. Also `pnpm
+build`, `pnpm lint`.
+**Hard stops** — prefs no (existing field) · url no · capture **yes, licensed
+above** · dependency no.
+
+### 23. The picture answers the light in the room
+`status: ready` · added 2026-08-29
+
+**Do** — while the camera is up, measure the frame's mean luminance and trim
+the composite's output gain gently toward it.
+**Why** — a picture that brightens in daylight and settles in a dark room
+reads as being in the room rather than on a screen.
+
+**Decided**
+- **Capture hard stop → licensed by Victor, 2026-08-29, narrowly:** camera
+  pixels may be measured as well as displayed, **"only while the camera is
+  already up"**. Nothing here raises the passthrough; entry 22 is the only
+  thing licensed to do that.
+- Not an ambient light sensor → `AmbientLightSensor` is behind a flag in
+  Chrome and absent from Safari entirely, so it would be a dependency on
+  something no target browser ships. The camera texture is already uploaded
+  every frame and costs nothing extra to look at.
+- What it costs when the camera is off → **nothing at all**, which is the
+  point of the licence's shape. Passthrough is 0 by default and the sensor is
+  released at 0, so the sampling never runs for most people.
+- How it is measured → **a small render target, read back twice a second**,
+  reusing the 30-frame cadence entry 17 established for the size check. A
+  per-frame readback stalls the pipeline waiting for the GPU; at 2 Hz that
+  stall is affordable and light in a room does not change faster than that.
+- Smoothing → an `Envelope` with a slow attack and a slower release, seconds
+  not frames, from `engine/fast.ts` — the same class entry 12 just retuned.
+  **Mine**: without it, someone walking past a lamp strobes the whole picture,
+  and the failure would look like a rendering bug rather than a feature.
+- How far it may move things → **a gain clamped to [0.85, 1.15]**. **Mine**,
+  because "a bit responsive" was the ask and because a wider range fights the
+  audio: the picture's brightness is already the music's job, and a second
+  thing driving the same quantity harder than the first turns the visualiser
+  into an auto-exposure that happens to have a soundtrack.
+- Which way → brighter room, brighter picture. The phone-in-daylight case is
+  the one that actually fails today; a dark room needs less, not more.
+- No preference toggle → the range is narrow enough that there is nothing to
+  opt out of, and a new stored field would put this into the `Prefs` hard stop
+  for no gain. Revisit only if the clamp turns out to want widening.
+
+**Lands in**
+- `src/scene.ts` — the sample target, the 30-frame tick beside entry 17's size
+  check, and the output gain uniform.
+- `src/shaders/composite.frag.glsl` — the gain applied to `col` at the end,
+  after the existing clamp rather than before it.
+- `src/engine/fast.ts` — nothing new; the `Envelope` is imported.
+
+**Done when** — with the camera up, covering it dims the picture by roughly
+15% over a second or two and uncovering it returns it, with no visible step
+changes; with the camera down, the render loop does no readback at all, and
+the frame time in the numeric readout is unchanged from today.
+**Verify** — on the phone, in a room where the light can actually be changed.
+The frame-time check matters as much as the visual one: the readback is the
+part that can quietly cost more than it is worth. Also `pnpm build`, `pnpm
+lint`.
+**Hard stops** — prefs no · url no · capture **yes, licensed above, and
+narrowly: measurement only, never activation** · dependency no.
