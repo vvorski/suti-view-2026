@@ -19,10 +19,13 @@
  */
 
 import auroraFrag from './shaders/aurora.frag.glsl?raw'
+import causticsFrag from './shaders/caustics.frag.glsl?raw'
+import cellsFrag from './shaders/cells.frag.glsl?raw'
 import chorusFrag from './shaders/chorus.frag.glsl?raw'
 import circlesFrag from './shaders/circles.frag.glsl?raw'
 import driftFrag from './shaders/drift.frag.glsl?raw'
 import fieldFrag from './shaders/field.frag.glsl?raw'
+import fringeFrag from './shaders/fringe.frag.glsl?raw'
 import gridFrag from './shaders/grid.frag.glsl?raw'
 import latticeFrag from './shaders/lattice.frag.glsl?raw'
 import shardsFrag from './shaders/shards.frag.glsl?raw'
@@ -93,6 +96,26 @@ export const ATMOSPHERIC_VIEWS = {
     label: 'Aurora',
     description: 'Hanging curtains of light. The only view with a horizon.',
     fragmentShader: auroraFrag,
+  },
+  // Three more, each built on an organising principle none of the four above
+  // uses. Field is cloud, Lattice is symmetry, Spectrogram is a diagram and
+  // Aurora is a place; these are focused light, superposed waves, and divided
+  // space. Added at the end because the registry's order is the order the HUD
+  // offers them in, and the first four remain the ones worth meeting first.
+  caustics: {
+    label: 'Caustics',
+    description: 'Light through moving water. A bright web that focuses and slides.',
+    fragmentShader: causticsFrag,
+  },
+  fringe: {
+    label: 'Fringe',
+    description: 'Two coherent sources. Where their wavefronts cross, hyperbolae.',
+    fragmentShader: fringeFrag,
+  },
+  cells: {
+    label: 'Cells',
+    description: 'The frame divided. Each cell lit by its own slice of the spectrum.',
+    fragmentShader: cellsFrag,
   },
 } satisfies Record<string, View>
 

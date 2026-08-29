@@ -1,0 +1,91 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>views probe</title>
+<style>
+  html, body { margin: 0; background: #111; color: #8f8; font: 11px ui-monospace, monospace; }
+  .grid { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px; }
+  figure { margin: 0; }
+  figcaption { padding: 2px 0; }
+  canvas { display: block; border: 1px solid #444; }
+</style>
+<div class="grid" id="grid"></div>
+<script type="module">
+  import { createVisualiser } from '/src/scene.ts'
+  import { ATMOSPHERIC_VIEWS } from '/src/views.ts'
+
+  // Synthetic audio. A real mic would make every render different and make a
+  // screenshot comparison meaningless, so every view is driven by exactly the
+  // same numbers — a moderately loud, mid-tilted, slightly rough signal with
+  // no transient, which is the steady state most of these views spend their
+  // time in.
+  const params = {
+    level: 0.62, low: 0.55, mid: 0.48, high: 0.34,
+    transient: 0.0, tilt: 0.45, breakdown: 0, surge: 0,
+    novelty: 0.2, roughness: 0.5,
+  }
+
+  // A plausible falling spectrum rather than flat: a flat one hides any bug
+  // where a view reads the wrong bin, because every bin is identical.
+  const spectrum = new Uint8Array(256)
+  for (let i = 0; i < 256; i++) {
+    spectrum[i] = Math.max(0, 210 * Math.exp(-i / 60) + 40 * Math.sin(i / 7) + 25)
+  }
+
+  const made = []
+  for (const name of Object.keys(ATMOSPHERIC_VIEWS)) {
+    const fig = document.createElement('figure')
+    const cap = document.createElement('figcaption')
+    cap.textContent = name
+    const canvas = document.createElement('canvas')
+    canvas.width = 260
+    canvas.height = 200
+    canvas.style.width = '260px'
+    canvas.style.height = '200px'
+    fig.append(cap, canvas)
+    document.getElementById('grid').append(fig)
+
+    const v = createVisualiser(canvas, {
+      geometricView: 'circles',
+      geoColour: 'white',
+      atmosphericView: name,
+      // Pure atmosphere: mix 0 so the geometric layer cannot mask a broken
+      // atmospheric shader with its own output.
+      mergeMode: 'normal',
+      mix: 0,
+    })
+    made.push({ name, v, cap })
+  }
+
+  // uFlow only advances when render() is called, so drive a fixed number of
+  // frames rather than a wall-clock duration: the same count gives the same
+  // picture on any machine, which is what makes these screenshots comparable.
+  // rAF never fires in a non-frontmost automation window — hence the plain
+  // loop with a spin-wait, written `while (cond);` WITH the semicolon.
+  window.drive = (frames = 90) => {
+    for (let f = 0; f < frames; f++) {
+      for (const m of made) m.v.render(params, spectrum)
+      const until = performance.now() + 4
+      while (performance.now() < until);
+    }
+    return made.map((m) => m.name).join(',')
+  }
+
+  // Read back a centre pixel per view, so "did it render anything at all" is
+  // answerable without trusting my own eyes on a thumbnail.
+  window.probe = () =>
+    made.map(({ name, v }, i) => {
+      const c = document.querySelectorAll('canvas')[i]
+      const gl = c.getContext('webgl2')
+      const px = new Uint8Array(4)
+      // drawingBufferWidth/Height, not the CSS box: Three sizes the drawing
+      // buffer to the window, and reading at CSS coordinates samples the
+      // wrong place (or off the end) — a harness bug that has been read as a
+      // shader bug here before.
+      gl.readPixels(
+        Math.floor(gl.drawingBufferWidth / 2), Math.floor(gl.drawingBufferHeight / 2),
+        1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px)
+      return { name, centre: [px[0], px[1], px[2]] }
+    })
+
+  document.title = 'ready'
+</script>
