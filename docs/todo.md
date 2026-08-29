@@ -1910,3 +1910,51 @@ and the on-screen check at 320×568 and 360×640 to confirm the HUD's own drags
 still work with the exclusion gone — that is what the deleted `.hud-scrim`
 guard was protecting.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 28. The byline is too dark to read, and is the only line with no shadow
+`status: ready` · added 2026-08-29
+
+**Do** — lift `.gate-byline` to the same colour as the release name below it,
+and give it the text-shadow both of its neighbours already have.
+**Why** — "by flyflyfly © 2026" sits at 2.3:1 against the gate's background, on
+top of a picture that is moving and sometimes bright.
+
+**Decided**
+- This reverses entry 10 → **Victor's call, made 2026-08-29.** That entry set
+  the byline deliberately quieter than `.gate-name`, on the reasoning that the
+  screen has exactly one thing designed to dominate and a second loud line
+  would spoil it. The comment above the rule says so and must be rewritten
+  rather than left contradicting the code.
+- How far → **`#8d88b8`, the same colour as `.gate-name`.** Measured rather
+  than eyeballed: against the gate's `#05060a` that moves the byline from
+  **2.33:1 to 6.12:1**, from well under the 4.5:1 needed for text this small
+  to comfortably over it. **Mine** as to the exact value: matching the release
+  name is the largest step that does not invent a new tone for this screen.
+- Why the hierarchy survives it anyway → the byline is 0.62rem against the
+  release name's 0.95–1.3rem, so with the colours equal, size alone carries
+  the rank. Entry 10's ordering — disc, then title, then release name, then
+  byline — still reads; what changes is that the bottom of that order is now
+  legible instead of nearly absent.
+- Size and weight stay → **Mine.** Growing the type would change the ordering
+  rather than the legibility, and legibility is what was asked for. If it
+  still reads as too quiet after the colour and the shadow, the next step is
+  weight, not size.
+- The real reason it disappears → **it is the only line on the gate with no
+  `text-shadow`.** `#gate h1` carries `0 1px 14px rgba(5,6,10,0.95)` and
+  `.gate-name` carries `0 1px 12px`; the byline carries none, and the idle
+  preview is drawing behind all three. So on a dark frame it is merely dim and
+  on a bright one it disappears into the picture. Give it the same 12px shadow
+  as the line below it — consistency with its neighbours rather than a new
+  idea, and it is the half of this that colour alone cannot fix.
+
+**Lands in**
+- `index.html:132-142` — the comment, the `color`, and a `text-shadow` to
+  match `.gate-name` at `:156`.
+
+**Done when** — on the gate at 320×568 and 360×640, the byline is readable
+against both a dark and a bright frame of the idle preview, and still reads as
+subordinate to the release name directly below it.
+**Verify** — in a browser on the gate, with the preview running, at both
+sizes — a static screenshot of a dark frame is exactly the case that hid this.
+Also `pnpm build`, `pnpm lint`.
+**Hard stops** — prefs no · url no · capture no · dependency no.
