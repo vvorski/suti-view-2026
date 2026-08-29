@@ -77,8 +77,13 @@ const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v)
  *
  * `attack`/`release` are the seconds to cover ~63% of the distance to the
  * target, so they read as durations rather than magic coefficients.
+ *
+ * Exported: `scene.ts` reuses this for the ambient-light gain (docs/todo.md
+ * entry 23) rather than writing a second smoother — the shape it needs is
+ * identical, a slow attack and a slower release measured in seconds, not
+ * frames.
  */
-class Envelope {
+export class Envelope {
   private value: number
   private readonly attack: number
   private readonly release: number

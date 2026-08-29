@@ -58,6 +58,12 @@ uniform float uCameraMix;  // 0 = no camera, and then this costs nothing
 // stretched to the frame, which reads as a bug immediately.
 uniform vec2 uCameraFit;
 
+// The picture answers the light in the room — docs/todo.md entry 23. 1 is
+// identity, and is also everything this ever is while the camera is down, so
+// a session that never raises passthrough pays nothing for this uniform
+// existing.
+uniform float uExposure;
+
 vec3 overlayBlend(vec3 base, vec3 top) {
   vec3 lo = 2.0 * base * top;
   vec3 hi = 1.0 - 2.0 * (1.0 - base) * (1.0 - top);
@@ -124,6 +130,13 @@ void main() {
     vec3 lit = blendWith(cam, col, uAtmMode);
     col = mix(col, lit, uCameraMix);
   }
+
+  // Applied last, after the camera mix and after the existing clamp above —
+  // this is a gain on the finished picture, not on either layer feeding it,
+  // so it answers the room without changing how the layers relate to each
+  // other. Re-clamped because a gain above 1 can push a bright pixel out of
+  // range.
+  col = clamp(col * uExposure, 0.0, 1.0);
 
   gl_FragColor = vec4(col, 1.0);
 }

@@ -34,7 +34,7 @@
 export { startMicrophone, MAX_DB, MIN_DB } from './capture.ts'
 export type { AudioFrame, AudioSource } from './capture.ts'
 
-export { MAPPINGS } from './fast.ts'
+export { MAPPINGS, Envelope } from './fast.ts'
 export type { Mapping, MappingName, VisualParams } from './fast.ts'
 
 export { StructureAnalysis, bandVector, BAND_EDGES, N_BANDS } from './features.ts'

@@ -38,7 +38,7 @@ import type { CameraSource } from './camera'
 import { type GeoColour } from './geo-colour'
 import { MERGE_MODES, type MergeModeName } from './merge-modes'
 import type { VisualParams } from './engine'
-import { createRippleState, MAX_RIPPLES, updateRipples } from './engine'
+import { createRippleState, Envelope, MAX_RIPPLES, updateRipples } from './engine'
 import type { TumbleState } from './shake'
 import compositeFrag from './shaders/composite.frag.glsl?raw'
 import vertexShader from './shaders/fullscreen.vert.glsl?raw'
@@ -301,6 +301,11 @@ export function createVisualiser(
     uCamera: { value: null as VideoTexture | null },
     uCameraMix: { value: 0 },
     uCameraFit: { value: new Vector2(1, 1) },
+    // The picture answers the light in the room — docs/todo.md entry 23.
+    // 1 is identity and is also everything this ever is while the camera is
+    // down, so a session that never raises it pays nothing for this uniform
+    // existing.
+    uExposure: { value: 1 },
   }
   const compositeMaterial = new ShaderMaterial({
     vertexShader,
@@ -309,10 +314,41 @@ export function createVisualiser(
   })
 
   const geometry = new PlaneGeometry(2, 2)
-  // One mesh, reused across all three passes below — each pass swaps its
-  // material in just before rendering.
+  // One mesh, reused across all passes below — each pass swaps its material
+  // in just before rendering.
   const mesh = new Mesh(geometry, geometryMaterial)
   scene.add(mesh)
+
+  // Ambient light sampling — docs/todo.md entry 23, licensed by Victor
+  // 2026-08-29, narrowly: camera pixels may be measured as well as
+  // displayed, but only while the camera is already up (never what turns it
+  // on — entry 22 is the only thing licensed to do that). A tiny render
+  // target rather than reading the full camera frame back: GL's own linear
+  // filtering does the downsampling for free as it rasterises to 8x8, and
+  // reading 64 pixels back costs far less than reading the whole frame.
+  const LIGHT_SAMPLE_SIZE = 8
+  const lightTarget = new WebGLRenderTarget(LIGHT_SAMPLE_SIZE, LIGHT_SAMPLE_SIZE, {
+    depthBuffer: false,
+    stencilBuffer: false,
+  })
+  const lightMaterial = new ShaderMaterial({
+    vertexShader,
+    // Deliberately not composite.frag.glsl: this measures the room the
+    // camera sees, not the picture the app is drawing over it — sampling
+    // the composite's own output would make the exposure gain chase itself.
+    fragmentShader: `
+      varying vec2 vUv;
+      uniform sampler2D uCamera;
+      void main() { gl_FragColor = texture2D(uCamera, vUv); }
+    `,
+    uniforms: { uCamera: compositeUniforms.uCamera },
+  })
+  const lightPixels = new Uint8Array(LIGHT_SAMPLE_SIZE * LIGHT_SAMPLE_SIZE * 4)
+  // Slow attack, slower release, seconds not frames: without this, someone
+  // walking past a lamp strobes the whole picture, and the failure would
+  // look like a rendering bug rather than a feature.
+  const exposureEnvelope = new Envelope(2.0, 5.0, 0.5)
+  let lightSampleFrames = 0
 
   // Motion clock. Integrated from the audio level rather than read from the
   // wall clock, so the field accumulates movement while there is sound and
@@ -455,6 +491,65 @@ export function createVisualiser(
     }
   }
 
+  /**
+   * Measure the room's mean brightness from the camera texture and ease the
+   * composite's output gain toward it — see this file's own comment on
+   * `lightTarget` for the licence and the reasoning.
+   *
+   * A no-op the instant the camera is down: `dt`'s costs before the guard
+   * are one comparison, and the whole point of the licence's shape is that
+   * this never runs for most people. Ticks on the same 30-frame cadence
+   * `checkSize` uses, for the same reason — a per-frame readback stalls the
+   * pipeline waiting for the GPU, and light in a room does not change
+   * faster than twice a second.
+   */
+  function sampleAmbientLight(dt: number): void {
+    if (!compositeUniforms.uCamera.value) {
+      compositeUniforms.uExposure.value = 1
+      return
+    }
+
+    lightSampleFrames++
+    if (lightSampleFrames >= 30) {
+      lightSampleFrames = 0
+      mesh.material = lightMaterial
+      renderer.setRenderTarget(lightTarget)
+      renderer.render(scene, camera)
+      renderer.readRenderTargetPixels(
+        lightTarget,
+        0,
+        0,
+        LIGHT_SAMPLE_SIZE,
+        LIGHT_SAMPLE_SIZE,
+        lightPixels,
+      )
+
+      let sum = 0
+      const n = LIGHT_SAMPLE_SIZE * LIGHT_SAMPLE_SIZE
+      for (let i = 0; i < n; i++) {
+        const r = lightPixels[i * 4] / 255
+        const g = lightPixels[i * 4 + 1] / 255
+        const b = lightPixels[i * 4 + 2] / 255
+        // Standard luminance weights — green dominates perceived brightness,
+        // blue barely registers.
+        sum += 0.2126 * r + 0.7152 * g + 0.0722 * b
+      }
+      exposureEnvelope.push(sum / n, dt * 30)
+    } else {
+      // The envelope still needs to advance every frame, or its own
+      // attack/release times would mean nothing — only the *sample* it is
+      // chasing updates once every 30.
+      exposureEnvelope.push(exposureEnvelope.current, dt)
+    }
+
+    // 0.85 at luminance 0 (a covered lens, or a dark room) to 1.15 at
+    // luminance 1 (bright daylight); 0.5 — an ordinary lit room — lands
+    // exactly on 1, unchanged. Narrower than it looks: the picture's
+    // brightness is already the music's job, and a wider range would fight
+    // it rather than merely answer the room.
+    compositeUniforms.uExposure.value = 0.85 + exposureEnvelope.current * 0.3
+  }
+
   return {
     render(params, spectrum) {
       if (contextLost) return
@@ -480,6 +575,7 @@ export function createVisualiser(
       frameMs += (dt * 1000 - frameMs) * 0.05
       adapt(dt)
       checkSize()
+      sampleAmbientLight(dt)
 
       // Advance the rolling spectrogram at a fixed rate rather than once per
       // rendered frame, so the time axis means the same thing regardless of

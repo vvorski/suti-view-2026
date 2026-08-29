@@ -1564,7 +1564,7 @@ states, which a desktop automation browser cannot meaningfully stand in for.
 Exactly what the entry's own Verify section already requires a device for.
 
 ### 23. The picture answers the light in the room
-`status: ready` · added 2026-08-29
+`status: done` · added 2026-08-29 · shipped at build 123
 
 **Do** — while the camera is up, measure the frame's mean luminance and trim
 the composite's output gain gently toward it.
@@ -1619,6 +1619,28 @@ part that can quietly cost more than it is worth. Also `pnpm build`, `pnpm
 lint`.
 **Hard stops** — prefs no · url no · capture **yes, licensed above, and
 narrowly: measurement only, never activation** · dependency no.
+
+**Build note.** `sampleAmbientLight()` lands in `scene.ts` right beside
+`checkSize()`, on the same 30-frame tick, and shares its early-return shape:
+with the camera down (`uCamera.value === null`) it sets `uExposure` to 1 and
+returns before touching the render target, so the readback genuinely never
+runs — confirmed by inspection rather than a live frame-time reading, since
+this harness can't get a real camera stream through `waitForStart()` (see
+entries 20 and 22's build notes for the same limitation). The envelope still
+advances every frame even between samples, so its attack/release timing is
+correct in wall-clock time regardless of the 30-frame sample cadence — only
+the *target* it chases updates that slowly. Luminance uses standard
+0.2126/0.7152/0.0722 weights over the 8×8 readback; the gain formula
+`0.85 + envelope * 0.3` was chosen so it satisfies the Done-when's "roughly
+15%" dimming exactly at the extremes and lands at neutral (1.0, no visible
+change) at an ordinary mid-grey room. The shader change is the last line
+before `gl_FragColor`, after the existing clamp, per the entry's own
+instruction, with its own re-clamp since a gain above 1 can push a channel
+out of range. Not verified live: the actual visual dimming/brightening in a
+real room with a real camera, and the frame-time readout with the camera up
+— both need a phone, which this harness cannot exercise, matching the
+pattern for every camera-touching entry this session. `pnpm build`, `pnpm
+lint` both clean.
 
 ### 24. The fullscreen chip cannot be hidden, so it arrives at Start and stays
 `status: done` · added 2026-08-29 · shipped at build 113
