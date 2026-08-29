@@ -1983,3 +1983,67 @@ subordinate to the release name directly below it.
 sizes — a static screenshot of a dark frame is exactly the case that hid this.
 Also `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 29. A light shake changes the colours and nothing else
+`status: ready` · added 2026-08-29
+
+**Do** — make the colour roll the ladder's bottom rung and give the re-seed a
+threshold of its own, instead of firing it on every shake regardless of depth.
+**Why** — the gentlest shake currently re-rolls the pattern, which is the
+biggest change the bottom of the scale can make and not the smallest.
+
+**Decided**
+- This corrects entry 15 rather than restating a preference → **the ladder
+  contradicts its own stated ordering.** Entry 15 ordered the rungs "by how
+  little of what you had survives: a colour shift is recognisably the same
+  picture, a view change is a different instrument." By that rule the re-seed
+  — which replaces the arrangement entirely, keeping only the palette and the
+  view — sits *above* a colour shift, not beneath it. It ended up unconditional
+  because it was the original shake behaviour and the graded ladder was built
+  around it (`main.ts:548`, `shuffle()` calls `randomise()` outside every
+  depth test).
+- New rungs → colours at **any qualifying shake**, re-seed at **0.30**, and
+  merge, views and everything unchanged at 0.45, 0.70 and 0.90. **Mine** as to
+  0.30: it sits above the old colour threshold of 0.20, so a shake that used
+  to re-seed silently now shifts the palette instead, and clear of 0.45 so the
+  "new pattern, same everything else" band is wide enough to land in on
+  purpose.
+- What that does to the probe's own cases → the gentle sustained 12 m/s² case
+  reports an intensity of 0 and now changes colours only; a deliberate 28
+  m/s² shake is 0.37 and gets colours plus a new pattern; the violent 45 stays
+  at 1.0 and still gets everything. That spread is the entry in one line: a
+  gentle shake repaints, a deliberate one redraws.
+- Every shake still does *something* visible → colours roll on all layers at
+  every depth, which is the point of moving them to the bottom. Nothing
+  becomes a shake that appears to do nothing, and the intensity-scaled buzz
+  from entry 8 still confirms the gesture independently of what changed.
+- The double is unaffected → it forces depth 1 and therefore every rung
+  including the re-seed. The escape hatch keeps working exactly as entry 15
+  described.
+- Space and the autopilot chip are unaffected → both call
+  `visualiser.randomise()` directly rather than through `shuffle()`, so a
+  deliberate "new pattern" request stays a re-seed with no depth in front of
+  it. That is correct: they are explicit asks, not graded ones.
+
+**Lands in**
+- `src/main.ts:181-184` — `SHUFFLE_COLOUR` becomes `SHUFFLE_RESEED` at 0.30;
+  the colour block loses its test.
+- `src/main.ts:545-549`, `shuffle()` — `visualiser.randomise()` moves behind
+  the new threshold, which is the only line that makes a light shake stop
+  re-seeding.
+- `src/main.ts:210-232`, `shuffled()`'s docstring — the ladder table at `:217`
+  says "any qualifying shake → re-seed only (handled by the caller)" and is
+  about to be exactly wrong.
+- `src/main.ts:820-825` — the comment at the call site repeating that
+  `shuffle()` always re-seeds regardless of depth.
+- `scripts/probe-shake.ts` — the printed depth per case is already there;
+  assert the gentle case reaches colours and not the re-seed.
+
+**Done when** — `pnpm probe:shake` shows the gentle sustained case rolling
+colours with no re-seed, the deliberate case rolling both, and the double
+still reaching every rung. On the phone, a light shake visibly repaints the
+same picture rather than replacing it.
+**Verify** — `pnpm probe:shake` for the ladder, then the phone, because the
+distinction this entry exists to create is between two things that both look
+like "the picture changed" in a still frame. Also `pnpm build`, `pnpm lint`.
+**Hard stops** — prefs no · url no · capture no · dependency no.
