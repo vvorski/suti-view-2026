@@ -28,6 +28,7 @@ import { createVisualiser } from './scene'
 import { SlowAnalysis } from './engine'
 import { startShake } from './shake'
 import { confirmBuzz, doubleBuzz, hapticStatus } from './haptics'
+import { IdlePreview } from './idle-preview'
 import { mountReleaseName, mountVersionHud, versionHudRunning } from './version'
 import {
   ATMOSPHERIC_VIEWS,
@@ -280,16 +281,48 @@ async function main(): Promise<void> {
   let live = false
   const idleSpectrum = new Uint8Array(256)
   const idleStart = performance.now()
-  const idleFrame = (): void => {
+
+  // Capped well below the display's own rate, and stopped outright once nobody
+  // is there to see it. The idle preview (build 63) put the visualiser behind
+  // the gate so the screen would not be a poster for an absent piece — but it
+  // also meant a gate left open now costs what running the app costs, on a
+  // phone, indefinitely, which was a real change in idle power draw introduced
+  // as a side effect and never paid for. The decision logic itself lives in
+  // idle-preview.ts, and is probed there — see scripts/probe-idle.ts.
+  const idle = new IdlePreview(idleStart, 1000 / 30, 60_000)
+
+  // Any touch or pointer move brings the picture back. Stopping outright and
+  // never resuming would leave a phone picked back up after a minute showing
+  // one frozen frame — indistinguishable from a crash on a screen whose entire
+  // point is that it is already alive.
+  const resumeIdle = (): void => {
     if (live) return
-    const t = (performance.now() - idleStart) / 1000
-    visualiser.render(idleParams(t, idleSpectrum), idleSpectrum)
-    requestAnimationFrame(idleFrame)
+    const wasStopped = idle.isStopped
+    idle.touch(performance.now())
+    if (wasStopped) requestAnimationFrame(idleFrame)
+  }
+  document.addEventListener('pointerdown', resumeIdle)
+  document.addEventListener('pointermove', resumeIdle)
+
+  const idleFrame = (now: number): void => {
+    if (live) return
+    if (idle.tick(now)) {
+      const t = (now - idleStart) / 1000
+      visualiser.render(idleParams(t, idleSpectrum), idleSpectrum)
+    }
+    // isStopped is read after tick(), which is what may have just set it —
+    // this is the line that actually saves the battery: no further frame is
+    // scheduled at all, not merely one that renders nothing.
+    if (!idle.isStopped) requestAnimationFrame(idleFrame)
   }
   requestAnimationFrame(idleFrame)
 
   const { source, motion } = await waitForStart({ gate, button, error })
   live = true
+  // The idle loop is done for the session; its own listeners are now dead
+  // weight on every pointer event for as long as the tab stays open.
+  document.removeEventListener('pointerdown', resumeIdle)
+  document.removeEventListener('pointermove', resumeIdle)
   // The gate is going; the version chip drops to its running form — no name,
   // and a reload button that fades out of the way. See versionHudRunning().
   versionHudRunning()

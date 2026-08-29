@@ -108,7 +108,7 @@ to be a decision on the record rather than a side effect of a layout change.
 copy and names the build that removed it.
 
 ### 3. Cap the start screen's idle frame rate
-`status: ready` · added 2026-08-29
+`status: done` · added 2026-08-29 · shipped at build 84
 
 **Do** — run the gate's idle render loop at about 30fps instead of every
 animation frame, and stop it entirely after a minute with no interaction.
