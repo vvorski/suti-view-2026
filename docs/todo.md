@@ -459,3 +459,31 @@ drives it — `requestAnimationFrame`, a CSS transition, or a `@keyframes`
 animation — which is the same family as the already-documented rAF trap, one
 step further. Added to CLAUDE.md's harness-traps list so it is not
 rediscovered as a CSS bug.
+
+### 10. A byline above the title on the start screen
+`status: ready` · added 2026-08-29
+
+**Do** — add "by flyflyfly \u00a9 2026" above `suti · view` on the gate, small
+and quiet, on the same right-justified axis as everything else there.
+**Why** — asked for directly; no problem being solved beyond attribution.
+
+**Decided**
+- Above *which* name → **above the title**, over above the release name.
+  **Mine**: "the name" most naturally means the piece's own name — SUTI ·
+  VIEW — not the build's codename, which is a diagnostic detail nobody but
+  Victor is meant to read as identity.
+- Weight → **quieter than the release name**, over matching it or the title.
+  **Mine**: a byline that outweighs the title it sits above would read as the
+  headline, and this screen already has one thing that dominates by design —
+  the filled Start disc — everything else is deliberately receding from it.
+
+**Lands in** — `index.html`, `.gate-head`: one `<div>` above the `<h1>`, one
+small CSS rule reusing the existing right-justified block.
+**Done when** — the line renders above the title, right-justified with it, at
+320\u00d7568 without pushing the column past the available height (484px used
+of 524 before this — see entry 4's headroom note; a byline this size costs
+under 20px).
+**Verify** — `pnpm build`, `pnpm lint`. Look at 320\u00d7568, 360\u00d7640,
+412\u00d7915 — the column has been re-measured for every gate change this
+session and this is another one.
+**Hard stops** — prefs no · url no · capture no · dependency no.
