@@ -164,6 +164,13 @@ export interface Hud {
       }
       /** Whether the long-scale buffer has enough history to act on. */
       warm?: boolean
+      /** Why there was or wasn't a buzz. See hapticStatus(). */
+      haptics?: {
+        supported: boolean
+        attempts: number
+        accepted: number
+        suppressed: number
+      }
     },
   ): void
   /** Step the atmospheric layer's programme forward (1) or back (-1), wrapping. */
@@ -1378,6 +1385,17 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
                   : `auto ${s.director.candidate ?? '—'} ` +
                     `${Math.floor(s.director.candidateHeld)}s  ` +
                     `next ${Math.ceil(s.director.tillView)}s`,
+            ]),
+        // Separates "nothing asked for a buzz" from "asked and refused" from
+        // "asked, accepted, and the phone did nothing you could feel".
+        ...(s.haptics === undefined
+          ? []
+          : [
+              !s.haptics.supported
+                ? 'buzz unsupported'
+                : s.haptics.suppressed > 0
+                  ? `buzz off (reduced-motion) ${s.haptics.suppressed}`
+                  : `buzz ${s.haptics.accepted}/${s.haptics.attempts}`,
             ]),
       ].join('\n')
     },

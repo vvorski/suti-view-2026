@@ -20,12 +20,19 @@
  * platform, absent on the other, and nothing may be built to depend on it.
  */
 
-/** A short confirmation buzz, in ms. Long enough to feel deliberate on a
- *  phone's actuator — below about 15ms most Android hardware produces
- *  nothing perceptible at all — and short enough not to read as an alert.
- *  A pattern rather than a single pulse is tempting here and wrong: a
- *  double-buzz reads as an error on most phones. */
-const CONFIRM_MS = 22
+/** A short confirmation buzz, in ms.
+ *
+ *  Was 22, on the reasoning that anything under ~15 is imperceptible and a
+ *  confirmation should not read as an alert. The floor was the right idea and
+ *  the margin above it was far too thin: plenty of Android actuators are
+ *  rotational-mass motors that need 30-40ms simply to spin up far enough to
+ *  be felt, so 22 is a request the hardware honours by doing almost nothing.
+ *  A buzz that fires correctly and cannot be felt is indistinguishable from
+ *  no buzz at all, and that is how this shipped.
+ *
+ *  40 is still one short pulse, not a pattern — a double-buzz reads as an
+ *  error on most phones. */
+const CONFIRM_MS = 40
 
 /** Whether the platform has a vibrator we are allowed to use. Read once:
  *  this cannot change within a session, and `vibrate` being present is a
@@ -59,10 +66,47 @@ function reducedMotion(): boolean {
  * branch at the call site — a missing buzz is a missing nicety.
  */
 export function confirmBuzz(): void {
-  if (!supported || reducedMotion()) return
+  attempts++
+  if (!supported) return
+  if (reducedMotion()) {
+    suppressed++
+    return
+  }
   try {
-    navigator.vibrate(CONFIRM_MS)
+    // vibrate() returns false when the browser declines — most often for want
+    // of a prior user gesture on the page. Recorded rather than ignored: a
+    // declined call and a call the hardware fulfilled but the user could not
+    // feel are different faults with different fixes.
+    accepted += navigator.vibrate(CONFIRM_MS) ? 1 : 0
   } catch {
     // No vibrator, or a webview that lied about having one.
   }
+}
+
+let attempts = 0
+let accepted = 0
+let suppressed = 0
+
+/**
+ * Why there was no buzz.
+ *
+ * "No haptics on shake" has at least four causes and they are identical from
+ * the outside: the shake never fired so nothing was requested; the platform
+ * has no Vibration API; reduced-motion is suppressing it; or the browser
+ * accepted the call and the phone's own settings or actuator produced nothing
+ * anyone could feel. The first two are in this app, the third is an OS
+ * accessibility setting, the fourth is out of reach entirely — and only the
+ * numbers separate them.
+ *
+ * `attempts` rising with `accepted` while nothing is felt means the software
+ * is doing its job and the phone is not: check that the device is not in a
+ * silent profile with vibration off.
+ */
+export function hapticStatus(): {
+  supported: boolean
+  attempts: number
+  accepted: number
+  suppressed: number
+} {
+  return { supported, attempts, accepted, suppressed }
 }

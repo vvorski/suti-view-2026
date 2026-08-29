@@ -19,7 +19,7 @@ import { Director } from './director'
 import { createVisualiser } from './scene'
 import { SlowAnalysis } from './engine'
 import { startShake } from './shake'
-import { confirmBuzz } from './haptics'
+import { confirmBuzz, hapticStatus } from './haptics'
 import { mountVersionHud } from './version'
 import {
   DEFAULT_ATMOSPHERIC_VIEW,
@@ -195,6 +195,7 @@ async function main(): Promise<void> {
         // "why has nothing changed" in both cases: off, or on and waiting.
         director: director.status(),
         warm: character.warm,
+        haptics: hapticStatus(),
       })
     }
     requestAnimationFrame(frame)
