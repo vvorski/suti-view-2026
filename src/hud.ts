@@ -125,20 +125,17 @@ const CHIP_GAP = 6
  *  an arc long enough to resolve a value along, not just three option stops. */
 const RING_A0 = -50 * DEG
 const RING_A1 = 50 * DEG
-/** Innermost ring's radius, in screen px anchored to the colour chip (fixed,
- *  like MAP_R, not viewport-scaled like the dial bands — the chip itself is
- *  a fixed CSS size). The chip is a 26px-radius circle; a ring's own hit
- *  zone reaches GRAB_PX further in than its drawn radius, so anything closer
- *  than about 26 + GRAB_PX would let the ring's grab arc reach onto the chip
- *  itself. 60 clears that by a working margin. */
+/** The camera ring's radius, in screen px anchored to its chip (fixed, like
+ *  MAP_R, not viewport-scaled like the dial bands — the chip itself is a fixed
+ *  CSS size). The chip is a 26px-radius circle; a ring's own hit zone reaches
+ *  GRAB_PX further in than its drawn radius, so anything closer than about
+ *  26 + GRAB_PX would let the grab arc reach onto the chip itself. 60 clears
+ *  that by a working margin.
+ *
+ *  Named for what it was: the innermost of three colour rings that also hung
+ *  off a chip. Those moved onto the bands (see colourCenter()) and this is now
+ *  the only chip-anchored ring left. */
 const RING_R_INNER = 60
-/** Spacing between adjacent rings' radii. Each ring's hit zone is GRAB_PX*2
- *  (48px) wide; less than that and neighbouring rings' invisible grab arcs
- *  would overlap, so a drag meant for one ring could get captured by the
- *  next one in. The extra 8px on top is a clear gap between them, not load-
- *  bearing but cheap insurance against a fat-fingered tap landing exactly on
- *  the seam. */
-const RING_PITCH = 56
 /** How far past a ring's 0% end (RING_A0) its numeric label sits, outside
  *  the angular span every ring's track occupies — so a label never draws
  *  over any ring's own arc, whichever channel or radius it belongs to,
@@ -1057,8 +1054,8 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
       bindArcDrag(
         hit,
         colourCenter,
-        RING_A0,
-        RING_A1,
+        SWEEP_A * DEG,
+        SWEEP_B * DEG,
         (t) => {
           prefs.geoColour = clampGeoColour({ ...prefs.geoColour, [key]: t })
           handlers.onGeoColour(prefs.geoColour)
@@ -1205,15 +1202,22 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     mapDialHit.style.pointerEvents = mapDialOpen ? 'auto' : 'none'
   }
 
-  /** The colour chip's centre, in the svg's own coordinate space — the same
-   *  conversion mapDialCenter() does for the mapping chip. */
+  /**
+   * The colour rings' centre: the wedge hinge, not the chip.
+   *
+   * They used to hang off the RGB chip like the mapping dial does, on their own
+   * small radii. Now they are drawn on the big circle itself, one ring per
+   * channel sitting exactly on one of the three band arcs.
+   *
+   * That is a better fit than a popup ever was. A 0-100 drag wants the longest
+   * arc available and the bands are the longest arcs on screen, so the rings
+   * stop being a cramped 60px dial in the corner. It also ends the fight that
+   * POPUP_DIM exists to referee: the rings no longer *cross* the bands, they
+   * replace them for as long as they are up, which is exactly what the dimming
+   * was already trying to express.
+   */
   function colourCenter(): [number, number] {
-    const svgRect = svg.getBoundingClientRect()
-    const chipRect = rgbBtn.getBoundingClientRect()
-    return [
-      chipRect.left + chipRect.width / 2 - svgRect.left,
-      chipRect.top + chipRect.height / 2 - svgRect.top,
-    ]
+    return [cx, cy]
   }
 
   /** Radius of the i'th channel's ring (i indexes CHANNELS: 0=R, 1=G, 2=B).
@@ -1227,7 +1231,11 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
    *  sync with it. Computed rather than stored, like everything else
    *  paintColourPopup() draws, so there is one definition of the layout. */
   function ringRadius(i: number): number {
-    return RING_R_INNER + (CHANNELS.length - 1 - i) * RING_PITCH
+    // One channel per band, outermost first: R on the geometric band, G on
+    // merge, B on atmospheric. Reading the bands' own live radii rather than
+    // recomputing from R_GEO/R_MRG/R_ATM keeps a single definition of where
+    // those arcs are, so a ring cannot drift off its band on resize.
+    return bands[Math.min(i, bands.length - 1)].r
   }
 
   /** The camera chip's own centre, same conversion as colourCenter(). */
@@ -1279,18 +1287,19 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     const open = colourOpen
     const [fx, fy] = colourCenter()
     const c = prefs.geoColour
+    // The wedge's own sweep, because the rings now sit on the bands rather than
+    // on a small dial of their own — see colourCenter().
+    const a0 = SWEEP_A * DEG
+    const a1 = SWEEP_B * DEG
     CHANNELS.forEach(({ key, label }, i) => {
       const r = ringRadius(i)
       const value = c[key]
-      const valueAngle = RING_A0 + value * (RING_A1 - RING_A0)
+      const valueAngle = a0 + value * (a1 - a0)
 
-      colourTracks[i].setAttribute('d', arcAt(fx, fy, r, RING_A0, RING_A1))
+      colourTracks[i].setAttribute('d', arcAt(fx, fy, r, a0, a1))
       colourTracks[i].setAttribute('opacity', open ? '1' : '0')
 
-      colourFills[i].setAttribute(
-        'd',
-        arcAt(fx, fy, r, RING_A0, Math.max(RING_A0 + 0.001, valueAngle)),
-      )
+      colourFills[i].setAttribute('d', arcAt(fx, fy, r, a0, Math.max(a0 + 0.001, valueAngle)))
       colourFills[i].setAttribute('opacity', open ? '1' : '0')
 
       const [kx, ky] = polarAt(fx, fy, r, valueAngle)
@@ -1298,17 +1307,22 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
       colourKnobs[i].setAttribute('cy', String(ky))
       colourKnobs[i].setAttribute('opacity', open ? '1' : '0')
 
-      // Anchored past RING_A0, outside every ring's own arc — see
-      // LABEL_OFFSET — so the text never sits over a track or fill
-      // regardless of this or any other channel's current value.
-      const [lx, ly] = polarAt(fx, fy, r + LABEL_PAD, RING_A0 - LABEL_OFFSET)
+      // On the notch line, but pulled LABEL_PAD inside the band's own radius.
+      //
+      // Exactly on the radius is the obvious place and is wrong: that is where
+      // the band's own selected-option label sits, so "R 100" printed straight
+      // over "CIRCLES". Both are legible alone and neither is together, even
+      // with the band at POPUP_DIM. The bands are ~52px apart, so a 26px offset
+      // lands each label in clear space between two of them and still leaves
+      // the three well clear of each other.
+      const [lx, ly] = polarAt(fx, fy, r - LABEL_PAD, NOTCH)
       const lbl = colourLabels[i]
       lbl.setAttribute('x', String(lx))
       lbl.setAttribute('y', String(ly))
       lbl.textContent = `${label} ${Math.round(value * 100)}`
       lbl.setAttribute('opacity', open ? '1' : '0')
 
-      colourHits[i].setAttribute('d', arcAt(fx, fy, r, RING_A0, RING_A1))
+      colourHits[i].setAttribute('d', arcAt(fx, fy, r, a0, a1))
       // Invisible when closed must also mean untappable, exactly like the
       // mapping dial's own hit arc — these hit zones are wider than that
       // one and sit over at least as much of the dial, so it matters at

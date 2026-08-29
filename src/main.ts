@@ -16,12 +16,13 @@ import { DEFAULT_MERGE_MODE, DEFAULT_MIX, isMergeModeName, type MergeModeName } 
 import { checkWebGL, fullscreenStatus, keepAwake, waitForStart } from './permission-gate'
 import { loadPrefs, type Prefs } from './prefs'
 import { applyReleaseTone } from './release-tone'
+import { mountShare } from './share'
 import { Director } from './director'
 import { createVisualiser } from './scene'
 import { SlowAnalysis } from './engine'
 import { startShake } from './shake'
 import { confirmBuzz, hapticStatus } from './haptics'
-import { mountVersionHud } from './version'
+import { mountVersionHud, versionHudRunning } from './version'
 import {
   DEFAULT_ATMOSPHERIC_VIEW,
   DEFAULT_GEOMETRIC_VIEW,
@@ -102,6 +103,7 @@ async function main(): Promise<void> {
 
   mountVersionHud()
   applyReleaseTone(__BUILD_NUMBER__)
+  mountShare()
 
   if (!checkWebGL()) {
     fail('This browser does not support WebGL2, which this page needs to draw.')
@@ -111,6 +113,9 @@ async function main(): Promise<void> {
   const prefs = resolvePrefs()
 
   const { source, motion } = await waitForStart({ gate, button, error })
+  // The gate is going; the version chip drops to its running form — no name,
+  // and a reload button that fades out of the way. See versionHudRunning().
+  versionHudRunning()
   void keepAwake()
 
   const shake = startShake(motion)

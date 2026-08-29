@@ -61,11 +61,11 @@
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        gap: 1.25rem;
+        gap: 0.85rem;
         /* Top padding clears the version chip, which is fixed at the top-left
            and, now that the release name is set large, is wide enough to run
            into a centred title on a 320px screen. It did. */
-        padding: 4.75rem 1.75rem 1.75rem;
+        padding: 4rem 1.5rem 1rem;
         text-align: center;
         background: #05060a;
         z-index: 10;
@@ -111,7 +111,7 @@
          to be dragged, which is what everything after this tap is. */
       .gate-dial {
         position: relative;
-        width: min(58vw, 14rem);
+        width: min(47vw, 11.5rem);
         aspect-ratio: 1;
         display: flex;
         align-items: center;
@@ -191,16 +191,67 @@
          not fine print, and it is here so nothing about the camera is a
          surprise later. */
       #gate .gate-aside {
-        font-size: 0.74rem;
+        font-size: 0.72rem;
         color: #454b58;
         margin-top: -0.9rem;
       }
+      /* QR and share, side by side. The QR is deliberately small — it is a
+         convenience for a second phone in the same room, not the point of the
+         screen — but not much smaller than 80px, below which a camera at
+         arm's length starts to struggle against a phone's own pixel grid. */
+      .gate-share {
+        display: flex;
+        align-items: center;
+        gap: 0.9rem;
+        z-index: 1;
+        margin-top: -0.4rem;
+      }
+      .gate-qr {
+        width: 5rem;
+        height: 5rem;
+        display: block;
+        border-radius: 4px;
+      }
+      .gate-qr[hidden] {
+        display: none;
+      }
+      .gate-btn {
+        appearance: none;
+        cursor: pointer;
+        border: 1px solid #2a3040;
+        background: transparent;
+        color: #8a90a2;
+        font-family: 'Chakra Petch', ui-sans-serif, system-ui, sans-serif;
+        font-size: 0.78rem;
+        font-weight: 500;
+        letter-spacing: 0.18em;
+        text-indent: 0.18em;
+        text-transform: uppercase;
+        padding: 0.6rem 1.2rem;
+        border-radius: 999px;
+        transition:
+          border-color 200ms ease,
+          color 200ms ease;
+      }
+      .gate-btn:hover,
+      .gate-btn:focus-visible {
+        border-color: #9d9bf0;
+        color: #f0eeff;
+      }
+      /* No reserved height. It used to hold a line open so the layout would not
+         jump when an error appeared, which was cheap when the gate had room to
+         spare; with the QR and share row it is 20px the gate does not have, and
+         it buys stillness on the one screen where nothing is happening yet. An
+         error re-centres the column, which is a jump nobody minds at the moment
+         they are being told the microphone was refused. */
       #error {
         color: #8a6b6b;
         font-size: 0.85rem;
         max-width: 26rem;
-        min-height: 1.5em;
         z-index: 1;
+      }
+      #error:empty {
+        display: none;
       }
       @media (prefers-reduced-motion: reduce) {
         .dial-ticks {
@@ -250,6 +301,13 @@
         off until you turn it on from the controls, and asks you then &mdash; not now.
         The video is drawn to the screen and never leaves this device either.
       </p>
+      <!-- Point a second phone at the code, or send the link. Both resolve to
+           wherever this page is actually served from — see share.ts. -->
+      <div class="gate-share">
+        <svg id="qr" class="gate-qr" role="img" aria-label="QR code linking to this page"></svg>
+        <button id="share" type="button" class="gate-btn">Share</button>
+      </div>
+
       <div id="error" role="status" aria-live="polite"></div>
     </div>
 

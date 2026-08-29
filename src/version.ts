@@ -7,7 +7,7 @@
  * once it is.
  *
  * Mounted unconditionally at startup, before the microphone gate resolves, so
- * it works even for someone staring at a stuck "Begin" screen wondering if
+ * it works even for someone staring at a stuck "Start" screen wondering if
  * reloading would help.
  */
 
@@ -58,6 +58,35 @@ const CSS = `
 #version-hud button:focus-visible {
   color: #f2f4f8;
 }
+/* Once the visualiser is running, the chip has said what it had to say. The
+   name goes entirely and the button fades back to a hint of itself — this is a
+   piece meant to be left running on a propped-up phone, and a permanent label
+   in the corner of it is litter.
+
+   It is faded rather than removed because it is still the reload control, and
+   still the thing that turns green. Opacity, not display, so .fresh below can
+   bring it back without either rule having to know about the other. */
+#version-hud.running {
+  background: transparent;
+  padding: 0.3rem;
+}
+#version-hud.running span {
+  display: none;
+}
+#version-hud.running button {
+  opacity: 0.18;
+  transition: opacity 900ms ease;
+}
+#version-hud.running button:hover,
+#version-hud.running button:focus-visible {
+  opacity: 1;
+}
+/* A new build outranks the fade: the whole reason the button survives into the
+   running state is to be able to say this. */
+#version-hud.running button.fresh {
+  opacity: 1;
+}
+
 /* The whole point of the thing. Green is doing real work here — it is the only
    saturated colour anywhere outside the visualiser, so it reads as "something
    changed" without a label explaining it. */
@@ -97,7 +126,7 @@ const HASHED = /assets\/(index-[A-Za-z0-9_-]+\.js)/
  * Watch for a newer deploy, and light the reload button when there is one.
  *
  * Deliberately not an automatic reload. Reloading drops whoever is watching
- * back to the "Begin" gate and kills the microphone session — a hostile thing
+ * back to the "Start" gate and kills the microphone session — a hostile thing
  * to do unprompted to a piece that is running. The button going green says the
  * same thing and leaves the decision where it belongs.
  *
@@ -141,6 +170,18 @@ function watchForNewBuild(button: HTMLButtonElement): void {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') void check()
   })
+}
+
+/**
+ * Drop the chip to its running form: no name, faded button.
+ *
+ * Called when the gate resolves rather than driven from inside here, because
+ * "the app has started" is main.ts's fact to know — this module would have to
+ * watch the gate element to find it out, which is a worse dependency than a
+ * one-line call.
+ */
+export function versionHudRunning(): void {
+  document.getElementById('version-hud')?.classList.add('running')
 }
 
 export function mountVersionHud(): void {
