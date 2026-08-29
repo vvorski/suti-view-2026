@@ -235,3 +235,55 @@ for two spaced beyond it. Then on the phone, because a double shake is a
 physical gesture and no probe knows whether it is comfortable.
 **Hard stops** — prefs no (writes existing fields) · url no · capture **no,
 explicitly**: the shuffle must never raise `passthrough` · dependency no.
+
+### 7. Give each layer type its own ring texture, and write down the design language
+`status: ready` · added 2026-08-29
+
+**Do** — make the stroke treatment of a band say what kind of layer it belongs
+to, and record the resulting design language in `docs/hud-design.md`.
+**Why** — every band is currently drawn identically. The only thing separating
+the geometric layer from the camera is tint colour, so the wedge always looks
+the same and you know where you are only from which icon is lit. Form carries
+no information at all.
+
+**Decided**
+- What carries identity → **texture, describing the material**, over stroke
+  weight (which encodes depth, not kind) and over cap treatment (too subtle to
+  read at 320px). The form means something rather than merely differing:
+  - **Geometric** — solid, square caps. Drawn line work.
+  - **Atmospheric** — a soft wide halo behind the stroke. A continuous field.
+  - **Camera** — segmented. Sampled reality, not drawn.
+  - **Listening** — ticked, like a measure. Not a picture at all.
+- R/G/B bands → **uniform on every layer**, over taking their layer's texture.
+  A colour band must be recognisable as a colour band wherever it appears, so
+  texture reliably means "which layer" and never "which kind of control".
+- Where it is recorded → `docs/hud-design.md` with the reasoning, and a
+  one-line pointer from CLAUDE.md, over a section inside CLAUDE.md. That file
+  is a rules list and is already long; a design language with worked reasoning
+  wants room.
+
+**Lands in**
+- `src/hud.ts` — the band drawing in `build()`. A texture per group, applied to
+  the track and fill of every band except the three colour ones. `stroke-dasharray`
+  for segmented, a second wider low-opacity path behind for the halo, tick marks
+  for the measure.
+- `docs/hud-design.md` — new. Must contain the circular rule and why, the
+  texture-to-material mapping above, the `BAND_R` ladder with the reason for
+  each number, the colour roles, and what is forbidden with examples.
+- `CLAUDE.md` — one line pointing at it, next to the circular constraint.
+
+**Done when** — the four groups are told apart with the colour removed. That is
+the test worth running: render each group greyscale and check they are still
+distinguishable, because if identity survives only in the tint then the texture
+is decoration.
+**Verify** — `pnpm build`, `pnpm lint`. In `hud-probe.html`: `describe()
+.straightEdges` still 0 — a dashed arc is still an arc, a tick is not a
+straight line in the forbidden sense, but the halo must not be drawn as a rect.
+Look at all four groups at 320x568 and 360x640, and once with a greyscale
+filter over the page for the test above.
+**Hard stops** — prefs no · url no · capture no · dependency no.
+
+**Watch for:** the segmented camera texture and the enum band's option labels
+compete for the same arc. Check the camera group specifically, where the
+opacity band is outermost and carries no labels, against the geometric group,
+where a segmented-looking band would sit under text.
