@@ -1579,3 +1579,65 @@ part that can quietly cost more than it is worth. Also `pnpm build`, `pnpm
 lint`.
 **Hard stops** — prefs no · url no · capture **yes, licensed above, and
 narrowly: measurement only, never activation** · dependency no.
+
+### 24. The fullscreen chip cannot be hidden, so it arrives at Start and stays
+`status: ready` · added 2026-08-29
+
+**Do** — make `hidden` actually hide a `.hud-chip`, and stop the fullscreen
+chip claiming fullscreen was lost before anything has asked for it.
+**Why** — pressing Start now puts the "return to fullscreen" chip on screen and
+nothing ever takes it away, which reads as fullscreen having been lost at the
+one moment it was just successfully entered.
+
+**Decided**
+- The mechanism → **`hud.ts:364`'s `.hud-chip { display: flex }` outranks the
+  UA stylesheet's `[hidden] { display: none }`.** Same specificity, author
+  sheet wins, so the `hidden` attribute on `#fullscreen-chip` does nothing and
+  `chip.hidden = !show` in `main.ts`'s `updateFullscreenChip` is a no-op.
+  Confirmed in a browser rather than reasoned about: a `.hud-chip` created
+  with `hidden` set computes to `display: flex` on `hud-probe.html`.
+- Why it looks fine until Start → **the CSS does not exist yet.** `createHud()`
+  injects that stylesheet, and it runs after `waitForStart` resolves. On the
+  gate the UA rule is unopposed and the chip is genuinely hidden; the instant
+  the HUD is built the rule appears and the chip becomes visible. That timing
+  is the whole reason this presents as "the Start button broke fullscreen"
+  rather than as a chip that is always wrong.
+- Second, independent fault → **`fsState` is initialised to `'refused'`**
+  (`permission-gate.ts:81`), which is also the state the chip shows on. So the
+  chip is due to be shown before any request has been made, and
+  `updateFullscreenChip()` runs during HUD setup, possibly before the
+  `requestFullscreen()` promise has settled. Even with the CSS fixed, the chip
+  would flash on at Start and then vanish. "Not asked yet" and "asked and
+  refused" are different facts and the type should carry both.
+- Fix → **`.hud-chip[hidden] { display: none }` in the same block**, at (0,2,0)
+  specificity so it beats the rule above it without `!important`, plus a
+  `'unasked'` member on `FullscreenState` as the initial value, shown by
+  nothing. **Mine**: the alternative — swapping the attribute for a class the
+  CSS knows about — leaves the next person to add a chip with exactly this
+  trap still armed, where fixing the rule fixes the class of bug.
+- What this does **not** claim → whether fullscreen itself still works on the
+  handset is not established. `probe:fullscreen` passes all thirteen checks
+  including the ordering one, the gate's `goFullscreen()` call is unchanged
+  and still first, and a browser here cannot enter fullscreen at all. If the
+  chip stops appearing and fullscreen is still absent, that is a second bug
+  and wants the `?debug` readout's `full <state>` line, which is what it was
+  built for.
+
+**Lands in**
+- `src/hud.ts:360-368` — the `.hud-chip` block gains the `[hidden]` rule.
+- `src/permission-gate.ts:79-81` — `FullscreenState` gains `'unasked'` and
+  `fsState` starts there.
+- `src/main.ts`, `updateFullscreenChip` — the `show` test is unchanged in
+  spirit but must not include the new initial state.
+- `hud-probe.html` — the fastest way to see this: it loads the HUD's CSS
+  without the mic gate, which is where the rule was confirmed.
+
+**Done when** — on `hud-probe.html`, a `.hud-chip` with `hidden` set computes
+to `display: none`; in the app, no chip is on screen at any point between load
+and a successful Start, and forcing `fsState` to `exited` shows it and
+returning to `active` removes it again.
+**Verify** — `hud-probe.html` in a browser for the CSS rule, at 320×568 and
+360×640. `pnpm probe:fullscreen` must still pass unchanged — the state type
+grows a member and the probe asserts on the others. Also `pnpm build`, `pnpm
+lint`. The real lost-and-regained cycle still needs a handset.
+**Hard stops** — prefs no · url no · capture no · dependency no.
