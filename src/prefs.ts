@@ -24,7 +24,14 @@ export interface Prefs {
   geometricView: GeometricViewName
   geoColour: GeoColour
   atmosphericView: AtmosphericViewName
+  /** The geometric layer's own blend, over the atmosphere. */
   mergeMode: MergeModeName
+  /** The atmospheric layer's own blend, over the camera. Added rather than
+   *  folded into `mergeMode` under a shared name, for the same reason
+   *  `geoColour`/`atmColour`/`camColour` are three fields and not one: each
+   *  layer's setting is its own stored fact, and `mergeMode` already has a
+   *  name and a meaning on every device that has ever run this. */
+  atmMergeMode: MergeModeName
   /**
    * 0-1. The old crossfade, kept and still honoured.
    *
@@ -116,6 +123,7 @@ export function loadPrefs(fallback: Prefs): Prefs {
         fallback.atmosphericView,
       ),
       mergeMode: pick(parsed.mergeMode, isMergeModeName, fallback.mergeMode),
+      atmMergeMode: pick(parsed.atmMergeMode, isMergeModeName, fallback.atmMergeMode),
       mix:
         typeof parsed.mix === 'number' && parsed.mix >= 0 && parsed.mix <= 1
           ? parsed.mix

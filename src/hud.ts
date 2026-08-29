@@ -23,8 +23,14 @@
  * arithmetic and the same control, and layers differing in what could be done
  * to them was what made the stack feel arbitrary rather than composed.
  *
- * The last icon selects no layer at all: it swaps the bands for the things
- * that belong to the whole picture, merge mode and mapping.
+ * Merge mode is a per-layer property too, for the same reason: it describes
+ * how *that* layer combines with what is beneath it, so the geometric and
+ * atmospheric groups each carry their own — the atmosphere's own blend, over
+ * the camera, used to be hardcoded and is now this band.
+ *
+ * The last icon selects no layer at all: it is Listening, and holds mapping —
+ * how the picture *hears*, which every layer shares equally, rather than a
+ * property of any one of them.
  */
 
 import {
@@ -56,12 +62,16 @@ const CUTOFF = 40 * DEG
 /**
  * Band radii, as fractions of the smaller viewport dimension, outermost first.
  *
- * Five, because that is the most any one selection needs: view, opacity, and
- * three colour channels. A selection with fewer takes the first few and the
- * rest are simply not built, so the spacing never depends on how many there
- * happen to be.
+ * Six, because that is the most any one selection needs now: view, merge,
+ * opacity, and three colour channels, for the geometric and atmospheric
+ * layers. A selection with fewer takes the first few and the rest are simply
+ * not built, so the spacing never depends on how many there happen to be.
+ *
+ * The sixth radius, 0.33, is new: the old single merge-mode band lived at
+ * 0.30 in the retired `set` group, so an arc this small is already proven
+ * draggable on a phone.
  */
-const BAND_R = [0.88, 0.75, 0.63, 0.53, 0.43]
+const BAND_R = [0.88, 0.75, 0.63, 0.53, 0.43, 0.33]
 
 /** The icon arc, outside every band and the tick rim. */
 const R_CHIPS = 1.08
@@ -142,6 +152,7 @@ export interface Hud {
     geometricView?: GeometricViewName
     atmosphericView?: AtmosphericViewName
     mergeMode?: MergeModeName
+    atmMergeMode?: MergeModeName
     geoColour?: GeoColour
     atmColour?: GeoColour
     camColour?: GeoColour
@@ -153,7 +164,8 @@ export interface Hud {
 interface Handlers {
   onGeometricView(name: GeometricViewName): void
   onAtmosphericView(name: AtmosphericViewName): void
-  onMergeMode(mode: MergeModeName): void
+  /** A layer's own blend, over what's beneath it. */
+  onMergeMode(layer: 'geo' | 'atm', mode: MergeModeName): void
   onMapping(name: MappingName): void
   /** 0-1, a layer's opacity. */
   onAlpha(layer: 'geo' | 'atm', a: number): void
@@ -187,10 +199,14 @@ const ICONS: Record<string, string> = {
     '<path d="M1.4 2.6h6v3.4H4.8v12H7.4v3.4h-6z"/>' +
     '<path d="M22.6 2.6h-6V6h2.6v12h-2.6v3.4h6z"/>' +
     '<circle cx="12" cy="12" r="5.6"/>',
-  set:
-    '<path d="M1.6 22.4 17.2 1.6h5.2L6.8 22.4z"/>' +
-    '<path d="M1.6 9.8h6.2v4.4H1.6z" fill-opacity=".55"/>' +
-    '<path d="M16.2 9.8h6.2v4.4h-6.2z" fill-opacity=".55"/>',
+  // Three concentric arcs, like sound arriving — chosen over the old
+  // diagonal-and-blocks glyph (which read as "settings", the mistake this
+  // group's rename fixes) and over a level meter (already the numeric
+  // readout icon's shape).
+  ear:
+    '<path d="M9.6 9.6a3.4 3.4 0 0 1 4.8 4.8" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>' +
+    '<path d="M6.4 6.4a8 8 0 0 1 11.2 11.2" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-opacity=".62"/>' +
+    '<path d="M3.2 3.2a12.6 12.6 0 0 1 17.6 17.6" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-opacity=".34"/>',
   auto:
     '<path d="M12 1.4a10.6 10.6 0 1 1-10.4 12.7l4.5-.9A6 6 0 1 0 12 6z"/>' +
     '<path d="M13.4 0 7.6 4.2l5.8 4.2z"/>',
@@ -381,6 +397,25 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     }))
   }
 
+  /** A layer's own merge-mode band — how it combines with what's beneath it. */
+  function mergeBand(layer: 'geo' | 'atm'): EnumBand {
+    return {
+      kind: 'enum',
+      name: 'Merge',
+      keys: mergeKeys,
+      label: (k) => MERGE_MODES[k as MergeModeName].label,
+      current: () => (layer === 'geo' ? prefs.mergeMode : prefs.atmMergeMode),
+      commit: (k) => {
+        if (layer === 'geo') prefs.mergeMode = k as MergeModeName
+        else prefs.atmMergeMode = k as MergeModeName
+        save()
+        handlers.onMergeMode(layer, k as MergeModeName)
+        manual()
+      },
+      rot: 0,
+    }
+  }
+
   function alphaBand(layer: 'geo' | 'atm', tint: string): ScalarBand {
     return {
       kind: 'scalar',
@@ -418,6 +453,7 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
           },
           rot: 0,
         },
+        mergeBand('geo'),
         alphaBand('geo', '#9d9bf0'),
         ...colourBands('geo', () => prefs.geoColour),
       ],
@@ -440,6 +476,7 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
           },
           rot: 0,
         },
+        mergeBand('atm'),
         alphaBand('atm', '#4dd6ff'),
         ...colourBands('atm', () => prefs.atmColour),
       ],
@@ -475,24 +512,13 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
         ...colourBands('cam', () => prefs.camColour),
       ],
     },
-    set: {
+    ear: {
       tint: '#c8c4e6',
-      name: 'Picture settings',
+      name: 'Listening',
+      // Mapping alone: it drives every layer equally, so it belongs to a
+      // group named for what it is — how the picture hears — rather than to
+      // any one layer, or to a leftover "settings" catch-all.
       bands: [
-        {
-          kind: 'enum',
-          name: 'Merge',
-          keys: mergeKeys,
-          label: (k) => MERGE_MODES[k as MergeModeName].label,
-          current: () => prefs.mergeMode,
-          commit: (k) => {
-            prefs.mergeMode = k as MergeModeName
-            save()
-            handlers.onMergeMode(prefs.mergeMode)
-            manual()
-          },
-          rot: 0,
-        },
         {
           kind: 'enum',
           name: 'Map',
@@ -654,7 +680,7 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     return b
   }
 
-  for (const id of ['geo', 'atm', 'cam', 'set'] as const) {
+  for (const id of ['geo', 'atm', 'cam', 'ear'] as const) {
     mkChip(id, GROUPS[id].name, GROUPS[id].tint, () => {
       group = id
       build()
@@ -978,7 +1004,11 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
       }
       if (next.mergeMode) {
         prefs.mergeMode = next.mergeMode
-        handlers.onMergeMode(prefs.mergeMode)
+        handlers.onMergeMode('geo', prefs.mergeMode)
+      }
+      if (next.atmMergeMode) {
+        prefs.atmMergeMode = next.atmMergeMode
+        handlers.onMergeMode('atm', prefs.atmMergeMode)
       }
       for (const [layer, colour] of [
         ['geo', next.geoColour],

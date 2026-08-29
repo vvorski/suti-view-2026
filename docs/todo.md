@@ -165,7 +165,7 @@ differs at the new size. Look at it at 320×568, 360×640 and 412×915.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 5. Merge becomes a per-layer property; Mapping becomes its own "Listening" group
-`status: ready` · added 2026-08-29
+`status: done` · added 2026-08-29 · shipped at build 88
 
 **Do** — give the geometric and atmospheric layers each their own merge mode
 band, replacing the single global one, and rename the settings group to

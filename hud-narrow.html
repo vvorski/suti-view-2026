@@ -38,17 +38,15 @@
       const w = f.contentWindow
       w.openHud()
       const hit = (label) => {
-        const chip = w.describe().chips.find((c) => c.text.trim().startsWith(label))
+        const chip = w.describe().chips.find((c) => c.label === label)
         if (!chip) throw new Error(`no chip "${label}" at ${f.width}x${f.height}`)
         w.tap(chip.x + chip.w / 2, chip.y + chip.h / 2)
       }
-      // RGB is the one tap that changes the grid's shape, swapping one cell
-      // for three. It is therefore the only layout the icon row can reach that
-      // the default view does not already show, and the only one worth
-      // measuring beyond it.
-      hit('MAP')
-      await new Promise((r) => setTimeout(r, 200))
-      hit('RGB')
+      // Chips carry no visible text any more — an aria-label, per ICONS in
+      // hud.ts. Atmospheric is the one worth switching to on top of the
+      // default (geometric): both now draw six bands (entry 5), and it is
+      // the only other group that does.
+      hit('Atmospheric layer')
       await new Promise((r) => setTimeout(r, 400))
 
       const vw = w.innerWidth
@@ -66,8 +64,14 @@
         })
         .filter((b) => b.right !== b.l || b.bot !== b.top)
       const esc = bits.filter((b) => b.l < 0 || b.top < 0 || b.right > vw || b.bot > vh)
-      out[id] = { viewport: [vw, vh], escaped: esc, worstRight: Math.max(...bits.map((b) => b.right)), worstBottom: Math.max(...bits.map((b) => b.bot)) }
-      document.getElementById(cap).textContent += `  -> vp ${vw}x${vh}, escaped ${esc.length}`
+      const desc = w.describe()
+      out[id] = {
+        viewport: [vw, vh], escaped: esc,
+        worstRight: Math.max(...bits.map((b) => b.right)), worstBottom: Math.max(...bits.map((b) => b.bot)),
+        bands: desc.bands, straightEdges: desc.straightEdges,
+      }
+      document.getElementById(cap).textContent +=
+        `  -> vp ${vw}x${vh}, escaped ${esc.length}, bands ${desc.bands}, straight ${desc.straightEdges}`
     }
     return out
   }

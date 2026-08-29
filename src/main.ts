@@ -13,6 +13,7 @@ import { startCamera, type CameraSource } from './camera'
 import { createHud } from './hud'
 import { MAPPINGS, type Mapping, type MappingName, type VisualParams } from './engine'
 import {
+  DEFAULT_ATM_MERGE_MODE,
   DEFAULT_MERGE_MODE,
   DEFAULT_MIX,
   isMergeModeName,
@@ -67,6 +68,7 @@ function resolvePrefs(): Prefs {
     camColour: { r: 1, g: 1, b: 1 },
     atmosphericView: DEFAULT_ATMOSPHERIC_VIEW,
     mergeMode: DEFAULT_MERGE_MODE,
+    atmMergeMode: DEFAULT_ATM_MERGE_MODE,
     mix: DEFAULT_MIX,
     geoAlpha: DEFAULT_MIX,
     atmAlpha: 1,
@@ -97,6 +99,9 @@ function resolvePrefs(): Prefs {
     camColour: stored.camColour,
     atmosphericView: isAtmosphericViewName(atmospheric) ? atmospheric : stored.atmosphericView,
     mergeMode: isMergeModeName(merge) ? merge : stored.mergeMode,
+    // No `?atmMerge=` — not specified in scope, and stored is enough: this
+    // control is reached from the HUD, not shared via link, at least for now.
+    atmMergeMode: stored.atmMergeMode,
     mix: pct(mix, stored.mix),
     // ?mix= keeps meaning exactly what it always meant, because it is in links
     // already in the world: the geometric layer's opacity, with the atmosphere
@@ -182,6 +187,7 @@ function shuffled(prefs: Prefs): {
   geometricView: GeometricViewName
   atmosphericView: AtmosphericViewName
   mergeMode: MergeModeName
+  atmMergeMode: MergeModeName
   geoColour: GeoColour
   atmColour: GeoColour
   camColour: GeoColour
@@ -193,6 +199,7 @@ function shuffled(prefs: Prefs): {
     geometricView: pick(Object.keys(GEOMETRIC_VIEWS) as GeometricViewName[]),
     atmosphericView: pick(Object.keys(ATMOSPHERIC_VIEWS) as AtmosphericViewName[]),
     mergeMode: pick(Object.keys(MERGE_MODES) as MergeModeName[]),
+    atmMergeMode: pick(Object.keys(MERGE_MODES) as MergeModeName[]),
     geoColour: colour(),
     atmColour: colour(),
     camColour: prefs.camColour,
@@ -273,6 +280,7 @@ async function main(): Promise<void> {
     camColour: prefs.camColour,
     atmosphericView: prefs.atmosphericView,
     mergeMode: prefs.mergeMode,
+    atmMergeMode: prefs.atmMergeMode,
     geoAlpha: prefs.geoAlpha,
     atmAlpha: prefs.atmAlpha,
   })
@@ -353,7 +361,7 @@ async function main(): Promise<void> {
     onGeometricView: (name: GeometricViewName) => visualiser.setGeometricView(name),
     onColour: (layer, colour) => visualiser.setLayerColour(layer, colour),
     onAtmosphericView: (name: AtmosphericViewName) => visualiser.setAtmosphericView(name),
-    onMergeMode: (mode: MergeModeName) => visualiser.setMergeMode(mode),
+    onMergeMode: (layer, mode: MergeModeName) => visualiser.setMergeMode(layer, mode),
     onAlpha: (layer, a) => {
       if (layer === 'geo') visualiser.setGeoAlpha(a)
       else visualiser.setAtmAlpha(a)

@@ -1,9 +1,12 @@
 /**
- * How the geometric layer composites over the atmospheric one.
+ * How a layer composites over what is beneath it — the geometric layer over
+ * the atmosphere, or the atmosphere over the camera.
  *
- * `index` is what actually reaches the shader (composite.frag.glsl's `uMode`)
- * — a plain int uniform is far cheaper to branch on than a string, and the
- * name here is purely for the control panel's dropdown.
+ * One shared table for both, because it is the same six-way rule wherever it
+ * is applied — see `blendWith` in composite.frag.glsl. `index` is what
+ * actually reaches the shader as `uMode` or `uAtmMode` — a plain int uniform
+ * is far cheaper to branch on than a string, and the name here is purely for
+ * the control panel.
  */
 export const MERGE_MODES = {
   normal: { label: 'Normal', index: 0 },
@@ -21,6 +24,17 @@ export type MergeModeName = keyof typeof MERGE_MODES
  * either fighting it for the same pixels (Normal) or wiping past it (Add).
  */
 export const DEFAULT_MERGE_MODE: MergeModeName = 'screen'
+
+/**
+ * The atmosphere's own default blend, over the camera.
+ *
+ * Screen, not a fork: that is what composite.frag.glsl hardcoded before this
+ * layer got a selectable mode of its own, so any other default would change
+ * every picture already made with the passthrough camera the moment this
+ * control shipped.
+ */
+export const DEFAULT_ATM_MERGE_MODE: MergeModeName = 'screen'
+
 export const DEFAULT_MIX = 0.4
 
 export function isMergeModeName(v: string | null): v is MergeModeName {

@@ -8,12 +8,14 @@
 // old uMix under a truer name, so every picture the crossfade could make is
 // still reachable with uAtmAlpha at 1.
 //
-// Geometric opacity is still applied before the merge mode gets a say — the
-// familiar Photoshop-layer contract. 0 is "just the atmosphere", 1 is "the
-// full blend", and the merge mode only decides what "full" looks like in
+// Each layer's own opacity is applied before its own merge mode gets a say —
+// the familiar Photoshop-layer contract. 0 is "just what's beneath", 1 is
+// "the full blend", and the merge mode only decides what "full" looks like in
 // between. Keeping it universal, rather than only meaningful for Normal, means
-// switching modes never requires also touching the slider to get back to
-// something legible.
+// switching modes never requires also touching the opacity to get back to
+// something legible. uMode and uAtmMode are each a property of the layer they
+// belong to now, not one global picture setting — a blend mode describes how
+// one layer combines with what is beneath it, which is a per-layer fact.
 
 varying vec2 vUv;
 
@@ -21,7 +23,10 @@ uniform sampler2D uAtmosphere;
 uniform sampler2D uGeometry;
 uniform float uGeoAlpha; // 0-1, the geometric layer's own opacity
 uniform float uAtmAlpha; // 0-1, the atmospheric layer's own opacity
-uniform int uMode;  // 0 normal, 1 add, 2 screen, 3 multiply, 4 overlay, 5 difference
+// 0 normal, 1 add, 2 screen, 3 multiply, 4 overlay, 5 difference — see
+// MERGE_MODES in merge-modes.ts, which both of these index into.
+uniform int uMode;    // the geometric layer's own blend, over the atmosphere
+uniform int uAtmMode; // the atmosphere's own blend, over the camera
 // Every layer is drawn in white by its own shader; all of its colour is a gain
 // applied here rather than inside each view. See geo-colour.ts.
 //
@@ -59,6 +64,20 @@ vec3 overlayBlend(vec3 base, vec3 top) {
   return mix(lo, hi, step(0.5, base));
 }
 
+// The one blend rule, applied wherever a layer needs to combine with what is
+// beneath it. Shared by the geo-over-atm step and the atm-over-camera step
+// below, rather than two copies of the same six-way ladder — the moment this
+// entry's whole point (merge is a per-layer property, not a global setting)
+// would otherwise be undone by the mode logic itself staying singular.
+vec3 blendWith(vec3 base, vec3 top, int mode) {
+  if (mode == 1) return base + top;
+  else if (mode == 2) return 1.0 - (1.0 - base) * (1.0 - top);
+  else if (mode == 3) return base * top;
+  else if (mode == 4) return overlayBlend(base, top);
+  else if (mode == 5) return abs(base - top);
+  else return top; // normal
+}
+
 void main() {
   // Rotate about the centre, scale up by the overscan, then drift. The
   // overscan is what keeps the rotated corners inside the source: without it
@@ -77,23 +96,17 @@ void main() {
   vec3 base = texture2D(uAtmosphere, uv).rgb * uAtmAlpha * uAtmColour;
   vec3 top = texture2D(uGeometry, uv).rgb * uGeoColour;
 
-  vec3 blended;
-  if (uMode == 1) blended = base + top;
-  else if (uMode == 2) blended = 1.0 - (1.0 - base) * (1.0 - top);
-  else if (uMode == 3) blended = base * top;
-  else if (uMode == 4) blended = overlayBlend(base, top);
-  else if (uMode == 5) blended = abs(base - top);
-  else blended = top; // normal
-
-  vec3 col = clamp(mix(base, blended, uGeoAlpha), 0.0, 1.0);
+  vec3 col = clamp(mix(base, blendWith(base, top, uMode), uGeoAlpha), 0.0, 1.0);
 
   // The room goes underneath, and the picture becomes light falling on it.
   //
-  // Screen, not alpha: neither layer has an alpha channel to composite with —
-  // both are opaque, dark-grounded and bright-marked. Screening is what makes
-  // white line work read as *projected onto* the room rather than *pasted
-  // over* it, and it leaves black exactly where the picture is black, which is
-  // most of the frame.
+  // The blend here used to be hardcoded to screen, which is why it is not
+  // simply another call to blendWith with uMode: the geometric layer's blend
+  // governs geo-over-atmosphere, and the atmosphere's own uAtmMode is what
+  // now governs how the resulting picture sits on the camera, replacing the
+  // constant that used to do this unconditionally. Screen is still uAtmMode's
+  // default, so nothing about the picture changes until this control is
+  // touched — see merge-modes.ts's DEFAULT_ATM_MERGE_MODE.
   //
   // Sampled from vUv, deliberately NOT the tumbled uv above. The tumble makes
   // the picture feel knocked about by the phone; a view of the actual room
@@ -102,12 +115,13 @@ void main() {
   //
   // At uCameraMix == 0 this collapses to `col` exactly — no cost, no drift in
   // what every existing view already looks like. And with both alphas low,
-  // `col` is near black, so the screen leaves the room almost untouched: that
-  // is the path to a readable camera, and it did not exist before.
+  // `col` is near black, so at the default screen mode the blend leaves the
+  // room almost untouched: that is the path to a readable camera, and it did
+  // not exist before.
   if (uCameraMix > 0.0) {
     vec2 camUv = (vUv - 0.5) * uCameraFit + 0.5;
     vec3 cam = texture2D(uCamera, camUv).rgb * uCamColour;
-    vec3 lit = 1.0 - (1.0 - cam) * (1.0 - col);
+    vec3 lit = blendWith(cam, col, uAtmMode);
     col = mix(col, lit, uCameraMix);
   }
 

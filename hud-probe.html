@@ -19,6 +19,7 @@
     geoColour: { r: 1, g: 0.3, b: 0.4 },
     atmosphericView: 'field',
     mergeMode: 'normal',
+    atmMergeMode: 'screen',
     mix: 0.62,
     geoAlpha: 0.62,
     atmColour: { r: 1, g: 1, b: 1 },
@@ -95,7 +96,7 @@
     const w = window.innerWidth, h = window.innerHeight
     const base = Math.min(w, h)
     const cx = w + 10, cy = h + 10
-    const r = base * [0.88, 0.75, 0.63, 0.53, 0.43][i]
+    const r = base * [0.88, 0.75, 0.63, 0.53, 0.43, 0.33][i]
     const a = (165 + t * (285 - 165)) * (Math.PI / 180)
     return [cx + r * Math.cos(a), cy + r * Math.sin(a)]
   }
@@ -129,7 +130,7 @@
     out.prefs = {
       geoAlpha: prefs.geoAlpha, atmAlpha: prefs.atmAlpha, passthrough: prefs.passthrough,
       geoColour: prefs.geoColour, atmColour: prefs.atmColour, camColour: prefs.camColour,
-      mergeMode: prefs.mergeMode, mapping: prefs.mapping,
+      mergeMode: prefs.mergeMode, atmMergeMode: prefs.atmMergeMode, mapping: prefs.mapping,
       autopilot: prefs.autopilot, showStats: prefs.showStats,
     }
     return out

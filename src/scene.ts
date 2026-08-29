@@ -101,7 +101,10 @@ export interface VisualiserOptions {
   atmColour: GeoColour
   camColour: GeoColour
   atmosphericView: AtmosphericViewName
+  /** The geometric layer's own blend, over the atmosphere. */
   mergeMode: MergeModeName
+  /** The atmospheric layer's own blend, over the camera. */
+  atmMergeMode: MergeModeName
   /** 0-1. The geometric layer's opacity: 0 is pure atmosphere, 1 the full
    *  blend. This is what `mix` used to be, under a name that says what it
    *  actually does now that the atmosphere has one of its own. */
@@ -118,7 +121,9 @@ export interface Visualiser {
   setGeometricView(name: GeometricViewName): void
   /** Swap the atmospheric layer's programme. Recompiles a shader; not a per-frame call. */
   setAtmosphericView(name: AtmosphericViewName): void
-  setMergeMode(mode: MergeModeName): void
+  /** Set a layer's own blend, over what's beneath it: geo over atmosphere,
+   *  atm over the camera. Mirrors `setLayerColour`'s per-layer shape. */
+  setMergeMode(layer: 'geo' | 'atm', mode: MergeModeName): void
   /** Recolour a layer. Cheap: a uniform, not a recompile. */
   setLayerColour(layer: 'geo' | 'atm' | 'cam', colour: GeoColour): void
   /** How far the device has been knocked about. See shake.ts. */
@@ -263,6 +268,7 @@ export function createVisualiser(
     uGeoAlpha: { value: options.geoAlpha },
     uAtmAlpha: { value: options.atmAlpha },
     uMode: { value: MERGE_MODES[options.mergeMode].index },
+    uAtmMode: { value: MERGE_MODES[options.atmMergeMode].index },
     // Seeded from options, not left at white for setLayerColour to correct
     // later: nothing calls that until the HUD is touched, so a stored or
     // URL-supplied colour would be ignored for the whole session.
@@ -521,8 +527,9 @@ export function createVisualiser(
       atmosphereMaterial = next
     },
 
-    setMergeMode(mode) {
-      compositeUniforms.uMode.value = MERGE_MODES[mode].index
+    setMergeMode(layer, mode) {
+      const u = layer === 'geo' ? compositeUniforms.uMode : compositeUniforms.uAtmMode
+      u.value = MERGE_MODES[mode].index
     },
 
     setTumble(t) {
