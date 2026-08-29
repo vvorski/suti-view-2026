@@ -58,7 +58,10 @@
         background: #fff;
         opacity: 0;
         pointer-events: none;
-        transition: opacity 260ms ease-out;
+        /* 260ms → 450ms: long enough to register on a screen someone is
+           also physically shaking, still clearly shorter than the double's
+           340ms two-pulse sequence below. */
+        transition: opacity 450ms ease-out;
       }
       #shake-flash.on {
         opacity: 0.9;
@@ -67,7 +70,11 @@
       /* A double gets a second pulse rather than a longer one, so the two
          read as two events on screen the same way the buzz makes them read
          as two events by feel. */
+      /* The app's own R-channel tint (see CHANNELS in hud.ts), reused rather
+         than inventing a second red nobody chose on purpose — one colour
+         language for "red" across the whole HUD. */
       #shake-flash.double {
+        background: #ff4d5e;
         animation: shake-flash-double 340ms ease-out;
       }
       @keyframes shake-flash-double {

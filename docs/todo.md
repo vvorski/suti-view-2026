@@ -487,3 +487,33 @@ under 20px).
 412\u00d7915 — the column has been re-measured for every gate change this
 session and this is another one.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 11. Double shake flashes red; the single flash holds longer
+`status: done` · added 2026-08-29 · shipped at build 82
+
+**Do** — give the double-shake flash its own red, distinct from the single's
+white, and slow the single's fade so it is easier to catch by eye.
+**Why** — asked for directly, refining the debug flash from entry 9. The two
+kinds currently differ only by pulse shape (fade vs. double-pulse), both in
+the same white — worth telling apart by colour too, and the single's 260ms
+fade is quick to miss on a real device where you are also watching the phone
+move.
+
+**Decided**
+- Red → **`#ff4d5e`**, over inventing a new colour. **Mine**: it is the app's
+  own R-channel tint, already used and legible on the dark ground everywhere
+  else in the HUD — reusing it keeps one colour language rather than adding a
+  second red nobody chose on purpose.
+- Single's fade → **260ms \u2192 450ms**, over a larger or smaller jump.
+  **Mine**: keeps it clearly shorter than the double's 340ms *pulse sequence*
+  while being long enough to register on a screen someone is also physically
+  shaking.
+
+**Lands in** — `index.html`, `#shake-flash.double` (add `background`) and the
+base `#shake-flash` transition duration.
+**Done when** — a single shake's flash is visibly white and holds noticeably
+longer than before; a double's is visibly red rather than white.
+**Verify** — `pnpm build`, `pnpm lint`. CSS/class inspection, as entry 9's
+transitions cannot be observed progressing live in this harness — see
+CLAUDE.md's harness-traps entry on backgrounded-tab animation stalls.
+**Hard stops** — prefs no · url no · capture no · dependency no.
