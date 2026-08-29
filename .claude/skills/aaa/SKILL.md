@@ -1,6 +1,6 @@
 ---
 name: aaa
-description: Use when an idea arrives that should be captured without derailing whatever is being built — takes a rough idea, does enough recon to ask only the questions that matter, resolves every fork with the user, and appends a build-ready entry to docs/todo.md. Invoke as /aaa <idea>.
+description: Use when an idea arrives that should be captured without derailing whatever is being built — takes a rough idea, does the recon, decides everything it can defend and asks only about hard stops and genuine taste forks, then appends a build-ready entry to docs/todo.md. Invoke as /aaa <idea>.
 ---
 
 # aaa — idea in, buildable entry out
@@ -39,26 +39,45 @@ tool calls establishing:
 Recon is for informing the questions, not for designing the thing. Two or three
 calls. If it is taking longer, the idea is a project and wants `spec-to-issue`.
 
-### 2. Ask only what you cannot decide
+### 2. Decide by default; ask only when you cannot
 
-Use `AskUserQuestion`. Batch them — up to four per call — so this is one
-interruption and not five.
+**Take your own recommendation.** If you can see the better option and say why,
+choose it and move on. An idea captured in ninety seconds with six defensible
+calls on the record beats one that took four rounds of questions to reach the
+same place. The user's attention is the scarcest thing in the loop, and every
+question spends it.
 
-**Ask about:**
+A decision is yours when you can defend it in one sentence against the
+alternative. Almost all of them are: which file it lands in, what a constant
+should be, whether to preserve existing behaviour, which of two implementations
+is tidier, what the entry's done-when should measure, build order between
+entries.
 
-- **Taste.** This is a visual project; almost every interesting fork is taste
-  wearing a technical costume. Easing, colour, whether a thing animates, how
-  loud something is. Catching yourself writing "rationale for the palette"
-  means you were about to approve something on the user's behalf.
-- **Scope boundaries.** What is deliberately *not* in it.
-- **Any Hard Stop it trips.** These are the user's to license, always. An
-  unapproved Hard Stop means the entry is `blocked`, not `ready`.
+**Three things are never yours, and no amount of independence changes that:**
 
-**Do not ask about:** anything the codebase answers, anything CLAUDE.md already
-settles, or which of two implementations is tidier. Those are yours.
+1. **A Hard Stop.** The stored `Prefs` shape, URL parameter shape, capture and
+   privacy, a new runtime dependency. These are the user's to license, always.
+   Without an explicit approval the entry is `blocked`, not `ready`, and no
+   recommendation substitutes for the answer.
+2. **A non-negotiable being overridden.** The circular control surface, the
+   audio-never-leaves-the-device promise. Name the constraint, quote it, and
+   let the user decide whether to override their own rule.
+3. **A taste call with no defensible default.** Not "which is nicer" — that you
+   decide — but a genuine fork where both answers are coherent and the choice
+   expresses what the thing *is*. Bigger than Start or matching it. A blend
+   mode per layer or one moved control. If you can argue either side equally
+   well, it is theirs.
 
-Offer a recommended option first and say why. "You pick" is a valid answer and
-means you choose and record what you chose.
+When you do ask, ask once. Batch up to four into a single `AskUserQuestion`,
+lead every one with a recommendation and the reason, and make the options
+concrete enough to choose between at a glance. `[No preference]` is a valid
+answer and means the choice reverts to you — take it, and record it as yours.
+
+**Recon still comes first, and matters more now.** The fewer questions you ask,
+the more the decisions rest on what you found rather than on what you assumed.
+A number from the codebase — how much vertical room there is, what a constant
+already governs, whether the thing half exists — is what makes a self-made call
+defensible instead of a guess wearing confidence.
 
 ### 3. Write the entry
 
@@ -71,6 +90,14 @@ Two fields carry the weight:
 - **Decided** — one line per fork, each recording what was chosen *and what it
   was chosen over*. The rejected option is what stops the decision being
   reopened by whoever builds it.
+
+  **Mark whose call each one was.** A decision the user made and a decision you
+  made are not the same kind of fact, and an entry that blurs them claims an
+  approval nobody gave — the failure `spec-to-issue`'s Approvals table exists
+  to prevent. Write `→ chosen, over rejected.` for theirs, and
+  `→ chosen, over rejected. **Mine**, because …` for yours. The reason is not
+  optional on yours: it is the only thing that makes the call auditable, and
+  the only way the user can overturn it later without re-deriving it.
 - **Done when** — an observable outcome. Never "it works". A number, a state
   visible on screen, or a thing a probe asserts.
 
@@ -97,9 +124,12 @@ Say so plainly and stop, rather than writing a weak entry:
 
 - **The idea is a project, not a task.** More than about three forks, or it
   spans layers. Say it wants `spec-to-issue` and a real spec.
-- **A fork cannot be resolved.** The user is unavailable or genuinely undecided.
-  Write the entry as `blocked`, with a **Blocked on:** line naming exactly what
-  would unblock it — one question, not a summary.
+- **A fork cannot be resolved.** Only for the three kinds above: an unlicensed
+  Hard Stop, an override of a non-negotiable, or a genuine taste fork the user
+  is unavailable to settle. Write the entry as `blocked`, with a
+  **Blocked on:** line naming exactly what would unblock it — one question, not
+  a summary. Everything else you decide and mark as yours; `blocked` is not
+  where uncertainty goes to wait.
 - **It contradicts a non-negotiable.** A rectangular control, or anything that
   breaks the audio-never-leaves-the-device promise. Name the constraint, quote
   it, and let the user decide whether to override their own rule.
@@ -111,4 +141,7 @@ One short paragraph, not a recital of the entry:
 - the number and title,
 - its status, and if blocked, the one thing it waits on,
 - anything the recon turned up that changes the idea — that is the part worth
-  their attention, and the part they cannot see.
+  their attention, and the part they cannot see,
+- **the calls you made on their behalf**, in one line. Not all of them, the
+  ones they might disagree with. Independence is only tolerable if it is
+  visible: a decision made silently is a decision they cannot overturn.

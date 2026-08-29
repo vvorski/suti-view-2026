@@ -20,8 +20,11 @@ and the builder's guess is worse than its question. In a visual project almost
 every interesting fork is a taste question wearing a technical costume — "should
 the arc ease out or grow linearly" reads as implementation and is not.
 
-Add entries with `/aaa <idea>`, which asks the questions and writes the entry.
-Writing one by hand is fine too; the format is below.
+Add entries with `/aaa <idea>`. It decides everything it can defend and asks
+only about hard stops and genuine taste forks, so most ideas cost one answer or
+none. Calls it made itself are marked **Mine** with a reason, which is what
+makes them overturnable later without re-deriving them. Writing an entry by
+hand is fine too; the format is below.
 
 ## Format
 
@@ -32,8 +35,9 @@ Writing one by hand is fine too; the format is below.
 **Do** — one sentence, imperative.
 **Why** — one sentence. The problem, not the solution.
 
-**Decided** — every fork the user settled, and what it was chosen *over*.
+**Decided** — every fork, what it was chosen *over*, and whose call it was.
 - Question → chosen, over rejected.
+- Question → chosen, over rejected. **Mine**, because reason.
 
 **Lands in** — files, with line numbers where they are known.
 **Done when** — an observable outcome, not "it works".
