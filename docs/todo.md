@@ -2519,3 +2519,104 @@ four emitters live, since the resolution ladder will otherwise absorb a
 regression by quietly dropping quality. Also `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs no · url no · capture no (touch coordinates drive the
 frame and are neither stored nor sent) · dependency no.
+
+### 34. A layer at zero opacity still imposes its blend mode
+`status: ready` · added 2026-08-29
+
+**Do** — apply the atmosphere's alpha as a mix of the blend's *result*, the way
+the geometric layer's alpha already works, instead of pre-multiplying the
+atmosphere's colour toward black before the blend sees it.
+**Why** — under Multiply and Overlay an atmosphere at zero opacity does not
+disappear, it turns the whole frame black. That is the dark screen, and it is
+reachable by a shake.
+
+**Decided**
+- The report is correct, and the asymmetry is exact → **the two layers spell
+  alpha differently.** `composite.frag.glsl:105` applies the geometric alpha as
+  `mix(base, blendWith(...), uGeoAlpha)`, so at `uGeoAlpha == 0` the result is
+  `base` for every mode — the layer and its mode both vanish, which is what the
+  report asks for. Line 102 applies the atmospheric alpha as
+  `atmosphere * uAtmAlpha`, which does not make the layer absent; it makes it
+  **black**, and black is not neutral under half the modes.
+- Measured, not reasoned about → replicating `blendWith` and the composite
+  arithmetic exactly, with the atmosphere invisible (`uAtmAlpha = 0`) and the
+  geometry at 0.6:
+
+  | uMode | result | should be |
+  |---|---|---|
+  | Normal, Add, Screen, Difference | 0.600 | 0.600 ✓ |
+  | Multiply | **0.000** | 0.600 |
+  | Overlay | **0.000** | 0.600 |
+
+  Two of the six modes take a picture that has a visible geometric layer and
+  return black. The same probe run with `uGeoAlpha == 0` returns the
+  atmosphere unharmed in all six, confirming the fault is on one side only.
+- It is not only the zero case → fading the atmosphere out under Multiply walks
+  the whole picture 0.42 → 0.00 as the slider travels, when it should walk
+  toward 0.60, the picture without an atmosphere. **Fading a layer out
+  currently moves the frame toward black rather than toward its own absence.**
+  That is the "quite dark" complaint in one line, and it is why the symptom is
+  vague rather than a clean on/off.
+- Relationship to entry 21 → **that entry fixed a symptom of this.** It found
+  the shuffle could floor both alphas low and multiply them together, and
+  raised the floors to 0.5. It named `composite.frag.glsl:96` (now 102) as the
+  mechanism and left the pre-multiply in place. With this fixed, entry 21's
+  floors are belt-and-braces rather than the only thing standing between the
+  shuffle and a black screen. Do not remove them — a low-opacity picture is
+  still a poor thing to hand back — but they stop being load-bearing.
+- How it became reachable → **the shuffle randomises both merge modes at depth
+  ≥ 0.45** (`main.ts:311-314`), uniformly over all six, so a medium shake has a
+  1-in-3 chance of landing the atmosphere on Multiply or Overlay, and only the
+  0.5 alpha floor from entry 21 keeps the result off pure black. The modes
+  became shuffleable more recently than they became selectable, which matches
+  "some versions ago".
+- The fix, in three lines → **Mine**, because it satisfies the stated
+  invariant with no new uniform, no prefs change, and no new control:
+
+  ```glsl
+  vec3 atm  = texture2D(uAtmosphere, uv).rgb * uAtmColour;   // undimmed
+  vec3 geo  = texture2D(uGeometry,   uv).rgb * uGeoColour;
+  vec3 both = blendWith(atm, geo, uMode);
+  vec3 col  = clamp(mix(atm * uAtmAlpha, mix(geo, both, uAtmAlpha), uGeoAlpha),
+                    0.0, 1.0);
+  ```
+
+  The inner `mix` is the whole change: the atmosphere's alpha now chooses
+  between *the geometry alone* and *the blend*, rather than between *black* and
+  *the layer*.
+- What it costs in existing pictures → **nothing at the default, and nothing at
+  either endpoint.** Verified against the current arithmetic across the alpha
+  range: Normal, Add and Screen are pixel-identical everywhere, and Screen is
+  the default for both layers (`merge-modes.ts`). Only Multiply, Overlay and
+  Difference move, and only where they were wrong — at full opacity all six are
+  identical to today. A stored preference cannot therefore be made to look
+  different unless it is already on one of those three at partial opacity, and
+  in that case it currently looks darker than it was asked to.
+- The camera step is **deliberately not touched** → line 130's
+  `blendWith(cam, col, uAtmMode)` has the same fault in a stronger form: with
+  the atmosphere invisible, `uAtmMode` still fully governs how the picture sits
+  on the room (Difference gives 0.10, Multiply 0.30, Add 1.00 from the same
+  inputs). Fixing it by the same rule would leave picture-over-camera with no
+  mode control at all, and giving it its own control is a new arc on a surface
+  whose non-negotiable is that it stays circular. **Mine**, to leave it: this
+  entry fixes the layer whose alpha is the one being complained about, and the
+  camera case wants a design decision rather than a correction.
+
+**Lands in**
+- `src/shaders/composite.frag.glsl:102-105` — the whole change; four lines
+  replacing three. The comment above line 102 explains why the dimming happens
+  before the blend and becomes wrong when this lands — rewrite it rather than
+  leaving it to contradict the code.
+
+**Done when** — with the atmosphere's opacity arc at zero, cycling the
+atmosphere's merge mode through all six leaves the frame visibly unchanged, and
+in particular Multiply and Overlay no longer black it out. Sweeping the same
+arc from full to zero under Multiply ends on the geometry alone, not on black.
+**Verify** — a node probe over the composite arithmetic asserting the three
+invariants (alpha 0 removes the layer and its mode for all six modes; the other
+layer's alpha behaviour is unchanged; both alphas at 1 is pixel-identical to
+today), because this is arithmetic and the browser cannot tell 0.51 from 0.46.
+Then on screen at 320×568 and 360×640, because the merge arcs are a shared
+surface. `pnpm build`, `pnpm lint`, and `pnpm probe` unchanged.
+**Hard stops** — prefs no (no field added, changed or reinterpreted) · url no ·
+capture no · dependency no.
