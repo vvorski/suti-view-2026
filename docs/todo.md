@@ -323,3 +323,68 @@ filter over the page for the test above.
 compete for the same arc. Check the camera group specifically, where the
 opacity band is outermost and carries no labels, against the geometric group,
 where a segmented-looking band would sit under text.
+
+### 8. Let the buzz report how hard you shook
+`status: ready` · added 2026-08-29
+
+**Do** — scale the confirmation pattern by the shake's own intensity, so a
+firm shake feels different from a barely-qualifying one. `Tumble` already
+tracks `peak`, the recent high-water AC magnitude in m/s²; carry it out of
+`takeStrong()` and pick the pattern from it.
+**Why** — the buzz currently says "heard you" and nothing else. The detector
+already knows *how much* it heard and throws that number away at the moment it
+would be most useful. A shake that only just cleared the threshold and one that
+nearly threw the phone produce identical feedback, so there is no way to learn
+where the threshold is except by trial.
+
+**Decided**
+- Scope → intensity on the **existing** single/double patterns, over building
+  a general haptic vocabulary. **Mine**, because the two patterns already carry
+  the meaning that matters (which thing happened); intensity is a second axis
+  on top, and adding a third signal before the first two are confirmed
+  perceptible on a real phone would be building on unverified ground.
+- Where the number comes from → `peak`, over `disturb`. **Mine**: `disturb` is
+  normalised and saturates at FULL, so everything from a brisk wave upward
+  reads as 1.0 and the distinction this entry exists to make would be lost at
+  exactly the top of the range where it is most interesting. `peak` is raw
+  m/s² and does not saturate.
+- Floor → the gentlest qualifying shake still gets a clearly perceptible
+  pattern, not a whisper. **Mine**: a confirmation that can be too faint to
+  feel is the bug builds 68 and 76 were both about, and reintroducing it as a
+  feature would be absurd.
+
+**Lands in** — `src/shake.ts` (`takeStrong`/`takeDouble` return the peak, or a
+sibling reports it), `src/haptics.ts` (pattern scaled by intensity),
+`src/main.ts` (pass it through).
+**Done when** — a gentle qualifying shake and a hard one produce measurably
+different patterns, verified by stubbing `navigator.vibrate` and comparing the
+arrays; and the gentlest one is still above the durations that builds 68 and 76
+established as perceptible.
+**Verify** — `pnpm probe:shake` unchanged: this must not alter *whether*
+anything fires, only what it feels like. The vibrate-stub check from build 76,
+extended to assert two intensities differ. Then the phone.
+**Hard stops** — prefs no · url no · capture no · dependency **no — see below**.
+
+**On the libraries in the research.** All four are declined, and declining a
+dependency needs no licence — only adding one does. The research's own
+conclusion for a normal website is "no library is the best library", which
+matches what is already here:
+
+- **web-haptics / pulsar-haptics** — presets and pattern composition over
+  `navigator.vibrate`. `haptics.ts` is 100 lines, has the two patterns this app
+  needs, and already records why each number is what it is. A dependency would
+  add bundle weight against Hard Stop 4 to replace code that exists and works.
+- **browser-haptic** — pitched for its iOS `<label>`/switch-control trick.
+  `haptics.ts:18` already names that trick and rejects it as not usable here,
+  reached independently. It is also moot: the target phone is Android Chrome.
+- **@capacitor/haptics, @capacitor/motion** — would mean shipping a native
+  wrapper. This is a page on GitHub Pages; that is a different product.
+- **shake.js** — the research itself says take the algorithm, not the package.
+  Ours is already past it: shake.js is threshold-and-debounce, while this
+  detector counts reversals *and* has a sustained-agitation path, which is what
+  makes it reject a knock and its rebound. `pnpm probe:shake` asserts that, and
+  a threshold-only detector fails it.
+
+The one thing worth taking from the research is the idea above — continuous
+shake energy driving the response rather than a boolean — and it needs no
+dependency at all, because the number is already being computed.
