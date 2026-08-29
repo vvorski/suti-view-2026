@@ -319,6 +319,18 @@ export function createVisualiser(
   const ripples = createRippleState()
   let lastNovelty = 0
   let lastAutoReroll = -1000
+  // The canvas's own client box, as of the last applySize() — see
+  // sizeCheckFrames below. Compared in CSS pixels, not the drawing buffer's,
+  // because that is the number CSS is actually stretching the buffer to.
+  let lastClientWidth = 0
+  let lastClientHeight = 0
+  /** Frames since the client box was last checked against what the buffer
+   *  was sized for. Not a per-frame check: reading clientWidth/clientHeight
+   *  can force layout, and this changes at most twice a session (fullscreen,
+   *  rotation) — paying that cost 60 times a second to catch something that
+   *  rare is the wrong trade. 30 frames is twice a second, which bounds any
+   *  visible distortion to about half that without adding a real cost. */
+  let sizeCheckFrames = 0
 
   const onContextLost = (event: Event) => {
     // Without preventDefault, Three never gets the restore event. Mobile
@@ -338,7 +350,16 @@ export function createVisualiser(
 
   function applySize() {
     renderer.setPixelRatio(RATIO_LADDER[rung])
-    renderer.setSize(window.innerWidth, window.innerHeight, false)
+    // The canvas's own client box, not window.innerWidth/innerHeight: CSS
+    // (`#canvas { inset: 0; width: 100%; height: 100% }`) paints the canvas
+    // across whatever that box is, and window.inner* was always only a proxy
+    // for it — one that fullscreen can silently stop agreeing with, which is
+    // exactly what stretched every circle in the app into an ellipse. Sizing
+    // from the same box CSS is stretching the buffer across makes the two
+    // numbers one number, so they cannot disagree by construction.
+    lastClientWidth = canvas.clientWidth
+    lastClientHeight = canvas.clientHeight
+    renderer.setSize(lastClientWidth, lastClientHeight, false)
     // Uniform wants the drawing-buffer size, not the CSS size — they differ by
     // the pixel ratio, and using CSS pixels here makes the shader's aspect
     // correction subtly wrong on every retina device.
@@ -402,6 +423,23 @@ export function createVisualiser(
     }
   }
 
+  /**
+   * Catch a viewport that changed shape without firing the `resize` this
+   * app listens for — fullscreen is the one already known to do that; there
+   * may be others nobody has thought of yet, which is the actual reason this
+   * exists rather than one more listener for one more event name. The
+   * existing `resize` handler stays as the immediate path, so an ordinary
+   * rotation does not wait up to 30 frames for this to notice.
+   */
+  function checkSize(): void {
+    sizeCheckFrames++
+    if (sizeCheckFrames < 30) return
+    sizeCheckFrames = 0
+    if (canvas.clientWidth !== lastClientWidth || canvas.clientHeight !== lastClientHeight) {
+      applySize()
+    }
+  }
+
   return {
     render(params, spectrum) {
       if (contextLost) return
@@ -426,6 +464,7 @@ export function createVisualiser(
       elapsed = now
       frameMs += (dt * 1000 - frameMs) * 0.05
       adapt(dt)
+      checkSize()
 
       // Advance the rolling spectrogram at a fixed rate rather than once per
       // rendered frame, so the time axis means the same thing regardless of

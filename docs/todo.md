@@ -959,7 +959,7 @@ still resolves to a full `animation: none` shorthand, confirmed by reading
 its serialised `cssText` directly rather than only trusting the source.
 
 ### 17. In fullscreen the circles are ellipses
-`status: ready` · added 2026-08-29
+`status: done` · added 2026-08-29 · shipped at build 101
 
 **Do** — size the drawing buffer from the canvas's own client box rather than
 from `window.innerWidth`/`innerHeight`, and re-check it periodically, so the
@@ -1032,6 +1032,25 @@ not frontmost and an automated one therefore proves nothing — the reason
 `probe-fullscreen.ts` stubs the API rather than driving it. Also `pnpm
 probe:fullscreen` unchanged, `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+**Build note.** Verified what this harness can actually verify: with
+`?geometric=circles`, `canvas.width/canvas.height` matches
+`canvas.clientWidth/canvas.clientHeight` to full floating-point precision in
+a normal window, and in *both* a 320×568 and a 568×320 iframe (a portrait and
+a landscape box are the structural stand-in for what fullscreen or a rotation
+actually changes — the aspect the canvas is stretched across). Both `pnpm
+build` and `pnpm lint` clean; `pnpm probe:fullscreen` unchanged, as expected —
+this entry doesn't touch the fullscreen request path, only what sizes the
+buffer.
+
+**Not verified here, and said so rather than claimed otherwise:** the 30-frame
+periodic re-check (`checkSize()`) needs the render loop to actually advance,
+which runs on `requestAnimationFrame` — and rAF never fires in this session's
+non-frontmost automation window (already in CLAUDE.md's harness-traps list).
+So the *initial* sizing fix is confirmed on screen; the periodic catch-all's
+live behaviour, and real fullscreen entry on a handset, are exactly what the
+entry's own Verify section already flags as needing a real device — still
+owed there.
 
 ### 18. A tap along the bottom saves the frame
 `status: ready` · added 2026-08-29
