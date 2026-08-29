@@ -65,35 +65,36 @@ const TAP_SLOP_PX = 12
 /** Half-width of a band's grab zone, in px. */
 const GRAB_PX = 24
 
-/** The mapping fan sweeps directly out to the chip's right, not up or down,
- *  because up and down are exactly where its neighbours in the same button
- *  column already are — the chip stack is a single vertical line, so any
- *  sweep with much vertical component lands an option on top of the chip
- *  above or below it rather than beside the one that opened the fan. */
-const FAN_A0 = -45 * DEG
-const FAN_A1 = 45 * DEG
-/** Centre-to-option radius for the fan, in screen px (fixed, unlike the dial
- *  bands' viewport-scaled radii, because the chip itself is a fixed CSS
- *  size). Chosen so both gaps clear by roughly a thumb's slop: adjacent 48px
- *  option circles (FAN_OPT_R*2) stay about 17px apart, and the nearest
- *  option clears the chip above/below in the column by about 10px. */
-const FAN_R = 85
-/** Radius of a fan option circle. Equal to GRAB_PX, this file's established
- *  thumb-safe half-width, so the visible circle doubles as its own hit
- *  target rather than needing a separate invisible one like the bands do. */
-const FAN_OPT_R = GRAB_PX
+/** Centre-to-option radius for the mapping dial, in screen px (fixed, unlike
+ *  the main bands' viewport-scaled radii, because the chip itself is a fixed
+ *  CSS size). Same value Task 1's tap-to-pick fan used at this spot (its own
+ *  FAN_R, now gone) — that number was already checked on screen to clear
+ *  both the chip's column neighbours and the bands' own grab arcs, and nothing
+ *  about turning the same three options into a drag changes that footprint. */
+const MAP_R = 85
+/** Angular spacing between adjacent options on the mapping dial — a
+ *  different origin from PITCH above (the wedge hinge), so a separate
+ *  constant rather than reuse. A drag's clamped rotation can swing an
+ *  unselected option as far as (keys.length-1) pitches from the notch — up
+ *  to 2×MAP_PITCH with three options — and that swing has to stay clear of
+ *  this chip's column neighbours (the mix readout above, AUTO below), the
+ *  same up/down-avoidance the old fan's fixed ±45° existed for. 20° keeps
+ *  the worst-case swing to 40° either side of the notch, five degrees short
+ *  of the fan's own limit — needed because unlike the fan's static circles,
+ *  every option here is moving, not just the one being watched. */
+const MAP_PITCH = 20 * DEG
 
 /** The colour rings' sweep, relative to the colour chip's own centre — same
- *  convention as FAN_A0/FAN_A1 (0 points due right, positive is clockwise
- *  since screen y grows downward), and for the same reason: the chip's
- *  neighbours in the column (the mix readout above, AUTO below) sit at
- *  roughly ±90°, so the sweep stays clear of both by keeping well inside
- *  that. Wider than the fan's own ±45° because a 0-100 drag needs an arc
- *  long enough to resolve a value along, not just three fixed stops. */
+ *  convention as the mapping dial's own angles (0 points due right, positive
+ *  is clockwise since screen y grows downward), and for the same reason: the
+ *  chip's neighbours in the column (the mix readout above, AUTO below) sit
+ *  at roughly ±90°, so the sweep stays clear of both by keeping well inside
+ *  that. Wider than the mapping dial's own reach because a 0-100 drag needs
+ *  an arc long enough to resolve a value along, not just three option stops. */
 const RING_A0 = -50 * DEG
 const RING_A1 = 50 * DEG
 /** Innermost ring's radius, in screen px anchored to the colour chip (fixed,
- *  like FAN_R, not viewport-scaled like the dial bands — the chip itself is
+ *  like MAP_R, not viewport-scaled like the dial bands — the chip itself is
  *  a fixed CSS size). The chip is a 26px-radius circle; a ring's own hit
  *  zone reaches GRAB_PX further in than its drawn radius, so anything closer
  *  than about 26 + GRAB_PX would let the ring's grab arc reach onto the chip
@@ -159,8 +160,8 @@ const MAPPING_LABELS: Record<MappingName, string> = {
 }
 
 /** Three-letter codes for the same three values, used wherever the full
- *  MAPPING_LABELS text won't fit — the mapping chip itself and its fan's
- *  option circles, both under 50px across. */
+ *  MAPPING_LABELS text won't fit — the mapping chip itself and its dial's
+ *  option labels, both under 50px across. */
 const MAPPING_SHORT: Record<MappingName, string> = {
   relative: 'REL',
   'speech-band': 'ABS',
@@ -264,24 +265,19 @@ const CSS = `
   border: 1px solid rgba(0,0,0,0.45);
 }
 
-/* The mapping chip's fan: three circular options drawn into the dial svg
-   (not HTML) so their position can be derived the same way everything else
-   in the dial is — polar coordinates around a centre, here the chip's own
-   centre instead of the wedge hinge. */
-.hud-fan-stem { stroke: rgba(169,166,232,0.22); stroke-width: 1; }
-.hud-fan-opt { fill: rgba(12,12,26,0.94); stroke: rgba(44,41,71,0.9); stroke-width: 1.2; }
-.hud-fan-opt.on { fill: rgba(26,24,48,0.96); stroke: #9d9bf0; stroke-width: 1.6; }
-.hud-fan-label {
-  font: 500 8px "Chakra Petch", ui-sans-serif, system-ui, sans-serif;
-  letter-spacing: 0.04em; text-transform: uppercase;
-  fill: #8a86a4; text-anchor: middle; dominant-baseline: middle;
-}
-.hud-fan-label.on { fill: #f0eeff; }
+/* The mapping chip's dial: three labels drawn into the dial svg (not HTML),
+   reusing the exact .hud-item/.hud-item.on styling the main bands already
+   use for their own option text — this is the same "options on an arc, one
+   highlighted" picture at a smaller radius, so it gets the same classes
+   rather than a parallel set. Its track and notch tick reuse .hud-track and
+   .hud-tick.major the same way. Task 1's fan (hud-fan-*, three independently
+   tappable circles with their own stems) is gone: a drag control has one
+   thing that turns, not three separate targets. */
 
 /* The colour chip's popup used to be this panel: three linear sliders, one
    per channel. The sliders are gone — the popup is now three concentric
    rings drawn straight into the dial svg, anchored to this chip the same way
-   the mapping fan is anchored to that one (see colourCenter() and
+   the mapping dial is anchored to that one (see colourCenter() and
    paintColourPopup()). What is left of the panel is just the composite
    swatch: a single-glance check that the three channels haven't combined
    into something unexpected, kept because the exact per-channel numbers now
@@ -494,17 +490,24 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
   let mixArc: SVGPathElement | null = null
   let mixKnob: SVGCircleElement | null = null
 
-  // The mapping fan. Rebuilt each layout pass like the bands and the mix arc
-  // are, then just repositioned and shown/hidden by paintMapFan() — except
+  // The mapping dial. Rebuilt each layout pass like the bands and the mix arc
+  // are, then just repositioned and shown/hidden by paintMapDial() — except
   // its geometry is anchored to the mapping chip's own screen position
-  // (an HTML element outside the dial) rather than to the dial's centre.
-  const mapFanStems: SVGLineElement[] = []
-  const mapFanOpts: SVGCircleElement[] = []
-  const mapFanLabels: SVGTextElement[] = []
+  // (an HTML element outside the dial) rather than to the dial's centre. One
+  // track, one notch tick, one hit arc (the single drag target — there is no
+  // per-option hit any more) and one label per option.
+  const mapDialLabels: SVGTextElement[] = []
+  let mapDialTrack: SVGPathElement | null = null
+  let mapDialTick: SVGLineElement | null = null
+  let mapDialHit: SVGPathElement | null = null
+  /** Rotation, in radians, of the mapping dial's ring of options — the
+   *  chip-anchored analogue of a Band's own `rot`. 0 puts mappingKeys[0]
+   *  under the notch (angle 0, i.e. due right of the chip). */
+  let mapRot = 0
 
   // The colour rings, one array per element kind, indexed like CHANNELS
   // (0=R, 1=G, 2=B — R outermost, B innermost; see ringRadius()). Same
-  // rebuild-then-reposition split as the mapping fan above, anchored to the
+  // rebuild-then-reposition split as the mapping dial above, anchored to the
   // colour chip's own screen position instead of the dial's centre.
   const colourTracks: SVGPathElement[] = []
   const colourFills: SVGPathElement[] = []
@@ -512,16 +515,16 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
   const colourLabels: SVGTextElement[] = []
   const colourHits: SVGPathElement[] = []
 
-  // Only one popup — the mapping fan, or a colour panel — is ever open at
+  // Only one popup — the mapping dial, or a colour panel — is ever open at
   // once. Each opener decides its own open/closed state from what it was
   // before acting, then unconditionally closes the other; that's what lets
   // a second tap on the same chip close it while a tap on any other chip
   // always closes both and only reopens the one that was tapped.
-  let mapFanOpen = false
+  let mapDialOpen = false
 
   const rgbBtn = mkButton('Geometric layer colour', 'RGB', () => {
     const wasOpen = rgbPanel.classList.contains('open')
-    closeMapFan()
+    closeMapDial()
     rgbPanel.classList.toggle('open', !wasOpen)
     paintButtons()
     paintColourPopup()
@@ -533,7 +536,7 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
 
   const autoBtn = mkButton('Autopilot', 'AUTO', () => {
     closeColourPopup()
-    closeMapFan()
+    closeMapDial()
     prefs.autopilot = !prefs.autopilot
     savePrefs(prefs)
     paintButtons()
@@ -543,16 +546,20 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
   })
 
   const mapBtn = mkButton('Mapping', 'MAP', () => {
-    const wasOpen = mapFanOpen
+    const wasOpen = mapDialOpen
     closeColourPopup()
-    mapFanOpen = !wasOpen
-    paintMapFan()
+    mapDialOpen = !wasOpen
+    // Mirrors restingRot()'s behaviour for the main bands: opening always
+    // parks the currently-selected option under the notch, regardless of
+    // wherever a previous drag left mapRot sitting.
+    if (mapDialOpen) mapRot = restingRotOf(mappingKeys, prefs.mapping, MAP_PITCH)
+    paintMapDial()
     paintButtons()
   })
 
   const statsBtn = mkButton('Numeric readout', 'NUM', () => {
     closeColourPopup()
-    closeMapFan()
+    closeMapDial()
     prefs.showStats = !prefs.showStats
     stats.hidden = !prefs.showStats
     if (!prefs.showStats) stats.textContent = ''
@@ -560,17 +567,17 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     paintButtons()
   })
 
-  function closeMapFan(): void {
-    if (!mapFanOpen) return
-    mapFanOpen = false
-    paintMapFan()
+  function closeMapDial(): void {
+    if (!mapDialOpen) return
+    mapDialOpen = false
+    paintMapDial()
   }
 
   // The colour popup's open/closed state lives on rgbPanel's own class,
-  // unlike mapFanOpen which has to be a closure variable — the mapping fan
+  // unlike mapDialOpen which has to be a closure variable — the mapping dial
   // is pure svg with nothing surviving build()'s teardown to hold a flag on,
   // but rgbPanel is an ordinary DOM node outside the svg, so its class
-  // already survives resize the same way mapFanOpen is made to.
+  // already survives resize the same way mapDialOpen is made to.
   function closeColourPopup(): void {
     if (!rgbPanel.classList.contains('open')) return
     rgbPanel.classList.remove('open')
@@ -596,9 +603,19 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     return arcAt(cx, cy, r, a0, a1)
   }
 
-  /** Rotation that puts the currently-selected key under the notch. */
+  /** Rotation that puts `cur` under the notch, given `pitch` spacing between
+   *  adjacent items in `keys`. Generalised out from what was a private
+   *  one-liner on Band<K> the moment the mapping dial needed the identical
+   *  arithmetic around a different origin, radius, and pitch — the same
+   *  boundary-grows-a-second-tenant case bindTurnDrag below is also an
+   *  instance of. */
+  function restingRotOf<K extends string>(keys: readonly K[], cur: K, pitch: number): number {
+    return -Math.max(0, keys.indexOf(cur)) * pitch
+  }
+  /** The main bands' own case of restingRotOf: their origin is always the
+   *  wedge hinge, so PITCH and Band<K>'s own keys/current() cover it. */
   function restingRot(b: Band<string>): number {
-    return -Math.max(0, b.keys.indexOf(b.current())) * PITCH
+    return restingRotOf(b.keys, b.current(), PITCH)
   }
 
   function build(): void {
@@ -721,41 +738,73 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     bindMixDrag(mixHit)
     svg.appendChild(mixHit)
 
-    // The mapping fan, added last of all so it draws above everything else
-    // in the dial — it has to, since it can be opened while the fan sits
-    // over band labels near the chip's corner of the screen.
-    mapFanStems.length = 0
-    mapFanOpts.length = 0
-    mapFanLabels.length = 0
-    mappingKeys.forEach((k) => {
-      const stem = el('line', { class: 'hud-fan-stem' })
-      svg.appendChild(stem)
-      mapFanStems.push(stem)
-
-      const opt = el('circle', { class: 'hud-fan-opt btn', r: FAN_OPT_R })
-      opt.setAttribute('aria-label', MAPPING_LABELS[k])
-      opt.addEventListener('pointerup', (e) => {
-        e.stopPropagation()
-        prefs.mapping = k
-        savePrefs(prefs)
-        handlers.onMapping(prefs.mapping)
-        mapFanOpen = false
-        paintMapFan()
-        paintButtons()
-      })
-      svg.appendChild(opt)
-      mapFanOpts.push(opt)
-
-      const label = el('text', { class: 'hud-fan-label' })
-      label.textContent = MAPPING_SHORT[k]
+    // The mapping dial, added last of all so it draws above everything else
+    // in the dial — it has to, since it can be opened while it sits over
+    // band labels near the chip's corner of the screen, and, more to the
+    // point, its hit arc has to win against the bands' own much larger grab
+    // arcs underneath wherever the two overlap (see the pointer-events
+    // toggle in paintMapDial() — DOM order alone decides who a pointerdown
+    // reaches when two `.hit`/`.btn` shapes both cover the same point, and
+    // Task 1 already proved this ordering clears the contested annulus its
+    // own fan sat in; the same annulus, same fix, still applies here).
+    mapDialLabels.length = 0
+    mappingKeys.forEach(() => {
+      const label = el('text', { class: 'hud-item' })
       svg.appendChild(label)
-      mapFanLabels.push(label)
+      mapDialLabels.push(label)
     })
+    {
+      const track = el('path', { class: 'hud-track', 'stroke-width': 4 })
+      svg.appendChild(track)
+      mapDialTrack = track
 
-    // The colour rings, added last of all — after the mapping fan, even —
+      const tick = el('line', { class: 'hud-tick major' })
+      svg.appendChild(tick)
+      mapDialTick = tick
+
+      const hit = el('path', {
+        class: 'hit',
+        fill: 'none',
+        stroke: 'transparent',
+        'stroke-width': GRAB_PX * 2,
+      })
+      hit.setAttribute('aria-label', 'Mapping options')
+      svg.appendChild(hit)
+      mapDialHit = hit
+
+      bindTurnDrag(
+        hit,
+        mapDialCenter,
+        MAP_PITCH,
+        mappingKeys,
+        () => mapRot,
+        (r) => {
+          mapRot = r
+        },
+        paintMapDial,
+        (next) => {
+          if (next !== prefs.mapping) {
+            prefs.mapping = next
+            savePrefs(prefs)
+            handlers.onMapping(prefs.mapping)
+          }
+          // Turning to a value is choosing it — the same "settling under the
+          // notch commits" rule the main bands already follow — so every
+          // release closes the dial, whether or not the value actually
+          // changed. A drag that ends back where it started is still a
+          // completed gesture, not a cancel; the scrim and a second chip tap
+          // are the two ways to back out without choosing anything.
+          mapDialOpen = false
+          paintButtons()
+        },
+      )
+    }
+    mapRot = restingRotOf(mappingKeys, prefs.mapping, MAP_PITCH)
+
+    // The colour rings, added last of all — after the mapping dial, even —
     // so that if a phone is somehow narrow enough for the two popups'
     // territory to touch, whichever is open draws on top. They never are
-    // both open at once (see closeColourPopup()/closeMapFan()), so in
+    // both open at once (see closeColourPopup()/closeMapDial()), so in
     // practice this only matters for z-order over the dial bands beneath.
     colourTracks.length = 0
     colourFills.length = 0
@@ -812,14 +861,16 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     paintMix()
     paintRgb()
     paintButtons()
-    paintMapFan()
+    paintMapDial()
     paintColourPopup()
   }
 
   /** The mapping chip's centre, in the svg's own coordinate space — the same
-   *  client-rect-to-local conversion localAngle() does for pointer events,
-   *  just for an element's position instead of an event's. */
-  function mapFanCenter(): [number, number] {
+   *  client-rect-to-local conversion angleFrom() does for pointer events,
+   *  just for an element's position instead of an event's. Named for what it
+   *  anchors now, not what Task 1 anchored here (mapFanCenter()) — the
+   *  computation itself is unchanged. */
+  function mapDialCenter(): [number, number] {
     const svgRect = svg.getBoundingClientRect()
     const chipRect = mapBtn.getBoundingClientRect()
     return [
@@ -828,41 +879,50 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     ]
   }
 
-  function paintMapFan(): void {
-    const [fx, fy] = mapFanCenter()
+  function paintMapDial(): void {
+    if (!mapDialTrack || !mapDialTick || !mapDialHit) return
+    const [fx, fy] = mapDialCenter()
+    // The fixed housing the ring of options turns inside. Its extent is
+    // exactly the worst-case swing MAP_PITCH's own comment reasons about —
+    // the same bound bindTurnDrag's clamp enforces on mapRot — so the drawn
+    // track never has to show more than a fully-turned drag can ever reach.
+    const sweep = (mappingKeys.length - 1) * MAP_PITCH
+    mapDialTrack.setAttribute('d', arcAt(fx, fy, MAP_R, -sweep, sweep))
+    mapDialTrack.setAttribute('opacity', mapDialOpen ? '1' : '0')
+
+    // A fixed tick at angle 0 — due right of the chip, same direction the
+    // old fan opened in — marking where a settled drag reads, the same role
+    // the wedge's own selector trapezoid plays for the main bands, just a
+    // plain tick because three always-visible options don't need a shape as
+    // heavy as that trapezoid to find.
+    const [tx0, ty0] = polarAt(fx, fy, MAP_R - 8, 0)
+    const [tx1, ty1] = polarAt(fx, fy, MAP_R + 8, 0)
+    mapDialTick.setAttribute('x1', String(tx0))
+    mapDialTick.setAttribute('y1', String(ty0))
+    mapDialTick.setAttribute('x2', String(tx1))
+    mapDialTick.setAttribute('y2', String(ty1))
+    mapDialTick.setAttribute('opacity', mapDialOpen ? '1' : '0')
+
     mappingKeys.forEach((k, i) => {
-      const a = FAN_A0 + (i * (FAN_A1 - FAN_A0)) / (mappingKeys.length - 1)
-      // Not polar() — that's centred on the wedge hinge (cx,cy), and this
-      // fan is centred on the chip (fx,fy) instead.
-      const x = fx + FAN_R * Math.cos(a)
-      const y = fy + FAN_R * Math.sin(a)
-      const stem = mapFanStems[i]
-      stem.setAttribute('x1', String(fx))
-      stem.setAttribute('y1', String(fy))
-      stem.setAttribute('x2', String(x))
-      stem.setAttribute('y2', String(y))
-      stem.setAttribute('opacity', mapFanOpen ? '1' : '0')
-
-      const opt = mapFanOpts[i]
-      opt.setAttribute('cx', String(x))
-      opt.setAttribute('cy', String(y))
-      opt.setAttribute('opacity', mapFanOpen ? '1' : '0')
-      opt.classList.toggle('on', k === prefs.mapping)
-      // Invisible when closed must also mean untappable — opacity alone
-      // would leave three 48px targets sitting live over whatever else is
-      // underneath them.
-      opt.style.pointerEvents = mapFanOpen ? 'auto' : 'none'
-
-      const label = mapFanLabels[i]
+      const a = i * MAP_PITCH + mapRot
+      const [x, y] = polarAt(fx, fy, MAP_R, a)
+      const label = mapDialLabels[i]
       label.setAttribute('x', String(x))
       label.setAttribute('y', String(y))
-      label.setAttribute('opacity', mapFanOpen ? '1' : '0')
+      label.textContent = MAPPING_SHORT[k]
+      label.setAttribute('opacity', mapDialOpen ? '1' : '0')
       label.classList.toggle('on', k === prefs.mapping)
     })
+
+    mapDialHit.setAttribute('d', arcAt(fx, fy, MAP_R, -sweep, sweep))
+    // Invisible when closed must also mean untappable — opacity alone would
+    // leave this hit arc live over whatever else is underneath it, the same
+    // reasoning paintColourPopup() gives for its own rings' hits.
+    mapDialHit.style.pointerEvents = mapDialOpen ? 'auto' : 'none'
   }
 
   /** The colour chip's centre, in the svg's own coordinate space — the same
-   *  conversion mapFanCenter() does for the mapping chip. */
+   *  conversion mapDialCenter() does for the mapping chip. */
   function colourCenter(): [number, number] {
     const svgRect = svg.getBoundingClientRect()
     const chipRect = rgbBtn.getBoundingClientRect()
@@ -921,9 +981,9 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
 
       colourHits[i].setAttribute('d', arcAt(fx, fy, r, RING_A0, RING_A1))
       // Invisible when closed must also mean untappable, exactly like the
-      // mapping fan's options — these hit zones are wider than the fan's
-      // and sit over at least as much of the dial, so it matters at least
-      // as much here.
+      // mapping dial's own hit arc — these hit zones are wider than that
+      // one and sit over at least as much of the dial, so it matters at
+      // least as much here.
       colourHits[i].style.pointerEvents = open ? 'auto' : 'none'
     })
   }
@@ -975,20 +1035,22 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     autoBtn.querySelector('b')!.textContent = prefs.autopilot ? 'on' : 'off'
     autoBtn.setAttribute('aria-pressed', String(prefs.autopilot))
     mapBtn.querySelector('b')!.textContent = MAPPING_SHORT[prefs.mapping]
-    mapBtn.setAttribute('aria-expanded', String(mapFanOpen))
+    mapBtn.setAttribute('aria-expanded', String(mapDialOpen))
+    // Task 1 gave mapBtn aria-expanded but never aria-pressed, so unlike the
+    // other three chips it never visually read as active while its own
+    // popup was open. Same treatment as rgbBtn/autoBtn/statsBtn above.
+    mapBtn.setAttribute('aria-pressed', String(mapDialOpen))
     statsBtn.querySelector('b')!.textContent = prefs.showStats ? 'on' : 'off'
     statsBtn.setAttribute('aria-pressed', String(prefs.showStats))
   }
 
   /** Pointer position as an angle about (ox,oy), in the svg's own coordinate
-   *  space (which is CSS pixels). localAngle() is the cx,cy special case of
-   *  this, used by the bands, which are always about the wedge hinge. */
+   *  space (which is CSS pixels). The bands call this with (cx,cy), the
+   *  wedge hinge they're always about; bindTurnDrag and the colour rings
+   *  call it with whatever origin() they were each given instead. */
   function angleFrom(e: PointerEvent, ox: number, oy: number): number {
     const r = svg.getBoundingClientRect()
     return Math.atan2(e.clientY - r.top - oy, e.clientX - r.left - ox)
-  }
-  function localAngle(e: PointerEvent): number {
-    return angleFrom(e, cx, cy)
   }
 
   /** Where an angle falls along the arc from a0 to a1, as 0-1, clamped to the
@@ -1042,39 +1104,83 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     hit.addEventListener('pointercancel', end)
   }
 
-  function bindBandDrag(hit: SVGPathElement, b: Band<string>): void {
+  /** Binds a drag on `hit` to "turn a ring of options past a fixed notch,
+   *  snap to whichever settles closest on release" — generalised from what
+   *  was bindBandDrag's own private arithmetic the moment the mapping dial
+   *  needed the identical shape of control around a different origin,
+   *  radius, and pitch. `origin`, `pitch`, and `keys` are the geometry;
+   *  `get`/`set` hold the live rotation whereever the caller keeps it (a
+   *  Band's own `.rot` field for the main bands, a closure variable for the
+   *  mapping dial — this function doesn't need to own that storage);
+   *  `repaint` redraws mid-drag and after settling; `onSettle` fires once,
+   *  on release, with whichever key ended up under the notch — always,
+   *  whether or not it differs from what was already selected, since (unlike
+   *  bindArcDrag's onCommit, which only means "persist") this is also where
+   *  a caller with a popup to close does that. */
+  function bindTurnDrag<K extends string>(
+    hit: SVGPathElement,
+    origin: () => [number, number],
+    pitch: number,
+    keys: readonly K[],
+    get: () => number,
+    set: (rot: number) => void,
+    repaint: () => void,
+    onSettle: (next: K) => void,
+  ): void {
     let last = 0
     let moved = false
 
     hit.addEventListener('pointerdown', (e) => {
       e.stopPropagation()
       hit.setPointerCapture(e.pointerId)
-      last = localAngle(e)
+      const [ox, oy] = origin()
+      last = angleFrom(e, ox, oy)
       moved = true
     })
     hit.addEventListener('pointermove', (e) => {
       if (!moved || !hit.hasPointerCapture(e.pointerId)) return
-      const a = localAngle(e)
-      b.rot += delta(a, last)
+      const [ox, oy] = origin()
+      const a = angleFrom(e, ox, oy)
+      let rot = get() + delta(a, last)
       last = a
       // Can't spin an option out past either end of the strip.
-      const lo = -(b.keys.length - 1) * PITCH
-      if (b.rot > 0) b.rot = 0
-      if (b.rot < lo) b.rot = lo
-      paintBands()
+      const lo = -(keys.length - 1) * pitch
+      if (rot > 0) rot = 0
+      if (rot < lo) rot = lo
+      set(rot)
+      repaint()
     })
     const settle = (e: PointerEvent) => {
       if (!moved) return
       moved = false
       e.stopPropagation()
-      const i = Math.max(0, Math.min(b.keys.length - 1, Math.round(-b.rot / PITCH)))
-      b.rot = -i * PITCH
-      const next = b.keys[i]
-      if (next !== b.current()) b.commit(next)
-      paintBands()
+      const i = Math.max(0, Math.min(keys.length - 1, Math.round(-get() / pitch)))
+      set(-i * pitch)
+      // Commit (or whatever else onSettle does — the mapping dial also
+      // closes here) before repainting, so the repaint's own read of
+      // "what's current" already reflects it.
+      onSettle(keys[i])
+      repaint()
     }
     hit.addEventListener('pointerup', settle)
     hit.addEventListener('pointercancel', settle)
+  }
+
+  function bindBandDrag(hit: SVGPathElement, b: Band<string>): void {
+    bindTurnDrag(
+      hit,
+      () => [cx, cy],
+      PITCH,
+      b.keys,
+      () => b.rot,
+      (r) => {
+        b.rot = r
+      },
+      paintBands,
+      (next) => {
+        if (next !== b.current()) b.commit(next)
+      },
+    )
   }
 
   function bindMixDrag(hit: SVGPathElement): void {
@@ -1116,7 +1222,7 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
       // Both are modes; leaving either open across a close would mean the HUD
       // reopens showing something the last tap did not ask for.
       closeColourPopup()
-      closeMapFan()
+      closeMapDial()
       stats.textContent = ''
     }
   }
