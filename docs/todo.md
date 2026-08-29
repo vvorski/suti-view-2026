@@ -2396,3 +2396,93 @@ this is the only test of whether it feels played. `pnpm probe` must still pass
 — the mapping is untouched, and if its numbers move, something other than this
 shader changed. Also `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 33. Touch drops a fading emitter into Circles
+`status: ready` · added 2026-08-29
+
+**Do** — while Circles is the geometric programme, a press-and-hold or a drag
+places an emitter at the finger that spawns rings from that point and dies
+away over a few seconds.
+**Why** — the view already draws event-born rings that age and fade; it just
+has no way for a person to be the event.
+
+**Decided**
+- Most of this exists → **`circles` already keeps an eight-slot ripple
+  buffer.** `engine/ripples.ts` holds `[birthTime, birthLevel]` per slot in a
+  ring buffer, `updateRipples` spawns one when a transient clears a threshold,
+  and the shader ages each slot independently and draws its wake. "Launches
+  circles that fade over time" is that machinery with a second trigger. What
+  it cannot do is place them.
+- What a touch creates → **a fading emitter at the touch point.** Asked and
+  answered. It carries a position, a birth, and a life of about four seconds,
+  spawning a ring at intervals with the ring's loudness scaled by the
+  emitter's remaining life, so it thins out rather than stopping dead. On a
+  drag the emitter follows the finger, which is what makes a drag draw.
+- How it coexists with the panel → **hold or drag emits; a plain tap still
+  opens the HUD.** Asked and answered, and it is the same reasoning
+  `gestures.ts` recorded when it abandoned double-tap: a hold clears a time
+  threshold and a drag clears a distance one, so neither can be confused with
+  the zero-delay tap the panel is built on. Nothing is added to the tap path,
+  which is what keeps the panel instant.
+- Suppressing the tap that ends a hold → the `pointerup` after an emit must
+  not also open the panel. Use the capture-phase `stopPropagation()` that
+  `main.ts`'s screenshot band already uses for exactly this, and for the same
+  reason: capture runs before hud.ts's bubble-phase listener on `document`.
+- Armed only while Circles is showing → **Mine.** The shader is the only
+  consumer, so in any other view a hold does nothing — and rather than
+  introduce a gesture that is dead in twelve views out of thirteen, the
+  arming is conditional and everywhere else behaves exactly as today. The
+  cost is that the same gesture means different things by view; the mitigation
+  is that the difference is "nothing happens", not a surprise.
+- One buffer, not two → **widen the ripple slot to carry a position** rather
+  than adding a parallel touch-ring system. Audio ripples write the centre;
+  touch ripples write their point. One implementation behind one interface,
+  which is the rule this repo states for exactly this moment.
+- **Twelve slots, four of them reserved for touch.** **Mine**, and the
+  reasoning matters more than the number: with a shared eight, a finger would
+  evict the music's rings within a second and the view would stop answering
+  the room, which is the thing it *is*. Reserving keeps the audio's eight
+  intact. Raising the total is the honest cost — the shader loops every slot
+  per fragment — and it is why the frame-time reading is part of Done when
+  rather than an afterthought.
+- **Two loops, not one.** The shader currently computes `rungR`, the pixel's
+  radius from centre, once per fragment and reuses it for all eight rings.
+  Positioned rings cannot share it: each needs its own `length(p - centre)`.
+  So keep the existing hoisted loop for the eight audio rings and give the
+  four touch rings their own loop with the per-ring distance. **Mine**, and it
+  is the whole performance argument: anyone who never touches the screen pays
+  four extra `length()` calls rather than twelve, and the view's cost for the
+  common case is unchanged.
+- What this changes about the view → the single-centre composition stops being
+  guaranteed. That is inherent in the ask and worth stating plainly rather
+  than discovering: Circles was built as concentric rules about one focus, and
+  after this a person can put a second focus anywhere.
+
+**Lands in**
+- `src/engine/ripples.ts` — `MAX_RIPPLES` 8 → 12, the slot stride 2 → 4, a
+  reserved band for touch, and a `spawnAt(state, now, level, x, y)` beside
+  `updateRipples`. The constant's comment already warns it must match the
+  shader; both move together.
+- `src/engine/` — emitter state: position, birth, life, last spawn.
+- `src/scene.ts:264`, `:613-616` — `Vector2` becomes `Vector4`, and the
+  emitter is ticked where `updateRipples` is called.
+- `src/shaders/circles.frag.glsl:74`, `:81`, `:215-232` — the constant, the
+  uniform type, and the second loop.
+- `src/main.ts` — the hold/drag recogniser, beside the screenshot band's
+  listeners so all pointer handling on the picture is in one place.
+
+**Done when** — with Circles showing, holding a finger still for a moment
+starts rings expanding from that point and they keep coming, weaker, until
+about four seconds after the finger lifts; dragging draws a trail of them; a
+plain tap still opens the panel and never emits; a hold never opens the panel.
+Rings born from the music keep arriving throughout, at the same density as
+before. In another view, a hold does nothing and a tap opens the panel as
+today. The frame-time figure in the numeric readout is unchanged from today
+when nothing is being touched.
+**Verify** — `views-probe.html` for the shader with synthetic emitters, then
+the phone for the gesture, because a hold-versus-tap threshold is a hand
+question and a mouse cannot answer it. Watch the frame time on the phone with
+four emitters live, since the resolution ladder will otherwise absorb a
+regression by quietly dropping quality. Also `pnpm build`, `pnpm lint`.
+**Hard stops** — prefs no · url no · capture no (touch coordinates drive the
+frame and are neither stored nor sent) · dependency no.
