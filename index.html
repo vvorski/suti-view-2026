@@ -48,79 +48,72 @@
         height: 100%;
         display: block;
       }
-      /* Constructivist: hard edges, heavy masses, one accent, and a composition
-         built off-axis instead of stacked down the middle. The previous gate was
-         a centred column, which is calm and anonymous; this one has a direction.
+      /* The gate is an overlay on the running piece, not a page in front of it.
+         The canvas behind is already drawing (see idleParams in main.ts), so
+         this screen's job is to stay out of its way and still be readable —
+         which is a legibility problem, not a decoration problem. Everything
+         here follows from that:
 
-         The rules that make it that rather than just dark: nothing is rounded
-         except the one circle that is meant to be pressed, type is tight and
-         heavy where it used to be airy and letterspaced, blocks are anchored to
-         a left edge rather than floating, and exactly one element is filled with
-         the accent so it cannot be mistaken for anything else. */
+           - no opaque background, only gradients where text needs a ground;
+           - no invented ornament, because there is real motion behind it now;
+           - one column on one left axis, weighted to the bottom so the visuals
+             own the largest empty area;
+           - exactly one filled shape, and it is the button. */
       #gate {
         position: fixed;
         inset: 0;
         display: flex;
         flex-direction: column;
-        align-items: stretch;
-        justify-content: center;
-        gap: clamp(0.9rem, 3.2vh, 1.6rem);
-        padding: calc(1.75rem + env(safe-area-inset-top, 0px)) 1.5rem 1.5rem;
-        text-align: left;
-        background: #05060a;
+        justify-content: flex-end;
+        gap: clamp(0.85rem, 2.8vh, 1.4rem);
+        padding: calc(1.5rem + env(safe-area-inset-top, 0px)) 1.5rem
+          calc(1.5rem + env(safe-area-inset-bottom, 0px));
         z-index: 10;
-        overflow: hidden;
-        transition: opacity 600ms ease;
+        transition: opacity 700ms ease;
+        /* Dark at the bottom where the words are, clear at the top where the
+           picture is. Without this the copy sits on whatever the visualiser
+           happens to be doing and becomes unreadable a few seconds in. */
+        background: linear-gradient(
+          to bottom,
+          rgba(5, 6, 10, 0.05) 0%,
+          rgba(5, 6, 10, 0.42) 40%,
+          rgba(5, 6, 10, 0.88) 72%,
+          rgba(5, 6, 10, 0.96) 100%
+        );
       }
       #gate[hidden] { display: none; }
       #gate.fading { opacity: 0; pointer-events: none; }
 
-      /* The field: two heavy diagonals and the HUD's corner arcs, thickened.
-         Low contrast on purpose — it is the ground the blocks sit on, and the
-         previous version's thin arcs ran through the middle of the copy. */
-      .gate-field {
+      /* Pinned to the top, away from the block at the bottom, so the middle of
+         the screen is left to the piece. */
+      .gate-head {
         position: absolute;
-        inset: 0;
-        width: 100%;
-        height: 100%;
-        pointer-events: none;
+        top: calc(1.4rem + env(safe-area-inset-top, 0px));
+        left: 1.5rem;
+        right: 1.5rem;
       }
-      .field-bar { fill: #9d9bf0; opacity: 0.055; }
-      .field-arc { fill: none; stroke: #9d9bf0; opacity: 0.12; }
-
-      .gate-head { position: relative; z-index: 1; }
       #gate h1 {
         font-family: 'Chakra Petch', ui-sans-serif, system-ui, sans-serif;
-        /* Tight and heavy. The airy 0.34em tracking it had was the opposite
-           instinct — elegant, and completely without force. */
-        font-size: clamp(2rem, 11.5vw, 3.1rem);
-        font-weight: 700;
-        letter-spacing: -0.01em;
-        line-height: 0.92;
+        font-size: clamp(1.15rem, 5vw, 1.5rem);
+        font-weight: 600;
+        letter-spacing: 0.3em;
+        margin: 0 0 0.3rem;
         text-transform: uppercase;
-        color: #f0eeff;
-        margin: 0;
-      }
-      /* A slab, not a hairline. Full width, and the thing the title sits on. */
-      .gate-rule {
-        height: 5px;
-        background: #9d9bf0;
-        margin: 0.55rem 0 0.5rem;
+        color: #e8e6f5;
+        text-shadow: 0 1px 12px rgba(5, 6, 10, 0.9);
       }
       .gate-name {
-        font: 500 0.82rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
-        letter-spacing: 0.22em;
+        font: 500 0.66rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+        letter-spacing: 0.24em;
         text-transform: uppercase;
-        color: #6f6b8c;
+        color: #8d88b8;
+        text-shadow: 0 1px 10px rgba(5, 6, 10, 0.9);
       }
 
-      /* The one round thing on the screen, and the only thing filled with the
-         accent — so the action is unmistakable without a word of instruction.
-         Left-anchored rather than centred, which is what keeps the composition
-         off-axis. */
+      /* The only filled shape on the screen. Sized by the smaller viewport
+         dimension so it stays a thumb-sized target on a phone and does not
+         become a dinner plate on a tablet. */
       .gate-dial {
-        position: relative;
-        z-index: 1;
         display: flex;
         align-items: center;
         gap: 1rem;
@@ -129,142 +122,121 @@
         appearance: none;
         cursor: pointer;
         flex: none;
-        width: min(38vw, min(24vh, 8.5rem));
+        width: min(34vw, min(19vh, 7.5rem));
         aspect-ratio: 1;
         border-radius: 50%;
         border: none;
         background: #9d9bf0;
         color: #05060a;
         font-family: 'Chakra Petch', ui-sans-serif, system-ui, sans-serif;
-        font-size: clamp(0.85rem, 3.6vw, 1rem);
+        font-size: clamp(0.8rem, 3.2vw, 0.95rem);
         font-weight: 700;
-        letter-spacing: 0.12em;
-        text-indent: 0.12em;
+        letter-spacing: 0.14em;
+        text-indent: 0.14em;
         text-transform: uppercase;
+        box-shadow: 0 0 0 0 rgba(157, 155, 240, 0.45);
+        animation: start-pulse 3.4s ease-out infinite;
         transition: background 180ms ease, transform 180ms ease;
+      }
+      /* One slow ring leaving the button. It is the only motion this screen
+         adds to what the visualiser is already doing, and it exists to say
+         which of the things on screen is the one to press. */
+      @keyframes start-pulse {
+        0% { box-shadow: 0 0 0 0 rgba(157, 155, 240, 0.4); }
+        70% { box-shadow: 0 0 0 18px rgba(157, 155, 240, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(157, 155, 240, 0); }
       }
       #start:hover,
       #start:focus-visible { background: #b9b7ff; }
       #start:active { transform: scale(0.97); }
-      #start:disabled { background: #4a4870; color: #14141f; cursor: default; }
-      /* Ticks beside the button rather than around it: a measure mark against
-         the mass, which is the constructivist move, and it also stops the
-         button competing with a ring for the same silhouette. */
-      .dial-ticks-bar {
-        flex: 1;
-        height: min(24vw, 5rem);
-        min-width: 0;
-      }
-      .tick-line { stroke: #9d9bf0; stroke-width: 2; opacity: 0.5; }
-      .tick-line.tall { opacity: 0.9; }
+      #start:disabled { background: #4a4870; color: #14141f; cursor: default; animation: none; }
 
-      /* Copy hangs off a heavy left bar, so the block is anchored rather than
-         floating in the middle of the screen. */
-      /* The bar hangs in the page gutter rather than indenting the text.
-         border-left plus padding pushed the copy about 18px right of the title,
-         so the one block with a marker on it was the one block that did not
-         line up with anything — which is the opposite of what the marker is
-         for. Everything now shares a single left axis. */
+      /* Sits beside the button and says what pressing it does. Replaces the
+         decorative tick marks, which measured nothing. */
+      .dial-note {
+        font: 400 0.72rem/1.45 ui-sans-serif, system-ui, sans-serif;
+        color: #9aa0b4;
+        max-width: 12rem;
+      }
+
       .gate-copy {
         position: relative;
-        z-index: 1;
         display: flex;
         flex-direction: column;
-        gap: 0.4rem;
-        max-width: 26rem;
+        gap: 0.35rem;
+        max-width: 30rem;
       }
       .gate-copy::before {
         content: '';
         position: absolute;
         left: -0.85rem;
-        top: 0;
-        bottom: 0;
-        width: 4px;
-        background: rgba(157, 155, 240, 0.42);
+        top: 0.15rem;
+        bottom: 0.15rem;
+        width: 2px;
+        background: rgba(157, 155, 240, 0.35);
       }
       #gate p {
-        font-size: 0.78rem;
-        line-height: 1.55;
-        color: #767d92;
+        font-size: 0.72rem;
+        line-height: 1.5;
+        color: #7b8296;
         margin: 0;
       }
-      /* The camera note stays legible — a disclosure, not fine print. */
-      #gate .gate-aside { font-size: 0.72rem; color: #565d70; }
+      #gate .gate-aside { color: #5c6376; }
 
-      /* Square, bordered, and sharing the left edge with everything else. */
+      /* QR and share on one line with the copy's own axis. Large enough to
+         grab from across a table, quiet enough not to be the brightest thing
+         on a screen that now has a picture on it. */
       .gate-take {
-        position: relative;
-        z-index: 1;
         display: flex;
-        align-items: stretch;
-        gap: 0;
-        border: 2px solid #1e2231;
-        align-self: flex-start;
+        align-items: center;
+        gap: 0.9rem;
       }
-      /* Bigger. At 4rem it was technically scannable and practically fiddly —
-         a second phone had to be held close and steady. 6.5rem is the size at
-         which it is grabbed casually, which is the only way it will ever be
-         used. */
       .gate-qr {
-        width: 6.5rem;
-        height: 6.5rem;
+        width: 5.5rem;
+        height: 5.5rem;
         display: block;
-        opacity: 0.9;
+        opacity: 0.86;
       }
       .gate-qr[hidden] { display: none; }
-      .take-side {
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        gap: 0.3rem;
-        padding: 0 0.9rem;
-        border-left: 2px solid #1e2231;
-      }
+      .take-side { display: flex; flex-direction: column; gap: 0.35rem; align-items: flex-start; }
       .take-cap {
-        font: 400 0.58rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+        font: 400 0.56rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
         letter-spacing: 0.18em;
         text-transform: uppercase;
-        color: #4e5464;
+        color: #565d70;
       }
       .gate-btn {
         appearance: none;
         cursor: pointer;
-        border: none;
-        background: transparent;
-        color: #cfd3dd;
+        border: 1px solid #333950;
+        background: rgba(5, 6, 10, 0.5);
+        color: #b9bece;
         font-family: 'Chakra Petch', ui-sans-serif, system-ui, sans-serif;
-        font-size: 0.8rem;
-        font-weight: 700;
+        font-size: 0.72rem;
+        font-weight: 600;
         letter-spacing: 0.16em;
         text-indent: 0.16em;
         text-transform: uppercase;
-        padding: 0;
-        text-align: left;
-        transition: color 160ms ease;
+        padding: 0.45rem 1rem;
+        transition: border-color 160ms ease, color 160ms ease;
       }
       .gate-btn:hover,
-      .gate-btn:focus-visible { color: #9d9bf0; }
+      .gate-btn:focus-visible { border-color: #9d9bf0; color: #f0eeff; }
 
       #error {
         position: relative;
-        z-index: 1;
         color: #d08a8a;
-        background: #2a1414;
+        background: rgba(42, 20, 20, 0.9);
         padding: 0.5rem 0.7rem;
         margin-left: -0.7rem;
-        font-size: 0.78rem;
-        max-width: 26rem;
-      }
-      #error::before {
-        content: '';
-        position: absolute;
-        left: -0.15rem;
-        top: 0;
-        bottom: 0;
-        width: 4px;
-        background: #d08a8a;
+        font-size: 0.76rem;
+        max-width: 30rem;
       }
       #error:empty { display: none; }
+
+      @media (prefers-reduced-motion: reduce) {
+        #start { animation: none; }
+      }
 
     </style>
   </head>
@@ -272,37 +244,14 @@
     <canvas id="canvas"></canvas>
 
     <div id="gate">
-      <!-- The ground. Two heavy diagonals crossing the frame, plus the HUD's own
-           corner arcs thickened up — the wedge is still previewed here, it just
-           reads as mass now rather than as a hairline drawn across the text. -->
-      <svg class="gate-field" viewBox="0 0 100 160" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
-        <path class="field-bar" d="M-40 168 92 -8h30L-10 168z" />
-        <path class="field-bar" d="M-40 190 78 -8h14L-26 190z" />
-        <g class="field-arc">
-          <circle cx="104" cy="164" r="86" stroke-width="10" />
-          <circle cx="104" cy="164" r="64" stroke-width="7" />
-          <circle cx="104" cy="164" r="44" stroke-width="4" />
-        </g>
-      </svg>
-
       <header class="gate-head">
         <h1>suti&#8202;&middot;&#8202;view</h1>
-        <div class="gate-rule"></div>
         <div class="gate-name"><span id="release-name"></span></div>
       </header>
 
       <div class="gate-dial">
         <button id="start" type="button">Start</button>
-        <!-- A measure mark beside the mass rather than a ring around it: the
-             button is already a circle and does not need a second one. -->
-        <svg class="dial-ticks-bar" viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden="true">
-          <g class="tick-line">
-            <path d="M2 40V22M10 40V26M18 40V26M26 40V26M34 40V26M42 40V26M50 40V26M58 40V26M66 40V26M74 40V26M82 40V26M90 40V26M98 40V26" />
-          </g>
-          <g class="tick-line tall">
-            <path d="M2 40V14M26 40V18M50 40V18M74 40V18M98 40V18" />
-          </g>
-        </svg>
+        <p class="dial-note">What you see is running already. Start lets it hear the room.</p>
       </div>
 
       <div class="gate-copy">

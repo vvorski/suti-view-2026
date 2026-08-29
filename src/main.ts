@@ -11,7 +11,7 @@ import { bindGestures } from './gestures'
 import { DEFAULT_GEO_COLOUR, parseGeoColour } from './geo-colour'
 import { startCamera, type CameraSource } from './camera'
 import { createHud } from './hud'
-import { MAPPINGS, type Mapping, type MappingName } from './engine'
+import { MAPPINGS, type Mapping, type MappingName, type VisualParams } from './engine'
 import { DEFAULT_MERGE_MODE, DEFAULT_MIX, isMergeModeName, type MergeModeName } from './merge-modes'
 import { checkWebGL, fullscreenStatus, keepAwake, waitForStart } from './permission-gate'
 import { loadPrefs, type Prefs } from './prefs'
@@ -86,6 +86,51 @@ function resolvePrefs(): Prefs {
   }
 }
 
+/**
+ * Plausible audio, for the start screen.
+ *
+ * Not silence and not noise: a few slow sinusoids at incommensurable periods,
+ * so the picture drifts and never visibly repeats. Everything is kept low and
+ * smooth on purpose — this is playing behind text somebody is reading, and it
+ * has to be alive without asking to be watched. The moment the microphone
+ * starts, real numbers replace these and nothing about the renderer changes.
+ *
+ * Writes the spectrum in place rather than allocating; it runs every frame.
+ */
+function idleParams(t: number, spectrum: Uint8Array): VisualParams {
+  const wave = (period: number, phase = 0): number =>
+    0.5 + 0.5 * Math.sin((t / period + phase) * Math.PI * 2)
+
+  // Held around a third to a half rather than near silence. Lower reads as a
+  // dim smear behind the gradient, which looks like a screen that has not
+  // finished loading rather than a piece that is already playing.
+  const level = 0.34 + 0.18 * wave(11)
+  const low = 0.32 + 0.22 * wave(7.3, 0.2)
+  const mid = 0.28 + 0.2 * wave(5.1, 0.55)
+  const high = 0.18 + 0.16 * wave(3.7, 0.8)
+
+  for (let i = 0; i < spectrum.length; i++) {
+    const fall = Math.exp(-i / 46)
+    const ripple = 0.75 + 0.25 * Math.sin(i / 9 + t * 0.7)
+    spectrum[i] = Math.min(255, 210 * fall * ripple * (0.55 + level))
+  }
+
+  return {
+    level,
+    low,
+    mid,
+    high,
+    // No transients at all: a flash on a screen nobody has interacted with
+    // yet reads as a glitch rather than as a beat.
+    transient: 0,
+    tilt: 0.35 + 0.25 * wave(13.9, 0.4),
+    breakdown: 0,
+    surge: 0,
+    novelty: 0.12 * wave(17.3),
+    roughness: 0.3 + 0.2 * wave(9.1, 0.65),
+  }
+}
+
 async function main(): Promise<void> {
   const canvas = document.getElementById('canvas')
   const gate = document.getElementById('gate')
@@ -113,14 +158,14 @@ async function main(): Promise<void> {
 
   const prefs = resolvePrefs()
 
-  const { source, motion } = await waitForStart({ gate, button, error })
-  // The gate is going; the version chip drops to its running form — no name,
-  // and a reload button that fades out of the way. See versionHudRunning().
-  versionHudRunning()
-  void keepAwake()
-
-  const shake = startShake(motion)
-
+  // Built before the gate resolves, not after.
+  //
+  // The start screen used to be a page *about* the piece — a title, a button
+  // and some invented decoration standing in for what the app does. It can
+  // simply be the piece instead, running quietly behind the words, because
+  // nothing about the renderer needs the microphone: it needs numbers, and
+  // idleParams() below makes plausible ones. The gate becomes an overlay on
+  // something real rather than a poster for something absent.
   const visualiser = createVisualiser(canvas, {
     geometricView: prefs.geometricView,
     geoColour: prefs.geoColour,
@@ -128,6 +173,27 @@ async function main(): Promise<void> {
     mergeMode: prefs.mergeMode,
     mix: prefs.mix,
   })
+
+  // Flipped by the real loop taking over, which is what stops the idle frames.
+  let live = false
+  const idleSpectrum = new Uint8Array(256)
+  const idleStart = performance.now()
+  const idleFrame = (): void => {
+    if (live) return
+    const t = (performance.now() - idleStart) / 1000
+    visualiser.render(idleParams(t, idleSpectrum), idleSpectrum)
+    requestAnimationFrame(idleFrame)
+  }
+  requestAnimationFrame(idleFrame)
+
+  const { source, motion } = await waitForStart({ gate, button, error })
+  live = true
+  // The gate is going; the version chip drops to its running form — no name,
+  // and a reload button that fades out of the way. See versionHudRunning().
+  versionHudRunning()
+  void keepAwake()
+
+  const shake = startShake(motion)
   let mapping: Mapping = MAPPINGS[prefs.mapping]()
 
   // The minutes tier and the thing that acts on it. Kept out of `mapping` on
