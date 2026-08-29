@@ -50,11 +50,20 @@ in Decided, and without it the status is `blocked`, not `ready`.
 ### 1. Read the shake diagnostics off a real phone
 `status: blocked` · added 2026-08-29
 
-**Do** — get the `motion N ev  peak X/18` line from Victor's phone with
-`?debug` on, and act on whichever of the two causes it names.
+**Do** — get the `motion N ev  peak X/18` line **and the `buzz` line** from
+Victor's phone with `?debug` on, and act on whichever cause each names.
 **Why** — the shake has been rebuilt twice against synthetic evidence. The
 readout exists precisely to separate "no devicemotion arriving at all" from
 "arriving, and never reaching STRONG_UP", and those want opposite fixes.
+
+Victor also reports not feeling the buzz on shake. That is the same trip and
+the same screen, so it belongs here rather than in an entry blocked on the
+identical thing. The `buzz` line already separates its three causes: `buzz
+unsupported` (no `navigator.vibrate` — every iPhone), `buzz off
+(reduced-motion) N` (suppressed by the OS setting), or `buzz N/M` where N is
+what the platform accepted. `buzz 0/0` means nothing even asked, which points
+at the shake never firing rather than at haptics — in which case the two halves
+of this entry are one bug.
 
 **Decided**
 - Guess vs measure → measure, over shipping another speculative threshold. See
@@ -67,7 +76,8 @@ healthy; a permissions/HTTPS-context hunt if `motion` is stuck at 0.
 that reported it, not on a synthetic case.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
-**Blocked on:** one line of `?debug` output from the phone.
+**Blocked on:** two lines of `?debug` output from the phone — the `motion`
+line and the `buzz` line, after a shake that felt like it should have worked.
 
 ### 2. Decide whether the privacy line comes back to the gate
 `status: blocked` · added 2026-08-29
@@ -188,3 +198,45 @@ is reachable and does not collide with its neighbour. Look at it at 320x568 and
 360x640 — six bands is one more than this wedge has ever drawn.
 **Hard stops** — prefs **no** (adding `atmMergeMode`; `mergeMode` unchanged in
 name and meaning) · url no · capture no · dependency no.
+
+### 6. Double shake shuffles the whole picture
+`status: ready` · added 2026-08-29
+
+**Do** — a second hard shake within ~1.5s of the first escalates from the
+current re-seed to a full shuffle of both views, the merge mode, and all three
+layers' colour gains.
+**Why** — a single shake re-rolls what the current views do with the audio,
+which is a small change and sometimes reads as nothing happening. There is no
+gesture for "give me something else entirely".
+
+**Decided**
+- How a double is detected → escalate, over holding the single back to wait for
+  a second. The single keeps firing instantly as it does now and a second
+  strong upgrades it; the alternative added about a second of latency to every
+  single shake, which is the common case, to make the rare one cleaner.
+- What gets rolled → both views, merge mode, and R/G/B on all three layers.
+  **Not** opacity, over including it with a 25% floor and over including it
+  unclamped: a shuffle that can hand back a black screen looks like a crash and
+  is recoverable only by shaking again. **Not** mapping either — that is how it
+  hears, not what it looks like.
+- The camera is never switched on by a shuffle. Not asked, not a fork: turning
+  a sensor on without a gesture is the capture hard stop.
+
+**Lands in**
+- `src/shake.ts` — a second strong inside the existing `STRONG_COOLDOWN` window
+  currently cannot fire at all. It needs to report "this was a double" without
+  lowering the cooldown, which is what protects against knocks and set-downs.
+- `src/main.ts`, the `takeStrong()` branch at ~318 — `randomise()` stays for a
+  single; the shuffle is new and has to write through `prefs` and the same
+  handlers the HUD uses, so the panel shows the truth afterwards.
+
+**Done when** — one shake re-seeds as now; two inside 1.5s change both views,
+the merge mode and the colours, and the HUD opened afterwards shows the new
+values rather than the old ones. Opacity is untouched by either.
+**Verify** — `pnpm probe:shake` must still pass unchanged: a knock and its
+rebound still fire nothing, which is the property the cooldown exists for and
+the one most at risk here. Add a case for two strongs inside the window and one
+for two spaced beyond it. Then on the phone, because a double shake is a
+physical gesture and no probe knows whether it is comfortable.
+**Hard stops** — prefs no (writes existing fields) · url no · capture **no,
+explicitly**: the shuffle must never raise `passthrough` · dependency no.
