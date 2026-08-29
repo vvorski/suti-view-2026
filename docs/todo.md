@@ -1641,3 +1641,72 @@ returning to `active` removes it again.
 grows a member and the probe asserts on the others. Also `pnpm build`, `pnpm
 lint`. The real lost-and-regained cycle still needs a handset.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 25. The fullscreen chip belongs in the utility corner, not on the arc
+`status: ready` · added 2026-08-29
+
+**Do** — move the fullscreen chip off the icon arc to the top-left, beside the
+version and reload marks, and drop the seventh-slot reservation that only
+existed to make room for it.
+**Why** — on a portrait phone the arc's last slot is most of the way up the
+middle of the screen, so with the panel closed the chip reads as a button
+dropped on the picture rather than as one of a row.
+
+**Decided**
+- It is not mispositioned → **it is exactly where it was told to go.**
+  `chipPosition(6, 7, size)` puts the seventh slot at about 262°, which on a
+  320×568 screen is 41% of the way up and well right of centre, and on the
+  reported handset lands in the same place. Entry 19 verified that all seven
+  bounding boxes stay on screen, which they do. What went unchecked is what
+  one chip looks like without the other six.
+- The premise that failed → **"it reads as one of the arc's chips" is only
+  true while the arc is populated**, and the HUD's own six are invisible
+  whenever the panel is closed (`.hud-scrim` is `opacity: 0` until `.open`).
+  So in the exact state this chip exists for — panel closed, fullscreen lost —
+  it is the only thing on that arc, and an arc of one is a floating button.
+- Where instead → **top-left, on the same inset as `#hud-stats`**
+  (`0.75rem + env(safe-area-inset-*)`). **Mine**: that corner is already the
+  screen's utility strip — the version mark, the reload control and the debug
+  readout all live there — and a fullscreen control belongs with the
+  browser-ish furniture rather than in the picture. It is still a circular
+  chip, so the control-surface rule is untouched; that rule governs *controls
+  being arcs*, and a round chip is permitted vocabulary wherever it sits.
+- What this removes → `Hud.setFullscreenChipShown()` and the 6-vs-7 slot
+  reservation exist solely to make room on the arc for this chip. With it
+  gone, nothing ever passes `n = 7`, the row is always six, and the
+  `CHIP_ARC_MIN_START` clamp stops being reachable. Delete the reservation and
+  its call site rather than leaving machinery that no longer has a caller —
+  the refactor belongs in the change that made it dead. Keep `chipPosition`
+  and the clamp: it is still the HUD's own layout and the clamp is the correct
+  behaviour if a seventh chip ever does join the row.
+- "Also doesn't work" → **treat as unproven until entry 24 lands.** The chip
+  cannot currently hide itself (entry 24), so a tap that *did* enter
+  fullscreen would leave the button sitting there exactly as before, which is
+  indistinguishable from nothing happening. `.hud-scrim` is `pointer-events:
+  none` while closed and cannot be swallowing the tap, and the handler calls
+  `goFullscreen()` from a `pointerup`, which carries the activation the API
+  needs. Fix 24 first; if the button still does not enter fullscreen after
+  that, the `?debug` readout's `full <state> ×<attempts> (<error>)` line is
+  what separates a refusal from a request never made.
+- Build order → **24, then this.** They touch the same element and 24 is what
+  makes the symptom legible.
+
+**Lands in**
+- `index.html` — `#fullscreen-chip` gains its own fixed top-left position
+  rather than being placed from script; the element moves next to the version
+  mark in the DOM so the corner's stacking is decided in one place.
+- `src/main.ts`, `updateFullscreenChip` — the `chipPosition` call and the
+  `panel.setFullscreenChipShown(show)` call both go; the function is left
+  toggling visibility only.
+- `src/hud.ts` — `setFullscreenChipShown` and the reserved-slot count it
+  feeds are deleted from both the interface and the implementation.
+
+**Done when** — with fullscreen lost, the chip sits in the top-left utility
+corner clear of the version mark and the readout at both 320×568 and 360×640,
+and nothing appears over the picture; opening the panel shows six chips in
+exactly the positions they occupy today, since nothing reserves a seventh slot
+any more.
+**Verify** — `hud-probe.html` at both sizes for the chip row's positions, and
+the app itself for the corner. `pnpm probe:fullscreen` unchanged. Also `pnpm
+build`, `pnpm lint`.
+**Hard stops** — prefs no · url no · capture no · dependency no.
