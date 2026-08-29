@@ -986,7 +986,23 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     // The camera ring. Built after the colour rings so it draws over them for
     // the same z-order reason they are built after the mapping dial — the two
     // are never open together, so this only matters against the bands.
+    // Tinted track, unlike the colour rings' plain .hud-track ones.
+    //
+    // At zero this ring has no fill to show where it runs, and .hud-track's
+    // rgba(18,18,35,0.72) against a near-black ground is invisible — so the
+    // control reads as a floating knob and a label, with nothing to say which
+    // way it turns. The colour rings never expose that because three channels
+    // are rarely all zero at once; this one is zero at the start of every
+    // session, which is exactly when its affordance matters most.
     camTrack = el('path', { class: 'hud-track', 'stroke-width': 8 })
+    // Inline style, not a stroke="" attribute. `.hud-track` sets stroke in
+    // CSS, and any CSS rule beats a presentation attribute however specific
+    // the attribute looks — so the attribute version of this drew in the
+    // class's near-black and stayed invisible, which read as the arc not being
+    // drawn at all. The colour rings already dodge this by setting knob.style
+    // .fill rather than a fill attribute.
+    camTrack.style.stroke = CAM_TINT
+    camTrack.style.strokeOpacity = '0.22'
     svg.appendChild(camTrack)
     camFill = el('path', { class: 'hud-ring-fill', 'stroke-width': 8, stroke: CAM_TINT })
     svg.appendChild(camFill)
