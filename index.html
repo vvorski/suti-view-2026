@@ -48,6 +48,12 @@
         height: 100%;
         display: block;
       }
+      /* The gate speaks the HUD's language — same ink, same violet, same tick
+         rims and corner-hinged arcs, same letterspaced caps — because it is
+         the first thing anyone sees and it used to look like a default browser
+         page wearing the app's background colour. The wedge in the corner is
+         the HUD's own silhouette, so the control surface is already familiar
+         before it is ever opened. */
       #gate {
         position: fixed;
         inset: 0;
@@ -56,10 +62,14 @@
         align-items: center;
         justify-content: center;
         gap: 1.25rem;
-        padding: 2rem;
+        /* Top padding clears the version chip, which is fixed at the top-left
+           and, now that the release name is set large, is wide enough to run
+           into a centred title on a 320px screen. It did. */
+        padding: 4.75rem 1.75rem 1.75rem;
         text-align: center;
         background: #05060a;
         z-index: 10;
+        overflow: hidden;
         transition: opacity 600ms ease;
         /* The per-release glow: a soft ring inset from the viewport edges,
            tinted by --tone-hue. Subtle enough not to read as "coloured
@@ -73,18 +83,106 @@
         opacity: 0;
         pointer-events: none;
       }
+      /* The HUD's wedge, as a ghost: concentric dark tracks and a tick rim
+         hinged just off the bottom-right corner, exactly where the real one
+         opens. Decoration with a purpose — it is a preview of the controls. */
+      .gate-corner {
+        position: absolute;
+        right: -12px;
+        bottom: -12px;
+        width: min(88vmin, 620px);
+        height: min(88vmin, 620px);
+        pointer-events: none;
+      }
       #gate h1 {
-        font-size: 1.05rem;
+        font-family: 'Chakra Petch', ui-sans-serif, system-ui, sans-serif;
+        font-size: clamp(1.15rem, 6vw, 1.5rem);
+        font-weight: 500;
+        letter-spacing: 0.34em;
+        /* Optical centring: the tracking adds a phantom space after the last
+           glyph; this eats it. */
+        margin-right: -0.34em;
+        text-transform: uppercase;
+        color: #a7a4c8;
+        z-index: 1;
+      }
+      /* The start dial: the HUD's ring idiom at gate scale. A tick ring turns
+         slowly around a circular button — the same picture as a band waiting
+         to be dragged, which is what everything after this tap is. */
+      .gate-dial {
+        position: relative;
+        width: min(58vw, 14rem);
+        aspect-ratio: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1;
+      }
+      .gate-dial svg {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+      }
+      .dial-rule {
+        fill: none;
+        stroke: rgba(255, 255, 255, 0.07);
+        stroke-width: 1;
+      }
+      /* Radial ticks via dasharray — 1-unit marks on a thick stroke read as a
+         tick rim without thirty hand-authored lines. Period 4 against the
+         circle's pathLength of 120 gives exactly 30 evenly spaced ticks. */
+      .dial-ticks {
+        fill: none;
+        stroke: rgba(169, 166, 232, 0.35);
+        stroke-width: 7;
+        stroke-dasharray: 1 3;
+        animation: dial-spin 120s linear infinite;
+        transform-origin: 50% 50%;
+      }
+      @keyframes dial-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      #start {
+        appearance: none;
+        cursor: pointer;
+        width: 74%;
+        aspect-ratio: 1;
+        border-radius: 50%;
+        border: 1px solid #2a3040;
+        background: rgba(12, 12, 26, 0.6);
+        color: #cfd3dd;
+        font-family: 'Chakra Petch', ui-sans-serif, system-ui, sans-serif;
+        font-size: 1rem;
         font-weight: 500;
         letter-spacing: 0.22em;
+        text-indent: 0.22em; /* same phantom-space correction as the title */
         text-transform: uppercase;
-        color: #6f7789;
+        transition:
+          border-color 200ms ease,
+          color 200ms ease,
+          box-shadow 200ms ease;
+      }
+      #start:hover,
+      #start:focus-visible {
+        border-color: #9d9bf0;
+        color: #fff;
+        box-shadow: inset 0 0 42px rgba(157, 155, 240, 0.12);
+      }
+      #start:disabled {
+        opacity: 0.5;
+        cursor: default;
       }
       #gate p {
-        max-width: 26rem;
-        font-size: 0.9rem;
+        max-width: 24rem;
+        font-size: 0.82rem;
+        line-height: 1.55;
         color: #565d6d;
         text-wrap: balance;
+        z-index: 1;
       }
       /* The camera note is subordinate to the microphone one: the mic is what
          the app is, the camera is an option that has not been asked for yet.
@@ -93,39 +191,21 @@
          not fine print, and it is here so nothing about the camera is a
          surprise later. */
       #gate .gate-aside {
-        font-size: 0.8rem;
+        font-size: 0.74rem;
         color: #454b58;
-        margin-top: -0.35rem;
-      }
-      #start {
-        appearance: none;
-        border: 1px solid #2a3040;
-        background: transparent;
-        color: #cfd3dd;
-        font: inherit;
-        font-size: 0.95rem;
-        letter-spacing: 0.08em;
-        padding: 0.85rem 2.5rem;
-        border-radius: 999px;
-        cursor: pointer;
-        transition:
-          border-color 200ms ease,
-          color 200ms ease;
-      }
-      #start:hover,
-      #start:focus-visible {
-        border-color: #4a5468;
-        color: #fff;
-      }
-      #start:disabled {
-        opacity: 0.5;
-        cursor: default;
+        margin-top: -0.9rem;
       }
       #error {
         color: #8a6b6b;
         font-size: 0.85rem;
         max-width: 26rem;
         min-height: 1.5em;
+        z-index: 1;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .dial-ticks {
+          animation: none;
+        }
       }
     </style>
   </head>
@@ -133,7 +213,34 @@
     <canvas id="canvas"></canvas>
 
     <div id="gate">
+      <!-- The HUD's wedge, hinged off the bottom-right corner exactly where the
+           real one opens. viewBox is 0 0 100 100 with the hinge at (100,100), so
+           the radii below are percentages of the square and it scales with the
+           element rather than the viewport. -->
+      <svg class="gate-corner" viewBox="0 0 100 100" aria-hidden="true">
+        <g fill="none" stroke-linecap="butt">
+          <circle cx="100" cy="100" r="88" class="dial-rule" />
+          <circle cx="100" cy="100" r="72" stroke="rgba(18,18,35,0.72)" stroke-width="9" />
+          <circle cx="100" cy="100" r="56" stroke="rgba(18,18,35,0.55)" stroke-width="7" />
+          <circle cx="100" cy="100" r="30" stroke="rgba(29,28,51,0.9)" stroke-width="2" />
+        </g>
+      </svg>
+
       <h1>suti&#8202;·&#8202;view</h1>
+
+      <div class="gate-dial">
+        <svg viewBox="0 0 100 100" aria-hidden="true">
+          <circle cx="50" cy="50" r="47" class="dial-rule" />
+          <!-- pathLength renormalises the circumference to 120 units, so the
+               dasharray period of 4 (see .dial-ticks) divides it exactly 30
+               times. Without it the dashes are measured against the real
+               circumference of 2πr ≈ 295.3, which no round period divides —
+               leaving a visibly wrong last tick where the path closes. -->
+          <circle cx="50" cy="50" r="47" class="dial-ticks" pathLength="120" />
+        </svg>
+        <button id="start" type="button">Start</button>
+      </div>
+
       <p>
         Listens through the microphone and renders what it hears. Nothing is recorded,
         stored, or sent anywhere &mdash; the audio never leaves this device.
@@ -143,7 +250,6 @@
         off until you turn it on from the controls, and asks you then &mdash; not now.
         The video is drawn to the screen and never leaves this device either.
       </p>
-      <button id="start" type="button">Begin</button>
       <div id="error" role="status" aria-live="polite"></div>
     </div>
 
