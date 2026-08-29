@@ -129,15 +129,26 @@
       /* Title and build name, right-justified and large. With the copy gone
          these are the only type on the screen, so they carry it. */
       .gate-head { text-align: right; }
-      /* Byline (queue entry 10). Quieter than .gate-name below it: this screen
-         has exactly one thing designed to dominate — the filled Start disc —
-         and a byline loud enough to compete with the title would be a second
-         one. */
+      /* Byline (queue entry 10, revised by entry 28). Entry 10 set this
+         deliberately quieter than .gate-name below it, reasoning that the
+         screen has exactly one thing designed to dominate — the filled Start
+         disc — and a byline loud enough to compete with the title would be a
+         second one. That held at 0.62rem against the release name's larger
+         clamp(), which is still true; what did not hold was the colour: at
+         #454b5c against the gate's #05060a background this measured 2.33:1,
+         under the 4.5:1 small text needs, and the *real* cause was that this
+         was the only line on the gate with no text-shadow while the idle
+         preview drew a moving picture behind all three. Entry 28 matches
+         .gate-name's own colour and shadow — the hierarchy still reads
+         because it was always carried by size, not colour, and matching
+         colours just makes the bottom of that order legible instead of
+         nearly invisible. */
       .gate-byline {
         font: 400 0.62rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
         letter-spacing: 0.16em;
         text-transform: uppercase;
-        color: #454b5c;
+        color: #8d88b8;
+        text-shadow: 0 1px 12px rgba(5, 6, 10, 0.95);
         margin: 0 0 0.3rem;
       }
       #gate h1 {

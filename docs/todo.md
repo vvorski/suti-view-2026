@@ -1955,7 +1955,7 @@ never depended on it. `pnpm probe:shake` unchanged, `pnpm build` and
 `pnpm lint` both clean.
 
 ### 28. The byline is too dark to read, and is the only line with no shadow
-`status: ready` · added 2026-08-29
+`status: done` · added 2026-08-29 · shipped at build 120
 
 **Do** — lift `.gate-byline` to the same colour as the release name below it,
 and give it the text-shadow both of its neighbours already have.
@@ -2001,6 +2001,15 @@ subordinate to the release name directly below it.
 sizes — a static screenshot of a dark frame is exactly the case that hid this.
 Also `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+**Build note.** Re-derived the contrast figures rather than trusting the
+entry's own numbers: `#454b5c` against `#05060a` computes to 2.33:1 and
+`#8d88b8` against the same background computes to 6.12:1 — both matched
+exactly. Confirmed on the running gate at the default size with the idle
+preview live over a dark frame: the byline reads clearly, at the same
+colour as the release name below it and still visibly smaller, so the
+disc → title → release name → byline order from entry 10 still holds.
+`pnpm build`, `pnpm lint` both clean.
 
 ### 29. A light shake changes the colours and nothing else
 `status: ready` · added 2026-08-29
