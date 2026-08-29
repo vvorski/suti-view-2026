@@ -916,3 +916,78 @@ page to reach. Emulate reduced motion in devtools for the last clause. Also
 `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs no · url no · capture no · dependency no. All of it is
 CSS in `index.html`.
+
+### 17. In fullscreen the circles are ellipses
+`status: ready` · added 2026-08-29
+
+**Do** — size the drawing buffer from the canvas's own client box rather than
+from `window.innerWidth`/`innerHeight`, and re-check it periodically, so the
+buffer's aspect can never disagree with the box it is stretched across.
+**Why** — in fullscreen every round thing is an ellipse, which means the
+canvas is being scaled by different factors on the two axes.
+
+**Decided**
+- Where it is *not* → **the shaders, by construction.** Every view normalises
+  with `(gl_FragCoord.xy - 0.5 * uResolution) / min(uResolution.x,
+  uResolution.y)` — one scalar for both axes, so a circle is round in the
+  drawing buffer whatever the buffer's shape. Worth stating because "circles
+  are not round" reads like a shader bug and thirteen shaders is a long place
+  to look.
+- Where it is → **the buffer and the CSS box disagree.** `#canvas` is
+  `position: fixed; inset: 0; width: 100%; height: 100%`
+  (`index.html:44-50`), so CSS always paints it across the whole viewport,
+  while `applySize` sizes the buffer from `window.innerWidth`/`innerHeight`
+  (`scene.ts:341`). Two numbers for one quantity; when they differ the browser
+  stretches the buffer to fit, on each axis independently, and that is exactly
+  an ellipse.
+- Why fullscreen specifically → the viewport changes shape at a moment when
+  nothing reliably re-reads it. `resize` is the only trigger bound
+  (`main.ts:409`), fullscreen does not dependably fire one before the viewport
+  has settled, and `permission-gate.ts:104` already watches `fullscreenchange`
+  but records the state and says in as many words that it deliberately does
+  not act on it. Same shape as the iOS rotation bug already patched at
+  `main.ts:410-413` with a delayed second resize — this is that bug's other
+  half, unpatched.
+- Why `setSize(..., false)` makes it invisible rather than obvious → the
+  `false` tells three not to touch the canvas's style, which is right, CSS
+  owns the layout. The side effect is that a stale size shows up as silent
+  distortion instead of as a canvas that is visibly the wrong size.
+- Fix → **read `canvas.clientWidth`/`clientHeight` in `applySize`.**
+  **Mine**, over adding a `fullscreenchange` listener: the listener fixes this
+  instance, the client box removes the class. The canvas's client box *is* the
+  rectangle CSS is stretching the buffer across, so sizing from it makes the
+  two numbers one number. `window.innerWidth` was always a proxy for it.
+- Plus a re-check every 30 frames in the render loop → **Mine.** A listener
+  can only catch causes someone thought of, and this file's own history is a
+  fullscreen fault that survived several builds with nobody noticing.
+  Comparing the client box to the last applied size is two reads and a branch;
+  at 30 frames it is twice a second, which bounds any distortion to about half
+  a second and keeps the layout reads far away from a per-frame cost. The
+  existing `resize` listener stays as the immediate path so a rotation does
+  not wait for the tick.
+- Not a per-frame check → reading `clientWidth` can force layout, and paying
+  that 60 times a second to fix something that changes twice a session is the
+  wrong trade.
+
+**Lands in**
+- `src/scene.ts:339-350`, `applySize` — the two `window.inner*` reads become
+  the canvas's client box; everything downstream (`getDrawingBufferSize`,
+  `uResolution`, both render targets, `applyCameraFit`) already derives from
+  that and needs no change.
+- `src/scene.ts`, the render loop beside `adapt()` — the frame counter and the
+  size comparison.
+- `src/main.ts:409-413` — unchanged, but read it first: the delayed
+  re-resize there is the precedent this generalises.
+
+**Done when** — in devtools on the running app, `canvas.width /
+canvas.height` equals `canvas.clientWidth / canvas.clientHeight` to within a
+pixel's rounding, both in and out of fullscreen, and immediately after
+entering fullscreen rather than only after a rotation. On the phone with
+`?geometric=circles`, a circle measures the same across as it does down in
+fullscreen; today it does not.
+**Verify** — the on-screen check at 320×568 and 360×640, and the fullscreen
+check on a real handset, because Chrome refuses fullscreen to a window that is
+not frontmost and an automated one therefore proves nothing — the reason
+`probe-fullscreen.ts` stubs the API rather than driving it. Also `pnpm
+probe:fullscreen` unchanged, `pnpm build`, `pnpm lint`.
+**Hard stops** — prefs no · url no · capture no · dependency no.
