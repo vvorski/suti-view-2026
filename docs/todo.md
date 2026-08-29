@@ -730,3 +730,96 @@ band still spins across its full sweep afterwards — that is the property most
 at risk from touching shared angle constants.
 **Hard stops** — prefs no (values stay 0–1; only the angle they sit at moves)
 · url no · capture no · dependency no.
+
+### 15. Shuffle depth follows how hard you shook
+`status: ready` · added 2026-08-29
+
+**Do** — make the shake's intensity decide *how much* of the picture is
+re-rolled, from a bare re-seed at the gentlest qualifying shake up to
+everything at the hardest, instead of the current two fixed outcomes.
+**Why** — the shake is the app's one eyes-free gesture and it currently has
+two settings, on and more-on; the detector already measures how hard it was
+and throws that number away at the moment it decides what to change.
+
+**Decided**
+- Graded or on/off → **graded**, as a deterministic ladder of thresholds, over
+  rolling each parameter with a probability proportional to intensity.
+  **Mine**, because a probabilistic version can hand back a hard shake that
+  changed almost nothing by luck, which is the same complaint as today's, and
+  it cannot be asserted in a probe. A ladder is predictable and testable, and
+  "more things changed" is the readable property either way.
+- Where the number comes from → **`peak`, already returned by `takeStrong()`
+  and `takeDouble()`** (`shake.ts:476`, `:490`). No plumbing needed: `main.ts`
+  already binds it as `strongPeak`/`doublePeak` (`:448`, `:458`) and passes it
+  to the buzz. It is used at the shuffle site as a truthiness check and
+  nothing more.
+- Not `disturb` → it saturates. The probe table is the evidence: a deliberate
+  28 m/s² shake, a violent 45 m/s² shake and a single hard knock all read
+  `disturb` 0.98, so everything this entry wants to tell apart is already the
+  same number. Same call entry 8 made, for the same reason.
+- The 0–1 scale → **`(peak - STRONG_UP) / (PEAK_CEILING - STRONG_UP)`,
+  clamped**, which is exactly the scale build 91 calibrated for the buzz:
+  `STRONG_UP` (18) is the least peak that can ever reach a caller, and
+  `PEAK_CEILING` (45) is `probe-shake.ts`'s own violent case. Do not invent a
+  second scale.
+- Where it lives → **move the 0–1 normaliser into `shake.ts` and export it**;
+  `haptics.ts` derives its 1..`MAX_SCALE` multiplier from it rather than
+  recomputing from the two constants. **Mine**: this is CLAUDE.md's
+  export-rather-than-duplicate rule arriving on schedule — one intensity
+  scale, two consumers, and `haptics.ts` already says in as many words that a
+  plain 0–1 number wants somewhere to plug in.
+- The ladder, each rung including the ones below it → re-seed always · **0.20**
+  adds both layers' colours · **0.45** adds the merge modes · **0.70** adds
+  both views · **0.90** adds opacity, mapping and the camera layer's colour.
+  **Mine**, ordered by how little of what you had survives: a colour shift is
+  recognisably the same picture, a view change is a different instrument. In
+  the probe's own terms a deliberate 28 m/s² shake lands at 0.37 (colours) and
+  the violent 45 at 1.0 (everything), which is the spread this is for.
+- Opacity, which entry 6 excluded → **in, at the top rung, floored at 0.35.**
+  You asked for everything scrambled at a hard shake; the floor keeps the
+  reason it was excluded, which was that a shuffle able to hand back a black
+  screen looks like a crash and is recoverable only by shaking at nothing.
+- Mapping, which entry 6 also excluded → **in, at the top rung only.** Entry 6
+  ruled it out as "how it hears, not what it looks like", and that is
+  overturned deliberately: at the top of the scale the ask is a different
+  instrument, not a different palette. Flagged because it reverses a recorded
+  decision rather than filling a gap in one.
+- The camera → **still never switched on, at any intensity.** Not a taste call
+  and not reachable by "everything": turning a sensor on without a gesture
+  asking for it is the capture hard stop. The camera *layer's colour* rolls at
+  the top rung, which changes a colour and not a permission.
+- Does the double survive → **yes: a double is a full scramble regardless of
+  peak.** **Mine**, and the load-bearing one. A phone whose accelerometer
+  clips at 2g can never produce a peak near 45, so on that hardware the ladder
+  compresses to its bottom rung and there would be no way to ask for
+  everything — the same class of silent, device-specific dead end the
+  sustained path in `shake.ts` exists to cover. The double is the
+  deterministic route, and intensity is the expressive one.
+- Build order → **entry 13 first.** It stops being a nicety once the double is
+  the guaranteed route to a full scramble: today that gesture never fires at
+  all.
+
+**Lands in**
+- `src/shake.ts` — export the 0–1 normaliser beside `STRONG_UP`; no change to
+  detection.
+- `src/haptics.ts` — `intensityMultiplier` consumes the shared normaliser
+  instead of recomputing it from the two constants.
+- `src/main.ts:186-207`, `shuffled()` — takes the depth and returns only the
+  fields that rung includes, so a caller cannot apply more than was earned.
+  The 0.2 colour floor already there stays; opacity gets its own 0.35 floor.
+- `src/main.ts:448-467` — the double branch asks for a full scramble; the
+  strong branch passes `strongPeak` through instead of testing it.
+- `scripts/probe-shake.ts` — print `peak` and the resulting depth per case.
+
+**Done when** — `pnpm probe:shake` prints a depth per case, and the gentle
+sustained 12 m/s² case re-seeds only, the deliberate 28 case reaches colours
+and no further, and the violent 45 case reaches everything; the double case
+reaches everything at any peak. Then on the phone: a gentle qualifying shake
+visibly changes only the pattern, a hard one changes the views, and the HUD
+opened afterwards shows values matching whichever happened.
+**Verify** — `pnpm probe:shake` for the ladder and `pnpm probe:haptics` to
+prove the shared normaliser did not move the buzz scaling build 91 just
+calibrated. Also `pnpm build`, `pnpm lint`, and the on-screen check at 320×568
+and 360×640 because the HUD must show the shuffled values.
+**Hard stops** — prefs no (writes existing fields) · url no · capture **no,
+explicitly: no rung switches the camera on** · dependency no.
