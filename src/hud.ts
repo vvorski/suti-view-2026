@@ -102,6 +102,42 @@ const R_CHIPS = 1.08
 const CHIP_ARC_MID = 232 * DEG
 /** Gap between neighbouring icons along their arc, in px. */
 const CHIP_GAP = 5
+/**
+ * The smallest start angle the leading (leftmost) chip may sit at.
+ *
+ * Centring blindly on CHIP_ARC_MID works for up to six chips — at 320×568 the
+ * centred start is 210°, already clear of this. A seventh does not append a
+ * slot, it re-centres all seven and pushes the leading one off the left edge
+ * (205.6° there, putting its left edge at roughly -5.7px). This is the clamp
+ * that keeps the row sliding toward the reachable end instead of centring
+ * blind once it runs out of room — about 209° leaves a 4px margin. See
+ * docs/todo.md entry 19.
+ */
+const CHIP_ARC_MIN_START = 209 * DEG
+
+/**
+ * Where chip `index` of `n` total sits on the icon arc, in viewport pixels.
+ *
+ * Pure and exported rather than folded only into `placeChips` below: a
+ * non-HUD element (the fullscreen chip, entry 19) has to sit on the exact
+ * same arc without a floating button bolted on beside it, and it lives
+ * outside the HUD's own container on purpose — see that entry's own
+ * reasoning for why. `n` must count every chip that will actually be shown,
+ * including the caller's own, since the clamp above depends on the true row
+ * length before anything is laid out.
+ */
+export function chipPosition(index: number, n: number, chipSize: number): [number, number] {
+  const w = window.innerWidth
+  const h = window.innerHeight
+  const base = Math.min(w, h)
+  const cx = w + 10
+  const cy = h + 10
+  const r = base * R_CHIPS
+  const step = (chipSize + CHIP_GAP) / r
+  const start = Math.max(CHIP_ARC_MID - ((n - 1) / 2) * step, CHIP_ARC_MIN_START)
+  const a = start + index * step
+  return [cx + r * Math.cos(a), cy + r * Math.sin(a)]
+}
 
 /** A tap that travels further than this is a swipe, and belongs to gestures.ts.
  *  Exported so main.ts's screenshot band uses the exact same boundary rather
@@ -186,6 +222,14 @@ export interface Hud {
   }): void
   /** Whether the user has the autopilot switched on. */
   autopilot(): boolean
+  /**
+   * Reserve or release the arc's last slot for the fullscreen chip — a
+   * sibling element outside this HUD's own container (see docs/todo.md
+   * entry 19), which is why this exists rather than that chip just being
+   * one more `mkChip()`. Repositions this HUD's own chips immediately so
+   * the row makes room before the caller's own element is shown.
+   */
+  setFullscreenChipShown(shown: boolean): void
 }
 
 interface Handlers {
@@ -240,6 +284,17 @@ const ICONS: Record<string, string> = {
   num:
     '<path d="M1.6 21V13.4h5.2V21zM9.4 21V6.6h5.2V21zM17.2 21V1.4h5.2V21z"/>' +
     '<path d="M1 22.4h22v1.6H1z" fill-opacity=".45"/>',
+  // Four corner brackets, the universal fullscreen mark — straight lines are
+  // fine inside a chip, since the circular non-negotiable governs the
+  // control surface, not every icon drawn on it (see `cam`'s own brackets).
+  // Lives outside this file's own chip set (docs/todo.md entry 19), but the
+  // glyph is defined here so main.ts's element and this file's icons never
+  // drift into two different fullscreen marks.
+  full:
+    '<path d="M1 9V1h8v3H4v5z"/>' +
+    '<path d="M23 9V1h-8v3h5v5z"/>' +
+    '<path d="M1 15v8h8v-3H4v-5z"/>' +
+    '<path d="M23 15v8h-8v-3h5v-5z"/>',
 }
 
 const CSS = `
@@ -752,16 +807,19 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     paint()
   })
 
+  /** Whether the caller's own fullscreen chip (entry 19, index.html) is
+   *  currently on the arc — it takes a slot in this row's count without
+   *  being one of `chips`, since it lives outside the HUD's own container. */
+  let fullscreenChipShown = false
+
   /** Lay the icons along their own arc. Spacing comes from the measured chip
    *  size, so a larger root font spreads them rather than overlapping them. */
   function placeChips(): void {
     const all = [...chips.values()]
     const size = all[0]?.offsetWidth || 48
-    const r = base * R_CHIPS
-    const step = (size + CHIP_GAP) / r
-    const start = CHIP_ARC_MID - ((all.length - 1) / 2) * step
+    const n = all.length + (fullscreenChipShown ? 1 : 0)
     all.forEach((chip, i) => {
-      const [x, y] = polar(r, start + i * step)
+      const [x, y] = chipPosition(i, n, size)
       chip.style.left = `${x - size / 2}px`
       chip.style.top = `${y - size / 2}px`
     })
@@ -1060,6 +1118,12 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     },
 
     autopilot: () => prefs.autopilot,
+
+    setFullscreenChipShown(shown) {
+      if (fullscreenChipShown === shown) return
+      fullscreenChipShown = shown
+      placeChips()
+    },
 
     adopt(next) {
       if (next.geometricView) {

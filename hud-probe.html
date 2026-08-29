@@ -11,7 +11,8 @@
 </style>
 <div id="tag">boot</div>
 <script type="module">
-  import { createHud } from '/src/hud.ts'
+  import { chipPosition, createHud } from '/src/hud.ts'
+  window.chipPosition = chipPosition
 
   const calls = []
   const prefs = {

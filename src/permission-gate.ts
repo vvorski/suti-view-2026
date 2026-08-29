@@ -86,6 +86,20 @@ let fsArmed = false
 let fsEverEntered = false
 let fsWatching = false
 
+/** Fires whenever `fsState` changes, so the fullscreen chip (docs/todo.md
+ *  entry 19) can appear and vanish without polling `fullscreenStatus()`
+ *  every frame for a value that changes at most a few times a session. */
+let fsListener: (() => void) | null = null
+
+export function onFullscreenChange(cb: () => void): void {
+  fsListener = cb
+}
+
+function setFsState(next: FullscreenState): void {
+  fsState = next
+  fsListener?.()
+}
+
 /**
  * What happened to the fullscreen request.
  *
@@ -105,10 +119,10 @@ function watchFullscreen(): void {
   document.addEventListener('fullscreenchange', () => {
     if (document.fullscreenElement) {
       fsEverEntered = true
-      fsState = 'active'
+      setFsState('active')
     } else if (fsEverEntered) {
       // A deliberate exit. Recorded, deliberately not acted on.
-      fsState = 'exited'
+      setFsState('exited')
     }
   })
 }
@@ -125,7 +139,7 @@ function watchFullscreen(): void {
 function armFullscreenRetry(): void {
   if (fsArmed || fsEverEntered) return
   fsArmed = true
-  fsState = 'armed'
+  setFsState('armed')
   const retry = (): void => {
     window.removeEventListener('pointerup', retry, true)
     fsArmed = false
@@ -137,7 +151,7 @@ function armFullscreenRetry(): void {
 export function goFullscreen(): void {
   const target = document.documentElement
   if (!target.requestFullscreen) {
-    fsState = 'unsupported'
+    setFsState('unsupported')
     return
   }
   watchFullscreen()
@@ -159,15 +173,14 @@ export function goFullscreen(): void {
       // fullscreenElement null. Trust the document, not the promise.
       if (document.fullscreenElement) {
         fsEverEntered = true
-        fsState = 'active'
+        setFsState('active')
       } else {
-        fsState = 'refused'
         fsError = 'resolved-but-not-fullscreen'
+        setFsState('refused')
         armFullscreenRetry()
       }
     },
     (err: unknown) => {
-      fsState = 'refused'
       // Not `instanceof DOMException`. Chrome rejects this with a plain
       // TypeError carrying "not granted" when the window is not focused, and
       // narrowing to DOMException recorded that — the single most informative
@@ -176,6 +189,7 @@ export function goFullscreen(): void {
       // TypeError-because-the-options-dictionary.
       fsError =
         err instanceof Error ? `${err.name}: ${err.message}`.slice(0, 60) : String(err).slice(0, 60)
+      setFsState('refused')
       armFullscreenRetry()
     },
   )

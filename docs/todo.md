@@ -1173,7 +1173,7 @@ pixels, and confirming a tap above the band still opens the HUD and a swipe
 starting in the band still fires.
 
 ### 19. A way back into fullscreen once it has been lost
-`status: ready` · added 2026-08-29
+`status: done` · added 2026-08-29 · shipped at build 105
 
 **Do** — show a single circular fullscreen chip, on the icon arc, whenever
 fullscreen has been lost and the platform supports getting it back.
@@ -1253,6 +1253,43 @@ on-screen check at 320×568 and 360×640 covers the arc arithmetic. Also `pnpm
 probe:fullscreen` unchanged, `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs no · url no · capture no (fullscreen prompts nothing
 and captures nothing) · dependency no.
+
+**Build note.** `permission-gate.ts`'s `fsState` assignments were all routed
+through one `setFsState()` helper (previously seven direct assignments across
+five call sites) so the new change-notification could not be added at only
+some of them by accident — a bug class worth naming since it is exactly the
+shape of fault this file's own history already has. Two of those call sites
+had `fsError` set *after* the state change; reordered so a listener reading
+`fullscreenStatus()` during the notification never sees a stale error message
+paired with the new state.
+
+`chipPosition(index, n, chipSize)` is a pure function exported from `hud.ts`
+rather than a method on the `Hud` instance, since its one external caller (the
+fullscreen chip in `index.html`) needs to compute a position for an element
+`Hud` itself knows nothing about. `Hud.setFullscreenChipShown(shown)` is the
+other half: it only tells the HUD's *own* six chips how many total slots to
+share, so they make room before the external chip is shown.
+
+Verified the regression this entry was most at risk of: driving
+`setFullscreenChipShown(true)` then `(false)` on the real `hud.ts` returns
+every one of the six chips to pixel-identical positions (`JSON.stringify`
+equal, not merely close) to before either call. With it left `true`, at both
+320×568 and 360×640, computed the would-be 7th chip's own rect via the same
+exported `chipPosition()` the real element uses and confirmed all seven
+bounding boxes stay on screen — leftmost edge 3.7px in at 320 wide, 5.9px at
+360, matching the entry's own "~4px margin" prediction. `pnpm build`, `pnpm
+lint`, `pnpm probe:fullscreen`, `pnpm probe:shake`, `pnpm probe:haptics` all
+clean.
+
+**Not verified here, and said so rather than claimed otherwise:** the actual
+lost-and-regained fullscreen cycle needs switching apps and returning on a
+real handset — Chrome refuses fullscreen to a window that isn't frontmost, so
+nothing about entering or losing real fullscreen can be driven from this
+automation session. The chip's static markup, its default-hidden state, and
+its glyph were confirmed to exist correctly in `index.html`; whether it
+actually appears within a frame or two of losing fullscreen on a phone is
+exactly what the entry's own Verify section already requires a real device
+for.
 
 ### 20. Shake answers before Start, and stands down while the panel is open
 `status: ready` · added 2026-08-29

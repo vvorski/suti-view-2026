@@ -275,6 +275,25 @@
          wired to a console. See shakeFlash() in main.ts. -->
     <div id="shake-flash" aria-hidden="true"></div>
 
+    <!-- The way back into fullscreen once it has been lost (docs/todo.md
+         entry 19) — hidden by default, shown by main.ts only while
+         permission-gate.ts reports `exited` or `refused`. A sibling of the
+         HUD rather than one of its own chips, deliberately: the HUD's own
+         chips go inert while its panel is closed
+         (`.hud-scrim:not(.open) .hud-chip`), and this one has to work at the
+         moment fullscreen is lost, not only once the panel is opened.
+         Positioned by main.ts using hud.ts's own chipPosition() so it reads
+         as one of the arc's chips despite living outside that file. -->
+    <button id="fullscreen-chip" class="hud-chip" type="button" hidden
+      style="--tint: #9d9bf0" aria-label="Return to fullscreen">
+      <svg class="hud-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M1 9V1h8v3H4v5z"/>
+        <path d="M23 9V1h-8v3h5v5z"/>
+        <path d="M1 15v8h8v-3H4v-5z"/>
+        <path d="M23 15v8h-8v-3h5v-5z"/>
+      </svg>
+    </button>
+
     <div id="gate">
       <!-- Share, top right. An icon rather than a labelled button: the only
            other control on this screen is Start, so there is nothing for a
