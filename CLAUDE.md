@@ -198,11 +198,17 @@ Read a few files before writing any.
 - **Mobile is the target.** Bundle size and fill rate matter; a desktop-only
   regression is a regression. Nothing needing COOP/COEP headers can ever work,
   because GitHub Pages cannot set them — that rules out `SharedArrayBuffer`.
-- **Both hosts serve the same build.** Cloudflare Pages and GitHub Pages
-  (`vvorski.github.io/suti-view-2026`, *not* the org account).
-- The CI Cloudflare deploy has never worked — `CLOUDFLARE_API_TOKEN` was never
-  set as a repo secret. `./deploy/deploy.sh` from a local checkout is the
-  working path. Do not "fix" the workflow by guessing at credentials.
+- **GitHub Pages is the deploy** — `vvorski.github.io/suti-view-2026`, *not*
+  the org account. It builds from `main` only: the `github-pages` environment
+  has a branch rule, so a `workflow_dispatch` on any other ref builds happily
+  and is then refused at the deploy step. Merge first.
+- **Cloudflare is parked**, as of build 53. Its CI deploy never once worked —
+  `CLOUDFLARE_API_TOKEN` was never set — so every push to `main` produced a red
+  X for a target nobody read. The workflow's lint/typecheck/build steps live on
+  as `checks.yml`; only the deploy step went. `pnpm deploy` still runs wrangler
+  from a local checkout if it is ever wanted. Do not "fix" this by guessing at
+  credentials, and do not delete `checks.yml` to tidy up — `pages.yml` runs
+  `pnpm build` but never `pnpm lint`, so that file is the lint gate.
 
 ## Hard stops
 

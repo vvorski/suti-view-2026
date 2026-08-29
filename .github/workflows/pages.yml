@@ -1,12 +1,17 @@
 name: GitHub Pages
 
-# A second, independent home for the same build. Cloudflare Pages is the primary
-# target; this one exists because a github.io URL needs nothing but a public
-# repo — no account, no token, no dashboard visit.
+# The deploy. The only one — Cloudflare is parked (see checks.yml), and was
+# never really deploying anyway: its token was never set, so every push to main
+# produced a red X beside this workflow's green tick.
 #
-# The one thing that must differ is the base path: Cloudflare serves the site at
-# the root of its own subdomain, GitHub serves it under /<repo>/. Hence
-# BASE_PATH, which vite.config.ts reads and defaults to "/".
+# Written as the fallback, and it became the whole thing for exactly the reason
+# it was worth having: a github.io URL needs nothing but a public repo — no
+# account, no token, no dashboard visit.
+#
+# BASE_PATH is the one thing a second host would have to differ on: GitHub
+# serves under /<repo>/, Cloudflare served at the root of its own subdomain.
+# vite.config.ts reads it and defaults to "/", so bringing a second host back
+# needs no change here.
 
 on:
   push:
