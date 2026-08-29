@@ -20,13 +20,14 @@ the point is to *not stop*: the main loop keeps building, and the idea lands in
 
 ## The shape of the run
 
-**Recon → ask → write → commit.** Four steps, and the first is what makes the
-second worth the user's time.
+**Recon → decide → write → commit.** Four steps, and the first is what earns
+you the right to do the second without asking.
 
 ### 1. Recon first, briefly
 
-Never open with questions you could have answered yourself. Spend a couple of
-tool calls establishing:
+Never ask what you could answer yourself — and, now, never ask what you could
+*decide* yourself. Recon is what turns a guess into a call you can defend.
+Spend a couple of tool calls establishing:
 
 - Where the idea would land. Grep for the thing it touches; get `file:line`.
 - Whether it already exists, partly. Half of all ideas here turn out to be
@@ -36,7 +37,7 @@ tool calls establishing:
   **circular control surface** constraint, which is non-negotiable and rules
   out any control that is not an arc.
 
-Recon is for informing the questions, not for designing the thing. Two or three
+Recon is for grounding the decisions, not for designing the thing. Two or three
 calls. If it is taking longer, the idea is a project and wants `spec-to-issue`.
 
 ### 2. Decide by default; ask only when you cannot
@@ -122,8 +123,10 @@ not a release. It rides along with the next real change.
 
 Say so plainly and stop, rather than writing a weak entry:
 
-- **The idea is a project, not a task.** More than about three forks, or it
-  spans layers. Say it wants `spec-to-issue` and a real spec.
+- **The idea is a project, not a task.** More than about three forks *you
+  cannot decide*, or it spans layers. Forks you can settle yourself no longer
+  count towards that — an idea with a dozen obvious calls in it is a small
+  entry, not a project.
 - **A fork cannot be resolved.** Only for the three kinds above: an unlicensed
   Hard Stop, an override of a non-negotiable, or a genuine taste fork the user
   is unavailable to settle. Write the entry as `blocked`, with a
