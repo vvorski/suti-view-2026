@@ -68,28 +68,60 @@ const GRAB_PX = 24
 /** Centre-to-option radius for the mapping dial, in screen px (fixed, unlike
  *  the main bands' viewport-scaled radii, because the chip itself is a fixed
  *  CSS size). Same value Task 1's tap-to-pick fan used at this spot (its own
- *  FAN_R, now gone) — that number was already checked on screen to clear
- *  both the chip's column neighbours and the bands' own grab arcs, and nothing
- *  about turning the same three options into a drag changes that footprint. */
+ *  FAN_R, now gone) — that number was already checked on screen to clear both
+ *  the neighbouring chips and the bands' own grab arcs, and neither turning the
+ *  same three options into a drag nor moving the chips onto an arc changes that
+ *  footprint: the neighbours moved from above/below to diagonal, no closer. */
 const MAP_R = 85
 /** Angular spacing between adjacent options on the mapping dial — a
  *  different origin from PITCH above (the wedge hinge), so a separate
  *  constant rather than reuse. A drag's clamped rotation can swing an
  *  unselected option as far as (keys.length-1) pitches from the notch — up
  *  to 2×MAP_PITCH with three options — and that swing has to stay clear of
- *  this chip's column neighbours (the mix readout above, AUTO below), the
- *  same up/down-avoidance the old fan's fixed ±45° existed for. 20° keeps
- *  the worst-case swing to 40° either side of the notch, five degrees short
- *  of the fan's own limit — needed because unlike the fan's static circles,
- *  every option here is moving, not just the one being watched. */
+ *  the chips either side of MAP.
+ *
+ *  Those neighbours used to be directly above and below, when the chips were
+ *  a column; they are now the next chips around the arc (see R_CHIPS), which
+ *  sit diagonally rather than vertically. 20° survived the move because it was
+ *  always the *worst-case* swing that mattered — 40° either side of the notch —
+ *  and that cone is narrower than the ~55° between one chip and the next along
+ *  the arc. Needed because, unlike a static label, every option here is moving
+ *  during a drag, not just the one being watched. */
 const MAP_PITCH = 20 * DEG
+
+/**
+ * The chip arc's radius, as a fraction of the smaller viewport dimension.
+ *
+ * Outside everything the dial draws. The outermost band sits at R_GEO 0.88 and
+ * is ~30px wide, and the tick rim runs to R_GEO + 0.07; a chip is 52px across,
+ * so its own radius has to clear all of that or the chips land on exactly the
+ * band labels the wedge exists to show. 1.08 puts the nearest chip edge about
+ * 12px outside the rim on a 320px screen, which is the tightest case.
+ */
+const R_CHIPS = 1.08
+
+/**
+ * Where the chip arc is centred — deliberately not the notch.
+ *
+ * Centring on NOTCH is the obvious choice and does not fit: at the radius the
+ * chips need, a symmetric arc puts the first chip's left edge at roughly x=0 on
+ * a 320px screen. Rotating the whole arc a few degrees toward the bottom edge
+ * buys that margin back at both ends, because the wedge's own corner hinge
+ * means the arc leaves the screen sooner at the top-left than the bottom-right.
+ */
+const CHIP_ARC_MID = 232 * DEG
+
+/** Gap between neighbouring chips along the arc, in px. Small, because the
+ *  radius is already fighting for room — see R_CHIPS. */
+const CHIP_GAP = 6
 
 /** The colour rings' sweep, relative to the colour chip's own centre — same
  *  convention as the mapping dial's own angles (0 points due right, positive
  *  is clockwise since screen y grows downward), and for the same reason: the
- *  chip's neighbours in the column (the mix readout above, AUTO below) sit
- *  at roughly ±90°, so the sweep stays clear of both by keeping well inside
- *  that. Wider than the mapping dial's own reach because a 0-100 drag needs
+ *  chip's nearest neighbours sit at roughly ±90° from this sweep's centre —
+ *  that was true when they were the column above and below, and remains true of
+ *  the chips either side along the arc — so ±50° stays clear of both with room
+ *  to spare. Wider than the mapping dial's own reach because a 0-100 drag needs
  *  an arc long enough to resolve a value along, not just three option stops. */
 const RING_A0 = -50 * DEG
 const RING_A1 = 50 * DEG
@@ -113,21 +145,21 @@ const RING_PITCH = 56
  *  regardless of that channel's current value. */
 const LABEL_OFFSET = 12 * DEG
 /** How far beyond its own ring's radius a label sits. Checked on screen at
- *  320×568: at RING_R_INNER with no padding, B's label lands almost exactly
- *  on the mix readout sitting directly above the chip in the column — the
- *  innermost ring is simply too close to the chip for angle alone to clear
- *  a same-column neighbour, since at radius 60 the whole ring's vertical
- *  reach is ±60px and the readout is only ~56px above centre. Pushing every
- *  label's radius out by this much clears that case with margin and, being
- *  uniform across all three, keeps their radial spacing consistent too. */
+ *  320×568: at RING_R_INNER with no padding, B's label landed almost exactly
+ *  on what was then the mix readout directly above the chip. The innermost ring
+ *  is simply too close to the chip for angle alone to clear anything nearby —
+ *  at radius 60 the whole ring's reach is ±60px, and a neighbour 56px away is
+ *  inside it. That specific collision went when the chips moved to an arc, but
+ *  the padding stays: it is what keeps every label off its own ring's arc, and
+ *  being uniform across all three it keeps their radial spacing consistent. */
 const LABEL_PAD = 26
 /** How far the bands fade back while a popup owns the screen.
  *
  *  Every control here was designed and checked on its own, and each one does
- *  clear its own neighbours: the rings dodge the chip column, their labels
- *  dodge each other, the dial dodges the mix readout. What none of them
- *  could see alone is that a popup anchored to the chip column reaches right
- *  across the bands behind it — at RING_R_INNER + 2*RING_PITCH the outermost
+ *  clear its own neighbours: the rings dodge the neighbouring chips, their
+ *  labels dodge each other, the dial dodges both. What none of them could see
+ *  alone is that a popup anchored to a chip reaches right across the bands
+ *  behind it — at RING_R_INNER + 2*RING_PITCH the outermost
  *  ring is 172px out, well inside the band arcs on any phone. Shipped, that
  *  read as three coloured arcs lying over MULTIPLY / CHORUS / ADD with all
  *  of it illegible.
@@ -296,25 +328,30 @@ const CSS = `
 .hud-mix-arc  { fill: none; stroke: #9d9bf0; stroke-linecap: round; }
 .hud-mix-knob { fill: #9d9bf0; }
 
-/* The toggles are HTML rather than SVG, and sit after the dial in the DOM so
-   they render above it. Inside the SVG they would fall within a band's grab
-   zone — the invisible arcs are 48px wide — and the band would swallow the
-   tap. Stacked at the left edge, clear of where the faded band labels reach.
+/* The chips are HTML rather than SVG, and sit after the dial in the DOM so they
+   render above it. Inside the SVG they would fall within a band's grab zone —
+   the invisible arcs are 48px wide — and the band would swallow the tap.
 
-   Everything in this corner lives in this one column: the mix readout, the
-   colour panel, and the buttons. They were three absolutely-positioned things
-   at hand-tuned offsets from the bottom, which held only for as long as the
-   count and heights did — adding a third button put it on top of the mix
-   readout, and opening the colour panel covered the button that opened it.
-   A flex column cannot have that bug. */
+   They used to be a flex column at the left edge. Now they follow their own arc
+   about the same hinge as the bands, so the whole HUD is one family of curves
+   instead of a dial with a list of buttons parked beside it. The column solved
+   a real problem — three absolutely-positioned things at hand-tuned offsets
+   used to collide as the count changed — and the arc keeps that property for
+   the same reason: every position is computed from one radius and one spacing
+   in placeChips(), so adding a sixth chip cannot land on top of a fifth.
+
+   This layer covers the whole scrim and passes taps through; only the chips
+   themselves take input. */
 .hud-btns {
   position: absolute;
-  left: calc(0.75rem + env(safe-area-inset-left, 0px));
-  bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
-  display: flex; flex-direction: column; align-items: flex-start; gap: 0.5rem;
+  inset: 0;
+  pointer-events: none;
 }
 
 .hud-mixread {
+  position: absolute;
+  left: calc(0.75rem + env(safe-area-inset-left, 0px));
+  bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
   display: flex; align-items: baseline; gap: 0.4rem;
   font: 400 8px ui-monospace, SFMono-Regular, Menlo, monospace;
   letter-spacing: 0.14em; text-transform: uppercase; color: #5d5a78;
@@ -330,6 +367,9 @@ const CSS = `
    file's established thumb-safe minimum) to leave room for the second line. */
 .hud-chip {
   appearance: none; cursor: pointer;
+  /* Placed by placeChips(); left/top are written per-chip on every layout. */
+  position: absolute;
+  pointer-events: auto;
   width: 3.25rem; height: 3.25rem; padding: 0;
   border-radius: 50%;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -360,24 +400,12 @@ const CSS = `
    tappable circles with their own stems) is gone: a drag control has one
    thing that turns, not three separate targets. */
 
-/* The colour chip's popup used to be this panel: three linear sliders, one
-   per channel. The sliders are gone — the popup is now three concentric
-   rings drawn straight into the dial svg, anchored to this chip the same way
-   the mapping dial is anchored to that one (see colourCenter() and
-   paintColourPopup()). What is left of the panel is just the composite
-   swatch: a single-glance check that the three channels haven't combined
-   into something unexpected, kept because the exact per-channel numbers now
-   live on the rings and their labels instead of in a per-row <output>. */
-.hud-rgb {
-  width: 3.25rem; padding: 0;
-  display: none;
-  pointer-events: auto;
-}
-.hud-rgb.open { display: block; }
-.hud-swatch {
-  height: 4px; border-radius: 2px;
-  background: var(--swatch, #fff);
-}
+/* The colour chip's popup was once a panel of three linear sliders, then a
+   panel holding just a composite swatch bar, and is now only the three
+   concentric rings drawn straight into the dial svg (see colourCenter() and
+   paintColourPopup()). The panel went with the move to an arc of chips: it had
+   no column left to sit in, and the composite colour it showed is already on
+   the RGB chip's own dot. */
 
 /* The three colour rings: the same track/fill/knob idiom as the mix arc,
    times three, concentric around the colour chip instead of the wedge hinge.
@@ -466,6 +494,10 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
   // `glyph` is what's visible — short enough to sit on one line inside a
   // 52px circle — and `name` is the full word, kept as the accessible name
   // so shrinking the chip doesn't also shrink what a screen reader says.
+  /** Every chip, in creation order — which is the order they sit along the
+   *  arc. See placeChips(). */
+  const chips: HTMLButtonElement[] = []
+
   function mkButton(name: string, glyph: string, onTap: () => void): HTMLButtonElement {
     const b = document.createElement('button')
     b.type = 'button'
@@ -478,6 +510,7 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
       onTap()
     })
     btnBar.appendChild(b)
+    chips.push(b)
     return b
   }
 
@@ -486,21 +519,20 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
   mixRead.innerHTML = '<span>mix</span><b></b>'
   btnBar.appendChild(mixRead)
 
-  // Appended to btnBar before any button, so it sits directly above the button
-  // that opens it. After the SVG in the DOM is what keeps it from being
-  // swallowed by a band's 48px grab zone.
-  const rgbPanel = document.createElement('div')
-  rgbPanel.className = 'hud-rgb'
-  // A tap inside the panel must not reach the scrim, which closes the HUD.
-  // Nothing in here is interactive any more — it's just the composite swatch
-  // below — but the swatch is thin, and a mis-tap on the sliver of panel
-  // around it shouldn't close the HUD out from under a colour change either.
-  rgbPanel.addEventListener('pointerup', (e) => e.stopPropagation())
-  rgbPanel.addEventListener('pointerdown', (e) => e.stopPropagation())
-  btnBar.appendChild(rgbPanel)
+  /**
+   * Whether the colour rings are up.
+   *
+   * This used to live on a panel element's class, because that node survived
+   * build()'s teardown of the svg while a closure variable was assumed not to.
+   * The panel is gone — it held a composite swatch bar that the RGB chip's own
+   * dot already shows — and the assumption was never true anyway: mapDialOpen
+   * beside it is a closure variable and survives resize perfectly well, since
+   * build() rebuilds the drawing, not the state.
+   */
+  let colourOpen = false
 
   // Per-channel identity used by both the (now gone) sliders' replacement —
-  // the colour rings — and paintRgb()'s swatch. Order is R, G, B throughout,
+  // the colour rings — and paintRgb()'s chip dot. Order is R, G, B throughout,
   // which is also the rings' outer-to-inner order (see ringRadius()).
   const CHANNELS = [
     { key: 'r' as const, label: 'R', tint: '#ff4d5e' },
@@ -508,9 +540,6 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     { key: 'b' as const, label: 'B', tint: '#5c8bff' },
   ]
 
-  const swatch = document.createElement('div')
-  swatch.className = 'hud-swatch'
-  rgbPanel.appendChild(swatch)
 
   document.body.appendChild(scrim)
 
@@ -624,7 +653,7 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
   let mapDialOpen = false
   /** Same shape as mapDialOpen and for the same reason: the camera ring is
    *  pure svg, so there is no DOM node outside build()'s teardown to hang the
-   *  flag on the way rgbPanel's class does it for the colour popup. */
+   *  flag on. Same shape as colourOpen above, for the same reason. */
   let camRingOpen = false
 
   /** The selector trapezoid and its tip — the reading window, which spans every
@@ -643,13 +672,13 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
    *  closeColourPopup()/closeMapDial()), so this is "is anything covering
    *  the bands", not a count. */
   const popupOpen = (): boolean =>
-    mapDialOpen || camRingOpen || rgbPanel.classList.contains('open')
+    mapDialOpen || camRingOpen || colourOpen
 
   const rgbBtn = mkButton('Geometric layer colour', 'RGB', () => {
-    const wasOpen = rgbPanel.classList.contains('open')
+    const wasOpen = colourOpen
     closeMapDial()
     closeCamRing()
-    rgbPanel.classList.toggle('open', !wasOpen)
+    colourOpen = !wasOpen
     paintButtons()
     paintColourPopup()
     // The bands sit under this popup and have to yield to it — see POPUP_DIM.
@@ -724,14 +753,9 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     paintBands()
   }
 
-  // The colour popup's open/closed state lives on rgbPanel's own class,
-  // unlike mapDialOpen which has to be a closure variable — the mapping dial
-  // is pure svg with nothing surviving build()'s teardown to hold a flag on,
-  // but rgbPanel is an ordinary DOM node outside the svg, so its class
-  // already survives resize the same way mapDialOpen is made to.
   function closeColourPopup(): void {
-    if (!rgbPanel.classList.contains('open')) return
-    rgbPanel.classList.remove('open')
+    if (!colourOpen) return
+    colourOpen = false
     paintColourPopup()
     paintBands()
   }
@@ -770,6 +794,31 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     return restingRotOf(b.keys, b.current(), PITCH)
   }
 
+  /**
+   * Lay the chips along their own arc about the wedge hinge.
+   *
+   * Spacing is derived from the chip's measured size rather than a constant, so
+   * the arc stays correct if the chip's `rem` sizing resolves differently — a
+   * larger root font size spreads them further apart instead of overlapping
+   * them. `offsetWidth` is readable even though the scrim is at opacity 0:
+   * transparent is laid out, `display: none` would not be.
+   *
+   * Centred on CHIP_ARC_MID and symmetric about it, so the row grows evenly in
+   * both directions as chips are added rather than drifting off one end.
+   */
+  function placeChips(base: number): void {
+    if (chips.length === 0) return
+    const size = chips[0].offsetWidth || 52
+    const r = base * R_CHIPS
+    const step = (size + CHIP_GAP) / r
+    const start = CHIP_ARC_MID - ((chips.length - 1) / 2) * step
+    chips.forEach((chip, i) => {
+      const [x, y] = polar(r, start + i * step)
+      chip.style.left = `${x - size / 2}px`
+      chip.style.top = `${y - size / 2}px`
+    })
+  }
+
   function build(): void {
     const w = window.innerWidth
     const h = window.innerHeight
@@ -778,6 +827,7 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     cx = w + 10
     cy = h + 10
     mixR = base * R_MIX
+    placeChips(base)
 
     svg.setAttribute('viewBox', `0 0 ${w} ${h}`)
     while (svg.firstChild) svg.removeChild(svg.firstChild)
@@ -1226,7 +1276,7 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
   }
 
   function paintColourPopup(): void {
-    const open = rgbPanel.classList.contains('open')
+    const open = colourOpen
     const [fx, fy] = colourCenter()
     const c = prefs.geoColour
     CHANNELS.forEach(({ key, label }, i) => {
@@ -1316,12 +1366,11 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
   function paintRgb(): void {
     const c = prefs.geoColour
     const rgbCss = `rgb(${Math.round(c.r * 255)} ${Math.round(c.g * 255)} ${Math.round(c.b * 255)})`
-    swatch.style.setProperty('--swatch', rgbCss)
     rgbSwatch.style.background = rgbCss
   }
 
   function paintButtons(): void {
-    const open = rgbPanel.classList.contains('open')
+    const open = colourOpen
     rgbBtn.setAttribute('aria-pressed', String(open))
     rgbBtn.setAttribute('aria-expanded', String(open))
     autoBtn.querySelector('b')!.textContent = prefs.autopilot ? 'on' : 'off'
