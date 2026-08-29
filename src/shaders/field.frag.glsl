@@ -174,7 +174,13 @@ void main() {
   // radius to frequency so bass sits at the centre and the top end at the rim,
   // and let the highs decide how much of it shows.
   float specSample = texture2D(uSpectrum, vec2(clamp(radius * 0.85, 0.0, 1.0), 0.5)).r;
-  float rings = sin(radius * 34.0 - uFlow * 1.4 + angle * 0.5) * 0.5 + 0.5;
+  // The angle term needs a whole-number coefficient. atan() returns (-PI, PI],
+  // so `angle` jumps by 2PI across the -x axis, and only an integer multiple of
+  // it survives that jump inside sin(). At 0.5 the phase jumped by PI instead
+  // and the rings broke along a straight line from the centre out to the left
+  // edge — one of the two seams this file used to draw. At 1.0 it is a
+  // single-armed spiral and continuous the whole way round.
+  float rings = sin(radius * 34.0 - uFlow * 1.4 + angle) * 0.5 + 0.5;
   field += rings * specSample * (0.06 + 0.30 * uHigh);
 
   // --- history: a polar spectrogram ---------------------------------------
@@ -184,14 +190,43 @@ void main() {
   // rolling GPU texture buys: every pixel reads a different moment of history
   // in a single fetch, which no amount of CPU work could reproduce per frame.
   float age = clamp((radius - 0.12) / 1.05, 0.0, 1.0);
-  float freqAxis = fract(angle / (2.0 * PI) + 0.5);
+
+  // Frequency is folded across the circle rather than wrapped once around it.
+  // The history texture's y axis does not wrap — row 0 is the bass and the last
+  // row the top octave — so running it once around butts those two ends against
+  // each other along atan()'s branch cut and draws a hard radial seam from the
+  // centre out to the left edge. That was the most visible thing in this view,
+  // present at every level and at every viewport size. abs(angle)/PI runs the
+  // axis out and back again, so each end of it only ever meets itself.
+  float freqAxis = abs(angle) / PI;
+
+  // ...and then jittered by the warp field, because the axis is coarse in a way
+  // that shows. scene.ts spaces its 64 rows logarithmically over 128 spectrum
+  // bins, so the lowest nine rows read bin 1 alone and the tenth spans bins 1
+  // and 2 — ten rows sharing essentially one value, an eighth of the frame
+  // wide, with dead-straight rays down its edges where the row index steps.
+  // Displacing the lookup by noise we have already computed makes those
+  // boundaries wander instead of radiate, which is the difference between
+  // weather and a pie chart. 0.09 is about six rows peak to peak: much less
+  // and the rays are still recognisably straight, much more and the frequency
+  // ordering — the reason for drawing this in polar at all — stops being
+  // readable.
+  freqAxis = clamp(freqAxis + (warp.x - 0.5) * 0.09, 0.0, 1.0);
+
   // Walk backwards from the write head, wrapping — the texture repeats in x.
   float pastX = uHistoryHead - age;
   float past = texture2D(uHistory, vec2(pastX, freqAxis)).r;
 
   // Fades with age so the present stays dominant and old material becomes a
-  // texture rather than competing for attention.
-  field += past * (1.0 - age) * (0.20 + 0.45 * uLevel);
+  // texture rather than competing for attention — and fades out again at the
+  // very centre. `age` is clamped, so every pixel inside r = 0.12 reads the
+  // newest column at full weight and the middle of the frame was a hard-edged
+  // wheel of the current spectrum with a notch cut where the spectrum was
+  // quiet. 0.17 is just past where the clamp releases, so the plateau is gone
+  // before the history is at strength; below about 0.13 the wheel's edge comes
+  // back, and much above 0.2 the recent past is missing from the middle of the
+  // frame, which is where the eye is.
+  field += past * (1.0 - age) * smoothstep(0.0, 0.17, radius) * (0.20 + 0.45 * uLevel);
 
   // --- transients ----------------------------------------------------------
   // An onset pushes a ripple outward from the centre instead of flashing the
@@ -210,8 +245,68 @@ void main() {
 
   // Contrast opens up with energy: near-silence is a flat, almost featureless
   // dark, and structure resolves as sound arrives.
-  float t = clamp((field - 0.5) * (1.1 + 2.3 * energy) + 0.5, 0.0, 1.0);
+  float expanded = (field - 0.5) * (1.1 + 2.3 * energy) + 0.5;
+
+  // ...and then the top is rolled off instead of clipped. Everything above adds
+  // into `field` — the rings, the history, the transient ripple — so at a loud
+  // moment most of the frame arrives here already past 1.0, and the clamp()
+  // that used to be here left whole regions with no modelling in them at all —
+  // saturated to the same palette colour, carrying only the vignette's gradient
+  // across them. At uLevel 0.75 that was most of the lower half of the frame,
+  // as a single flat wash; with the knee it is modelled the whole way up. The
+  // share of the frame whose local luminance range is one code or less over an
+  // 8px neighbourhood measured 4.9% before and 3.5% after, but treat those as
+  // indicative only: a throwaway browser probe cannot be made reproducible
+  // here (uTime and uFlow keep advancing, so no two runs read the same patch
+  // of noise) and repeats of one build spread several points. The flat wash is
+  // obvious by eye, which is the evidence that actually settled this. Note that
+  // counting repeated RGB triples will NOT find it — the dither at the end of
+  // main() puts the flat region on several adjacent codes.
+  //
+  // Below KNEE this is exactly the straight line it replaces, and the two
+  // pieces meet with the same slope, so nothing about the dark or the middle of
+  // the picture moves; above it the curve approaches 1 without arriving and the
+  // loud end keeps its modelling. Lower than 0.55 and the midtones start
+  // compressing too, which flattens the ordinary case in order to fix the loud
+  // one; higher and there is not enough curve left above the knee to hold the
+  // highlights apart. 0.85 was tried and is not distinguishable from 0.55 at
+  // the quiet end once the run-to-run spread above is accounted for, so the
+  // lower value stays on the argument rather than on a measurement.
+  const float KNEE = 0.55;
+  float over = max(expanded - KNEE, 0.0);
+  float t = clamp(min(expanded, KNEE) + (1.0 - KNEE) * over / (over + (1.0 - KNEE)), 0.0, 1.0);
+
   vec3 col = palette(t, energy, tilt);
+
+  // --- depth ---------------------------------------------------------------
+  // A second, slower deck behind the near one, for no extra noise at all.
+  // warp.x is already a full fbm evaluation of this patch, read at a different
+  // offset and drifting on uFlow * 0.35 in y while the field it displaces drifts
+  // on uFlow * 0.18 in x — two layers of the same medium moving at different
+  // rates, which is what parallax is. It was only ever used as a displacement;
+  // reading it as a second deck as well measured +1% frame time, inside the
+  // run-to-run noise. The honest version would be an independent fourth fbm, and
+  // both ways of buying a genuinely new noise layer were measured rather than
+  // assumed: at 1228x1706, four octaves cost 1.70ms/frame, a fifth octave 1.91
+  // and a fourth fbm 1.98 — +12% and +16%. Neither is worth it when re-reading
+  // warp.x gets most of the picture.
+  //
+  // Multiplicative rather than additive, and the factor is zero-mean, so it
+  // models the dark instead of washing it — an additive haze raises the floor
+  // of every frame to buy structure in a few of them, and this is a nocturnal
+  // thing on a dark ground. It is not quite mean-preserving in practice: warp.x
+  // also feeds `field`, so it correlates with what it multiplies and the quiet
+  // frame comes out a few code values brighter with this on than off. Small
+  // enough to accept for what it buys, but it is a lift, not nothing.
+  //
+  // Weighted by (1 - t) so it is invisible where the near layer is lit and
+  // carries the whole of the low end — both how a distant deck seen through a
+  // near one behaves, and where the picture was previously a flat pedestal. 0.9
+  // is +/-45% at the very bottom; at 0.4 the second deck is not visible as
+  // structure, and past about 1.4 it reads as two fields fighting instead of
+  // one behind the other. It can never reach zero, so nothing goes black here
+  // that was not black already.
+  col *= 1.0 + (warp.x - 0.5) * 0.9 * (1.0 - t);
 
   // A dim core that swells with the mids — the eye needs somewhere to rest.
   col += vec3(0.10, 0.14, 0.20) * uMid * exp(-radius * 2.6);
