@@ -517,3 +517,46 @@ longer than before; a double's is visibly red rather than white.
 transitions cannot be observed progressing live in this harness — see
 CLAUDE.md's harness-traps entry on backgrounded-tab animation stalls.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 12. Sustained loud passages relax back to baseline too fast
+`status: ready` · added 2026-08-29
+
+**Do** — slow the relative mapping's long-term energy floor so a loud section
+keeps reading as loud, instead of the drive relaxing back toward its resting
+value a couple of seconds after the loudness arrives.
+**Why** — `pnpm probe`'s own "Full track" table shows it: `level` hits 1.00 at
+0.75s into a loud section and has already relaxed to 0.53 by 5.25s, while the
+underlying audio has not changed. The floor (`longEnergy`, attack 1.5s) rises
+to meet the new loudness almost as fast as `level` itself moves, so the
+normalizer chases the music instead of measuring it against a stable recent
+history. Beat-to-beat response is fine — the same probe's 120bpm test shows a
+0.677 swing with `break` correctly pinned near 0 — so this is specifically
+about sustained dynamics (a section staying loud) reading as inert, which is
+the shape of "feels poor in responding to the music."
+
+**Decided**
+- Scope: `relativeMapping`'s `longEnergy` envelope only, not `shortEnergy`,
+  `bandEnv`, or the other two mappings. **Mine**, because the probe shows
+  per-hit response (transient peak 0.985, beat swing 0.677) already working —
+  widening the fix to constants that measure correctly would risk trading away
+  behaviour that isn't broken to fix behaviour that is.
+- Direction: raise `longEnergy`'s attack from 1.5s toward something at least
+  as slow as its own 4.0s release (rather than faster than release, which is
+  the mismatch causing this). **Mine**, because a "recent history" floor that
+  rises faster than it falls cannot describe a *recent history* — it describes
+  the current instant. The exact value is a build-time call against the
+  probe's own numbers, not one to pin without re-running it.
+
+**Lands in** — `src/engine/fast.ts`, `relativeMapping()`'s `longEnergy = new
+Envelope(1.5, 4.0)` line only.
+**Done when** — in `pnpm probe`'s "Full track" section, `level` during the
+9.00s–12.75s recovery stays at or above roughly 0.6 through at least t=11s
+(currently falls to 0.58 by 11.25s and keeps falling), while the 120bpm
+beat-pattern swing stays at or above its current 0.677 — sustained response
+must not cost per-hit response.
+**Verify** — `pnpm probe` is the primary evidence (this is what surfaced the
+problem and what proves the fix). Also `pnpm build`, `pnpm lint`. No on-screen
+check — a DSP constant with no shared UI surface — but confirm by ear against
+real music before calling it settled, since a synthetic flat-band probe cannot
+prove *feel*, only rule out regressions.
+**Hard stops** — prefs no · url no · capture no · dependency no.
