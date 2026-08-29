@@ -160,15 +160,27 @@
 
       /* Copy hangs off a heavy left bar, so the block is anchored rather than
          floating in the middle of the screen. */
+      /* The bar hangs in the page gutter rather than indenting the text.
+         border-left plus padding pushed the copy about 18px right of the title,
+         so the one block with a marker on it was the one block that did not
+         line up with anything — which is the opposite of what the marker is
+         for. Everything now shares a single left axis. */
       .gate-copy {
         position: relative;
         z-index: 1;
-        border-left: 4px solid rgba(157, 155, 240, 0.42);
-        padding-left: 0.85rem;
         display: flex;
         flex-direction: column;
         gap: 0.4rem;
         max-width: 26rem;
+      }
+      .gate-copy::before {
+        content: '';
+        position: absolute;
+        left: -0.85rem;
+        top: 0;
+        bottom: 0;
+        width: 4px;
+        background: rgba(157, 155, 240, 0.42);
       }
       #gate p {
         font-size: 0.78rem;
@@ -189,11 +201,15 @@
         border: 2px solid #1e2231;
         align-self: flex-start;
       }
+      /* Bigger. At 4rem it was technically scannable and practically fiddly —
+         a second phone had to be held close and steady. 6.5rem is the size at
+         which it is grabbed casually, which is the only way it will ever be
+         used. */
       .gate-qr {
-        width: 4rem;
-        height: 4rem;
+        width: 6.5rem;
+        height: 6.5rem;
         display: block;
-        opacity: 0.85;
+        opacity: 0.9;
       }
       .gate-qr[hidden] { display: none; }
       .take-side {
@@ -234,10 +250,19 @@
         z-index: 1;
         color: #d08a8a;
         background: #2a1414;
-        border-left: 4px solid #d08a8a;
         padding: 0.5rem 0.7rem;
+        margin-left: -0.7rem;
         font-size: 0.78rem;
         max-width: 26rem;
+      }
+      #error::before {
+        content: '';
+        position: absolute;
+        left: -0.15rem;
+        top: 0;
+        bottom: 0;
+        width: 4px;
+        background: #d08a8a;
       }
       #error:empty { display: none; }
 
