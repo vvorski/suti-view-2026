@@ -47,61 +47,56 @@ in Decided, and without it the status is `blocked`, not `ready`.
 
 ## Entries
 
-### 1. Read the shake diagnostics off a real phone
-`status: blocked` · added 2026-08-29
+### 1. Make the shake's buzz actually perceptible
+`status: ready` · added 2026-08-29 · unblocked 2026-08-29
 
-**Do** — get the `motion N ev  peak X/18` line **and the `buzz` line** from
-Victor's phone with `?debug` on, and act on whichever cause each names.
-**Why** — the shake has been rebuilt twice against synthetic evidence. The
-readout exists precisely to separate "no devicemotion arriving at all" from
-"arriving, and never reaching STRONG_UP", and those want opposite fixes.
-
-Victor also reports not feeling the buzz on shake. That is the same trip and
-the same screen, so it belongs here rather than in an entry blocked on the
-identical thing. The `buzz` line already separates its three causes: `buzz
-unsupported` (no `navigator.vibrate` — every iPhone), `buzz off
-(reduced-motion) N` (suppressed by the OS setting), or `buzz N/M` where N is
-what the platform accepted. `buzz 0/0` means nothing even asked, which points
-at the shake never firing rather than at haptics — in which case the two halves
-of this entry are one bug.
+**Do** — replace the single 40ms pulse with a pattern, so the confirmation is
+felt on an Android actuator that cannot spin up inside 40ms.
+**Why** — Victor cannot feel the buzz on shake. This was blocked on a `?debug`
+reading and is not any more: two answers closed it without the trip.
 
 **Decided**
-- Guess vs measure → measure, over shipping another speculative threshold. See
-  CLAUDE.md, "Two identical symptoms need two different numbers".
+- Platform → Android, Chrome. `navigator.vibrate` exists, so a buzz is possible
+  and worth fixing; on iOS it would have been unfixable and the entry would
+  have become "replace the haptic with something visual".
+- Does the shake itself work → **yes, the picture re-rolls**. That closes the
+  half of this entry that was about `motion`/`peak`: `takeStrong()` fires,
+  `confirmBuzz()` is called, and the accelerometer path is fine. Two bugs, not
+  one, and only the buzz is left.
 
-**Lands in** — nothing until the number is known. `src/shake.ts` if the peak is
-healthy; a permissions/HTTPS-context hunt if `motion` is stuck at 0.
-**Done when** — a shake on Victor's phone re-rolls the view, confirmed by him.
-**Verify** — `pnpm probe:shake` stays green; the change is checked on the device
-that reported it, not on a synthetic case.
+**Lands in** — `src/haptics.ts`, `CONFIRM_MS` and the `navigator.vibrate` call.
+**Done when** — a shake is felt on Victor's phone. If it still is not, the
+`buzz` line in `?debug` distinguishes the two remaining causes without another
+guess: `buzz off (reduced-motion) N` means the OS setting is suppressing it,
+which is deliberate and correct behaviour rather than a bug; `buzz N/M` with
+N==M means the platform accepted every pulse and the hardware simply is not
+producing something perceptible at that duration.
+**Verify** — on the phone. There is no probe for "can a person feel this", and
+`hapticStatus()` already reports what was asked for and accepted.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
-**Blocked on:** two lines of `?debug` output from the phone — the `motion`
-line and the `buzz` line, after a shake that felt like it should have worked.
+**Note:** a single short pulse is the known weak case. Rotational-mass
+actuators need time to spin up, and a pattern (a short pulse, a gap, a longer
+one) is felt where a flat 40ms is not. Try the pattern before raising the
+duration — a long single buzz reads as an error, not a confirmation.
 
-### 2. Decide whether the privacy line comes back to the gate
-`status: blocked` · added 2026-08-29
+### 2. Record that the gate carries no privacy line
+`status: done` · added 2026-08-29 · closed at build 68
 
-**Do** — either restore one short line to the start screen, or record that the
-page deliberately makes no on-screen promise about capture.
-**Why** — build 66 removed the two paragraphs at Victor's instruction. They
-carried "the audio never leaves this device" and the only disclosure of the
-camera layer. CLAUDE.md's third hard stop names that copy as a promise the page
-makes, so its absence should be a decision on the record rather than a side
-effect of a layout change.
+**Do** — write the decision into CLAUDE.md's hard-stop section so the absence
+reads as deliberate.
+**Why** — build 66 removed the two paragraphs, which carried "the audio never
+leaves this device" and the only disclosure of the camera layer. CLAUDE.md's
+third hard stop names that copy as a promise the page makes, so its absence had
+to be a decision on the record rather than a side effect of a layout change.
 
 **Decided**
-- Remove the paragraphs → done, at Victor's explicit instruction, over keeping
-  a compact version. What remains open is only whether *anything* replaces them.
+- Restore a line, or none → **none**, over one short line under the QR. The
+  browser's own permission prompt is the consent point. Recorded in CLAUDE.md
+  so nobody re-adds it as a bug fix or assumes it was lost in a refactor.
 
-**Lands in** — `index.html`, the gate markup.
-**Done when** — either the line is on screen, or this entry is closed `done`
-with the decision written into CLAUDE.md's hard-stop section.
-**Verify** — the gate still fits at 320x568 with the line present.
-**Hard stops** — capture **yes**: this *is* the capture hard stop. Needs
-Victor's answer either way.
-
-**Blocked on:** yes or no to a single line under the QR.
+**Done** — CLAUDE.md, hard stop 3, now says the gate deliberately carries no
+copy and names the build that removed it.
 
 ### 3. Cap the start screen's idle frame rate
 `status: ready` · added 2026-08-29

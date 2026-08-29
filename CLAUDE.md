@@ -260,7 +260,16 @@ else on an approved issue is yours to build.
 
 3. **Capture and privacy.** Anything that changes what is captured, adds a
    network request, adds a permission prompt, or persists audio-derived data
-   anywhere. "Audio never leaves the device" is a promise made on the page.
+   anywhere.
+
+   **The gate deliberately carries no copy about this, as of build 66.** It
+   used to say "the audio never leaves this device" and disclose the optional
+   camera layer; both paragraphs were removed at Victor's instruction and the
+   decision to leave them out was confirmed afterwards. The browser's own
+   permission prompt is the consent point. Do not re-add the text as a bug fix
+   — it is absent on purpose. The promise itself still binds the code: nothing
+   here records, uploads, or persists audio or video, and the camera still
+   stays off until a live gesture asks for it.
 
 4. **A new runtime dependency.** This ships to phones over cellular. Three.js
    is 117 KB gzipped and is the budget. Anything else is a conversation, with
