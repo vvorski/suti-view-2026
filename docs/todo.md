@@ -2428,12 +2428,38 @@ has no way for a person to be the event.
   not also open the panel. Use the capture-phase `stopPropagation()` that
   `main.ts`'s screenshot band already uses for exactly this, and for the same
   reason: capture runs before hud.ts's bubble-phase listener on `document`.
-- Armed only while Circles is showing → **Mine.** The shader is the only
-  consumer, so in any other view a hold does nothing — and rather than
-  introduce a gesture that is dead in twelve views out of thirteen, the
-  arming is conditional and everywhere else behaves exactly as today. The
-  cost is that the same gesture means different things by view; the mitigation
-  is that the difference is "nothing happens", not a surprise.
+- Armed in **every geometric view** → Victor, 2026-08-29, overturning an
+  earlier "Circles only" call of mine that was made before the recon below.
+  It is also now the cheaper option, not the more expensive one.
+- Because **all six geometric views already read `uRipples`** — circles,
+  shards, grid, drift, chorus and tide. There is no per-view plumbing to
+  build: the buffer is already the geometric layer's shared event bus, and
+  each view already has its own answer to what a ripple looks like. Three of
+  them are documented in `views.ts:57` as "variations on Circles that keep its
+  ring and move its emitter", which means the concept of an origin away from
+  the centre is not new either.
+- So "appropriately to each" is **already designed, and is not being
+  overridden** → each view derives its origin from the ring's own birth time
+  (`drift.frag.glsl:12` states this outright). The change is that a slot may
+  now *carry* an origin, and a view uses it when present and keeps today's
+  rule when absent. One branch per shader, no new idiom anywhere:
+
+  | View | What a touched ripple does |
+  |---|---|
+  | Circles | the ring is born at the finger instead of the centre |
+  | Shards | fragments are thrown outward from the finger |
+  | Grid | the square wavefront starts at the finger's cell |
+  | Drift | the wander starts at the finger rather than at its seeded phase |
+  | Chorus | the nearest of its fixed origins fires, rather than an arbitrary one |
+  | Tide | the arc is born at the frame edge nearest the finger |
+
+  Chorus and Tide take the finger as an *influence* rather than as a
+  coordinate, **Mine**, because both are built on where rings may be born —
+  a ring of fixed origins, and the frame edge — and a view whose identity is
+  its emitter geometry should not have that geometry deleted by a touch.
+- The per-fragment cost does not multiply → only one geometric shader runs at
+  a time, so the two-loop split below is paid once whichever view is showing,
+  exactly as it would have been for Circles alone.
 - One buffer, not two → **widen the ripple slot to carry a position** rather
   than adding a parallel touch-ring system. Audio ripples write the centre;
   touch ripples write their point. One implementation behind one interface,
@@ -2453,10 +2479,12 @@ has no way for a person to be the event.
   is the whole performance argument: anyone who never touches the screen pays
   four extra `length()` calls rather than twelve, and the view's cost for the
   common case is unchanged.
-- What this changes about the view → the single-centre composition stops being
-  guaranteed. That is inherent in the ask and worth stating plainly rather
-  than discovering: Circles was built as concentric rules about one focus, and
-  after this a person can put a second focus anywhere.
+- What this changes → Circles' single-centre composition stops being
+  guaranteed. Inherent in the ask and worth stating plainly rather than
+  discovering: it was built as concentric rules about one focus, and after
+  this a person can put a second focus anywhere. The other five are unaffected
+  in principle, because none of them was ever centred — which is a second
+  reason this generalises more comfortably than it first appeared.
 
 **Lands in**
 - `src/engine/ripples.ts` — `MAX_RIPPLES` 8 → 12, the slot stride 2 → 4, a
@@ -2468,6 +2496,10 @@ has no way for a person to be the event.
   emitter is ticked where `updateRipples` is called.
 - `src/shaders/circles.frag.glsl:74`, `:81`, `:215-232` — the constant, the
   uniform type, and the second loop.
+- `src/shaders/shards.frag.glsl`, `grid.frag.glsl`, `drift.frag.glsl`,
+  `chorus.frag.glsl`, `tide.frag.glsl` — the same constant and uniform type,
+  and one branch each per the table above. Every one of them already loops
+  `uRipples`; none needs a new input.
 - `src/main.ts` — the hold/drag recogniser, beside the screenshot band's
   listeners so all pointer handling on the picture is in one place.
 
@@ -2476,9 +2508,10 @@ starts rings expanding from that point and they keep coming, weaker, until
 about four seconds after the finger lifts; dragging draws a trail of them; a
 plain tap still opens the panel and never emits; a hold never opens the panel.
 Rings born from the music keep arriving throughout, at the same density as
-before. In another view, a hold does nothing and a tap opens the panel as
-today. The frame-time figure in the numeric readout is unchanged from today
-when nothing is being touched.
+before. Switching to each of the other five geometric views and holding
+produces that view's own response from the table above, not a ring bolted onto
+it. The frame-time figure in the numeric readout is unchanged from today when
+nothing is being touched, in every one of the six.
 **Verify** — `views-probe.html` for the shader with synthetic emitters, then
 the phone for the gesture, because a hold-versus-tap threshold is a hand
 question and a mouse cannot answer it. Watch the frame time on the phone with
