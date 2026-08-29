@@ -461,7 +461,7 @@ step further. Added to CLAUDE.md's harness-traps list so it is not
 rediscovered as a CSS bug.
 
 ### 10. A byline above the title on the start screen
-`status: ready` · added 2026-08-29
+`status: done` · added 2026-08-29 · shipped at build 86
 
 **Do** — add "by flyflyfly \u00a9 2026" above `suti · view` on the gate, small
 and quiet, on the same right-justified axis as everything else there.

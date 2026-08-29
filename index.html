@@ -125,6 +125,17 @@
       /* Title and build name, right-justified and large. With the copy gone
          these are the only type on the screen, so they carry it. */
       .gate-head { text-align: right; }
+      /* Byline (queue entry 10). Quieter than .gate-name below it: this screen
+         has exactly one thing designed to dominate — the filled Start disc —
+         and a byline loud enough to compete with the title would be a second
+         one. */
+      .gate-byline {
+        font: 400 0.62rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: #454b5c;
+        margin: 0 0 0.3rem;
+      }
       #gate h1 {
         font-family: 'Chakra Petch', ui-sans-serif, system-ui, sans-serif;
         font-size: clamp(1.7rem, 9vw, 2.6rem);
@@ -260,6 +271,7 @@
       </button>
 
       <header class="gate-head">
+        <p class="gate-byline">by flyflyfly &copy; 2026</p>
         <h1>suti&#8202;&middot;&#8202;view</h1>
         <div class="gate-name"><span id="release-name"></span></div>
       </header>
