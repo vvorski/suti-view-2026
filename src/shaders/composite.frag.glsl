@@ -24,6 +24,18 @@ uniform vec3 uGeoColour;
 // shake.ts.
 uniform vec4 uTumble;
 
+// Passthrough AR: the room, under everything. See camera.ts.
+//
+// A third layer rather than a third *view*, so that every existing programme
+// and every merge mode works over it without knowing it exists — the views
+// stay what views.ts says they are, a fragment shader plus a label.
+uniform sampler2D uCamera;
+uniform float uCameraMix;  // 0 = no camera, and then this costs nothing
+// Cover-fit scale, computed against the drawing buffer in scene.ts. The camera
+// is landscape and the canvas is usually portrait; without this the room is
+// stretched to the frame, which reads as a bug immediately.
+uniform vec2 uCameraFit;
+
 vec3 overlayBlend(vec3 base, vec3 top) {
   vec3 lo = 2.0 * base * top;
   vec3 hi = 1.0 - 2.0 * (1.0 - base) * (1.0 - top);
@@ -53,5 +65,28 @@ void main() {
   else blended = top; // normal
 
   vec3 col = clamp(mix(base, blended, uMix), 0.0, 1.0);
+
+  // The room goes underneath, and the picture becomes light falling on it.
+  //
+  // Screen, not alpha: neither layer has an alpha channel to composite with —
+  // both are opaque, dark-grounded and bright-marked. Screening is what makes
+  // white line work read as *projected onto* the room rather than *pasted
+  // over* it, and it leaves black exactly where the picture is black, which is
+  // most of the frame.
+  //
+  // Sampled from vUv, deliberately NOT the tumbled uv above. The tumble makes
+  // the picture feel knocked about by the phone; a view of the actual room
+  // already appears to move when the phone moves, so tumbling it too would
+  // double-count that motion and read as broken rather than physical.
+  //
+  // At uCameraMix == 0 this collapses to `col` exactly — no cost, no drift in
+  // what every existing view already looks like.
+  if (uCameraMix > 0.0) {
+    vec2 camUv = (vUv - 0.5) * uCameraFit + 0.5;
+    vec3 cam = texture2D(uCamera, camUv).rgb;
+    vec3 lit = 1.0 - (1.0 - cam) * (1.0 - col);
+    col = mix(col, lit, uCameraMix);
+  }
+
   gl_FragColor = vec4(col, 1.0);
 }

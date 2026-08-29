@@ -86,6 +86,17 @@
         color: #565d6d;
         text-wrap: balance;
       }
+      /* The camera note is subordinate to the microphone one: the mic is what
+         the app is, the camera is an option that has not been asked for yet.
+         Dimmer and smaller says that without a heading, and keeps the gate to
+         one glance on a phone. It must stay legible — this is a disclosure,
+         not fine print, and it is here so nothing about the camera is a
+         surprise later. */
+      #gate .gate-aside {
+        font-size: 0.8rem;
+        color: #454b58;
+        margin-top: -0.35rem;
+      }
       #start {
         appearance: none;
         border: 1px solid #2a3040;
@@ -126,6 +137,11 @@
       <p>
         Listens through the microphone and renders what it hears. Nothing is recorded,
         stored, or sent anywhere &mdash; the audio never leaves this device.
+      </p>
+      <p class="gate-aside">
+        There is an optional camera layer that puts the visuals over the room. It stays
+        off until you turn it on from the controls, and asks you then &mdash; not now.
+        The video is drawn to the screen and never leaves this device either.
       </p>
       <button id="start" type="button">Begin</button>
       <div id="error" role="status" aria-live="polite"></div>

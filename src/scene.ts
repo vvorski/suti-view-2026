@@ -29,10 +29,12 @@ import {
   Vector2,
   Vector3,
   Vector4,
+  VideoTexture,
   WebGLRenderer,
   WebGLRenderTarget,
 } from 'three'
 
+import type { CameraSource } from './camera'
 import { type GeoColour } from './geo-colour'
 import { MERGE_MODES, type MergeModeName } from './merge-modes'
 import type { VisualParams } from './engine'
@@ -117,6 +119,15 @@ export interface Visualiser {
   setTumble(t: TumbleState): void
   /** 0-1. */
   setMix(mix: number): void
+  /**
+   * Attach or detach the passthrough camera, and set how much of it shows.
+   *
+   * `source` null detaches and frees the texture. Passing a source with mix 0
+   * is legal and means "attached but invisible" — which is what the HUD does
+   * while dragging back to zero, so that letting go at 0 and then dragging up
+   * again does not re-prompt for the camera.
+   */
+  setPassthrough(source: CameraSource | null, mix: number): void
   /** Re-roll the seed each view spends on whatever it doesn't get from audio. */
   randomise(): void
   /** Smoothed frame time in ms, and the pixel ratio currently in use. */
@@ -252,6 +263,12 @@ export function createVisualiser(
     // (angle, offsetX, offsetY, overscan) — at rest this is the identity, so
     // a device with no accelerometer costs one unused uniform and nothing else.
     uTumble: { value: new Vector4(0, 0, 0, 0) },
+    // Passthrough AR. Null until a camera is actually attached: Three binds a
+    // default 1x1 white texture for a null sampler, which is never sampled
+    // because the shader guards on uCameraMix > 0.
+    uCamera: { value: null as VideoTexture | null },
+    uCameraMix: { value: 0 },
+    uCameraFit: { value: new Vector2(1, 1) },
   }
   const compositeMaterial = new ShaderMaterial({
     vertexShader,
@@ -308,6 +325,39 @@ export function createVisualiser(
     uniforms.uResolution.value.copy(drawSize)
     geometryTarget.setSize(drawSize.x, drawSize.y)
     atmosphereTarget.setSize(drawSize.x, drawSize.y)
+    applyCameraFit()
+  }
+
+  /**
+   * Cover-fit the camera frame to the canvas.
+   *
+   * The sensor is landscape (1280x720) and a phone held upright is portrait,
+   * so the two aspects are not merely different, they are inverted. Stretching
+   * one to the other is instantly legible as wrong — faces get wide, the room
+   * leans.
+   *
+   * The shader samples `(vUv - 0.5) * uCameraFit + 0.5`, so this is the factor
+   * the *texture coordinates* are scaled by, which is the reciprocal of the
+   * scale applied to the image: to show less of the source along an axis
+   * (cropping it) the uv range must shrink, hence the < 1 values here. Getting
+   * that backwards produces a frame that is letterboxed rather than cropped,
+   * with the clamp smearing the edge pixels outward.
+   */
+  function applyCameraFit(): void {
+    const tex = compositeUniforms.uCamera.value
+    const video = tex?.image as HTMLVideoElement | undefined
+    if (!video || !video.videoWidth || !video.videoHeight || !drawSize.y) {
+      compositeUniforms.uCameraFit.value.set(1, 1)
+      return
+    }
+    const canvasAspect = drawSize.x / drawSize.y
+    const videoAspect = video.videoWidth / video.videoHeight
+    if (videoAspect > canvasAspect) {
+      // Source is wider than the frame: keep full height, crop the sides.
+      compositeUniforms.uCameraFit.value.set(canvasAspect / videoAspect, 1)
+    } else {
+      compositeUniforms.uCameraFit.value.set(1, videoAspect / canvasAspect)
+    }
   }
   applySize()
 
@@ -474,6 +524,35 @@ export function createVisualiser(
       compositeUniforms.uMix.value = Math.min(1, Math.max(0, mix))
     },
 
+    setPassthrough(source, mix) {
+      const current = compositeUniforms.uCamera.value
+      const wantVideo = source?.video ?? null
+
+      if ((current?.image ?? null) !== wantVideo) {
+        // Dispose the old one before replacing it. A VideoTexture holds a GPU
+        // texture that is re-uploaded every frame; leaking one per attach
+        // would leak the upload too, not just the memory.
+        current?.dispose()
+        if (wantVideo) {
+          const tex = new VideoTexture(wantVideo)
+          tex.minFilter = LinearFilter
+          tex.magFilter = LinearFilter
+          tex.wrapS = ClampToEdgeWrapping
+          tex.wrapT = ClampToEdgeWrapping
+          compositeUniforms.uCamera.value = tex
+        } else {
+          compositeUniforms.uCamera.value = null
+        }
+        // The fit depends on the source's own dimensions, so it can only be
+        // computed once there is a source.
+        applyCameraFit()
+      }
+
+      compositeUniforms.uCameraMix.value = wantVideo
+        ? Math.min(1, Math.max(0, mix))
+        : 0
+    },
+
     randomise() {
       uniforms.uSeed.value.set(Math.random(), Math.random(), Math.random(), Math.random())
     },
@@ -491,6 +570,7 @@ export function createVisualiser(
       atmosphereTarget.dispose()
       spectrumTexture.dispose()
       historyTexture.dispose()
+      compositeUniforms.uCamera.value?.dispose()
       renderer.dispose()
     },
   }

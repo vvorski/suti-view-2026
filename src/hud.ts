@@ -140,6 +140,12 @@ const LABEL_PAD = 26
  *  as a ghost, so the wedge still looks like one object. */
 const POPUP_DIM = 0.12
 
+/** The camera ring's colour. Deliberately not one of CHANNELS' three tints —
+ *  those say "this is the red channel", and a fourth ring in a fourth hue
+ *  would read as a fourth channel. A near-white amber says "this is not one
+ *  of those", and matches the convention every phone uses for a live camera. */
+const CAM_TINT = '#ffcf8a'
+
 export interface Hud {
   /** Call every frame with the current state; only does work while visible. */
   update(
@@ -193,6 +199,16 @@ interface Handlers {
   /** 0-1. */
   onMix(mix: number): void
   onMapping(name: MappingName): void
+  /**
+   * 0-1 of the passthrough camera.
+   *
+   * Async and able to fail, unlike every other handler here, because the first
+   * non-zero value is what actually asks for the camera — and the person can
+   * say no. Resolves to the mix that was really achieved, so the control can
+   * snap back to 0 on a refusal rather than sitting at a value that is not
+   * true. The HUD must not itself decide what a refusal means.
+   */
+  onPassthrough(mix: number): Promise<number>
   /** Fired on every change the user makes by hand, so the autopilot can get
    *  out of the way. Not fired for `adopt`. */
   onManualChange(): void
@@ -560,12 +576,28 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
   const colourLabels: SVGTextElement[] = []
   const colourHits: SVGPathElement[] = []
 
+  // The camera ring: one arc, same idiom as a single colour ring, anchored to
+  // its own chip. Only one, so plain refs rather than the arrays above.
+  let camTrack: SVGPathElement | null = null
+  let camFill: SVGPathElement | null = null
+  let camKnob: SVGCircleElement | null = null
+  let camLabel: SVGTextElement | null = null
+  let camHit: SVGPathElement | null = null
+  /** What the ring is showing, which during a drag runs ahead of what the
+   *  camera has actually granted. `onPassthrough` is the only thing allowed to
+   *  make it true — see the drag binding. */
+  let camShown = 0
+
   // Only one popup — the mapping dial, or a colour panel — is ever open at
   // once. Each opener decides its own open/closed state from what it was
   // before acting, then unconditionally closes the other; that's what lets
   // a second tap on the same chip close it while a tap on any other chip
   // always closes both and only reopens the one that was tapped.
   let mapDialOpen = false
+  /** Same shape as mapDialOpen and for the same reason: the camera ring is
+   *  pure svg, so there is no DOM node outside build()'s teardown to hang the
+   *  flag on the way rgbPanel's class does it for the colour popup. */
+  let camRingOpen = false
 
   /** The band arcs, kept only so a popup can fade them back — see POPUP_DIM.
    *  Their labels already live on each band as b.labels. */
@@ -575,11 +607,12 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
    *  closeColourPopup()/closeMapDial()), so this is "is anything covering
    *  the bands", not a count. */
   const popupOpen = (): boolean =>
-    mapDialOpen || rgbPanel.classList.contains('open')
+    mapDialOpen || camRingOpen || rgbPanel.classList.contains('open')
 
   const rgbBtn = mkButton('Geometric layer colour', 'RGB', () => {
     const wasOpen = rgbPanel.classList.contains('open')
     closeMapDial()
+    closeCamRing()
     rgbPanel.classList.toggle('open', !wasOpen)
     paintButtons()
     paintColourPopup()
@@ -594,6 +627,7 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
   const autoBtn = mkButton('Autopilot', 'AUTO', () => {
     closeColourPopup()
     closeMapDial()
+    closeCamRing()
     prefs.autopilot = !prefs.autopilot
     savePrefs(prefs)
     paintButtons()
@@ -605,6 +639,7 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
   const mapBtn = mkButton('Mapping', 'MAP', () => {
     const wasOpen = mapDialOpen
     closeColourPopup()
+    closeCamRing()
     mapDialOpen = !wasOpen
     // Mirrors restingRot()'s behaviour for the main bands: opening always
     // parks the currently-selected option under the notch, regardless of
@@ -616,9 +651,27 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     paintBands()
   })
 
+  const camBtn = mkButton('Camera passthrough', 'CAM', () => {
+    const wasOpen = camRingOpen
+    closeColourPopup()
+    closeMapDial()
+    camRingOpen = !wasOpen
+    paintCamRing()
+    paintButtons()
+    paintBands()
+  })
+
+  function closeCamRing(): void {
+    if (!camRingOpen) return
+    camRingOpen = false
+    paintCamRing()
+    paintBands()
+  }
+
   const statsBtn = mkButton('Numeric readout', 'NUM', () => {
     closeColourPopup()
     closeMapDial()
+    closeCamRing()
     prefs.showStats = !prefs.showStats
     stats.hidden = !prefs.showStats
     if (!prefs.showStats) stats.textContent = ''
@@ -930,12 +983,66 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
       )
     })
 
+    // The camera ring. Built after the colour rings so it draws over them for
+    // the same z-order reason they are built after the mapping dial — the two
+    // are never open together, so this only matters against the bands.
+    camTrack = el('path', { class: 'hud-track', 'stroke-width': 8 })
+    svg.appendChild(camTrack)
+    camFill = el('path', { class: 'hud-ring-fill', 'stroke-width': 8, stroke: CAM_TINT })
+    svg.appendChild(camFill)
+    camKnob = el('circle', { r: 6, class: 'hud-ring-knob' })
+    camKnob.style.fill = CAM_TINT
+    svg.appendChild(camKnob)
+    camLabel = el('text', { class: 'hud-ring-label' })
+    camLabel.style.fill = CAM_TINT
+    svg.appendChild(camLabel)
+    camHit = el('path', {
+      class: 'hit',
+      fill: 'none',
+      stroke: 'transparent',
+      'stroke-width': GRAB_PX * 2,
+    })
+    camHit.setAttribute('aria-label', 'Camera passthrough amount')
+    svg.appendChild(camHit)
+
+    bindArcDrag(
+      camHit,
+      camCenter,
+      RING_A0,
+      RING_A1,
+      (t) => {
+        // The ring follows the thumb immediately, but `prefs.passthrough` is
+        // not set here — the camera may refuse, and a preference that says 60
+        // while the sensor was declined is a lie the rest of the app would
+        // act on. camShown is what the thumb asked for; the handler's reply
+        // is what actually happened, applied on commit below.
+        camShown = t
+        paintCamRing()
+        manual()
+      },
+      () => {
+        // Asking happens once, on release, not on every pointermove: the first
+        // non-zero value triggers getUserMedia, and firing that from a move
+        // handler would queue a prompt per frame of the drag.
+        void handlers.onPassthrough(camShown).then((granted) => {
+          // Snap to the truth. On a refusal this puts the ring back to 0,
+          // which is the only honest thing to show — the alternative is a
+          // control sitting at 60 with a black ground behind it.
+          camShown = granted
+          prefs.passthrough = granted
+          savePrefs(prefs)
+          paintCamRing()
+        })
+      },
+    )
+
     paintBands()
     paintMix()
     paintRgb()
     paintButtons()
     paintMapDial()
     paintColourPopup()
+    paintCamRing()
   }
 
   /** The mapping chip's centre, in the svg's own coordinate space — the same
@@ -1017,6 +1124,51 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
    *  paintColourPopup() draws, so there is one definition of the layout. */
   function ringRadius(i: number): number {
     return RING_R_INNER + (CHANNELS.length - 1 - i) * RING_PITCH
+  }
+
+  /** The camera chip's own centre, same conversion as colourCenter(). */
+  function camCenter(): [number, number] {
+    const svgRect = svg.getBoundingClientRect()
+    const chipRect = camBtn.getBoundingClientRect()
+    return [
+      chipRect.left + chipRect.width / 2 - svgRect.left,
+      chipRect.top + chipRect.height / 2 - svgRect.top,
+    ]
+  }
+
+  function paintCamRing(): void {
+    if (!camTrack || !camFill || !camKnob || !camLabel || !camHit) return
+    const [fx, fy] = camCenter()
+    // RING_R_INNER, not a radius of its own: one ring anchored to one chip has
+    // no neighbours to clear, so the innermost colour ring's already-checked
+    // clearance from a 26px chip plus a GRAB_PX hit zone is exactly the right
+    // number, and reusing it keeps the two popups the same size on screen.
+    const r = RING_R_INNER
+
+    camTrack.setAttribute('d', arcAt(fx, fy, r, RING_A0, RING_A1))
+    camTrack.setAttribute('opacity', camRingOpen ? '1' : '0')
+
+    // Same 0-1 to angle mapping the colour rings use inline.
+    const value = RING_A0 + camShown * (RING_A1 - RING_A0)
+    camFill.setAttribute('d', arcAt(fx, fy, r, RING_A0, Math.max(RING_A0 + 0.001, value)))
+    camFill.setAttribute('opacity', camRingOpen ? '1' : '0')
+
+    const [kx, ky] = polarAt(fx, fy, r, value)
+    camKnob.setAttribute('cx', String(kx))
+    camKnob.setAttribute('cy', String(ky))
+    camKnob.setAttribute('opacity', camRingOpen ? '1' : '0')
+
+    const [lx, ly] = polarAt(fx, fy, r + LABEL_PAD, RING_A0 - LABEL_OFFSET)
+    camLabel.setAttribute('x', String(lx))
+    camLabel.setAttribute('y', String(ly))
+    camLabel.textContent = `CAM ${Math.round(camShown * 100)}`
+    camLabel.setAttribute('opacity', camRingOpen ? '1' : '0')
+
+    camHit.setAttribute('d', arcAt(fx, fy, r, RING_A0, RING_A1))
+    // Invisible must mean untappable — `.hud-dial .hit` sets pointer-events
+    // via a shared class regardless of opacity, so a closed ring would still
+    // swallow drags meant for the band underneath it.
+    camHit.style.pointerEvents = camRingOpen ? 'auto' : 'none'
   }
 
   function paintColourPopup(): void {
@@ -1120,6 +1272,12 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     mapBtn.setAttribute('aria-pressed', String(mapDialOpen))
     statsBtn.querySelector('b')!.textContent = prefs.showStats ? 'on' : 'off'
     statsBtn.setAttribute('aria-pressed', String(prefs.showStats))
+    // Shows the amount, not on/off: the difference between 15 and 80 is the
+    // whole control, and "on" would hide it.
+    camBtn.querySelector('b')!.textContent =
+      camShown > 0 ? String(Math.round(camShown * 100)) : 'off'
+    camBtn.setAttribute('aria-pressed', String(camRingOpen))
+    camBtn.setAttribute('aria-expanded', String(camRingOpen))
   }
 
   /** Pointer position as an angle about (ox,oy), in the svg's own coordinate

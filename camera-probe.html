@@ -1,0 +1,229 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>camera probe</title>
+<style>
+  html, body { margin: 0; background: #111; color: #8f8; font: 11px ui-monospace, monospace; }
+  .grid { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px; }
+  figure { margin: 0; }
+  figcaption { padding: 2px 0; }
+  canvas { display: block; border: 1px solid #444; }
+</style>
+<div class="grid" id="grid"></div>
+<script type="module">
+  import { createVisualiser } from '/src/scene.ts'
+
+  // A camera without a camera.
+  //
+  // A real getUserMedia feed makes every run different, which makes the two
+  // things this page exists to check — that mix 0 is unchanged, and that the
+  // cover fit crops rather than stretches — impossible to assert. So the
+  // "camera" is a canvas painting a known pattern, wrapped in a video-shaped
+  // object. captureStream() gives a real MediaStream from it, so what reaches
+  // VideoTexture is exactly what a camera would deliver, minus the permission
+  // prompt and the variability.
+  // The canvas must be redrawn continuously, not once. captureStream() emits a
+  // frame when the canvas changes; a canvas painted once produces a stream
+  // that never delivers a decodable frame, the video sits at currentTime 0,
+  // and the VideoTexture uploads black. That is indistinguishable from a
+  // broken shader and cost a debugging pass here — the first version of this
+  // probe painted once and every panel came out identical.
+  function fakeCamera(w, h) {
+    const c = document.createElement('canvas')
+    c.width = w
+    c.height = h
+    const g = c.getContext('2d')
+    // Deliberately anisotropic: a grid of squares and a circle. A stretch is
+    // invisible on noise and obvious on these — squares become rectangles and
+    // the circle becomes an ellipse the moment the aspect handling is wrong.
+    g.fillStyle = '#203040'
+    g.fillRect(0, 0, w, h)
+    g.strokeStyle = '#89a'
+    g.lineWidth = 2
+    for (let x = 0; x <= w; x += 80) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, h); g.stroke() }
+    for (let y = 0; y <= h; y += 80) { g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.stroke() }
+    g.strokeStyle = '#ffb'
+    g.lineWidth = 4
+    g.beginPath(); g.arc(w / 2, h / 2, Math.min(w, h) * 0.35, 0, Math.PI * 2); g.stroke()
+
+    // Repaint on demand, with a moving element so every call produces a
+    // genuinely different frame for captureStream to emit.
+    const paint = (t) => {
+      g.fillStyle = '#203040'
+      g.fillRect(0, 0, w, h)
+      g.strokeStyle = '#89a'
+      g.lineWidth = 2
+      for (let x = 0; x <= w; x += 80) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, h); g.stroke() }
+      for (let y = 0; y <= h; y += 80) { g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.stroke() }
+      g.strokeStyle = '#ffb'
+      g.lineWidth = 4
+      g.beginPath(); g.arc(w / 2, h / 2, Math.min(w, h) * 0.35, 0, Math.PI * 2); g.stroke()
+      g.fillStyle = '#f66'
+      g.fillRect(40 + (t % 40) * 8, h - 90, 60, 50)
+    }
+    paint(0)
+
+    const video = document.createElement('video')
+    video.srcObject = c.captureStream(30)
+    video.muted = true
+    video.playsInline = true
+    video.autoplay = true
+    return { canvas: c, paint, source: { video, close() {} } }
+  }
+
+  const params = {
+    level: 0.62, low: 0.55, mid: 0.48, high: 0.34,
+    transient: 0, tilt: 0.45, breakdown: 0, surge: 0,
+    novelty: 0.2, roughness: 0.5,
+  }
+  const spectrum = new Uint8Array(256)
+  for (let i = 0; i < 256; i++) {
+    spectrum[i] = Math.max(0, 210 * Math.exp(-i / 60) + 40 * Math.sin(i / 7) + 25)
+  }
+
+  const cam = fakeCamera(1280, 720)
+  await cam.source.video.play().catch(() => {})
+  await new Promise((r) => {
+    if (cam.source.video.videoWidth) return r()
+    cam.source.video.addEventListener('loadeddata', r, { once: true })
+  })
+
+  // Canvas CSS size must match the *drawing buffer's* aspect, not the phone
+  // aspect this is meant to stand in for.
+  //
+  // scene.ts sizes the renderer to window.innerWidth/innerHeight, not to the
+  // canvas's CSS box — the documented Three trap in CLAUDE.md. In the real app
+  // the canvas is the window and the two agree; in a probe with several small
+  // canvases they do not, and the buffer is squeezed into whatever CSS box it
+  // is given. A portrait box therefore renders a correctly cover-fitted
+  // landscape frame as a vertically stretched one, and the circle below comes
+  // out an ellipse for a reason that has nothing to do with the shader. That
+  // read as a fit bug on the first pass.
+  //
+  // So these boxes follow the window's own aspect, which makes the circle a
+  // real test of the fit again. The portrait-phone case is checked on the
+  // device, where the buffer genuinely is portrait.
+  const CASES = [
+    { name: 'mix 0 (must equal baseline)', mix: 0 },
+    { name: 'mix 0.5', mix: 0.5 },
+    { name: 'mix 1', mix: 1 },
+  ]
+
+  const made = []
+  for (const c of CASES) {
+    const fig = document.createElement('figure')
+    const cap = document.createElement('figcaption')
+    cap.textContent = c.name
+    const canvas = document.createElement('canvas')
+    const boxW = 300
+    const boxH = Math.round((300 * window.innerHeight) / window.innerWidth)
+    canvas.width = boxW
+    canvas.height = boxH
+    canvas.style.width = boxW + 'px'
+    canvas.style.height = boxH + 'px'
+    fig.append(cap, canvas)
+    document.getElementById('grid').append(fig)
+
+    const v = createVisualiser(canvas, {
+      geometricView: 'circles',
+      geoColour: { r: 1, g: 1, b: 1 },
+      atmosphericView: 'field',
+      mergeMode: 'normal',
+      mix: 0.6,
+    })
+    v.setPassthrough(c.mix > 0 ? cam.source : null, c.mix)
+    made.push({ ...c, v, canvas })
+  }
+
+  // Async, and yielding with a real setTimeout rather than the spin-wait the
+  // other probes here use.
+  //
+  // The spin-wait exists because requestAnimationFrame never fires in a
+  // non-frontmost automation window. It is fine when everything is CPU work,
+  // and completely wrong here: video decoding happens off the main thread and
+  // delivers frames through the event loop, so a synchronous loop that never
+  // yields starves the decoder. currentTime stays at 0, the VideoTexture
+  // uploads black, and every panel renders as if there were no camera — which
+  // is exactly what the first run of this probe showed, and it looked like a
+  // broken shader rather than a starved harness.
+  // Note on wall-clock: a backgrounded tab has its setTimeout clamped to
+  // roughly 1 Hz, so a run that should take frames*16ms takes frames*1s
+  // instead. Keep frame counts small, and kick long runs off without awaiting
+  // them from the driving tool or the call times out rather than the page
+  // failing. Nothing is wrong when that happens.
+  window.drive = async (frames = 60) => {
+    for (let f = 0; f < frames; f++) {
+      cam.paint(f)
+      for (const m of made) m.v.render(params, spectrum)
+      await new Promise((r) => setTimeout(r, 16))
+    }
+    return made.length
+  }
+
+  // Full-frame readback, so "mix 0 is unchanged" is a claim about every pixel
+  // rather than about the one in the middle. drawingBufferWidth/Height, not
+  // the CSS box — Three sizes the buffer to the window.
+  window.grab = (i) => {
+    const gl = made[i].canvas.getContext('webgl2')
+    const w = gl.drawingBufferWidth
+    const h = gl.drawingBufferHeight
+    const px = new Uint8Array(w * h * 4)
+    gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px)
+    let sum = 0
+    for (let k = 0; k < px.length; k += 4) sum += px[k] + px[k + 1] + px[k + 2]
+    return { w, h, sum, first: [px[0], px[1], px[2]] }
+  }
+
+  // Comparing two *different* visualisers proves nothing: createVisualiser
+  // seeds uSeed from Math.random(), so two instances draw different pictures
+  // whatever the camera is doing. The only sound regression test is one
+  // instance toggled — same seed, same audio, same frame count — going 0 to
+  // full and back, and landing on exactly the number it started from.
+  window.toggleTest = async () => {
+    const m = made[0]
+    const settle = async () => {
+      for (let f = 0; f < 30; f++) {
+        cam.paint(f)
+        m.v.render(params, spectrum)
+        await new Promise((r) => setTimeout(r, 16))
+      }
+    }
+    m.v.setPassthrough(null, 0)
+    await settle()
+    const before = window.grab(0).sum
+
+    m.v.setPassthrough(cam.source, 1)
+    await settle()
+    const withCam = window.grab(0).sum
+
+    m.v.setPassthrough(null, 0)
+    await settle()
+    const after = window.grab(0).sum
+
+    return {
+      before,
+      withCam,
+      after,
+      cameraChangedSomething: withCam !== before,
+      // uFlow advances with every render, so the picture genuinely moves
+      // between grabs and an exact equality here would be wrong to demand.
+      // What must hold is that removing the camera returns the frame to the
+      // same *scale* of output, not that it replays an identical frame.
+      returnedClose: Math.abs(after - before) / before < 0.08,
+    }
+  }
+
+  window.cam = cam
+  window.probeVideo = () => {
+    const v = cam.source.video
+    return {
+      readyState: v.readyState,
+      vw: v.videoWidth,
+      vh: v.videoHeight,
+      paused: v.paused,
+      currentTime: v.currentTime,
+      inDocument: document.contains(v),
+    }
+  }
+
+  document.title = 'ready'
+</script>

@@ -9,6 +9,7 @@
 
 import { bindGestures } from './gestures'
 import { DEFAULT_GEO_COLOUR, parseGeoColour } from './geo-colour'
+import { startCamera, type CameraSource } from './camera'
 import { createHud } from './hud'
 import { MAPPINGS, type Mapping, type MappingName } from './engine'
 import { DEFAULT_MERGE_MODE, DEFAULT_MIX, isMergeModeName, type MergeModeName } from './merge-modes'
@@ -47,6 +48,7 @@ function resolvePrefs(): Prefs {
     atmosphericView: DEFAULT_ATMOSPHERIC_VIEW,
     mergeMode: DEFAULT_MERGE_MODE,
     mix: DEFAULT_MIX,
+    passthrough: 0,
     mapping: DEFAULT_MAPPING,
     autopilot: true,
     showStats: false,
@@ -70,6 +72,13 @@ function resolvePrefs(): Prefs {
     atmosphericView: isAtmosphericViewName(atmospheric) ? atmospheric : stored.atmosphericView,
     mergeMode: isMergeModeName(merge) ? merge : stored.mergeMode,
     mix: mix !== null && !Number.isNaN(Number(mix)) ? Math.min(1, Math.max(0, Number(mix) / 100)) : stored.mix,
+    // Deliberately no `?camera=` parameter, though the Hard Stop on URL shape
+    // would allow adding one freely. Every other parameter here sets how the
+    // page *looks*; this one would set whether it reaches for a sensor, and a
+    // link is not consent — a shared URL that silently opened someone's camera
+    // is the exact shape of the thing the capture Hard Stop is protecting.
+    // The camera is turned on from the HUD, by the person holding the phone.
+    passthrough: 0,
     mapping: mapping && mapping in MAPPINGS ? (mapping as MappingName) : stored.mapping,
     autopilot: auto === null ? stored.autopilot : auto !== '0' && auto !== 'off',
     showStats: query.has('debug') || stored.showStats,
@@ -122,6 +131,9 @@ async function main(): Promise<void> {
   const slow = new SlowAnalysis()
   const director = new Director()
 
+  /** Held open only while passthrough is actually showing. See onPassthrough. */
+  let cameraSource: CameraSource | null = null
+
   const panel = createHud(prefs, {
     onGeometricView: (name: GeometricViewName) => visualiser.setGeometricView(name),
     onGeoColour: (colour) => visualiser.setGeoColour(colour),
@@ -133,6 +145,32 @@ async function main(): Promise<void> {
     // rather than trying to hand the old state over.
     onMapping: (name: MappingName) => {
       mapping = MAPPINGS[name]()
+    },
+    onPassthrough: async (mix: number) => {
+      // Turning it down to nothing releases the camera outright rather than
+      // leaving it running behind a zero. Holding an open stream that nothing
+      // draws keeps the sensor powered and the OS camera indicator lit, which
+      // is the most visible possible way to break the start gate's promise.
+      if (mix <= 0) {
+        visualiser.setPassthrough(null, 0)
+        cameraSource?.close()
+        cameraSource = null
+        return 0
+      }
+
+      // First non-zero value is what asks. This runs inside the control's own
+      // pointer handler, so the gesture getUserMedia requires is still live.
+      if (!cameraSource) {
+        try {
+          cameraSource = await startCamera()
+        } catch {
+          // Declined, or no camera. Report the truth — 0 — and let the HUD put
+          // its control back rather than leaving it somewhere it is not.
+          return 0
+        }
+      }
+      visualiser.setPassthrough(cameraSource, mix)
+      return mix
     },
     onManualChange: () => director.suspend(),
   })
@@ -207,6 +245,10 @@ async function main(): Promise<void> {
     visualiser.dispose()
     shake.close()
     source.close()
+    // Release the camera on the way out like every other capture here. A
+    // backgrounded tab holding an open video track keeps the sensor awake and
+    // the indicator lit with nothing on screen to explain it.
+    cameraSource?.close()
   })
 }
 

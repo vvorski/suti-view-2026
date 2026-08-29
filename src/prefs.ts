@@ -27,6 +27,16 @@ export interface Prefs {
   mergeMode: MergeModeName
   /** 0-1. Universal opacity: 0 is pure atmosphere, 1 is the full blend. */
   mix: number
+  /**
+   * 0-1. How much of the passthrough camera shows beneath everything.
+   *
+   * Stored so the value survives a session, but **never restored above 0** —
+   * see `loadPrefs`. Restoring it would mean a page load reaching for the
+   * camera with no gesture behind it, which `getUserMedia` would refuse
+   * anyway, and which is the wrong thing to attempt regardless: a stored
+   * number must not be able to switch a sensor on.
+   */
+  passthrough: number
   mapping: MappingName
   /** Let the slow tier choose colour and programme. See director.ts. */
   autopilot: boolean
@@ -69,6 +79,12 @@ export function loadPrefs(fallback: Prefs): Prefs {
         typeof parsed.mix === 'number' && parsed.mix >= 0 && parsed.mix <= 1
           ? parsed.mix
           : fallback.mix,
+      // Always 0 on load, whatever was stored. Every other field here restores
+      // what the user last chose; this one deliberately does not, because
+      // restoring it would have the page reach for the camera on arrival with
+      // no gesture behind it. The promise on the start gate is that the camera
+      // is off until asked for, and a value in localStorage is not an asking.
+      passthrough: 0,
       mapping:
         parsed.mapping && parsed.mapping in MAPPINGS ? parsed.mapping : fallback.mapping,
       autopilot:
