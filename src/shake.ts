@@ -218,7 +218,23 @@ const OFF_KICK = 0.20
 /** Caps. Past these the image reads as broken rather than disturbed, and the
  *  overscan needed to hide the edges would be a visible zoom. */
 const MAX_ANGLE = 0.26
-const MAX_OFFSET = 0.055
+// Exported: docs/todo.md entry 30 sums a steady gravity offset onto this
+// same spring-driven one and needs the identical cap, in scene.ts, so a
+// tilted-and-shaken phone still clamps to one shared edge rather than two
+// slightly different ones.
+export const MAX_OFFSET = 0.055
+
+/** A nominal 1g in the units DeviceMotionEvent reports (m/s²). Used only to
+ *  turn the gravity estimate's horizontal component into -1..1 = sin(tilt) —
+ *  see `gravity()`. Not a claim about the local gravitational constant,
+ *  which no phone accelerometer is precise enough to need. */
+const EARTH_G = 9.81
+
+/** How far a full 90° tilt may push the picture, as a fraction of
+ *  MAX_OFFSET — docs/todo.md entry 30. **Mine**: leaves the remaining 40%
+ *  of the cap for a shake to still visibly kick into on top of a held tilt,
+ *  rather than the spring pinning against a cap gravity already occupies. */
+const GRAVITY_FRACTION = 0.6
 
 /** Motion smaller than this does not kick at all, so a phone held still is
  *  perfectly still rather than jittering on sensor noise. */
@@ -227,6 +243,22 @@ const KICK_DEADZONE = 0.35
 const clamp01 = (v: number): number => (v < 0 ? 0 : v > 1 ? 1 : v)
 const clampAbs = (v: number, max: number): number =>
   v > max ? max : v < -max ? -max : v
+
+/**
+ * Enough overscan to cover the corner a rotated, drifted frame exposes.
+ * Rotating a unit-square frame by θ about its centre needs roughly θ of
+ * extra scale at these small angles; drift needs twice its own size, being
+ * one-sided.
+ *
+ * Exported and shared rather than kept private to `advance()`: docs/todo.md
+ * entry 30 adds a steady gravity offset to the spring's own in scene.ts,
+ * after `advance()` has already returned, so the overscan for the *combined*
+ * offset — which can be larger than the spring's own alone — has to be
+ * recomputed there from the same formula rather than a second copy of it.
+ */
+export function overscanFor(angle: number, offsetX: number, offsetY: number): number {
+  return Math.min(0.3, Math.abs(angle) * 0.8 + (Math.abs(offsetX) + Math.abs(offsetY)) * 2.2)
+}
 
 /**
  * Turns a stream of accelerometer samples into a tumble, and raises an edge
@@ -278,6 +310,30 @@ export class Tumble {
   /** The motion has stopped since the last shake, so the next one is a second
    *  gesture rather than a continuation of the first. */
   private armedForDouble = false
+
+  /**
+   * A steady offset from how the phone is being held, independent of
+   * motion — docs/todo.md entry 30. In the same uv units as `TumbleState`'s
+   * own `offsetX`/`offsetY`, so the caller can add them directly.
+   *
+   * `gravX`/`gravY` are the low-pass DC estimate `sample()` already
+   * maintains purely so it can be subtracted back out; the direction it
+   * points is thrown away everywhere else. Dividing by EARTH_G turns "how
+   * many g's of horizontal component" into -1..1 = sin(tilt), which is 0
+   * face-up and ±1 at a 90° tilt — the entry's own "up to 0.6 × MAX_OFFSET
+   * at 90° of tilt".
+   *
+   * The sign against screen axes is deliberately not asserted here — see
+   * the entry's own note that it needs confirming against `?debug` on a
+   * real handset rather than reasoned out from memory.
+   */
+  gravity(): { x: number; y: number } {
+    const cap = MAX_OFFSET * GRAVITY_FRACTION
+    return {
+      x: clampAbs(this.gravX / EARTH_G, 1) * cap,
+      y: clampAbs(this.gravY / EARTH_G, 1) * cap,
+    }
+  }
 
   /** Diagnostics, not physics.
    *
@@ -499,14 +555,7 @@ export class Tumble {
     // asking while holding the phone and shaking it.
     this.peak *= Math.exp(-dt / 2.5)
 
-    // Enough overscan to cover the corner that rotation and drift expose.
-    // Rotating a unit-square frame by θ about its centre needs roughly θ of
-    // extra scale at these small angles; drift needs twice its own size,
-    // being one-sided.
-    const zoom = Math.min(
-      0.3,
-      Math.abs(this.angle) * 0.8 + (Math.abs(this.offX) + Math.abs(this.offY)) * 2.2,
-    )
+    const zoom = overscanFor(this.angle, this.offX, this.offY)
 
     return {
       disturb: this.disturb,
@@ -606,6 +655,8 @@ export interface ShakeSensor {
   /** The peak (m/s²) once per *second* hard shake inside the cooldown of the
    *  first, 0 otherwise. See Tumble.takeDouble. */
   takeDouble(): number
+  /** The steady, motion-independent tilt offset. See Tumble.gravity. */
+  gravity(): { x: number; y: number }
   /** Sample count, recent peak, and events discarded as unusable. For the
    *  numeric readout only. See Tumble. */
   diagnostics(): { samples: number; peak: number; rejected: number }
@@ -626,6 +677,7 @@ export function startShake(granted: boolean): ShakeSensor {
       frame: () => STILL,
       takeStrong: () => 0,
       takeDouble: () => 0,
+      gravity: () => ({ x: 0, y: 0 }),
       diagnostics: () => ({ samples: 0, peak: 0, rejected: 0 }),
       close: () => {},
     }
@@ -678,6 +730,7 @@ export function startShake(granted: boolean): ShakeSensor {
     frame: (dt) => tumble.advance(dt),
     takeStrong: () => tumble.takeStrong(),
     takeDouble: () => tumble.takeDouble(),
+    gravity: () => tumble.gravity(),
     diagnostics: () => ({ ...tumble.diagnostics(), rejected }),
     close: () => window.removeEventListener('devicemotion', onMotion),
   }

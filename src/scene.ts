@@ -39,7 +39,7 @@ import { type GeoColour } from './geo-colour'
 import { MERGE_MODES, type MergeModeName } from './merge-modes'
 import type { VisualParams } from './engine'
 import { createRippleState, Envelope, MAX_RIPPLES, updateRipples } from './engine'
-import type { TumbleState } from './shake'
+import { MAX_OFFSET, overscanFor, type TumbleState } from './shake'
 import compositeFrag from './shaders/composite.frag.glsl?raw'
 import vertexShader from './shaders/fullscreen.vert.glsl?raw'
 import {
@@ -126,8 +126,17 @@ export interface Visualiser {
   setMergeMode(layer: 'geo' | 'atm', mode: MergeModeName): void
   /** Recolour a layer. Cheap: a uniform, not a recompile. */
   setLayerColour(layer: 'geo' | 'atm' | 'cam', colour: GeoColour): void
-  /** How far the device has been knocked about. See shake.ts. */
-  setTumble(t: TumbleState): void
+  /**
+   * How far the device has been knocked about. See shake.ts.
+   *
+   * `gravity`, when given, is a steady offset from how the phone is being
+   * held rather than from its motion — docs/todo.md entry 30 — in the same
+   * uv units as `t.offsetX`/`t.offsetY`. Summed with the spring's own offset
+   * and clamped to the same MAX_OFFSET the spring already respects, here
+   * rather than in the caller, so there is exactly one place that cap is
+   * enforced against the combined value.
+   */
+  setTumble(t: TumbleState, gravity?: { x: number; y: number }): void
   /** 0-1, the geometric layer's opacity. Formerly setMix. */
   setGeoAlpha(a: number): void
   /** 0-1, the atmospheric layer's opacity. */
@@ -695,8 +704,16 @@ export function createVisualiser(
       u.value = MERGE_MODES[mode].index
     },
 
-    setTumble(t) {
-      compositeUniforms.uTumble.value.set(t.angle, t.offsetX, t.offsetY, t.zoom)
+    setTumble(t, gravity) {
+      const gx = gravity?.x ?? 0
+      const gy = gravity?.y ?? 0
+      const offsetX = Math.min(MAX_OFFSET, Math.max(-MAX_OFFSET, t.offsetX + gx))
+      const offsetY = Math.min(MAX_OFFSET, Math.max(-MAX_OFFSET, t.offsetY + gy))
+      // Recomputed from the combined offset, not just t.zoom: a held tilt can
+      // push the applied offset further than the spring's own displacement
+      // did, and the overscan has to cover whatever is actually on screen.
+      const zoom = Math.max(t.zoom, overscanFor(t.angle, offsetX, offsetY))
+      compositeUniforms.uTumble.value.set(t.angle, offsetX, offsetY, zoom)
     },
 
     setLayerColour(layer, colour) {

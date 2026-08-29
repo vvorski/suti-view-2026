@@ -2113,7 +2113,7 @@ before this entry, `pnpm probe:fullscreen` and `pnpm probe:haptics`
 likewise, `pnpm build` and `pnpm lint` both clean.
 
 ### 30. Gravity mode: the picture has weight and pools downhill
-`status: ready` · added 2026-08-29
+`status: done` · added 2026-08-29 · shipped at build 126
 
 **Do** — add a switchable mode in which the phone's tilt gives the generated
 layers a steady offset toward the low side, on top of the existing tumble.
@@ -2202,6 +2202,37 @@ the seventh chip.
 validates and falls back for; no existing field changes type or meaning · url
 no · capture no (the accelerometer is already running; nothing new is read) ·
 dependency no.
+
+**Build note.** One thing not anticipated in Decided: the overscan (`zoom`)
+`Tumble.advance()` computes only covers the spring's own displacement, so a
+held tilt near the cap plus a shake on top of it could exceed the overscan
+the spring alone budgeted for, exposing a raw edge — a real gap in "no frame
+edge or smeared border appears at maximum tilt", not something the entry's
+own text had flagged. Fixed by extracting the overscan formula out of
+`advance()` into an exported `overscanFor(angle, offsetX, offsetY)` in
+`shake.ts`, so `scene.ts`'s `setTumble` can recompute it from the *combined*
+offset (tumble plus gravity, after summing and clamping to `MAX_OFFSET`) and
+take the larger of that and the spring's own figure, rather than duplicating
+the formula's two magic numbers a second time. **Mine**, and the one
+deviation from the plan's literal file list: `MAX_OFFSET` and `overscanFor`
+are now both exported from `shake.ts` rather than the addition-and-clamp
+happening in `main.ts` as the phrasing loosely suggested, so the cap is
+enforced in exactly the one place (`scene.ts`) that already owns packing
+`uTumble`.
+
+`gravX`/`gravY`'s sign against screen axes is genuinely untested here, per
+the entry's own allowance — this harness cannot tilt a device, so `?debug`
+on a real phone is the only way to see whether "toward the low side" comes
+out backwards, which the entry already flagged as a likely one-character
+fix. `pnpm probe:shake` output is byte-for-byte unchanged (gravity is never
+sampled by the probe's synthetic path), `pnpm probe:haptics` and `pnpm
+probe:fullscreen` both still pass. The seventh chip was checked in
+`hud-narrow.html` at both 320×568 and 360×640: `describe().chips` lists
+"Gravity" alongside the existing six, `escaped: []` at both sizes, and
+tapping it round-trips `prefs.gravity` through localStorage in both
+directions. Not verified here: the actual tilt-and-pool behaviour on a real
+phone, which needs a device this harness does not have. `pnpm build`, `pnpm
+lint` both clean.
 
 ### 31. `?debug` writes itself into stored preferences and never leaves
 `status: ready` · added 2026-08-29

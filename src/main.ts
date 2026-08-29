@@ -84,6 +84,7 @@ function resolvePrefs(): Prefs {
     mapping: DEFAULT_MAPPING,
     autopilot: true,
     showStats: false,
+    gravity: false,
   })
 
   // A URL parameter is an explicit instruction for this load and overrides what
@@ -127,6 +128,10 @@ function resolvePrefs(): Prefs {
     mapping: mapping && mapping in MAPPINGS ? (mapping as MappingName) : stored.mapping,
     autopilot: auto === null ? stored.autopilot : auto !== '0' && auto !== 'off',
     showStats: query.has('debug') || stored.showStats,
+    // No URL parameter, deliberately — this changes the picture's motion at
+    // rest rather than its appearance, and every parameter here today is the
+    // latter. Reached from the HUD like autopilot and the numeric readout.
+    gravity: stored.gravity,
   }
 }
 
@@ -526,7 +531,7 @@ async function main(): Promise<void> {
       // the instant the real loop starts reading them after Start.
       const dt = (now - lastGateShakeAt) / 1000
       lastGateShakeAt = now
-      visualiser.setTumble(shake.frame(dt))
+      visualiser.setTumble(shake.frame(dt), prefs.gravity ? shake.gravity() : undefined)
       shake.takeStrong()
       shake.takeDouble()
       visualiser.render(idleParams(t, idleSpectrum), idleSpectrum)
@@ -798,7 +803,7 @@ async function main(): Promise<void> {
       }
 
       const tumble = shake.frame(audio.dt)
-      visualiser.setTumble(tumble)
+      visualiser.setTumble(tumble, prefs.gravity ? shake.gravity() : undefined)
       // The discrete gesture stands down while the panel is open — a
       // shuffle rewrites the values someone currently has a finger on, the
       // same fault as a control lying about its state — but the tumble

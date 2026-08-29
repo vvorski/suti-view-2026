@@ -292,6 +292,13 @@ const ICONS: Record<string, string> = {
     '<path d="M23 9V1h-8v3h5v5z"/>' +
     '<path d="M1 15v8h8v-3H4v-5z"/>' +
     '<path d="M23 15v8h-8v-3h5v-5z"/>',
+  // A plumb bob: a mount, a line, a weight — the plainest glyph for "this
+  // answers which way is down". Straight lines are fine here for the same
+  // reason `full`'s brackets are — see that icon's own comment.
+  grav:
+    '<path d="M8 1.4h8v2.6H8z"/>' +
+    '<path d="M11.2 4v7.4h1.6V4z"/>' +
+    '<circle cx="12" cy="16.4" r="6.2"/>',
 }
 
 const CSS = `
@@ -811,12 +818,21 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     save()
     paint()
   })
+  // docs/todo.md entry 30. A boolean needs a chip rather than a band, same
+  // as autopilot and the readout above — no visualiser call here, either:
+  // main.ts reads prefs.gravity itself, once per frame, the same way it
+  // already reads prefs.showStats.
+  const gravChip = mkChip('grav', 'Gravity', '#9d9bf0', () => {
+    prefs.gravity = !prefs.gravity
+    save()
+    paint()
+  })
 
   /** Lay the icons along their own arc. Spacing comes from the measured chip
    *  size, so a larger root font spreads them rather than overlapping them.
-   *  Always six — the fullscreen chip moved off this arc entirely in entry
-   *  25, so nothing reserves a seventh slot on it any more; see
-   *  chipPosition's own comment for why the function stays anyway. */
+   *  Seven as of entry 30's gravity chip — the fullscreen chip moved off
+   *  this arc entirely in entry 25, which is what left a seventh slot free;
+   *  see CHIP_ARC_MIN_START's own comment, written for exactly this. */
   function placeChips(): void {
     const all = [...chips.values()]
     const size = all[0]?.offsetWidth || 48
@@ -989,11 +1005,18 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
 
     for (const [id, chip] of chips) {
       const on =
-        id === 'auto' ? prefs.autopilot : id === 'num' ? prefs.showStats : group === id
+        id === 'auto'
+          ? prefs.autopilot
+          : id === 'num'
+            ? prefs.showStats
+            : id === 'grav'
+              ? prefs.gravity
+              : group === id
       chip.setAttribute('aria-pressed', String(on))
     }
     void autoChip
     void statsChip
+    void gravChip
   }
 
   build()

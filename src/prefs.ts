@@ -84,6 +84,13 @@ export interface Prefs {
   /** Let the slow tier choose colour and programme. See director.ts. */
   autopilot: boolean
   showStats: boolean
+  /**
+   * Whether tilt gives the generated layers a steady offset toward the low
+   * side, on top of the tumble — docs/todo.md entry 30. Defaults off: it
+   * changes what a held-still, unshaken phone looks like, which the tumble
+   * alone never did.
+   */
+  gravity: boolean
 }
 
 /** `valid` narrows `raw ?? null` rather than `raw` itself, so the ternary needs
@@ -151,6 +158,8 @@ export function loadPrefs(fallback: Prefs): Prefs {
         typeof parsed.autopilot === 'boolean' ? parsed.autopilot : fallback.autopilot,
       showStats:
         typeof parsed.showStats === 'boolean' ? parsed.showStats : fallback.showStats,
+      gravity:
+        typeof parsed.gravity === 'boolean' ? parsed.gravity : fallback.gravity,
     }
   } catch {
     // Private mode, blocked site data, corrupt JSON — all the same to us.
