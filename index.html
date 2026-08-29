@@ -61,11 +61,12 @@
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        gap: 0.85rem;
-        /* Top padding clears the version chip, which is fixed at the top-left
-           and, now that the release name is set large, is wide enough to run
-           into a centred title on a 320px screen. It did. */
-        padding: 4rem 1.5rem 1rem;
+        gap: var(--gap);
+        /* The old 4rem of top padding existed only to clear a large name pill
+           at the top-left. The name moved into the layout and the pill became a
+           single glyph at the top-right, so the column can sit where it wants:
+           optically centred, with just enough room for the notch. */
+        padding: calc(1.5rem + env(safe-area-inset-top, 0px)) 1.5rem 1.25rem;
         text-align: center;
         background: #05060a;
         z-index: 10;
@@ -88,35 +89,78 @@
          opens. Decoration with a purpose — it is a preview of the controls. */
       .gate-corner {
         position: absolute;
-        right: -12px;
-        bottom: -12px;
-        width: min(88vmin, 620px);
-        height: min(88vmin, 620px);
+        /* Pushed further out and faded well down. At its old size and opacity
+           the arcs crossed the middle of the copy, so every paragraph had a
+           curve running through it — texture where the eye wanted a clean
+           line. It should be felt at the corner, not read across the text. */
+        right: -22%;
+        bottom: -20%;
+        width: min(78vmin, 560px);
+        height: min(78vmin, 560px);
+        opacity: 0.5;
         pointer-events: none;
+      }
+      /* One vertical rhythm for the whole gate: blocks separated by --gap,
+         lines inside a block separated by a fraction of it. The screen was
+         previously five independent elements each with its own spacing, which
+         is why it read as a stack rather than a composition. */
+      #gate {
+        --gap: clamp(0.85rem, 3.5vh, 1.9rem);
+      }
+      .gate-head,
+      .gate-copy,
+      .gate-take {
+        z-index: 1;
+      }
+      .gate-head {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.5rem;
       }
       #gate h1 {
         font-family: 'Chakra Petch', ui-sans-serif, system-ui, sans-serif;
-        font-size: clamp(1.15rem, 6vw, 1.5rem);
+        font-size: clamp(1.2rem, 6.2vw, 1.6rem);
         font-weight: 500;
         letter-spacing: 0.34em;
         /* Optical centring: the tracking adds a phantom space after the last
            glyph; this eats it. */
         margin-right: -0.34em;
         text-transform: uppercase;
-        color: #a7a4c8;
-        z-index: 1;
+        color: #b6b3d6;
+        margin: 0;
+      }
+      /* The release name, sitting under the title as its subtitle. Monospace
+         against the title's spaced caps so the two read as different kinds of
+         thing — a name for the piece, and a name for this particular build —
+         rather than as one heading in two sizes. */
+      .gate-name {
+        font: 500 0.95rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+        letter-spacing: 0.06em;
+        color: #7d79b4;
+      }
+      .gate-name::before,
+      .gate-name::after {
+        content: '';
+        display: inline-block;
+        width: 1.1rem;
+        height: 1px;
+        vertical-align: middle;
+        margin: 0 0.6rem;
+        background: rgba(157, 155, 240, 0.28);
       }
       /* The start dial: the HUD's ring idiom at gate scale. A tick ring turns
          slowly around a circular button — the same picture as a band waiting
          to be dragged, which is what everything after this tap is. */
       .gate-dial {
         position: relative;
-        width: min(47vw, 11.5rem);
+        width: min(46vw, min(30vh, 10.5rem));
         aspect-ratio: 1;
         display: flex;
         align-items: center;
         justify-content: center;
         z-index: 1;
+        margin: calc(var(--gap) * 0.35) 0;
       }
       .gate-dial svg {
         position: absolute;
@@ -152,11 +196,11 @@
         width: 74%;
         aspect-ratio: 1;
         border-radius: 50%;
-        border: 1px solid #2a3040;
+        border: 1px solid #2f3448;
         background: rgba(12, 12, 26, 0.6);
-        color: #cfd3dd;
+        color: #e4e7ef;
         font-family: 'Chakra Petch', ui-sans-serif, system-ui, sans-serif;
-        font-size: 1rem;
+        font-size: 0.95rem;
         font-weight: 500;
         letter-spacing: 0.22em;
         text-indent: 0.22em; /* same phantom-space correction as the title */
@@ -176,58 +220,82 @@
         opacity: 0.5;
         cursor: default;
       }
+      /* Two paragraphs, one block. Measure is capped near 42 characters, which
+         on a phone is four short lines rather than the six-line grey wall this
+         used to be — the copy is a disclosure, and a wall of it does not get
+         read, which defeats the point of disclosing. */
+      .gate-copy {
+        display: flex;
+        flex-direction: column;
+        gap: 0.55rem;
+        max-width: 23rem;
+      }
       #gate p {
-        max-width: 24rem;
-        font-size: 0.82rem;
-        line-height: 1.55;
-        color: #565d6d;
+        font-size: 0.8rem;
+        line-height: 1.6;
+        color: #6b7183;
         text-wrap: balance;
-        z-index: 1;
+        margin: 0;
       }
       /* The camera note is subordinate to the microphone one: the mic is what
          the app is, the camera is an option that has not been asked for yet.
-         Dimmer and smaller says that without a heading, and keeps the gate to
-         one glance on a phone. It must stay legible — this is a disclosure,
-         not fine print, and it is here so nothing about the camera is a
-         surprise later. */
+         Dimmer says that without a heading. It must stay legible — this is a
+         disclosure, not fine print, and it is here so nothing about the camera
+         is a surprise later. */
       #gate .gate-aside {
-        font-size: 0.72rem;
-        color: #454b58;
-        margin-top: -0.9rem;
+        font-size: 0.74rem;
+        color: #545a6b;
       }
-      /* QR and share, side by side. The QR is deliberately small — it is a
-         convenience for a second phone in the same room, not the point of the
-         screen — but not much smaller than 80px, below which a camera at
-         arm's length starts to struggle against a phone's own pixel grid. */
-      .gate-share {
+      /* QR and share as one card. The QR alone was the brightest thing on a
+         near-black screen and pulled the eye straight off the Start button; a
+         hairline container, a caption, and a smaller code make it read as an
+         offer rather than an interruption. */
+      .gate-take {
         display: flex;
         align-items: center;
-        gap: 0.9rem;
-        z-index: 1;
-        margin-top: -0.4rem;
+        gap: 0.85rem;
+        padding: 0.7rem 0.9rem 0.7rem 0.7rem;
+        border: 1px solid #191d2b;
+        border-radius: 14px;
+        background: rgba(10, 11, 20, 0.6);
       }
       .gate-qr {
-        width: 5rem;
-        height: 5rem;
+        width: 4.25rem;
+        height: 4.25rem;
         display: block;
-        border-radius: 4px;
+        border-radius: 3px;
+        /* Held just off full white. A QR needs contrast to scan and this keeps
+           plenty, but paper-white on this ground is a hole in the screen. */
+        opacity: 0.82;
       }
       .gate-qr[hidden] {
         display: none;
       }
+      .take-side {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.45rem;
+      }
+      .take-cap {
+        font: 400 0.62rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: #4e5464;
+      }
       .gate-btn {
         appearance: none;
         cursor: pointer;
-        border: 1px solid #2a3040;
+        border: 1px solid #2f3448;
         background: transparent;
-        color: #8a90a2;
+        color: #9aa0b2;
         font-family: 'Chakra Petch', ui-sans-serif, system-ui, sans-serif;
-        font-size: 0.78rem;
+        font-size: 0.72rem;
         font-weight: 500;
         letter-spacing: 0.18em;
         text-indent: 0.18em;
         text-transform: uppercase;
-        padding: 0.6rem 1.2rem;
+        padding: 0.5rem 1.05rem;
         border-radius: 999px;
         transition:
           border-color 200ms ease,
@@ -238,16 +306,13 @@
         border-color: #9d9bf0;
         color: #f0eeff;
       }
-      /* No reserved height. It used to hold a line open so the layout would not
-         jump when an error appeared, which was cheap when the gate had room to
-         spare; with the QR and share row it is 20px the gate does not have, and
-         it buys stillness on the one screen where nothing is happening yet. An
-         error re-centres the column, which is a jump nobody minds at the moment
-         they are being told the microphone was refused. */
+      /* No reserved height — an error re-centres the column, which is a jump
+         nobody minds at the moment they are told the microphone was refused,
+         and the gate has no spare rows to hold open for it. */
       #error {
         color: #8a6b6b;
-        font-size: 0.85rem;
-        max-width: 26rem;
+        font-size: 0.8rem;
+        max-width: 23rem;
         z-index: 1;
       }
       #error:empty {
@@ -277,7 +342,10 @@
         </g>
       </svg>
 
-      <h1>suti&#8202;·&#8202;view</h1>
+      <div class="gate-head">
+        <h1>suti&#8202;&middot;&#8202;view</h1>
+        <div class="gate-name"><span id="release-name"></span></div>
+      </div>
 
       <div class="gate-dial">
         <svg viewBox="0 0 100 100" aria-hidden="true">
@@ -292,20 +360,27 @@
         <button id="start" type="button">Start</button>
       </div>
 
-      <p>
-        Listens through the microphone and renders what it hears. Nothing is recorded,
-        stored, or sent anywhere &mdash; the audio never leaves this device.
-      </p>
-      <p class="gate-aside">
-        There is an optional camera layer that puts the visuals over the room. It stays
-        off until you turn it on from the controls, and asks you then &mdash; not now.
-        The video is drawn to the screen and never leaves this device either.
-      </p>
-      <!-- Point a second phone at the code, or send the link. Both resolve to
-           wherever this page is actually served from — see share.ts. -->
-      <div class="gate-share">
+      <div class="gate-copy">
+        <p>
+          Listens through the microphone and renders what it hears. Nothing is
+          recorded or sent anywhere &mdash; the audio never leaves this device.
+        </p>
+        <p class="gate-aside">
+          An optional camera layer can put the visuals over the room. It stays off
+          until you turn it on, and asks you then. Video never leaves this device
+          either.
+        </p>
+      </div>
+
+      <!-- One object, not two loose ones: a bordered card is what stops the QR
+           reading as a bright slab dropped on the screen, and it gives the pair
+           a reason to be next to each other. -->
+      <div class="gate-take">
         <svg id="qr" class="gate-qr" role="img" aria-label="QR code linking to this page"></svg>
-        <button id="share" type="button" class="gate-btn">Share</button>
+        <div class="take-side">
+          <span class="take-cap">Take it with you</span>
+          <button id="share" type="button" class="gate-btn">Share</button>
+        </div>
       </div>
 
       <div id="error" role="status" aria-live="polite"></div>

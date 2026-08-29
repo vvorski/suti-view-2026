@@ -16,27 +16,17 @@ import { RELEASE_NAME } from './release-name'
 const CSS = `
 #version-hud {
   position: fixed;
-  left: calc(0.6rem + env(safe-area-inset-left, 0px));
+  /* Top-right, and only the glyph. The release name used to live here as a
+     large pill on the left, where it was the loudest thing on the start screen
+     and sat across the title. The name now belongs to the gate's own layout
+     (see #release-name in index.html) — this is just the control. */
+  right: calc(0.6rem + env(safe-area-inset-right, 0px));
   top: calc(0.6rem + env(safe-area-inset-top, 0px));
   z-index: 40;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.3rem 0.8rem;
-  border-radius: 999px;
-  background: rgba(5, 6, 10, 0.55);
-  /* Big, because the whole job of this is being readable at arm's length on a
-     phone you are not holding. At 12px it was a build marker you had to go
-     looking for; the name is the one thing here worth reading across a room,
-     and it is the only thing left in the chip now that the number moved to the
-     tooltip. */
-  /* Clamped rather than fixed: at a flat 1.45rem a long two-word name runs off
-     a 320px screen, and a name that has to be truncated to fit is worse than a
-     slightly smaller one. 6vw keeps the longest plausible name on the glass. */
-  font: 600 clamp(1.35rem, 7vw, 1.75rem)/1 ui-monospace, SFMono-Regular, Menlo, monospace;
-  letter-spacing: 0.01em;
-  white-space: nowrap;
-  color: #cfd6e6;
+  padding: 0.25rem;
+  color: #6f7789;
 }
 #version-hud button {
   appearance: none;
@@ -47,12 +37,14 @@ const CSS = `
   /* em, not rem: this is the green "there is a newer build" indicator, and it
      has to grow with the name beside it. At a fixed rem it read as a stray
      speck next to 22px text. */
-  font-size: 1.15em;
+  font-size: 1.5rem;
   cursor: pointer;
-  padding: 0.1rem 0.2rem;
+  padding: 0.35rem;
   line-height: 1;
-  opacity: 0.9;
-  transition: color 160ms ease;
+  opacity: 0.75;
+  transition:
+    color 160ms ease,
+    opacity 400ms ease;
 }
 #version-hud button:hover,
 #version-hud button:focus-visible {
@@ -66,13 +58,6 @@ const CSS = `
    It is faded rather than removed because it is still the reload control, and
    still the thing that turns green. Opacity, not display, so .fresh below can
    bring it back without either rule having to know about the other. */
-#version-hud.running {
-  background: transparent;
-  padding: 0.3rem;
-}
-#version-hud.running span {
-  display: none;
-}
 #version-hud.running button {
   opacity: 0.18;
   transition: opacity 900ms ease;
@@ -180,6 +165,26 @@ function watchForNewBuild(button: HTMLButtonElement): void {
  * watch the gate element to find it out, which is a worse dependency than a
  * one-line call.
  */
+/**
+ * Write the release name into the gate.
+ *
+ * It used to be a large pill floating at the top-left, which made a build
+ * marker the loudest thing on the start screen and sat it across the title.
+ * The name is worth showing — it is how two builds are told apart across a
+ * room — but it belongs inside the composition, in the gate's own type, not
+ * pasted over it. `#release-name` is a span the gate lays out; if it is
+ * missing, nothing here breaks.
+ */
+export function mountReleaseName(): void {
+  const el = document.getElementById('release-name')
+  if (!el) return
+  el.textContent = RELEASE_NAME
+  // __BUILD_NUMBER__ stays in the bundle — it is what the deploy checks grep
+  // for, and a tooltip is the right amount of prominence for a number nobody
+  // needs unless they are debugging.
+  el.title = `build ${__BUILD_NUMBER__}`
+}
+
 export function versionHudRunning(): void {
   document.getElementById('version-hud')?.classList.add('running')
 }
@@ -192,20 +197,8 @@ export function mountVersionHud(): void {
   const el = document.createElement('div')
   el.id = 'version-hud'
 
-  const label = document.createElement('span')
-  // The name, and no longer the number.
-  //
-  // The number answered "is this newer than what I had", and the green button
-  // below now answers that better — it answers it without anyone having to
-  // remember what they had. What is left is the question a number was never
-  // any good at: which build is this. See release-name.ts.
-  //
-  // __BUILD_NUMBER__ stays defined and stays in the bundle: it is what the
-  // deploy checks grep for, and it costs nothing.
-  label.textContent = RELEASE_NAME
-  label.title = `build ${__BUILD_NUMBER__}`
-  el.appendChild(label)
-
+  // The release name is written into the gate's own layout rather than drawn
+  // here — see mountReleaseName(). What is left in this corner is the control.
   const button = document.createElement('button')
   button.type = 'button'
   button.setAttribute('aria-label', 'Reload')

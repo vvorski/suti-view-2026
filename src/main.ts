@@ -22,7 +22,7 @@ import { createVisualiser } from './scene'
 import { SlowAnalysis } from './engine'
 import { startShake } from './shake'
 import { confirmBuzz, hapticStatus } from './haptics'
-import { mountVersionHud, versionHudRunning } from './version'
+import { mountReleaseName, mountVersionHud, versionHudRunning } from './version'
 import {
   DEFAULT_ATMOSPHERIC_VIEW,
   DEFAULT_GEOMETRIC_VIEW,
@@ -103,6 +103,7 @@ async function main(): Promise<void> {
 
   mountVersionHud()
   applyReleaseTone(__BUILD_NUMBER__)
+  mountReleaseName()
   mountShare()
 
   if (!checkWebGL()) {
