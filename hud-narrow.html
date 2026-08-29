@@ -37,8 +37,18 @@
       await ready(f)
       const w = f.contentWindow
       w.openHud()
-      const chip = w.describe().chips.find((c) => c.text.startsWith('MAP'))
-      w.tap(chip.x + chip.w / 2, chip.y + chip.h / 2)
+      const hit = (label) => {
+        const chip = w.describe().chips.find((c) => c.text.trim().startsWith(label))
+        if (!chip) throw new Error(`no chip "${label}" at ${f.width}x${f.height}`)
+        w.tap(chip.x + chip.w / 2, chip.y + chip.h / 2)
+      }
+      // RGB is the one tap that changes the grid's shape, swapping one cell
+      // for three. It is therefore the only layout the icon row can reach that
+      // the default view does not already show, and the only one worth
+      // measuring beyond it.
+      hit('MAP')
+      await new Promise((r) => setTimeout(r, 200))
+      hit('RGB')
       await new Promise((r) => setTimeout(r, 400))
 
       const vw = w.innerWidth

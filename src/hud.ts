@@ -1,149 +1,98 @@
 /**
- * The radial control HUD.
+ * The control panel: one ring, and icons that choose what it controls.
  *
- * A 120° wedge hinged just outside the bottom-right corner of the screen —
- * where the thumb actually pivots from. One arc band per control, stacked
- * outward: geometric layer, merge mode, atmospheric layer. Swipe along a band
- * to turn it; whatever settles under the notch is selected. The innermost arc
- * is the mix.
+ * Tap anywhere to open. A wedge hinged just off the bottom-right corner opens
+ * into the screen, carrying a single band of options past a fixed notch. What
+ * that band contains is whatever the icon column currently points it at.
  *
- * The band order is the compositing order, read outward: the two layers with
- * the mode that combines them physically between them. An earlier version put
- * a colour chooser in that middle slot and exiled merge inward past the
- * atmospheric band, which broke the one thing the stack is meant to say. The
- * geometric layer's colour is not a per-layer programme at all — it is a gain
- * on a finished layer — so it belongs on a button, not on a dial band.
+ * This replaced four different control idioms living in the same corner —
+ * three stacked concentric bands, a separate mix arc, and three chip-anchored
+ * popups with mutual-exclusion logic between them. The popups were the reason
+ * this file once needed to dim the bands underneath them (a popup reached
+ * 172px across the bands and made the HUD unreadable on a phone); with one
+ * ring there is nothing to cover and nothing to dim.
  *
- * This replaced a bottom-sheet list of cards. The list worked, but it took the
- * whole screen to change one value, which meant you could never see the thing
- * you were adjusting actually respond. A thumb doesn't move in straight lines
- * either — it swings in an arc from the base joint — so laying the controls
- * along that arc is what makes the whole surface reachable one-handed.
+ * Two shapes of thing can be controlled and there is no third:
  *
- * Geometry is recomputed from the live viewport on every resize rather than
- * baked in, because "the corner" is a different place on every phone and after
- * every rotation.
+ *   enum    turn the ring, snap to whichever option settles under the notch
+ *   scalar  drag along the ring, 0 to 1
+ *
+ * Adding a control means adding an entry to TARGETS. It does not mean adding
+ * geometry, a popup, a drag binding, or a paint function, which is the whole
+ * point of the shape.
  */
 
-import { clampGeoColour, type GeoColour } from './geo-colour'
-import type { MappingName, VisualParams } from './engine'
-import { MERGE_MODES, type MergeModeName } from './merge-modes'
-import { savePrefs, type Prefs } from './prefs'
 import {
   ATMOSPHERIC_VIEWS,
-  GEOMETRIC_VIEWS,
   type AtmosphericViewName,
+  GEOMETRIC_VIEWS,
   type GeometricViewName,
 } from './views'
+import { MERGE_MODES, type MergeModeName } from './merge-modes'
+import { type MappingName } from './engine'
+import { type GeoColour } from './geo-colour'
+import { savePrefs, type Prefs } from './prefs'
+import { type VisualParams } from './engine'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 const DEG = Math.PI / 180
 const TAU = Math.PI * 2
 
-/** The wedge, in degrees. Contiguous in [0,360) so hit-testing needs no wrap. */
+/** The wedge's opening, in degrees about the hinge. */
 const SWEEP_A = 165
 const SWEEP_B = 285
-/** Where selection reads — up and to the left, the natural thumb rest. */
+
+/** Where the selection is read off. Midway along the sweep. */
 const NOTCH = 225 * DEG
-/** Angular spacing between adjacent options on a band. */
+
+/** Angular spacing between adjacent options on the ring. */
 const PITCH = 26 * DEG
-/** Options fade to nothing this far from the notch, so a band reads as a strip
- *  continuing past the wedge rather than a closed list. */
+
+/** Options fade out this far from the notch, so the ring reads as a strip
+ *  passing a window rather than as a full circle of equal candidates. */
 const CUTOFF = 40 * DEG
 
-/** Band radii and the mix arc, as fractions of the screen's short edge — the
- *  wedge has to stay a thumb's reach whatever the phone. Three bands, in
- *  compositing order outward-in: geometric, how they merge, atmospheric. The
- *  innermost band still clears the mix arc by more than a finger's width. */
-const R_GEO = 0.88
-const R_MRG = 0.72
-const R_ATM = 0.56
-const R_MIX = 0.30
+/**
+ * The ring's radius, as a fraction of the smaller viewport dimension.
+ *
+ * One radius where there were three. 0.72 is the middle band's old value,
+ * kept rather than averaged: it is the one that was already checked on a
+ * 320×568 screen for having its labels land on glass rather than off the edge.
+ */
+const R_RING = 0.72
 
-/** How far a pointer may stray and still count as a tap rather than a drag. */
+/** A tap that moves more than this is a swipe, and belongs to gestures.ts. */
 const TAP_SLOP_PX = 12
-/** Half-width of a band's grab zone, in px. */
+
+/** Half-width of the invisible grab arc. 24px each side is the thumb-safe
+ *  minimum this file is built around, and the chip size derives from it. */
 const GRAB_PX = 24
 
-/** Centre-to-option radius for the mapping dial, in screen px (fixed, unlike
- *  the main bands' viewport-scaled radii, because the chip itself is a fixed
- *  CSS size). Same value Task 1's tap-to-pick fan used at this spot (its own
- *  FAN_R, now gone) — that number was already checked on screen to clear
- *  both the chip's column neighbours and the bands' own grab arcs, and nothing
- *  about turning the same three options into a drag changes that footprint. */
-const MAP_R = 85
-/** Angular spacing between adjacent options on the mapping dial — a
- *  different origin from PITCH above (the wedge hinge), so a separate
- *  constant rather than reuse. A drag's clamped rotation can swing an
- *  unselected option as far as (keys.length-1) pitches from the notch — up
- *  to 2×MAP_PITCH with three options — and that swing has to stay clear of
- *  this chip's column neighbours (the mix readout above, AUTO below), the
- *  same up/down-avoidance the old fan's fixed ±45° existed for. 20° keeps
- *  the worst-case swing to 40° either side of the notch, five degrees short
- *  of the fan's own limit — needed because unlike the fan's static circles,
- *  every option here is moving, not just the one being watched. */
-const MAP_PITCH = 20 * DEG
+/** How far outside the ring the value readout sits, in px. */
+const VALUE_PAD = 26
 
-/** The colour rings' sweep, relative to the colour chip's own centre — same
- *  convention as the mapping dial's own angles (0 points due right, positive
- *  is clockwise since screen y grows downward), and for the same reason: the
- *  chip's neighbours in the column (the mix readout above, AUTO below) sit
- *  at roughly ±90°, so the sweep stays clear of both by keeping well inside
- *  that. Wider than the mapping dial's own reach because a 0-100 drag needs
- *  an arc long enough to resolve a value along, not just three option stops. */
-const RING_A0 = -50 * DEG
-const RING_A1 = 50 * DEG
-/** Innermost ring's radius, in screen px anchored to the colour chip (fixed,
- *  like MAP_R, not viewport-scaled like the dial bands — the chip itself is
- *  a fixed CSS size). The chip is a 26px-radius circle; a ring's own hit
- *  zone reaches GRAB_PX further in than its drawn radius, so anything closer
- *  than about 26 + GRAB_PX would let the ring's grab arc reach onto the chip
- *  itself. 60 clears that by a working margin. */
-const RING_R_INNER = 60
-/** Spacing between adjacent rings' radii. Each ring's hit zone is GRAB_PX*2
- *  (48px) wide; less than that and neighbouring rings' invisible grab arcs
- *  would overlap, so a drag meant for one ring could get captured by the
- *  next one in. The extra 8px on top is a clear gap between them, not load-
- *  bearing but cheap insurance against a fat-fingered tap landing exactly on
- *  the seam. */
-const RING_PITCH = 56
-/** How far past a ring's 0% end (RING_A0) its numeric label sits, outside
- *  the angular span every ring's track occupies — so a label never draws
- *  over any ring's own arc, whichever channel or radius it belongs to,
- *  regardless of that channel's current value. */
-const LABEL_OFFSET = 12 * DEG
-/** How far beyond its own ring's radius a label sits. Checked on screen at
- *  320×568: at RING_R_INNER with no padding, B's label lands almost exactly
- *  on the mix readout sitting directly above the chip in the column — the
- *  innermost ring is simply too close to the chip for angle alone to clear
- *  a same-column neighbour, since at radius 60 the whole ring's vertical
- *  reach is ±60px and the readout is only ~56px above centre. Pushing every
- *  label's radius out by this much clears that case with margin and, being
- *  uniform across all three, keeps their radial spacing consistent too. */
-const LABEL_PAD = 26
-/** How far the bands fade back while a popup owns the screen.
+/**
+ * How far inside the ring the active target's name sits, in px.
  *
- *  Every control here was designed and checked on its own, and each one does
- *  clear its own neighbours: the rings dodge the chip column, their labels
- *  dodge each other, the dial dodges the mix readout. What none of them
- *  could see alone is that a popup anchored to the chip column reaches right
- *  across the bands behind it — at RING_R_INNER + 2*RING_PITCH the outermost
- *  ring is 172px out, well inside the band arcs on any phone. Shipped, that
- *  read as three coloured arcs lying over MULTIPLY / CHORUS / ADD with all
- *  of it illegible.
- *
- *  Shrinking the rings does not fix it: a 0-100 drag wants a long arc to
- *  resolve a value along, and the bands are 30px+ wide wherever they sit.
- *  The two simply want the same pixels, so one has to yield while the other
- *  is in use — and it is not the one the thumb is on. Zero would be cleaner
- *  still but reads as the HUD having vanished mid-gesture; this keeps them
- *  as a ghost, so the wedge still looks like one object. */
-const POPUP_DIM = 0.12
+ * Must clear the selector's tip, which is drawn from ringR-26 to ringR-40 (see
+ * build()). At 34 the name landed exactly inside the arrowhead and rendered as
+ * "A▼M" — legible in neither direction, and invisible to the escaped-viewport
+ * check, which only measures whether things leave the screen and not whether
+ * they land on each other.
+ */
+const NAME_PAD = 58
 
-/** The camera ring's colour. Deliberately not one of CHANNELS' three tints —
- *  those say "this is the red channel", and a fourth ring in a fourth hue
- *  would read as a fourth channel. A near-white amber says "this is not one
- *  of those", and matches the convention every phone uses for a live camera. */
+/** Per-channel identity for the geometric layer's colour. R, G, B throughout. */
+const CHANNELS = [
+  { key: 'r' as const, label: 'R', tint: '#ff4d5e' },
+  { key: 'g' as const, label: 'G', tint: '#4dff8f' },
+  { key: 'b' as const, label: 'B', tint: '#5c8bff' },
+]
+
+/** The camera's tint. Deliberately not one of CHANNELS' three — those say
+ *  "this is the red channel", and a fourth in a fourth hue would read as a
+ *  fourth channel. Near-white amber is what every phone uses for a live
+ *  camera. */
 const CAM_TINT = '#ffcf8a'
 
 export interface Hud {
@@ -185,12 +134,11 @@ export interface Hud {
       }
     },
   ): void
-  /** Step the atmospheric layer's programme forward (1) or back (-1), wrapping. */
+  /** Step the atmospheric layer's programme forward (1) or back (-1), wrapping.
+   *  Bound to a swipe in gestures.ts via main.ts — not called from in here. */
   cycleAtmosphericView(direction: 1 | -1): void
-  /** Step the geometric layer's programme forward (1) or back (-1), wrapping. */
-  cycleGeometricView(direction: 1 | -1): void
   /** Adopt a change decided elsewhere (see director.ts) — updates the stored
-   *  preference and the dial so the HUD keeps showing the truth, without
+   *  preference and the ring so the HUD keeps showing the truth, without
    *  reporting it as a manual change. */
   adopt(next: { geoColour?: GeoColour; atmosphericView?: AtmosphericViewName }): void
   /** Whether the user has the autopilot switched on. */
@@ -226,15 +174,6 @@ const MAPPING_LABELS: Record<MappingName, string> = {
   'auto-normalised': 'Normalised',
 }
 
-/** Three-letter codes for the same three values, used wherever the full
- *  MAPPING_LABELS text won't fit — the mapping chip itself and its dial's
- *  option labels, both under 50px across. */
-const MAPPING_SHORT: Record<MappingName, string> = {
-  relative: 'REL',
-  'speech-band': 'ABS',
-  'auto-normalised': 'NOR',
-}
-
 const CSS = `
 .hud-scrim {
   position: fixed; inset: 0; z-index: 30;
@@ -252,11 +191,10 @@ const CSS = `
 .hud-scrim.open { opacity: 1; pointer-events: auto; }
 
 .hud-dial { position: absolute; inset: 0; width: 100%; height: 100%; }
-/* Only the bands and buttons take input; everywhere else falls through to the
+/* Only the ring and the chips take input; everywhere else falls through to the
    scrim, which closes. */
 .hud-dial * { pointer-events: none; }
 .hud-dial .hit { pointer-events: stroke; cursor: pointer; }
-.hud-dial .btn { pointer-events: auto; cursor: pointer; }
 
 .hud-track { fill: none; stroke: rgba(18,18,35,0.72); }
 .hud-rule  { fill: none; stroke: rgba(255,255,255,0.07); stroke-width: 1; }
@@ -273,45 +211,50 @@ const CSS = `
 .hud-selector { fill: rgba(169,166,232,0.13); stroke: rgba(169,166,232,0.85); stroke-width: 1.4; }
 .hud-tip { fill: rgba(169,166,232,0.85); }
 
-.hud-mix-ring { fill: none; stroke: rgba(29,28,51,0.9); }
-.hud-mix-arc  { fill: none; stroke: #9d9bf0; stroke-linecap: round; }
-.hud-mix-knob { fill: #9d9bf0; }
+/* The scalar fill. Stroke colour is set inline per target, because the colour
+   channels and the camera each carry their own tint and a shared class cannot
+   express that. */
+.hud-fill { fill: none; stroke-linecap: round; }
+.hud-knob { stroke: none; }
 
-/* The toggles are HTML rather than SVG, and sit after the dial in the DOM so
-   they render above it. Inside the SVG they would fall within a band's grab
-   zone — the invisible arcs are 48px wide — and the band would swallow the
-   tap. Stacked at the left edge, clear of where the faded band labels reach.
+/* Which setting the ring is currently pointed at, and its value. Both sit on
+   the notch line, one inside the ring and one outside, so they read as
+   labelling the window rather than any particular option. */
+.hud-name {
+  font: 500 9px "Chakra Petch", ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: 0.18em; text-transform: uppercase;
+  fill: #6f6b8c; text-anchor: middle; dominant-baseline: middle;
+}
+.hud-value {
+  font: 600 17px "Chakra Petch", ui-sans-serif, system-ui, sans-serif;
+  fill: #f0eeff; text-anchor: middle; dominant-baseline: middle;
+  font-variant-numeric: tabular-nums;
+}
 
-   Everything in this corner lives in this one column: the mix readout, the
-   colour panel, and the buttons. They were three absolutely-positioned things
-   at hand-tuned offsets from the bottom, which held only for as long as the
-   count and heights did — adding a third button put it on top of the mix
-   readout, and opening the colour panel covered the button that opened it.
-   A flex column cannot have that bug. */
+/* The chips are HTML rather than SVG and sit after the dial in the DOM so they
+   render above it. Inside the SVG they would fall within the ring's 48px grab
+   zone and it would swallow the tap.
+
+   A two-column grid, not the flex column this used to be. One ring means more
+   icons than one column can hold on a 320×568 screen — nine of them, eleven
+   while the colour icon is expanded. The grid is what keeps that from running
+   off the top of the phone. */
 .hud-btns {
   position: absolute;
   left: calc(0.75rem + env(safe-area-inset-left, 0px));
   bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
-  display: flex; flex-direction: column; align-items: flex-start; gap: 0.5rem;
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  gap: 0.4rem;
+  align-items: start;
 }
 
-.hud-mixread {
-  display: flex; align-items: baseline; gap: 0.4rem;
-  font: 400 8px ui-monospace, SFMono-Regular, Menlo, monospace;
-  letter-spacing: 0.14em; text-transform: uppercase; color: #5d5a78;
-}
-.hud-mixread b {
-  font: 600 19px "Chakra Petch", ui-sans-serif, system-ui, sans-serif;
-  letter-spacing: 0; color: #f0eeff; font-variant-numeric: tabular-nums;
-}
-/* Circular so the four read as one family of chips instead of a button list.
-   Two short lines fit inside — an identity glyph and the live value — because
-   the original span+b markup already carried both; only the shape changed.
-   Sized a hair over GRAB_PX*2 (48px, the band hit zone's diameter and this
-   file's established thumb-safe minimum) to leave room for the second line. */
+/* Circular so they read as one family rather than a button list. 2.75rem is
+   the smallest that still clears GRAB_PX*2 (48px, this file's thumb-safe
+   minimum) once the border is counted. */
 .hud-chip {
   appearance: none; cursor: pointer;
-  width: 3.25rem; height: 3.25rem; padding: 0;
+  width: 2.75rem; height: 2.75rem; padding: 0;
   border-radius: 50%;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 0.05rem;
@@ -321,54 +264,25 @@ const CSS = `
   letter-spacing: 0.06em; text-transform: uppercase;
   color: #8a86a4; text-align: center; line-height: 1.1;
 }
-.hud-chip[aria-pressed='true'] { background: rgba(26,24,48,0.9); border-color: #9d9bf0; }
+.hud-chip[hidden] { display: none; }
+/* The active chip takes its own tint, so the icon that selected the ring and
+   the ring itself agree on colour — the red channel's chip is red-edged while
+   the ring is drawing red. Falls back to the house violet for every target
+   that has no tint of its own. */
+.hud-chip[aria-pressed='true'] {
+  background: rgba(26,24,48,0.9);
+  border-color: var(--tint, #9d9bf0);
+  color: #f0eeff;
+}
 .hud-chip b { font-weight: 400; color: #9d9bf0; display: block; }
 .hud-chip[aria-pressed='true'] b { color: #f0eeff; }
-/* The colour chip's value line is a swatch, not text — "100/100/100" does not
-   fit in a 52px circle, and a dot of the actual colour reads faster than the
-   digits ever did. */
+/* The colour chip's mark is a dot of the actual composite colour, not a value.
+   With R, G and B now three separate ring targets, the ring can only ever show
+   one channel at a time, so this dot is the only place the combined result
+   appears at all. */
 .hud-chip b.hud-chip-swatch {
-  width: 14px; height: 14px; margin: 0 auto; border-radius: 50%;
+  width: 12px; height: 12px; margin: 0 auto; border-radius: 50%;
   border: 1px solid rgba(0,0,0,0.45);
-}
-
-/* The mapping chip's dial: three labels drawn into the dial svg (not HTML),
-   reusing the exact .hud-item/.hud-item.on styling the main bands already
-   use for their own option text — this is the same "options on an arc, one
-   highlighted" picture at a smaller radius, so it gets the same classes
-   rather than a parallel set. Its track and notch tick reuse .hud-track and
-   .hud-tick.major the same way. Task 1's fan (hud-fan-*, three independently
-   tappable circles with their own stems) is gone: a drag control has one
-   thing that turns, not three separate targets. */
-
-/* The colour chip's popup used to be this panel: three linear sliders, one
-   per channel. The sliders are gone — the popup is now three concentric
-   rings drawn straight into the dial svg, anchored to this chip the same way
-   the mapping dial is anchored to that one (see colourCenter() and
-   paintColourPopup()). What is left of the panel is just the composite
-   swatch: a single-glance check that the three channels haven't combined
-   into something unexpected, kept because the exact per-channel numbers now
-   live on the rings and their labels instead of in a per-row <output>. */
-.hud-rgb {
-  width: 3.25rem; padding: 0;
-  display: none;
-  pointer-events: auto;
-}
-.hud-rgb.open { display: block; }
-.hud-swatch {
-  height: 4px; border-radius: 2px;
-  background: var(--swatch, #fff);
-}
-
-/* The three colour rings: the same track/fill/knob idiom as the mix arc,
-   times three, concentric around the colour chip instead of the wedge hinge.
-   Fill stroke colour is set per-channel inline (the tint from CHANNELS),
-   since it varies per ring in a way a shared class can't express. */
-.hud-ring-fill { fill: none; stroke-linecap: round; }
-.hud-ring-label {
-  font: 500 9px "Chakra Petch", ui-sans-serif, system-ui, sans-serif;
-  letter-spacing: 0.04em; text-transform: uppercase;
-  text-anchor: middle; dominant-baseline: middle;
 }
 
 .hud-stats {
@@ -401,21 +315,39 @@ function delta(a: number, b: number): number {
   return d
 }
 
-/** A band is one layer's worth of options laid along an arc. */
-interface Band<K extends string> {
+/** A ring of discrete options, turned past the notch. */
+interface EnumTarget {
+  readonly kind: 'enum'
+  readonly id: string
+  /** What the chip shows, and the ring's own name label. */
+  readonly glyph: string
+  /** Full word, kept as the accessible name so shrinking the chip does not
+   *  also shrink what a screen reader says. */
   readonly name: string
-  readonly keys: readonly K[]
-  readonly radius: number
+  readonly keys: readonly string[]
+  label(k: string): string
+  current(): string
+  commit(k: string): void
   /** Rotation, in radians. 0 puts keys[0] under the notch. */
   rot: number
-  label(k: K): string
-  current(): K
-  commit(k: K): void
-  /** Filled in on layout. */
-  labels: SVGTextElement[]
-  hit?: SVGPathElement
-  r: number
 }
+
+/** A continuous 0-1 value, dragged along the ring. */
+interface ScalarTarget {
+  readonly kind: 'scalar'
+  readonly id: string
+  readonly glyph: string
+  readonly name: string
+  readonly tint: string
+  current(): number
+  /** Live, on every pointermove. */
+  apply(v: number): void
+  /** Once, on release — where persistence belongs. */
+  commit(): void
+  format(v: number): string
+}
+
+type Target = EnumTarget | ScalarTarget
 
 export function createHud(prefs: Prefs, handlers: Handlers): Hud {
   const style = document.createElement('style')
@@ -439,12 +371,157 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
   btnBar.className = 'hud-btns'
   scrim.appendChild(btnBar)
 
+  document.body.appendChild(scrim)
+
   const manual = (): void => handlers.onManualChange()
 
-  // `glyph` is what's visible — short enough to sit on one line inside a
-  // 52px circle — and `name` is the full word, kept as the accessible name
-  // so shrinking the chip doesn't also shrink what a screen reader says.
-  function mkButton(name: string, glyph: string, onTap: () => void): HTMLButtonElement {
+  const geometricKeys = Object.keys(GEOMETRIC_VIEWS) as GeometricViewName[]
+  const atmosphericKeys = Object.keys(ATMOSPHERIC_VIEWS) as AtmosphericViewName[]
+  const mergeKeys = Object.keys(MERGE_MODES) as MergeModeName[]
+  const mappingKeys = Object.keys(MAPPING_LABELS) as MappingName[]
+
+  /** What the camera ring is showing, which during a drag runs ahead of what
+   *  the camera has actually granted. `onPassthrough` is the only thing
+   *  allowed to make it true — see the CAM target's commit. */
+  let camShown = 0
+
+  const TARGETS: Target[] = [
+    {
+      kind: 'enum',
+      id: 'geo',
+      glyph: 'GEO',
+      name: 'Geometric layer',
+      keys: geometricKeys,
+      label: (k) => GEOMETRIC_VIEWS[k as GeometricViewName].label,
+      current: () => prefs.geometricView,
+      commit: (k) => {
+        prefs.geometricView = k as GeometricViewName
+        savePrefs(prefs)
+        handlers.onGeometricView(prefs.geometricView)
+        manual()
+      },
+      rot: 0,
+    },
+    {
+      kind: 'enum',
+      id: 'mrg',
+      glyph: 'MRG',
+      name: 'Merge mode',
+      keys: mergeKeys,
+      label: (k) => MERGE_MODES[k as MergeModeName].label,
+      current: () => prefs.mergeMode,
+      commit: (k) => {
+        prefs.mergeMode = k as MergeModeName
+        savePrefs(prefs)
+        handlers.onMergeMode(prefs.mergeMode)
+        manual()
+      },
+      rot: 0,
+    },
+    {
+      kind: 'enum',
+      id: 'atm',
+      glyph: 'ATM',
+      name: 'Atmospheric layer',
+      keys: atmosphericKeys,
+      label: (k) => ATMOSPHERIC_VIEWS[k as AtmosphericViewName].label,
+      current: () => prefs.atmosphericView,
+      commit: (k) => {
+        prefs.atmosphericView = k as AtmosphericViewName
+        savePrefs(prefs)
+        handlers.onAtmosphericView(prefs.atmosphericView)
+        manual()
+      },
+      rot: 0,
+    },
+    {
+      kind: 'scalar',
+      id: 'mix',
+      glyph: 'MIX',
+      name: 'Layer mix',
+      tint: '#9d9bf0',
+      current: () => prefs.mix,
+      apply: (v) => {
+        prefs.mix = v
+        handlers.onMix(prefs.mix)
+        manual()
+      },
+      // Persist once at the end — a drag fires many events a second and there
+      // is no reason to write localStorage that often.
+      commit: () => savePrefs(prefs),
+      format: (v) => `${Math.round(v * 100)}%`,
+    },
+    {
+      kind: 'enum',
+      id: 'map',
+      glyph: 'MAP',
+      name: 'Mapping',
+      keys: mappingKeys,
+      label: (k) => MAPPING_LABELS[k as MappingName],
+      current: () => prefs.mapping,
+      commit: (k) => {
+        prefs.mapping = k as MappingName
+        savePrefs(prefs)
+        handlers.onMapping(prefs.mapping)
+        manual()
+      },
+      rot: 0,
+    },
+    ...CHANNELS.map(
+      ({ key, label, tint }): ScalarTarget => ({
+        kind: 'scalar',
+        id: key,
+        glyph: label,
+        name: `Geometric layer colour, ${label}`,
+        tint,
+        current: () => prefs.geoColour[key],
+        apply: (v) => {
+          prefs.geoColour = { ...prefs.geoColour, [key]: v }
+          handlers.onGeoColour(prefs.geoColour)
+          manual()
+        },
+        commit: () => savePrefs(prefs),
+        format: (v) => String(Math.round(v * 100)),
+      }),
+    ),
+    {
+      kind: 'scalar',
+      id: 'cam',
+      glyph: 'CAM',
+      name: 'Camera passthrough',
+      tint: CAM_TINT,
+      current: () => camShown,
+      apply: (v) => {
+        camShown = v
+        manual()
+      },
+      commit: () => {
+        // The camera is the one control whose value is not ours to decide: the
+        // first non-zero drag is what asks for it, and the answer can be no.
+        void handlers.onPassthrough(camShown).then((granted) => {
+          camShown = granted
+          prefs.passthrough = granted
+          savePrefs(prefs)
+          paintRing()
+          paintChips()
+        })
+      },
+      format: (v) => (v > 0 ? String(Math.round(v * 100)) : 'off'),
+    },
+  ]
+
+  const targetById = (id: string): Target => TARGETS.find((t) => t.id === id)!
+
+  /** Which target the ring is pointed at. */
+  let activeId = 'geo'
+  const active = (): Target => targetById(activeId)
+
+  /** Whether the colour icon has expanded into its three channels. */
+  let rgbExpanded = false
+
+  // ── chips ────────────────────────────────────────────────────────────────
+
+  function mkChip(name: string, glyph: string, onTap: () => void): HTMLButtonElement {
     const b = document.createElement('button')
     b.type = 'button'
     b.className = 'hud-chip'
@@ -459,285 +536,99 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     return b
   }
 
-  const mixRead = document.createElement('div')
-  mixRead.className = 'hud-mixread'
-  mixRead.innerHTML = '<span>mix</span><b></b>'
-  btnBar.appendChild(mixRead)
+  /** Point the ring at a target, parking its current value under the notch. */
+  function select(id: string): void {
+    activeId = id
+    const t = active()
+    if (t.kind === 'enum') t.rot = restingRot(t)
+    paintRing()
+    paintChips()
+  }
 
-  // Appended to btnBar before any button, so it sits directly above the button
-  // that opens it. After the SVG in the DOM is what keeps it from being
-  // swallowed by a band's 48px grab zone.
-  const rgbPanel = document.createElement('div')
-  rgbPanel.className = 'hud-rgb'
-  // A tap inside the panel must not reach the scrim, which closes the HUD.
-  // Nothing in here is interactive any more — it's just the composite swatch
-  // below — but the swatch is thin, and a mis-tap on the sliver of panel
-  // around it shouldn't close the HUD out from under a colour change either.
-  rgbPanel.addEventListener('pointerup', (e) => e.stopPropagation())
-  rgbPanel.addEventListener('pointerdown', (e) => e.stopPropagation())
-  btnBar.appendChild(rgbPanel)
+  const targetChips = new Map<string, HTMLButtonElement>()
 
-  // Per-channel identity used by both the (now gone) sliders' replacement —
-  // the colour rings — and paintRgb()'s swatch. Order is R, G, B throughout,
-  // which is also the rings' outer-to-inner order (see ringRadius()).
-  const CHANNELS = [
-    { key: 'r' as const, label: 'R', tint: '#ff4d5e' },
-    { key: 'g' as const, label: 'G', tint: '#4dff8f' },
-    { key: 'b' as const, label: 'B', tint: '#5c8bff' },
-  ]
+  for (const id of ['geo', 'mrg', 'atm', 'mix', 'map'] as const) {
+    const t = targetById(id)
+    targetChips.set(id, mkChip(t.name, t.glyph, () => select(id)))
+  }
 
-  const swatch = document.createElement('div')
-  swatch.className = 'hud-swatch'
-  rgbPanel.appendChild(swatch)
-
-  document.body.appendChild(scrim)
-
-  const geometricKeys = Object.keys(GEOMETRIC_VIEWS) as GeometricViewName[]
-  const atmosphericKeys = Object.keys(ATMOSPHERIC_VIEWS) as AtmosphericViewName[]
-  const mergeKeys = Object.keys(MERGE_MODES) as MergeModeName[]
-  const mappingKeys = Object.keys(MAPPING_LABELS) as MappingName[]
-
-  const bands: Array<Band<string>> = [
-    {
-      name: 'geometric',
-      keys: geometricKeys,
-      radius: R_GEO,
-      rot: 0,
-      label: (k) => GEOMETRIC_VIEWS[k as GeometricViewName].label,
-      current: () => prefs.geometricView,
-      commit: (k) => {
-        prefs.geometricView = k as GeometricViewName
-        savePrefs(prefs)
-        handlers.onGeometricView(prefs.geometricView)
-        manual()
-      },
-      labels: [],
-      r: 0,
-    },
-    {
-      name: 'merge',
-      keys: mergeKeys,
-      radius: R_MRG,
-      rot: 0,
-      label: (k) => MERGE_MODES[k as MergeModeName].label,
-      current: () => prefs.mergeMode,
-      commit: (k) => {
-        prefs.mergeMode = k as MergeModeName
-        savePrefs(prefs)
-        handlers.onMergeMode(prefs.mergeMode)
-        manual()
-      },
-      labels: [],
-      r: 0,
-    },
-    {
-      name: 'atmospheric',
-      keys: atmosphericKeys,
-      radius: R_ATM,
-      rot: 0,
-      label: (k) => ATMOSPHERIC_VIEWS[k as AtmosphericViewName].label,
-      current: () => prefs.atmosphericView,
-      commit: (k) => {
-        prefs.atmosphericView = k as AtmosphericViewName
-        savePrefs(prefs)
-        handlers.onAtmosphericView(prefs.atmosphericView)
-        manual()
-      },
-      labels: [],
-      r: 0,
-    },
-  ]
-
-  const bandNamed = (name: string): Band<string> => bands.find((b) => b.name === name)!
-
-  // Live geometry, recomputed on resize.
-  let cx = 0
-  let cy = 0
-  let mixR = 0
-  let mixArc: SVGPathElement | null = null
-  let mixKnob: SVGCircleElement | null = null
-
-  // The mapping dial. Rebuilt each layout pass like the bands and the mix arc
-  // are, then just repositioned and shown/hidden by paintMapDial() — except
-  // its geometry is anchored to the mapping chip's own screen position
-  // (an HTML element outside the dial) rather than to the dial's centre. One
-  // track, one notch tick, one hit arc (the single drag target — there is no
-  // per-option hit any more) and one label per option.
-  const mapDialLabels: SVGTextElement[] = []
-  let mapDialTrack: SVGPathElement | null = null
-  let mapDialTick: SVGLineElement | null = null
-  let mapDialHit: SVGPathElement | null = null
-  /** Rotation, in radians, of the mapping dial's ring of options — the
-   *  chip-anchored analogue of a Band's own `rot`. 0 puts mappingKeys[0]
-   *  under the notch (angle 0, i.e. due right of the chip). */
-  let mapRot = 0
-
-  // The colour rings, one array per element kind, indexed like CHANNELS
-  // (0=R, 1=G, 2=B — R outermost, B innermost; see ringRadius()). Same
-  // rebuild-then-reposition split as the mapping dial above, anchored to the
-  // colour chip's own screen position instead of the dial's centre.
-  const colourTracks: SVGPathElement[] = []
-  const colourFills: SVGPathElement[] = []
-  const colourKnobs: SVGCircleElement[] = []
-  const colourLabels: SVGTextElement[] = []
-  const colourHits: SVGPathElement[] = []
-
-  // The camera ring: one arc, same idiom as a single colour ring, anchored to
-  // its own chip. Only one, so plain refs rather than the arrays above.
-  let camTrack: SVGPathElement | null = null
-  let camFill: SVGPathElement | null = null
-  let camKnob: SVGCircleElement | null = null
-  let camLabel: SVGTextElement | null = null
-  let camHit: SVGPathElement | null = null
-  /** What the ring is showing, which during a drag runs ahead of what the
-   *  camera has actually granted. `onPassthrough` is the only thing allowed to
-   *  make it true — see the drag binding. */
-  let camShown = 0
-
-  // Only one popup — the mapping dial, or a colour panel — is ever open at
-  // once. Each opener decides its own open/closed state from what it was
-  // before acting, then unconditionally closes the other; that's what lets
-  // a second tap on the same chip close it while a tap on any other chip
-  // always closes both and only reopens the one that was tapped.
-  let mapDialOpen = false
-  /** Same shape as mapDialOpen and for the same reason: the camera ring is
-   *  pure svg, so there is no DOM node outside build()'s teardown to hang the
-   *  flag on the way rgbPanel's class does it for the colour popup. */
-  let camRingOpen = false
-
-  /** The band arcs, kept only so a popup can fade them back — see POPUP_DIM.
-   *  Their labels already live on each band as b.labels. */
-  let bandTracks: SVGPathElement[] = []
-
-  /** True while either popup is up. They are mutually exclusive (see
-   *  closeColourPopup()/closeMapDial()), so this is "is anything covering
-   *  the bands", not a count. */
-  const popupOpen = (): boolean =>
-    mapDialOpen || camRingOpen || rgbPanel.classList.contains('open')
-
-  const rgbBtn = mkButton('Geometric layer colour', 'RGB', () => {
-    const wasOpen = rgbPanel.classList.contains('open')
-    closeMapDial()
-    closeCamRing()
-    rgbPanel.classList.toggle('open', !wasOpen)
-    paintButtons()
-    paintColourPopup()
-    // The bands sit under this popup and have to yield to it — see POPUP_DIM.
-    paintBands()
+  // The colour icon and the three it expands into occupy consecutive grid
+  // cells, so hiding one set and showing the other keeps everything else in
+  // place. Building all four up front and toggling `hidden` is what makes that
+  // true — rebuilding the row would reorder it.
+  const rgbChip = mkChip('Geometric layer colour', 'RGB', () => {
+    rgbExpanded = true
+    select('r')
   })
-  // The colour chip's value is a swatch dot, not text — see the CSS comment
-  // on .hud-chip-swatch for why.
-  const rgbSwatch = rgbBtn.querySelector('b')!
+  const rgbSwatch = rgbChip.querySelector('b')!
   rgbSwatch.classList.add('hud-chip-swatch')
 
-  const autoBtn = mkButton('Autopilot', 'AUTO', () => {
-    closeColourPopup()
-    closeMapDial()
-    closeCamRing()
+  for (const { key, label } of CHANNELS) {
+    const t = targetById(key)
+    const chip = mkChip(t.name, label, () => select(key))
+    chip.style.setProperty('--tint', (t as ScalarTarget).tint)
+    targetChips.set(key, chip)
+  }
+
+  const camChip = mkChip('Camera passthrough', 'CAM', () => select('cam'))
+  camChip.style.setProperty('--tint', CAM_TINT)
+  targetChips.set('cam', camChip)
+
+  // AUTO and NUM are not ring targets. A boolean is not ring-shaped, and
+  // forcing it into one would be worse than the inconsistency.
+  const autoBtn = mkChip('Autopilot', 'AUTO', () => {
     prefs.autopilot = !prefs.autopilot
     savePrefs(prefs)
-    paintButtons()
+    paintChips()
     // Toggling it on is not a manual change to *what is on screen*, so it does
     // not suspend — switching it on and then waiting three minutes for it to
     // do anything would read as broken.
   })
 
-  const mapBtn = mkButton('Mapping', 'MAP', () => {
-    const wasOpen = mapDialOpen
-    closeColourPopup()
-    closeCamRing()
-    mapDialOpen = !wasOpen
-    // Mirrors restingRot()'s behaviour for the main bands: opening always
-    // parks the currently-selected option under the notch, regardless of
-    // wherever a previous drag left mapRot sitting.
-    if (mapDialOpen) mapRot = restingRotOf(mappingKeys, prefs.mapping, MAP_PITCH)
-    paintMapDial()
-    paintButtons()
-    // Same as the colour popup: the bands underneath yield while this is up.
-    paintBands()
-  })
-
-  const camBtn = mkButton('Camera passthrough', 'CAM', () => {
-    const wasOpen = camRingOpen
-    closeColourPopup()
-    closeMapDial()
-    camRingOpen = !wasOpen
-    paintCamRing()
-    paintButtons()
-    paintBands()
-  })
-
-  function closeCamRing(): void {
-    if (!camRingOpen) return
-    camRingOpen = false
-    paintCamRing()
-    paintBands()
-  }
-
-  const statsBtn = mkButton('Numeric readout', 'NUM', () => {
-    closeColourPopup()
-    closeMapDial()
-    closeCamRing()
+  const statsBtn = mkChip('Numeric readout', 'NUM', () => {
     prefs.showStats = !prefs.showStats
     stats.hidden = !prefs.showStats
     if (!prefs.showStats) stats.textContent = ''
     savePrefs(prefs)
-    paintButtons()
+    paintChips()
   })
 
-  function closeMapDial(): void {
-    if (!mapDialOpen) return
-    mapDialOpen = false
-    paintMapDial()
-    // Bands come back up — see POPUP_DIM. Harmless when the caller is a chip
-    // that is about to open the other popup: its own paintBands() follows.
-    paintBands()
-  }
+  // ── geometry ─────────────────────────────────────────────────────────────
 
-  // The colour popup's open/closed state lives on rgbPanel's own class,
-  // unlike mapDialOpen which has to be a closure variable — the mapping dial
-  // is pure svg with nothing surviving build()'s teardown to hold a flag on,
-  // but rgbPanel is an ordinary DOM node outside the svg, so its class
-  // already survives resize the same way mapDialOpen is made to.
-  function closeColourPopup(): void {
-    if (!rgbPanel.classList.contains('open')) return
-    rgbPanel.classList.remove('open')
-    paintColourPopup()
-    paintBands()
-  }
+  let cx = 0
+  let cy = 0
+  let ringR = 0
 
-  /** Position on a circle of radius r about (ox,oy). polar()/arcPath() are
-   *  this centred on the wedge hinge (cx,cy); the colour rings need the same
-   *  arithmetic centred on the colour chip instead, so it's generalised here
-   *  and polar()/arcPath() become the cx,cy special case of it. */
-  const polarAt = (ox: number, oy: number, r: number, a: number): [number, number] => [
-    ox + r * Math.cos(a),
-    oy + r * Math.sin(a),
+  let ringTrack: SVGPathElement | null = null
+  let selector: SVGPathElement | null = null
+  let selectorTip: SVGPathElement | null = null
+  let fillArc: SVGPathElement | null = null
+  let knob: SVGCircleElement | null = null
+  let nameLabel: SVGTextElement | null = null
+  let valueLabel: SVGTextElement | null = null
+  let itemLabels: SVGTextElement[] = []
+  let enumHit: SVGPathElement | null = null
+  let scalarHit: SVGPathElement | null = null
+
+  /** Enough label slots for the largest enum target, allocated once. */
+  const MAX_ITEMS = Math.max(
+    ...TARGETS.filter((t): t is EnumTarget => t.kind === 'enum').map((t) => t.keys.length),
+  )
+
+  const polar = (r: number, a: number): [number, number] => [
+    cx + r * Math.cos(a),
+    cy + r * Math.sin(a),
   ]
-  const polar = (r: number, a: number): [number, number] => polarAt(cx, cy, r, a)
 
-  function arcAt(ox: number, oy: number, r: number, a0: number, a1: number): string {
-    const [x0, y0] = polarAt(ox, oy, r, a0)
-    const [x1, y1] = polarAt(ox, oy, r, a1)
+  function arcPath(r: number, a0: number, a1: number): string {
+    const [x0, y0] = polar(r, a0)
+    const [x1, y1] = polar(r, a1)
     return `M${x0} ${y0}A${r} ${r} 0 ${a1 - a0 > Math.PI ? 1 : 0} 1 ${x1} ${y1}`
   }
-  function arcPath(r: number, a0: number, a1: number): string {
-    return arcAt(cx, cy, r, a0, a1)
-  }
 
-  /** Rotation that puts `cur` under the notch, given `pitch` spacing between
-   *  adjacent items in `keys`. Generalised out from what was a private
-   *  one-liner on Band<K> the moment the mapping dial needed the identical
-   *  arithmetic around a different origin, radius, and pitch — the same
-   *  boundary-grows-a-second-tenant case bindTurnDrag below is also an
-   *  instance of. */
-  function restingRotOf<K extends string>(keys: readonly K[], cur: K, pitch: number): number {
-    return -Math.max(0, keys.indexOf(cur)) * pitch
-  }
-  /** The main bands' own case of restingRotOf: their origin is always the
-   *  wedge hinge, so PITCH and Band<K>'s own keys/current() cover it. */
-  function restingRot(b: Band<string>): number {
-    return restingRotOf(b.keys, b.current(), PITCH)
+  /** Rotation that puts the current option under the notch. */
+  function restingRot(t: EnumTarget): number {
+    return -Math.max(0, t.keys.indexOf(t.current())) * PITCH
   }
 
   function build(): void {
@@ -747,7 +638,7 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     // Hinge sits just outside the corner, so the wedge opens into the screen.
     cx = w + 10
     cy = h + 10
-    mixR = base * R_MIX
+    ringR = base * R_RING
 
     svg.setAttribute('viewBox', `0 0 ${w} ${h}`)
     while (svg.firstChild) svg.removeChild(svg.firstChild)
@@ -756,708 +647,300 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     const a1 = SWEEP_B * DEG
 
     // Ticks along the outer edge, as a rim for the whole wedge.
-    const outer = base * R_GEO + base * 0.07
+    const outer = ringR + base * 0.14
     for (let d = SWEEP_A; d <= SWEEP_B; d += 3) {
       const a = d * DEG
       const major = d % 15 === 0
       const [px0, py0] = polar(outer - (major ? 8 : 4), a)
       const [px1, py1] = polar(outer, a)
       svg.appendChild(
-        el('line', {
-          x1: px0,
-          y1: py0,
-          x2: px1,
-          y2: py1,
-          class: `hud-tick${major ? ' major' : ''}`,
-        }),
+        el('line', { x1: px0, y1: py0, x2: px1, y2: py1, class: `hud-tick${major ? ' major' : ''}` }),
       )
     }
     svg.appendChild(el('path', { d: arcPath(outer + 4, a0, a1), class: 'hud-rule' }))
 
-    // Bands, outermost first.
-    bandTracks = []
-    for (const b of bands) {
-      b.r = base * b.radius
-      b.rot = restingRot(b)
-      const bandTrack = el('path', {
-        d: arcPath(b.r, a0, a1),
-        class: 'hud-track',
-        'stroke-width': Math.max(30, base * 0.09),
-      })
-      svg.appendChild(bandTrack)
-      // Held onto only so a popup can fade them — see POPUP_DIM. Rebuilt on
-      // every resize along with everything else in here, hence the reset
-      // above rather than a push onto a stale array.
-      bandTracks.push(bandTrack)
-      b.labels = b.keys.map(() => {
-        const t = el('text', { class: 'hud-item' })
-        svg.appendChild(t)
-        return t
-      })
-    }
+    ringTrack = el('path', {
+      d: arcPath(ringR, a0, a1),
+      class: 'hud-track',
+      'stroke-width': Math.max(30, base * 0.09),
+    })
+    svg.appendChild(ringTrack)
 
-    // The selector: a trapezoid crossing every band at the notch.
+    // The scalar fill rides on the track, at the same radius.
+    fillArc = el('path', { class: 'hud-fill', 'stroke-width': 7 })
+    svg.appendChild(fillArc)
+    knob = el('circle', { r: 8, class: 'hud-knob' })
+    svg.appendChild(knob)
+
+    // The selector: a trapezoid across the ring at the notch, for enum targets.
     {
-      const r0 = base * R_ATM - base * 0.05
-      const r1 = base * R_GEO + base * 0.05
+      const r0 = ringR - base * 0.05
+      const r1 = ringR + base * 0.05
       const w0 = 26
       const w1 = 40
       const [lx0, ly0] = polar(r0, NOTCH - Math.atan2(w0 / 2, r0))
       const [rx0, ry0] = polar(r0, NOTCH + Math.atan2(w0 / 2, r0))
       const [lx1, ly1] = polar(r1, NOTCH - Math.atan2(w1 / 2, r1))
       const [rx1, ry1] = polar(r1, NOTCH + Math.atan2(w1 / 2, r1))
-      // Fades with the bands it reads — it marks which band option is
-      // selected, so leaving it lit over faded bands points at nothing.
-      bandTracks.push(
-        svg.appendChild(
-          el('path', {
-            d: `M${lx0} ${ly0}L${lx1} ${ly1}L${rx1} ${ry1}L${rx0} ${ry0}Z`,
-            class: 'hud-selector',
-          }),
-        ) as SVGPathElement,
-      )
+      selector = el('path', {
+        d: `M${lx0} ${ly0}L${lx1} ${ly1}L${rx1} ${ry1}L${rx0} ${ry0}Z`,
+        class: 'hud-selector',
+      })
+      svg.appendChild(selector)
+
       const [tx, ty] = polar(r0 - 10, NOTCH)
       const [bx, by] = polar(r0 - 24, NOTCH)
       const perp = NOTCH + Math.PI / 2
-      bandTracks.push(
-        svg.appendChild(
-          el('path', {
-            d:
-              `M${bx + 6 * Math.cos(perp)} ${by + 6 * Math.sin(perp)}` +
-              `L${bx - 6 * Math.cos(perp)} ${by - 6 * Math.sin(perp)}` +
-              `L${tx} ${ty}Z`,
-            class: 'hud-tip',
-          }),
-        ) as SVGPathElement,
-      )
-    }
-
-    // Mix arc, innermost.
-    svg.appendChild(
-      el('path', {
-        d: arcPath(mixR, a0, a1),
-        class: 'hud-mix-ring',
-        'stroke-width': 7,
-      }),
-    )
-    mixArc = el('path', { class: 'hud-mix-arc', 'stroke-width': 7 })
-    svg.appendChild(mixArc)
-    mixKnob = el('circle', { r: 8, class: 'hud-mix-knob' })
-    svg.appendChild(mixKnob)
-
-    // Invisible thick arcs are the actual grab targets. Added last so they sit
-    // above the painted bands, and stroke-only so taps elsewhere fall through
-    // to the scrim and close the HUD.
-    for (const b of bands) {
-      const hit = el('path', {
-        d: arcPath(b.r, a0, a1),
-        class: 'hit',
-        fill: 'none',
-        stroke: 'transparent',
-        'stroke-width': GRAB_PX * 2,
+      selectorTip = el('path', {
+        d:
+          `M${bx + 6 * Math.cos(perp)} ${by + 6 * Math.sin(perp)}` +
+          `L${bx - 6 * Math.cos(perp)} ${by - 6 * Math.sin(perp)}` +
+          `L${tx} ${ty}Z`,
+        class: 'hud-tip',
       })
-      bindBandDrag(hit, b)
-      svg.appendChild(hit)
-      b.hit = hit
+      svg.appendChild(selectorTip)
     }
-    const mixHit = el('path', {
-      d: arcPath(mixR, a0, a1),
+
+    itemLabels = Array.from({ length: MAX_ITEMS }, () => {
+      const t = el('text', { class: 'hud-item' })
+      svg.appendChild(t)
+      return t
+    })
+
+    nameLabel = el('text', { class: 'hud-name' })
+    svg.appendChild(nameLabel)
+    valueLabel = el('text', { class: 'hud-value' })
+    svg.appendChild(valueLabel)
+
+    // Two grab arcs over the same ring, one per kind, with pointer-events
+    // toggled by paintRing(). One element cannot carry both bindings: turning
+    // and sliding interpret the same drag differently, and a single hit arc
+    // would have to branch inside every handler.
+    enumHit = el('path', {
+      d: arcPath(ringR, a0, a1),
       class: 'hit',
       fill: 'none',
       stroke: 'transparent',
       'stroke-width': GRAB_PX * 2,
     })
-    bindMixDrag(mixHit)
-    svg.appendChild(mixHit)
+    bindTurnDrag(enumHit)
+    svg.appendChild(enumHit)
 
-    // The mapping dial, added last of all so it draws above everything else
-    // in the dial — it has to, since it can be opened while it sits over
-    // band labels near the chip's corner of the screen, and, more to the
-    // point, its hit arc has to win against the bands' own much larger grab
-    // arcs underneath wherever the two overlap (see the pointer-events
-    // toggle in paintMapDial() — DOM order alone decides who a pointerdown
-    // reaches when two `.hit`/`.btn` shapes both cover the same point, and
-    // Task 1 already proved this ordering clears the contested annulus its
-    // own fan sat in; the same annulus, same fix, still applies here).
-    mapDialLabels.length = 0
-    mappingKeys.forEach(() => {
-      const label = el('text', { class: 'hud-item' })
-      svg.appendChild(label)
-      mapDialLabels.push(label)
-    })
-    {
-      const track = el('path', { class: 'hud-track', 'stroke-width': 4 })
-      svg.appendChild(track)
-      mapDialTrack = track
-
-      const tick = el('line', { class: 'hud-tick major' })
-      svg.appendChild(tick)
-      mapDialTick = tick
-
-      const hit = el('path', {
-        class: 'hit',
-        fill: 'none',
-        stroke: 'transparent',
-        'stroke-width': GRAB_PX * 2,
-      })
-      hit.setAttribute('aria-label', 'Mapping options')
-      svg.appendChild(hit)
-      mapDialHit = hit
-
-      bindTurnDrag(
-        hit,
-        mapDialCenter,
-        MAP_PITCH,
-        mappingKeys,
-        () => mapRot,
-        (r) => {
-          mapRot = r
-        },
-        paintMapDial,
-        (next) => {
-          if (next !== prefs.mapping) {
-            prefs.mapping = next
-            savePrefs(prefs)
-            handlers.onMapping(prefs.mapping)
-          }
-          // Turning to a value is choosing it — the same "settling under the
-          // notch commits" rule the main bands already follow — so every
-          // release closes the dial, whether or not the value actually
-          // changed. A drag that ends back where it started is still a
-          // completed gesture, not a cancel; the scrim and a second chip tap
-          // are the two ways to back out without choosing anything.
-          mapDialOpen = false
-          paintButtons()
-        },
-      )
-    }
-    mapRot = restingRotOf(mappingKeys, prefs.mapping, MAP_PITCH)
-
-    // The colour rings, added last of all — after the mapping dial, even —
-    // so that if a phone is somehow narrow enough for the two popups'
-    // territory to touch, whichever is open draws on top. They never are
-    // both open at once (see closeColourPopup()/closeMapDial()), so in
-    // practice this only matters for z-order over the dial bands beneath.
-    colourTracks.length = 0
-    colourFills.length = 0
-    colourKnobs.length = 0
-    colourLabels.length = 0
-    colourHits.length = 0
-    CHANNELS.forEach(({ key, label, tint }) => {
-      const track = el('path', { class: 'hud-track', 'stroke-width': 8 })
-      svg.appendChild(track)
-      colourTracks.push(track)
-
-      const fill = el('path', { class: 'hud-ring-fill', 'stroke-width': 8, stroke: tint })
-      svg.appendChild(fill)
-      colourFills.push(fill)
-
-      const knob = el('circle', { r: 6, class: 'hud-ring-knob' })
-      knob.style.fill = tint
-      svg.appendChild(knob)
-      colourKnobs.push(knob)
-
-      const lbl = el('text', { class: 'hud-ring-label' })
-      lbl.style.fill = tint
-      svg.appendChild(lbl)
-      colourLabels.push(lbl)
-
-      const hit = el('path', {
-        class: 'hit',
-        fill: 'none',
-        stroke: 'transparent',
-        'stroke-width': GRAB_PX * 2,
-      })
-      hit.setAttribute('aria-label', `${label} intensity`)
-      svg.appendChild(hit)
-      colourHits.push(hit)
-
-      bindArcDrag(
-        hit,
-        colourCenter,
-        RING_A0,
-        RING_A1,
-        (t) => {
-          prefs.geoColour = clampGeoColour({ ...prefs.geoColour, [key]: t })
-          handlers.onGeoColour(prefs.geoColour)
-          paintColourPopup()
-          paintRgb()
-          manual()
-        },
-        // Persist once at the end, same as every other dragged control here.
-        () => savePrefs(prefs),
-      )
-    })
-
-    // The camera ring. Built after the colour rings so it draws over them for
-    // the same z-order reason they are built after the mapping dial — the two
-    // are never open together, so this only matters against the bands.
-    // Tinted track, unlike the colour rings' plain .hud-track ones.
-    //
-    // At zero this ring has no fill to show where it runs, and .hud-track's
-    // rgba(18,18,35,0.72) against a near-black ground is invisible — so the
-    // control reads as a floating knob and a label, with nothing to say which
-    // way it turns. The colour rings never expose that because three channels
-    // are rarely all zero at once; this one is zero at the start of every
-    // session, which is exactly when its affordance matters most.
-    camTrack = el('path', { class: 'hud-track', 'stroke-width': 8 })
-    // Inline style, not a stroke="" attribute. `.hud-track` sets stroke in
-    // CSS, and any CSS rule beats a presentation attribute however specific
-    // the attribute looks — so the attribute version of this drew in the
-    // class's near-black and stayed invisible, which read as the arc not being
-    // drawn at all. The colour rings already dodge this by setting knob.style
-    // .fill rather than a fill attribute.
-    camTrack.style.stroke = CAM_TINT
-    camTrack.style.strokeOpacity = '0.22'
-    svg.appendChild(camTrack)
-    camFill = el('path', { class: 'hud-ring-fill', 'stroke-width': 8, stroke: CAM_TINT })
-    svg.appendChild(camFill)
-    camKnob = el('circle', { r: 6, class: 'hud-ring-knob' })
-    camKnob.style.fill = CAM_TINT
-    svg.appendChild(camKnob)
-    camLabel = el('text', { class: 'hud-ring-label' })
-    camLabel.style.fill = CAM_TINT
-    svg.appendChild(camLabel)
-    camHit = el('path', {
+    scalarHit = el('path', {
+      d: arcPath(ringR, a0, a1),
       class: 'hit',
       fill: 'none',
       stroke: 'transparent',
       'stroke-width': GRAB_PX * 2,
     })
-    camHit.setAttribute('aria-label', 'Camera passthrough amount')
-    svg.appendChild(camHit)
+    bindArcDrag(scalarHit)
+    svg.appendChild(scalarHit)
 
-    bindArcDrag(
-      camHit,
-      camCenter,
-      RING_A0,
-      RING_A1,
-      (t) => {
-        // The ring follows the thumb immediately, but `prefs.passthrough` is
-        // not set here — the camera may refuse, and a preference that says 60
-        // while the sensor was declined is a lie the rest of the app would
-        // act on. camShown is what the thumb asked for; the handler's reply
-        // is what actually happened, applied on commit below.
-        camShown = t
-        paintCamRing()
-        manual()
-      },
-      () => {
-        // Asking happens once, on release, not on every pointermove: the first
-        // non-zero value triggers getUserMedia, and firing that from a move
-        // handler would queue a prompt per frame of the drag.
-        void handlers.onPassthrough(camShown).then((granted) => {
-          // Snap to the truth. On a refusal this puts the ring back to 0,
-          // which is the only honest thing to show — the alternative is a
-          // control sitting at 60 with a black ground behind it.
-          camShown = granted
-          prefs.passthrough = granted
-          savePrefs(prefs)
-          paintCamRing()
-        })
-      },
-    )
-
-    paintBands()
-    paintMix()
-    paintRgb()
-    paintButtons()
-    paintMapDial()
-    paintColourPopup()
-    paintCamRing()
+    paintRing()
+    paintChips()
   }
 
-  /** The mapping chip's centre, in the svg's own coordinate space — the same
-   *  client-rect-to-local conversion angleFrom() does for pointer events,
-   *  just for an element's position instead of an event's. Named for what it
-   *  anchors now, not what Task 1 anchored here (mapFanCenter()) — the
-   *  computation itself is unchanged. */
-  function mapDialCenter(): [number, number] {
-    const svgRect = svg.getBoundingClientRect()
-    const chipRect = mapBtn.getBoundingClientRect()
-    return [
-      chipRect.left + chipRect.width / 2 - svgRect.left,
-      chipRect.top + chipRect.height / 2 - svgRect.top,
-    ]
-  }
+  // ── painting ─────────────────────────────────────────────────────────────
 
-  function paintMapDial(): void {
-    if (!mapDialTrack || !mapDialTick || !mapDialHit) return
-    const [fx, fy] = mapDialCenter()
-    // The fixed housing the ring of options turns inside. Its extent is
-    // exactly the worst-case swing MAP_PITCH's own comment reasons about —
-    // the same bound bindTurnDrag's clamp enforces on mapRot — so the drawn
-    // track never has to show more than a fully-turned drag can ever reach.
-    const sweep = (mappingKeys.length - 1) * MAP_PITCH
-    mapDialTrack.setAttribute('d', arcAt(fx, fy, MAP_R, -sweep, sweep))
-    mapDialTrack.setAttribute('opacity', mapDialOpen ? '1' : '0')
+  function paintRing(): void {
+    if (!ringTrack || !selector || !selectorTip || !fillArc || !knob) return
+    if (!nameLabel || !valueLabel || !enumHit || !scalarHit) return
 
-    // A fixed tick at angle 0 — due right of the chip, same direction the
-    // old fan opened in — marking where a settled drag reads, the same role
-    // the wedge's own selector trapezoid plays for the main bands, just a
-    // plain tick because three always-visible options don't need a shape as
-    // heavy as that trapezoid to find.
-    const [tx0, ty0] = polarAt(fx, fy, MAP_R - 8, 0)
-    const [tx1, ty1] = polarAt(fx, fy, MAP_R + 8, 0)
-    mapDialTick.setAttribute('x1', String(tx0))
-    mapDialTick.setAttribute('y1', String(ty0))
-    mapDialTick.setAttribute('x2', String(tx1))
-    mapDialTick.setAttribute('y2', String(ty1))
-    mapDialTick.setAttribute('opacity', mapDialOpen ? '1' : '0')
+    const t = active()
+    const isEnum = t.kind === 'enum'
 
-    mappingKeys.forEach((k, i) => {
-      const a = i * MAP_PITCH + mapRot
-      const [x, y] = polarAt(fx, fy, MAP_R, a)
-      const label = mapDialLabels[i]
-      label.setAttribute('x', String(x))
-      label.setAttribute('y', String(y))
-      label.textContent = MAPPING_SHORT[k]
-      label.setAttribute('opacity', mapDialOpen ? '1' : '0')
-      label.classList.toggle('on', k === prefs.mapping)
-    })
+    // Only one kind is live at a time, and invisible must mean untappable —
+    // `.hud-dial .hit` sets pointer-events by class regardless of opacity, so
+    // a hidden hit arc would still swallow the other kind's drags.
+    enumHit.style.pointerEvents = isEnum ? 'stroke' : 'none'
+    scalarHit.style.pointerEvents = isEnum ? 'none' : 'stroke'
 
-    mapDialHit.setAttribute('d', arcAt(fx, fy, MAP_R, -sweep, sweep))
-    // Invisible when closed must also mean untappable — opacity alone would
-    // leave this hit arc live over whatever else is underneath it, the same
-    // reasoning paintColourPopup() gives for its own rings' hits.
-    mapDialHit.style.pointerEvents = mapDialOpen ? 'auto' : 'none'
-  }
+    selector.setAttribute('opacity', isEnum ? '1' : '0')
+    selectorTip.setAttribute('opacity', isEnum ? '1' : '0')
+    fillArc.setAttribute('opacity', isEnum ? '0' : '1')
+    knob.setAttribute('opacity', isEnum ? '0' : '1')
 
-  /** The colour chip's centre, in the svg's own coordinate space — the same
-   *  conversion mapDialCenter() does for the mapping chip. */
-  function colourCenter(): [number, number] {
-    const svgRect = svg.getBoundingClientRect()
-    const chipRect = rgbBtn.getBoundingClientRect()
-    return [
-      chipRect.left + chipRect.width / 2 - svgRect.left,
-      chipRect.top + chipRect.height / 2 - svgRect.top,
-    ]
-  }
+    const [nx, ny] = polar(ringR - NAME_PAD, NOTCH)
+    nameLabel.setAttribute('x', String(nx))
+    nameLabel.setAttribute('y', String(ny))
+    nameLabel.textContent = t.glyph
 
-  /** Radius of the i'th channel's ring (i indexes CHANNELS: 0=R, 1=G, 2=B).
-   *  R outermost, B innermost, in CHANNELS' own order. Checked on screen at
-   *  320×568 rather than picked blind: with R biggest, the popup reads as
-   *  one shape shrinking inward rather than three arcs of equal weight
-   *  competing for attention, and R is the ring a thumb reaches first
-   *  without crossing the other two — which matches it usually being the
-   *  first channel a warm/cool push touches. Nesting by CHANNELS' existing
-   *  order also means no separate ordering has to be invented or kept in
-   *  sync with it. Computed rather than stored, like everything else
-   *  paintColourPopup() draws, so there is one definition of the layout. */
-  function ringRadius(i: number): number {
-    return RING_R_INNER + (CHANNELS.length - 1 - i) * RING_PITCH
-  }
-
-  /** The camera chip's own centre, same conversion as colourCenter(). */
-  function camCenter(): [number, number] {
-    const svgRect = svg.getBoundingClientRect()
-    const chipRect = camBtn.getBoundingClientRect()
-    return [
-      chipRect.left + chipRect.width / 2 - svgRect.left,
-      chipRect.top + chipRect.height / 2 - svgRect.top,
-    ]
-  }
-
-  function paintCamRing(): void {
-    if (!camTrack || !camFill || !camKnob || !camLabel || !camHit) return
-    const [fx, fy] = camCenter()
-    // RING_R_INNER, not a radius of its own: one ring anchored to one chip has
-    // no neighbours to clear, so the innermost colour ring's already-checked
-    // clearance from a 26px chip plus a GRAB_PX hit zone is exactly the right
-    // number, and reusing it keeps the two popups the same size on screen.
-    const r = RING_R_INNER
-
-    camTrack.setAttribute('d', arcAt(fx, fy, r, RING_A0, RING_A1))
-    camTrack.setAttribute('opacity', camRingOpen ? '1' : '0')
-
-    // Same 0-1 to angle mapping the colour rings use inline.
-    const value = RING_A0 + camShown * (RING_A1 - RING_A0)
-    camFill.setAttribute('d', arcAt(fx, fy, r, RING_A0, Math.max(RING_A0 + 0.001, value)))
-    camFill.setAttribute('opacity', camRingOpen ? '1' : '0')
-
-    const [kx, ky] = polarAt(fx, fy, r, value)
-    camKnob.setAttribute('cx', String(kx))
-    camKnob.setAttribute('cy', String(ky))
-    camKnob.setAttribute('opacity', camRingOpen ? '1' : '0')
-
-    const [lx, ly] = polarAt(fx, fy, r + LABEL_PAD, RING_A0 - LABEL_OFFSET)
-    camLabel.setAttribute('x', String(lx))
-    camLabel.setAttribute('y', String(ly))
-    camLabel.textContent = `CAM ${Math.round(camShown * 100)}`
-    camLabel.setAttribute('opacity', camRingOpen ? '1' : '0')
-
-    camHit.setAttribute('d', arcAt(fx, fy, r, RING_A0, RING_A1))
-    // Invisible must mean untappable — `.hud-dial .hit` sets pointer-events
-    // via a shared class regardless of opacity, so a closed ring would still
-    // swallow drags meant for the band underneath it.
-    camHit.style.pointerEvents = camRingOpen ? 'auto' : 'none'
-  }
-
-  function paintColourPopup(): void {
-    const open = rgbPanel.classList.contains('open')
-    const [fx, fy] = colourCenter()
-    const c = prefs.geoColour
-    CHANNELS.forEach(({ key, label }, i) => {
-      const r = ringRadius(i)
-      const value = c[key]
-      const valueAngle = RING_A0 + value * (RING_A1 - RING_A0)
-
-      colourTracks[i].setAttribute('d', arcAt(fx, fy, r, RING_A0, RING_A1))
-      colourTracks[i].setAttribute('opacity', open ? '1' : '0')
-
-      colourFills[i].setAttribute(
-        'd',
-        arcAt(fx, fy, r, RING_A0, Math.max(RING_A0 + 0.001, valueAngle)),
-      )
-      colourFills[i].setAttribute('opacity', open ? '1' : '0')
-
-      const [kx, ky] = polarAt(fx, fy, r, valueAngle)
-      colourKnobs[i].setAttribute('cx', String(kx))
-      colourKnobs[i].setAttribute('cy', String(ky))
-      colourKnobs[i].setAttribute('opacity', open ? '1' : '0')
-
-      // Anchored past RING_A0, outside every ring's own arc — see
-      // LABEL_OFFSET — so the text never sits over a track or fill
-      // regardless of this or any other channel's current value.
-      const [lx, ly] = polarAt(fx, fy, r + LABEL_PAD, RING_A0 - LABEL_OFFSET)
-      const lbl = colourLabels[i]
-      lbl.setAttribute('x', String(lx))
-      lbl.setAttribute('y', String(ly))
-      lbl.textContent = `${label} ${Math.round(value * 100)}`
-      lbl.setAttribute('opacity', open ? '1' : '0')
-
-      colourHits[i].setAttribute('d', arcAt(fx, fy, r, RING_A0, RING_A1))
-      // Invisible when closed must also mean untappable, exactly like the
-      // mapping dial's own hit arc — these hit zones are wider than that
-      // one and sit over at least as much of the dial, so it matters at
-      // least as much here.
-      colourHits[i].style.pointerEvents = open ? 'auto' : 'none'
-    })
-  }
-
-  function paintBands(): void {
-    // A popup anchored to the chip column lies across these, so they yield
-    // while one is up rather than fighting it for the same pixels.
-    const dim = popupOpen() ? POPUP_DIM : 1
-    for (const t of bandTracks) t.setAttribute('opacity', dim.toFixed(3))
-
-    for (const b of bands) {
-      const sel = b.current()
-      b.keys.forEach((k, i) => {
-        const a = NOTCH + i * PITCH + b.rot
+    if (isEnum) {
+      const sel = t.current()
+      itemLabels.forEach((label, i) => {
+        if (i >= t.keys.length) {
+          label.setAttribute('opacity', '0')
+          label.textContent = ''
+          return
+        }
+        const a = NOTCH + i * PITCH + t.rot
         const d = Math.abs(delta(a, NOTCH))
-        const vis = (d > CUTOFF ? 0 : 1 - (d / CUTOFF) * 0.72) * dim
-        const [x, y] = polar(b.r, a)
-        const t = b.labels[i]
-        t.setAttribute('x', String(x))
-        t.setAttribute('y', String(y))
-        t.setAttribute('opacity', vis.toFixed(3))
-        t.textContent = b.label(k)
-        t.classList.toggle('on', k === sel)
+        const vis = d > CUTOFF ? 0 : 1 - (d / CUTOFF) * 0.72
+        const [x, y] = polar(ringR, a)
+        label.setAttribute('x', String(x))
+        label.setAttribute('y', String(y))
+        label.setAttribute('opacity', vis.toFixed(3))
+        label.textContent = t.label(t.keys[i])
+        label.classList.toggle('on', t.keys[i] === sel)
       })
+      valueLabel.setAttribute('opacity', '0')
+      valueLabel.textContent = ''
+      return
     }
-  }
 
-  function paintMix(): void {
-    if (!mixArc || !mixKnob) return
+    for (const label of itemLabels) {
+      label.setAttribute('opacity', '0')
+      label.textContent = ''
+    }
+
+    const v = t.current()
     const a0 = SWEEP_A * DEG
-    const a1 = a0 + prefs.mix * (SWEEP_B - SWEEP_A) * DEG
-    mixArc.setAttribute('d', arcPath(mixR, a0, Math.max(a0 + 0.001, a1)))
-    const [kx, ky] = polar(mixR, a1)
-    mixKnob.setAttribute('cx', String(kx))
-    mixKnob.setAttribute('cy', String(ky))
-    mixRead.querySelector('b')!.textContent = `${Math.round(prefs.mix * 100)}%`
+    const a1 = a0 + v * (SWEEP_B - SWEEP_A) * DEG
+    fillArc.setAttribute('d', arcPath(ringR, a0, Math.max(a0 + 0.001, a1)))
+    fillArc.style.stroke = t.tint
+    const [kx, ky] = polar(ringR, a1)
+    knob.setAttribute('cx', String(kx))
+    knob.setAttribute('cy', String(ky))
+    knob.style.fill = t.tint
+
+    const [vx, vy] = polar(ringR + VALUE_PAD, NOTCH)
+    valueLabel.setAttribute('x', String(vx))
+    valueLabel.setAttribute('y', String(vy))
+    valueLabel.setAttribute('opacity', '1')
+    valueLabel.textContent = t.format(v)
   }
 
-  // The per-channel exact values now live on the rings themselves
-  // (paintColourPopup()'s labels); this only paints the composite preview —
-  // the swatch bar and the chip's own dot — which is why it no longer needs
-  // to know about individual channels.
-  function paintRgb(): void {
+  function paintChips(): void {
+    for (const [id, chip] of targetChips) {
+      chip.setAttribute('aria-pressed', String(activeId === id))
+    }
+    // The colour icon and its three channels swap places rather than coexist.
+    rgbChip.hidden = rgbExpanded
+    rgbChip.setAttribute('aria-expanded', String(rgbExpanded))
+    for (const { key } of CHANNELS) targetChips.get(key)!.hidden = !rgbExpanded
+
     const c = prefs.geoColour
-    const rgbCss = `rgb(${Math.round(c.r * 255)} ${Math.round(c.g * 255)} ${Math.round(c.b * 255)})`
-    swatch.style.setProperty('--swatch', rgbCss)
-    rgbSwatch.style.background = rgbCss
-  }
+    rgbSwatch.style.background = `rgb(${Math.round(c.r * 255)} ${Math.round(c.g * 255)} ${Math.round(c.b * 255)})`
 
-  function paintButtons(): void {
-    const open = rgbPanel.classList.contains('open')
-    rgbBtn.setAttribute('aria-pressed', String(open))
-    rgbBtn.setAttribute('aria-expanded', String(open))
     autoBtn.querySelector('b')!.textContent = prefs.autopilot ? 'on' : 'off'
     autoBtn.setAttribute('aria-pressed', String(prefs.autopilot))
-    mapBtn.querySelector('b')!.textContent = MAPPING_SHORT[prefs.mapping]
-    mapBtn.setAttribute('aria-expanded', String(mapDialOpen))
-    // Task 1 gave mapBtn aria-expanded but never aria-pressed, so unlike the
-    // other three chips it never visually read as active while its own
-    // popup was open. Same treatment as rgbBtn/autoBtn/statsBtn above.
-    mapBtn.setAttribute('aria-pressed', String(mapDialOpen))
     statsBtn.querySelector('b')!.textContent = prefs.showStats ? 'on' : 'off'
     statsBtn.setAttribute('aria-pressed', String(prefs.showStats))
-    // Shows the amount, not on/off: the difference between 15 and 80 is the
-    // whole control, and "on" would hide it.
-    camBtn.querySelector('b')!.textContent =
-      camShown > 0 ? String(Math.round(camShown * 100)) : 'off'
-    camBtn.setAttribute('aria-pressed', String(camRingOpen))
-    camBtn.setAttribute('aria-expanded', String(camRingOpen))
   }
 
-  /** Pointer position as an angle about (ox,oy), in the svg's own coordinate
-   *  space (which is CSS pixels). The bands call this with (cx,cy), the
-   *  wedge hinge they're always about; bindTurnDrag and the colour rings
-   *  call it with whatever origin() they were each given instead. */
-  function angleFrom(e: PointerEvent, ox: number, oy: number): number {
+  // ── dragging ─────────────────────────────────────────────────────────────
+
+  /** Pointer position as an angle about the hinge, in the svg's own coordinate
+   *  space (which is CSS pixels). */
+  function angleFrom(e: PointerEvent): number {
     const r = svg.getBoundingClientRect()
-    return Math.atan2(e.clientY - r.top - oy, e.clientX - r.left - ox)
+    return Math.atan2(e.clientY - r.top - cy, e.clientX - r.left - cx)
   }
 
-  /** Where an angle falls along the arc from a0 to a1, as 0-1, clamped to the
-   *  arc's own ends. Built on delta() rather than the naive
-   *  "(deg-a0)/(a1-a0)" so it survives a0/a1 straddling the 0/360 wrap —
-   *  which the mix arc's own SWEEP_A/SWEEP_B never do, but the colour rings'
-   *  chip-relative angles can, depending where the chip lands on screen.
-   *  Shared by bindMixDrag and the colour rings' drag binder so a drag turns
-   *  into a value the same way everywhere in this file. */
-  function angleToUnit(a: number, a0: number, a1: number): number {
-    const t = delta(a, a0) / delta(a1, a0)
+  /** Where an angle falls along the sweep, as 0-1, clamped to its ends. Built
+   *  on delta() rather than the naive "(deg-a0)/(a1-a0)" so it survives a0/a1
+   *  straddling the 0/360 wrap. */
+  function angleToUnit(a: number): number {
+    const t = delta(a, SWEEP_A * DEG) / delta(SWEEP_B * DEG, SWEEP_A * DEG)
     return Math.max(0, Math.min(1, t))
   }
 
-  /** Binds a drag on `hit` to a 0-1 value along the arc from a0 to a1 about
-   *  whatever point `origin()` currently reports — a function rather than a
-   *  fixed pair because the colour rings' centre moves with the chip's own
-   *  layout, re-read on every event rather than cached, the same as every
-   *  other paint path in this file. `apply` gets the live value on every
-   *  move; `onCommit` fires once, on release, which is where persistence
-   *  belongs (see the comment on the old sliders' `commit`, above). */
-  function bindArcDrag(
-    hit: SVGPathElement,
-    origin: () => [number, number],
-    a0: number,
-    a1: number,
-    apply: (t: number) => void,
-    onCommit: () => void,
-  ): void {
-    let active = false
+  /**
+   * Take the pointer, if the browser will give it.
+   *
+   * Capture is an enhancement — it keeps a drag alive once the finger wanders
+   * off the arc, which on a 48px band happens constantly. It is not what makes
+   * the drag work, and it must not be: `setPointerCapture` throws when the id
+   * is not an active pointer, and because the call sat above the line that
+   * armed the drag, a throw silently abandoned the whole gesture rather than
+   * degrading it. The drag state now hangs off its own flag, so a refused
+   * capture costs the off-arc travel and nothing else.
+   */
+  function capture(hit: SVGPathElement, e: PointerEvent): void {
+    try {
+      hit.setPointerCapture(e.pointerId)
+    } catch {
+      // No capture; the pointerdown/up flag carries the drag on its own.
+    }
+  }
+
+  /** Drag along the ring for a 0-1 value. Reads the active target at event
+   *  time, not at bind time — the ring is rebuilt on resize but the target it
+   *  points at changes far more often than that. */
+  function bindArcDrag(hit: SVGPathElement): void {
+    let live = false
     const set = (e: PointerEvent): void => {
-      const [ox, oy] = origin()
-      apply(angleToUnit(angleFrom(e, ox, oy), a0, a1))
+      const t = active()
+      if (t.kind !== 'scalar') return
+      t.apply(angleToUnit(angleFrom(e)))
+      paintRing()
+      paintChips()
     }
     hit.addEventListener('pointerdown', (e) => {
       e.stopPropagation()
-      hit.setPointerCapture(e.pointerId)
-      active = true
+      capture(hit, e)
+      live = true
       set(e)
     })
     hit.addEventListener('pointermove', (e) => {
-      if (active && hit.hasPointerCapture(e.pointerId)) set(e)
+      if (live) set(e)
     })
     const end = (e: PointerEvent): void => {
-      if (!active) return
-      active = false
+      if (!live) return
+      live = false
       e.stopPropagation()
-      onCommit()
+      const t = active()
+      if (t.kind === 'scalar') t.commit()
     }
     hit.addEventListener('pointerup', end)
     hit.addEventListener('pointercancel', end)
   }
 
-  /** Binds a drag on `hit` to "turn a ring of options past a fixed notch,
-   *  snap to whichever settles closest on release" — generalised from what
-   *  was bindBandDrag's own private arithmetic the moment the mapping dial
-   *  needed the identical shape of control around a different origin,
-   *  radius, and pitch. `origin`, `pitch`, and `keys` are the geometry;
-   *  `get`/`set` hold the live rotation whereever the caller keeps it (a
-   *  Band's own `.rot` field for the main bands, a closure variable for the
-   *  mapping dial — this function doesn't need to own that storage);
-   *  `repaint` redraws mid-drag and after settling; `onSettle` fires once,
-   *  on release, with whichever key ended up under the notch — always,
-   *  whether or not it differs from what was already selected, since (unlike
-   *  bindArcDrag's onCommit, which only means "persist") this is also where
-   *  a caller with a popup to close does that. */
-  function bindTurnDrag<K extends string>(
-    hit: SVGPathElement,
-    origin: () => [number, number],
-    pitch: number,
-    keys: readonly K[],
-    get: () => number,
-    set: (rot: number) => void,
-    repaint: () => void,
-    onSettle: (next: K) => void,
-  ): void {
+  /** Turn the ring of options past the notch; snap to whichever settles
+   *  closest on release. */
+  function bindTurnDrag(hit: SVGPathElement): void {
     let last = 0
     let moved = false
 
     hit.addEventListener('pointerdown', (e) => {
       e.stopPropagation()
-      hit.setPointerCapture(e.pointerId)
-      const [ox, oy] = origin()
-      last = angleFrom(e, ox, oy)
+      capture(hit, e)
+      last = angleFrom(e)
       moved = true
     })
     hit.addEventListener('pointermove', (e) => {
-      if (!moved || !hit.hasPointerCapture(e.pointerId)) return
-      const [ox, oy] = origin()
-      const a = angleFrom(e, ox, oy)
-      let rot = get() + delta(a, last)
+      if (!moved) return
+      const t = active()
+      if (t.kind !== 'enum') return
+      const a = angleFrom(e)
+      let rot = t.rot + delta(a, last)
       last = a
       // Can't spin an option out past either end of the strip.
-      const lo = -(keys.length - 1) * pitch
+      const lo = -(t.keys.length - 1) * PITCH
       if (rot > 0) rot = 0
       if (rot < lo) rot = lo
-      set(rot)
-      repaint()
+      t.rot = rot
+      paintRing()
     })
-    const settle = (e: PointerEvent) => {
+    const settle = (e: PointerEvent): void => {
       if (!moved) return
       moved = false
       e.stopPropagation()
-      const i = Math.max(0, Math.min(keys.length - 1, Math.round(-get() / pitch)))
-      set(-i * pitch)
-      // Commit (or whatever else onSettle does — the mapping dial also
-      // closes here) before repainting, so the repaint's own read of
-      // "what's current" already reflects it.
-      onSettle(keys[i])
-      repaint()
+      const t = active()
+      if (t.kind !== 'enum') return
+      const i = Math.max(0, Math.min(t.keys.length - 1, Math.round(-t.rot / PITCH)))
+      t.rot = -i * PITCH
+      // Commit before repainting, so the repaint's own read of "what's
+      // current" already reflects it.
+      if (t.keys[i] !== t.current()) t.commit(t.keys[i])
+      paintRing()
+      paintChips()
     }
     hit.addEventListener('pointerup', settle)
     hit.addEventListener('pointercancel', settle)
   }
 
-  function bindBandDrag(hit: SVGPathElement, b: Band<string>): void {
-    bindTurnDrag(
-      hit,
-      () => [cx, cy],
-      PITCH,
-      b.keys,
-      () => b.rot,
-      (r) => {
-        b.rot = r
-      },
-      paintBands,
-      (next) => {
-        if (next !== b.current()) b.commit(next)
-      },
-    )
-  }
-
-  function bindMixDrag(hit: SVGPathElement): void {
-    bindArcDrag(
-      hit,
-      () => [cx, cy],
-      SWEEP_A * DEG,
-      SWEEP_B * DEG,
-      (t) => {
-        prefs.mix = t
-        handlers.onMix(prefs.mix)
-        paintMix()
-        manual()
-      },
-      // Persist once at the end — a drag fires many events a second and there
-      // is no reason to write localStorage that often.
-      () => savePrefs(prefs),
-    )
-  }
+  // ── open/close ───────────────────────────────────────────────────────────
 
   build()
   window.addEventListener('resize', build)
@@ -1469,18 +952,21 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     open = v
     scrim.classList.toggle('open', v)
     if (v) {
-      // Bands may have been changed by a swipe gesture while closed.
-      for (const b of bands) b.rot = restingRot(b)
-      paintBands()
-      paintMix()
-      paintRgb()
-      paintButtons()
-      paintColourPopup()
+      // The active target may have been changed by a swipe gesture, or by the
+      // autopilot, while the HUD was closed.
+      const t = active()
+      if (t.kind === 'enum') t.rot = restingRot(t)
+      paintRing()
+      paintChips()
     } else {
-      // Both are modes; leaving either open across a close would mean the HUD
-      // reopens showing something the last tap did not ask for.
-      closeColourPopup()
-      closeMapDial()
+      // Expanding the colour icon is a mode; leaving it expanded across a close
+      // would mean the HUD reopens showing something the last tap did not ask
+      // for.
+      if (rgbExpanded) {
+        rgbExpanded = false
+        if (CHANNELS.some(({ key }) => key === activeId)) select('geo')
+        else paintChips()
+      }
       stats.textContent = ''
     }
   }
@@ -1502,8 +988,8 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     setOpen(true)
   })
 
-  // Anything that reaches the scrim itself is outside the wedge — the bands and
-  // buttons stop their own events.
+  // Anything that reaches the scrim itself is outside the wedge — the ring and
+  // the chips stop their own events.
   scrim.addEventListener('pointerup', (e) => {
     e.stopPropagation()
     setOpen(false)
@@ -1597,9 +1083,9 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
       prefs.atmosphericView = next
       savePrefs(prefs)
       handlers.onAtmosphericView(next)
-      const b = bandNamed('atmospheric')
-      b.rot = restingRot(b)
-      paintBands()
+      const t = targetById('atm') as EnumTarget
+      t.rot = restingRot(t)
+      if (open) paintRing()
     },
 
     autopilot: () => prefs.autopilot,
@@ -1612,28 +1098,16 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
       if (next.atmosphericView) {
         prefs.atmosphericView = next.atmosphericView
         handlers.onAtmosphericView(prefs.atmosphericView)
-        bandNamed('atmospheric').rot = restingRot(bandNamed('atmospheric'))
+        const t = targetById('atm') as EnumTarget
+        t.rot = restingRot(t)
       }
       savePrefs(prefs)
       // Only repaint what is visible; the HUD is closed most of the time and
       // setOpen re-reads everything from prefs anyway.
       if (open) {
-        paintBands()
-        paintRgb()
-        paintButtons()
-        paintColourPopup()
+        paintRing()
+        paintChips()
       }
-    },
-
-    cycleGeometricView(direction) {
-      const i = geometricKeys.indexOf(prefs.geometricView)
-      const next = geometricKeys[(i + direction + geometricKeys.length) % geometricKeys.length]
-      prefs.geometricView = next
-      savePrefs(prefs)
-      handlers.onGeometricView(next)
-      const b = bandNamed('geometric')
-      b.rot = restingRot(b)
-      paintBands()
     },
   }
 }

@@ -1,5 +1,29 @@
 # HUD refactor: one ring, icons choose its target
 
+> **Built.** What shipped differs from the plan below in four places, each
+> noted here rather than quietly folded in:
+>
+> 1. **The ring is the existing wedge, not a new centred one.** The plan
+>    proposed the chip-anchored `RING_A0..RING_A1` arc; "the big half circle"
+>    and "the main ring" meant keeping the corner-hinged wedge and swapping
+>    what its single band contains. That reuses the sweep, the notch, the
+>    selector, the tick rim and both drag idioms instead of replacing them, and
+>    it is why the bundle got 6 KB *smaller*.
+> 2. **`cycleGeometricView` was deleted**, not ported — dead across `src/`.
+> 3. **The colour chip keeps its swatch dot**, against the glyph-only choice.
+>    With R, G and B now three separate targets the ring can only ever show one
+>    channel, so the dot is the only place the composite colour appears at all.
+>    It is not a redundant value label; it is the only view of the result.
+> 4. **`setPointerCapture` no longer gates the drags.** Found while making the
+>    ring testable, and a real robustness bug: see the CLAUDE.md section on
+>    enhancements that abort what they enhance.
+>
+> `NAME_PAD` also had to move from 34 to 58 — at 34 the ring's name label
+> landed inside the selector's arrowhead and rendered "A▼M". The
+> escaped-viewport check passed throughout, because it measures whether things
+> leave the screen and not whether they land on each other.
+
+
 ## The change
 
 Today the HUD is four different control idioms stacked in one place:

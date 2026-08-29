@@ -21,6 +21,7 @@
     mergeMode: 'normal',
     mix: 0.62,
     mapping: 'relative',
+    passthrough: 0,
     autopilot: true,
     showStats: false,
   }
@@ -33,7 +34,15 @@
     onMix: log('mix'),
     onMapping: log('mapping'),
     onManualChange: log('manualChange'),
+    // Grants whatever is asked for. The refusal path is the camera probe's
+    // job; here the point is only that the ring's commit round-trips through
+    // a promise and lands back on the control.
+    onPassthrough: (m) => {
+      calls.push(['passthrough', JSON.stringify([m])])
+      return Promise.resolve(m)
+    },
   })
+  window.calls = calls
 
   // The HUD opens on a document-level pointerup whose travel is under
   // TAP_SLOP_PX. Synthesise a real tap rather than reaching inside the module:
@@ -53,6 +62,37 @@
   }
 
   window.openHud = () => window.tap(window.innerWidth / 2, window.innerHeight / 2)
+
+  // Drag along the ring, in screen coordinates.
+  //
+  // The moves are dispatched at the element the drag *started* on rather than
+  // at whatever is under each point, which is what a captured pointer does for
+  // real. Synthetic pointers cannot be captured — setPointerCapture throws
+  // because the id is not an active pointer — so this stands in for it, and
+  // the HUD's drags are written not to depend on capture succeeding.
+  window.drag = (pts) => {
+    const [x0, y0] = pts[0]
+    const target = document.elementFromPoint(x0, y0)
+    if (!target) throw new Error(`nothing at ${x0},${y0}`)
+    const send = (type, x, y) =>
+      target.dispatchEvent(
+        new PointerEvent(type, { clientX: x, clientY: y, pointerId: 1, bubbles: true, cancelable: true }),
+      )
+    send('pointerdown', x0, y0)
+    for (const [x, y] of pts.slice(1)) send('pointermove', x, y)
+    const [xn, yn] = pts[pts.length - 1]
+    send('pointerup', xn, yn)
+    return target.getAttribute('class')
+  }
+
+  /** A point on the ring at `t` (0-1) along its sweep, in screen coordinates. */
+  window.ringPoint = (t) => {
+    const w = window.innerWidth, h = window.innerHeight
+    const cx = w + 10, cy = h + 10
+    const r = Math.min(w, h) * 0.72
+    const a = (165 + t * (285 - 165)) * (Math.PI / 180)
+    return [cx + r * Math.cos(a), cy + r * Math.sin(a)]
+  }
 
   // What is actually on screen, and whether any of it has escaped the viewport.
   // This is the check the implementer said it could only do by arithmetic.

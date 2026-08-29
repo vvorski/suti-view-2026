@@ -125,6 +125,22 @@ they describe changes, and prefer a justification a test can hold — the reason
 this one lasted so long is that nothing anywhere asserted the behaviour it was
 reasoning about. `scripts/probe-fullscreen.ts` now does.
 
+## An enhancement must not be able to abort the thing it enhances
+
+`setPointerCapture` is what keeps a drag alive once the finger wanders off a
+48px arc. It is not what makes the drag work — but it was called on the line
+above the one that armed the drag, and it throws when the pointer id is not
+active. So a refused capture did not cost the off-arc travel; it abandoned the
+whole gesture, silently, before anything was armed.
+
+This also made the ring untestable: synthetic `PointerEvent`s cannot be
+captured, so every probe drag died on that first line, and the HUD probes only
+ever covered layout and chips. Two problems, one cause.
+
+The shape to copy: wrap the enhancement in its own try, and hang the state the
+feature actually needs on a flag you own. Then ask what a probe can drive —
+if a control can only be exercised by a real finger, it will not be exercised.
+
 ## Deleting code deletes what it was doing
 
 Twice now, removing something has removed a second thing nobody was tracking.
