@@ -177,6 +177,12 @@ export interface Hud {
         accepted: number
         suppressed: number
       }
+      /** Where the fullscreen request got to. See fullscreenStatus(). */
+      fullscreen?: {
+        state: string
+        attempts: number
+        error: string
+      }
     },
   ): void
   /** Step the atmospheric layer's programme forward (1) or back (-1), wrapping. */
@@ -1570,6 +1576,17 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
                 : s.haptics.suppressed > 0
                   ? `buzz off (reduced-motion) ${s.haptics.suppressed}`
                   : `buzz ${s.haptics.accepted}/${s.haptics.attempts}`,
+            ]),
+        // "We lost full screen" is three different bugs wearing one sentence:
+        // a platform that has no element fullscreen at all, a request the
+        // browser refused, and a request that landed and was then exited. The
+        // error name is what separates the middle case from the others.
+        ...(s.fullscreen === undefined
+          ? []
+          : [
+              `full ${s.fullscreen.state}` +
+                (s.fullscreen.attempts > 1 ? ` ×${s.fullscreen.attempts}` : '') +
+                (s.fullscreen.error ? ` (${s.fullscreen.error})` : ''),
             ]),
       ].join('\n')
     },

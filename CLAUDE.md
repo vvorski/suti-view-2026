@@ -108,6 +108,23 @@ The numeric readout therefore carries `motion N ev  peak X/18`. When a symptom
 has two candidate causes, put the number that separates them on screen rather
 than reasoning about which is more likely.
 
+## A comment's assumption expires; the comment does not
+
+`goFullscreen()` was written not to retry, and said why: "there is no further
+gesture to hang it on anyway." That was true of an app that was a gate and a
+bare canvas. The HUD then arrived and filled the screen with gestures, and the
+sentence quietly became false while still reading as a decision. The cost was a
+fullscreen that could be refused once at the gate and never asked for again,
+with nothing on screen or in any test to say so — the source still contained the
+call, unmodified and shipped, so reading the diff found nothing and confirmed
+nothing.
+
+When a comment justifies *not* doing something by describing what the app is
+like, that description is a dependency. Reread those comments when the thing
+they describe changes, and prefer a justification a test can hold — the reason
+this one lasted so long is that nothing anywhere asserted the behaviour it was
+reasoning about. `scripts/probe-fullscreen.ts` now does.
+
 ## Deleting code deletes what it was doing
 
 Twice now, removing something has removed a second thing nobody was tracking.
@@ -186,5 +203,6 @@ pnpm build          # tsc --noEmit && vite build   — run before every commit
 pnpm lint
 pnpm probe          # headless: mappings, ripple triggering
 pnpm probe:shake    # headless: tumble springs, shake-vs-knock
+pnpm probe:fullscreen  # headless: the start gesture asks, a refusal recovers
 pnpm deploy         # build + wrangler pages deploy
 ```

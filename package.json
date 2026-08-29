@@ -12,6 +12,7 @@
     "probe": "node --experimental-strip-types scripts/probe-mapping.ts",
     "probe:shake": "node --experimental-strip-types scripts/probe-shake.ts",
     "probe:slow": "node --experimental-strip-types scripts/probe-slow.ts",
+    "probe:fullscreen": "node --experimental-strip-types --import ./scripts/dir-import-hook.mjs scripts/probe-fullscreen.ts",
     "format": "prettier --write .",
     "deploy": "./deploy/deploy.sh"
   },

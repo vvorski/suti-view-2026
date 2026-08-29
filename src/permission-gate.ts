@@ -63,16 +63,107 @@ export function checkWebGL(): boolean {
  * device this rejects, and a rejection here means the visualiser simply runs
  * with the browser's chrome — not that it refuses to run.
  *
- * Deliberately not retried or offered again later: a second prompt for
- * something the platform has already refused is noise, and there is no
- * further gesture to hang it on anyway.
+ * Retried on the next gesture if the gate's attempt does not land, but only
+ * until it lands once. That is a correction to what this comment used to say
+ * — that there was "no further gesture to hang it on". That was true when the
+ * app was a gate and a bare canvas; it stopped being true the moment the HUD
+ * existed, and the cost of the stale assumption was a fullscreen that could be
+ * lost at the gate and never come back, with nothing anywhere saying why.
+ *
+ * The one-shot rule is what keeps the retry from becoming a nuisance: once we
+ * have been fullscreen even once, leaving it is the user's own swipe or back
+ * gesture and re-grabbing it on their next tap would be fighting them. So the
+ * retry arms only while we have never got in.
  */
+
+/** Where the fullscreen request got to. Diagnostics only — see the readout. */
+type FullscreenState = 'unsupported' | 'active' | 'refused' | 'armed' | 'exited'
+
+let fsState: FullscreenState = 'refused'
+let fsError = ''
+let fsAttempts = 0
+let fsArmed = false
+let fsEverEntered = false
+let fsWatching = false
+
+/**
+ * What happened to the fullscreen request.
+ *
+ * On screen because this failed silently for several builds and the only
+ * report available was "we lost full screen" — which cannot distinguish a
+ * platform with no element fullscreen (iPhone Safari) from a request the
+ * browser refused for want of a live gesture, and those want opposite fixes.
+ */
+export function fullscreenStatus(): { state: string; attempts: number; error: string } {
+  return { state: fsState, attempts: fsAttempts, error: fsError }
+}
+
+/** Watch for arriving in — or being thrown out of — fullscreen by any route. */
+function watchFullscreen(): void {
+  if (fsWatching) return
+  fsWatching = true
+  document.addEventListener('fullscreenchange', () => {
+    if (document.fullscreenElement) {
+      fsEverEntered = true
+      fsState = 'active'
+    } else if (fsEverEntered) {
+      // A deliberate exit. Recorded, deliberately not acted on.
+      fsState = 'exited'
+    }
+  })
+}
+
+/**
+ * Ask again on the next tap.
+ *
+ * pointerup rather than pointerdown: both are activation-triggering in Chrome,
+ * but pointerup is the one every engine agrees on, and a tap that ends is
+ * unambiguously a tap. Capture phase on window so it sees the gesture whatever
+ * the HUD does with it — several HUD controls call preventDefault, which would
+ * lose a listener waiting for `click`.
+ */
+function armFullscreenRetry(): void {
+  if (fsArmed || fsEverEntered) return
+  fsArmed = true
+  fsState = 'armed'
+  const retry = (): void => {
+    window.removeEventListener('pointerup', retry, true)
+    fsArmed = false
+    goFullscreen()
+  }
+  window.addEventListener('pointerup', retry, true)
+}
+
 export function goFullscreen(): void {
   const target = document.documentElement
-  if (!target.requestFullscreen) return
-  // Swallowed, not surfaced — same posture as keepAwake() below, and for the
-  // same reason: what the user loses is chrome, not the app.
-  void target.requestFullscreen({ navigationUI: 'hide' }).catch(() => {})
+  if (!target.requestFullscreen) {
+    fsState = 'unsupported'
+    return
+  }
+  watchFullscreen()
+  fsAttempts++
+  // Still never surfaced as an error and never awaited before the audio path —
+  // what the user loses is chrome, not the app. What changed is that a failure
+  // now leaves a mark instead of vanishing into an empty catch.
+  void target.requestFullscreen({ navigationUI: 'hide' }).then(
+    () => {
+      // A resolve is not proof of arrival: some engines resolve and leave
+      // fullscreenElement null. Trust the document, not the promise.
+      if (document.fullscreenElement) {
+        fsEverEntered = true
+        fsState = 'active'
+      } else {
+        fsState = 'refused'
+        fsError = 'resolved-but-not-fullscreen'
+        armFullscreenRetry()
+      }
+    },
+    (err: unknown) => {
+      fsState = 'refused'
+      fsError = err instanceof DOMException ? err.name : 'unknown'
+      armFullscreenRetry()
+    },
+  )
 }
 
 /**

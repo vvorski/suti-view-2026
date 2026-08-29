@@ -13,7 +13,7 @@ import { startCamera, type CameraSource } from './camera'
 import { createHud } from './hud'
 import { MAPPINGS, type Mapping, type MappingName } from './engine'
 import { DEFAULT_MERGE_MODE, DEFAULT_MIX, isMergeModeName, type MergeModeName } from './merge-modes'
-import { checkWebGL, keepAwake, waitForStart } from './permission-gate'
+import { checkWebGL, fullscreenStatus, keepAwake, waitForStart } from './permission-gate'
 import { loadPrefs, type Prefs } from './prefs'
 import { applyReleaseTone } from './release-tone'
 import { Director } from './director'
@@ -234,6 +234,7 @@ async function main(): Promise<void> {
         director: director.status(),
         warm: character.warm,
         haptics: hapticStatus(),
+        fullscreen: fullscreenStatus(),
       })
     }
     requestAnimationFrame(frame)
