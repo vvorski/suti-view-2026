@@ -364,17 +364,37 @@ function inCaptureBand(clientY: number): boolean {
   return clientY >= top && clientY <= bottom
 }
 
+/** How many captures this session has already saved. Widens the counter's
+ *  own padding past 99 on its own — docs/todo.md entry 26. */
+let captureCount = 0
+
 /**
  * Save the current frame as a PNG, named with the build it came from — the
  * difference between a bug report that can be acted on and one that cannot.
+ *
+ * The timestamp is the phone's own local time, not UTC — the person who has
+ * to find this file reads their own clock, and a name an hour off its own
+ * screenshot is worse than no timestamp; nothing here is ever compared
+ * across devices, so the ambiguity a local stamp introduces costs nothing.
+ * It is cut to the second, not the minute a first version of this used,
+ * because a tap is not a long-running job and two of them a minute apart
+ * are entirely reachable. Seconds alone are still not *unique*, though —
+ * two taps inside the same second are reachable too, and wall-clock time on
+ * a phone is not even monotonic: a handset picking up NTP mid-session can
+ * hand back an *earlier* stamp than one it already used, which no amount of
+ * resolution fixes. `captureCount` is what actually guarantees a name
+ * nothing else can take; the timestamp exists to make that name legible,
+ * not to make it unique.
  */
 function saveCapture(visualiser: Visualiser): void {
   visualiser.requestCapture((blob) => {
     if (!blob) return
-    const stamp = new Date()
-      .toISOString()
-      .replace(/[-:]/g, '')
-      .replace(/T(\d{2})(\d{2}).*/, '-$1$2')
+    const pad = (n: number, width = 2): string => String(n).padStart(width, '0')
+    const now = new Date()
+    const date = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`
+    const time = `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
+    captureCount++
+    const stamp = `${date}-${time}-${pad(captureCount)}`
     const name = `suti-${__BUILD_NUMBER__}-${RELEASE_NAME.replace(/\s+/g, '-')}-${stamp}.png`
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')

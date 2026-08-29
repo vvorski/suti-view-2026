@@ -1795,7 +1795,7 @@ a real device, same as everything else this entry and entry 19 before it
 already flagged as needing one.
 
 ### 26. Two screenshots in the same minute get the same filename
-`status: ready` · added 2026-08-29
+`status: done` · added 2026-08-29 · shipped at build 117
 
 **Do** — give every capture a name nothing else can take, and stamp it in the
 phone's own time rather than UTC.
@@ -1845,6 +1845,31 @@ disambiguates differently and would hide exactly the collision this is about.
 Also `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs no (the counter lives for the session only) · url no ·
 capture no (what is captured is unchanged; only its name) · dependency no.
+
+**Build note.** `captureCount` increments inside `requestCapture`'s callback
+(when the blob is actually ready), not at the moment a tap is registered —
+consistent with the counter's own job of guaranteeing uniqueness for
+captures that actually complete, and harmless in practice since taps a
+render frame or more apart (the realistic case for a human tapping a
+band) each get their own turn through `scene.ts`'s single-slot
+`pendingCapture` before the next one overwrites it.
+
+Verified in isolation (the exact expression, not a paraphrase of it): five
+simulated taps at the identical local second produce
+`suti-115-own-corner-20260829-195203-01.png` through `…-05.png`, distinct
+and sorting in the order taken, built from `getFullYear`/`getMonth`/
+`getDate`/`getHours`/`getMinutes`/`getSeconds` rather than `toISOString()`
+so the stamp reads in the phone's own local time rather than UTC. `pnpm
+build`, `pnpm lint`, `pnpm probe:fullscreen`, `pnpm probe:shake` and `pnpm
+probe:haptics` all clean — none of them touch this code path, and none
+moved.
+
+**Not verified here:** the actual download-manager behaviour on a real
+device — whether five real taps in quick succession really do land as five
+separate files rather than the browser's own disambiguation kicking in
+first — needs a phone, exactly as the entry's own Verify section says a
+desktop browser's download manager would hide the very collision this
+entry is about.
 
 ### 27. Swipes stop changing the picture; the shake is the gesture
 `status: ready` · added 2026-08-29
