@@ -48,6 +48,10 @@
     },
   })
   window.calls = calls
+  // Exposed so a test can drive adopt() directly — a shuffle (docs/todo.md
+  // entry 15) isn't reachable through a pointer gesture the way every other
+  // change here is.
+  window.hud = hud
 
   // The HUD opens on a document-level pointerup whose travel is under
   // TAP_SLOP_PX. Synthesise a real tap rather than reaching inside the module:

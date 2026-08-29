@@ -176,6 +176,11 @@ export interface Hud {
     geoColour?: GeoColour
     atmColour?: GeoColour
     camColour?: GeoColour
+    /** 0-1. Only ever set by a shuffle depth ladder deep enough to include
+     *  opacity — see docs/todo.md entry 15. */
+    geoAlpha?: number
+    atmAlpha?: number
+    mapping?: MappingName
   }): void
   /** Whether the user has the autopilot switched on. */
   autopilot(): boolean
@@ -1081,6 +1086,18 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
         else if (layer === 'atm') prefs.atmColour = colour
         else prefs.camColour = colour
         handlers.onColour(layer, colour)
+      }
+      if (next.geoAlpha !== undefined) {
+        prefs.geoAlpha = next.geoAlpha
+        handlers.onAlpha('geo', next.geoAlpha)
+      }
+      if (next.atmAlpha !== undefined) {
+        prefs.atmAlpha = next.atmAlpha
+        handlers.onAlpha('atm', next.atmAlpha)
+      }
+      if (next.mapping) {
+        prefs.mapping = next.mapping
+        handlers.onMapping(next.mapping)
       }
       save()
       // Only redraw what is visible; the HUD is closed most of the time and

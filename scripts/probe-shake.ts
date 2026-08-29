@@ -14,7 +14,7 @@
  *   node --experimental-strip-types scripts/probe-shake.ts
  */
 
-import { Tumble, type MotionSample } from '../src/shake.ts'
+import { Tumble, intensity, type MotionSample } from '../src/shake.ts'
 
 /** Default sensor rate: what iOS delivers. Each case may override it — see
  *  run(), where the rate turned out to matter more than the thresholds. */
@@ -49,6 +49,14 @@ interface Result {
   peakDisturb: number
   restAngle: number
   restOffset: number
+  /** The peak (m/s²) of the *last* strong or double this case fired, 0 if
+   *  neither ever did. What main.ts's shuffle would actually see. */
+  lastPeak: number
+  /** What that peak maps to on shake.ts's own 0-1 scale — docs/todo.md entry
+   *  15's shuffle depth. Forced to 1 when a double fired: a double is always
+   *  a full scramble regardless of measured peak, so printing intensity()'s
+   *  raw answer here would say something main.ts does not actually do. */
+  depth: number
 }
 
 /** Run `seconds` of motion, then `settle` seconds of stillness.
@@ -72,13 +80,22 @@ function run(
   let peakAngle = 0
   let peakOffset = 0
   let peakDisturb = 0
+  let lastPeak = 0
   let t = 0
 
   const step = (m: MotionSample): void => {
     tumble.sample(m, dt)
     const s = tumble.advance(dt)
-    if (tumble.takeStrong()) strongs++
-    if (tumble.takeDouble()) doubles++
+    const sp = tumble.takeStrong()
+    if (sp) {
+      strongs++
+      lastPeak = sp
+    }
+    const dp = tumble.takeDouble()
+    if (dp) {
+      doubles++
+      lastPeak = dp
+    }
     peakAngle = Math.max(peakAngle, Math.abs(s.angle))
     peakOffset = Math.max(peakOffset, Math.hypot(s.offsetX, s.offsetY))
     peakDisturb = Math.max(peakDisturb, s.disturb)
@@ -96,8 +113,16 @@ function run(
   for (let i = 0; i < settle * hz; i++) {
     tumble.sample(still(), dt)
     last = tumble.advance(dt)
-    if (tumble.takeStrong()) strongs++
-    if (tumble.takeDouble()) doubles++
+    const sp = tumble.takeStrong()
+    if (sp) {
+      strongs++
+      lastPeak = sp
+    }
+    const dp = tumble.takeDouble()
+    if (dp) {
+      doubles++
+      lastPeak = dp
+    }
   }
 
   return {
@@ -108,6 +133,8 @@ function run(
     peakDisturb,
     restAngle: Math.abs(last.angle),
     restOffset: Math.hypot(last.offsetX, last.offsetY),
+    lastPeak,
+    depth: doubles > 0 ? 1 : intensity(lastPeak),
   }
 }
 
@@ -203,7 +230,7 @@ const cases: Array<[string, Result]> = [
 ]
 
 console.log(
-  'case                                    strong  dbl  angle°  drift   disturb  rest∠   restΔ',
+  'case                                    strong  dbl  angle°  drift   disturb  rest∠   restΔ  peak  depth',
 )
 for (const [name, r] of cases) {
   console.log(
@@ -215,6 +242,8 @@ for (const [name, r] of cases) {
     r.peakDisturb.toFixed(2).padStart(8),
     ((r.restAngle * 180) / Math.PI).toFixed(2).padStart(7),
     r.restOffset.toFixed(4).padStart(7),
+    r.lastPeak.toFixed(1).padStart(5),
+    r.depth.toFixed(2).padStart(6),
   )
 }
 

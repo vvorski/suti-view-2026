@@ -75,6 +75,26 @@ const GRAVITY_TAU = 0.5
 // to clear to fire at all, so "the gentlest qualifying shake" means the same
 // m/s² value in both files rather than two constants that can drift apart.
 export const STRONG_UP = 18
+/**
+ * The hardest shake this app is calibrated against — probe-shake.ts's own
+ * "violent shake" case, not a real physical limit (none exists). Exported
+ * alongside `intensity()` below rather than left for `haptics.ts` to
+ * recompute a second time from the same two numbers.
+ */
+export const PEAK_CEILING = 45
+
+/**
+ * A shake's peak (m/s²), scaled to 0-1: 0 at STRONG_UP (the least peak that
+ * can ever reach a caller — nothing fires below it), 1 at PEAK_CEILING.
+ *
+ * One scale, two consumers: the buzz's intensity (haptics.ts) and the
+ * shuffle's depth (main.ts, docs/todo.md entry 15) both derive from this
+ * rather than each calibrating their own copy of "how hard was that".
+ */
+export function intensity(peak: number): number {
+  return Math.min(1, Math.max(0, (peak - STRONG_UP) / (PEAK_CEILING - STRONG_UP)))
+}
+
 const STRONG_DOWN = 7
 const STRONG_REVERSALS = 3
 const STRONG_WINDOW = 1.2

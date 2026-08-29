@@ -23,7 +23,7 @@
 // .ts extension kept explicit: a probe script needs to import this file
 // directly under `node --experimental-strip-types`, which requires it for
 // any value import inside src/ — see CLAUDE.md.
-import { STRONG_UP } from './shake.ts'
+import { intensity } from './shake.ts'
 
 /**
  * A short confirmation buzz, as a pattern rather than one pulse.
@@ -69,17 +69,14 @@ const CONFIRM_PATTERN = [26, 34, 62]
  * scales the patterns *up*: 1x at the quietest shake that still fires at all,
  * up to MAX_SCALE at a shake as hard as this app has been tested with.
  *
- * `STRONG_UP` (imported from shake.ts, not duplicated) is the least peak that
- * can ever reach here — Tumble never sets `strongPending`/`doublePending`
- * below it — so it is the correct zero point for "gentlest qualifying",
- * rather than an arbitrary guess. `PEAK_CEILING` matches probe-shake.ts's own
- * "violent shake" case (45 m/s², 6 Hz): the hardest shake this app's test
- * suite models, not a real physical limit, which does not exist.
+ * `intensity()` (imported from shake.ts, not duplicated) is the same 0-1
+ * scale the shuffle's depth uses (docs/todo.md entry 15) — one normaliser,
+ * two consumers, rather than this file calibrating its own copy of "how hard
+ * was that" from the same two constants.
  */
-// Exported so scripts/probe-haptics.ts can compute expected values from the
-// real numbers rather than duplicating them as a second copy that could
-// silently drift out of step with this file.
-export const PEAK_CEILING = 45
+// Re-exported so scripts/probe-haptics.ts's existing import keeps working —
+// the constant itself now lives in shake.ts, next to the scale it defines.
+export { PEAK_CEILING } from './shake.ts'
 export const MAX_SCALE = 1.8
 
 /**
@@ -89,8 +86,7 @@ export const MAX_SCALE = 1.8
  * without this file's internal pattern-scaling logic changing at all.
  */
 function intensityMultiplier(peak: number): number {
-  const t = Math.min(1, Math.max(0, (peak - STRONG_UP) / (PEAK_CEILING - STRONG_UP)))
-  return 1 + t * (MAX_SCALE - 1)
+  return 1 + intensity(peak) * (MAX_SCALE - 1)
 }
 
 /**

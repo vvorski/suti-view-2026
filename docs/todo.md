@@ -763,7 +763,7 @@ range and commits correctly — confirms `SWEEP_*` and `SCALAR_*` didn't
 cross-contaminate.
 
 ### 15. Shuffle depth follows how hard you shook
-`status: ready` · added 2026-08-29
+`status: done` · added 2026-08-29 · shipped at build 98
 
 **Do** — make the shake's intensity decide *how much* of the picture is
 re-rolled, from a bare re-seed at the gentlest qualifying shake up to
@@ -854,6 +854,26 @@ calibrated. Also `pnpm build`, `pnpm lint`, and the on-screen check at 320×568
 and 360×640 because the HUD must show the shuffled values.
 **Hard stops** — prefs no (writes existing fields) · url no · capture **no,
 explicitly: no rung switches the camera on** · dependency no.
+
+**Build note.** `Hud.adopt()` gained `geoAlpha`/`atmAlpha`/`mapping` fields,
+all optional — needed because `shuffled()` now has to reach opacity and
+mapping at the top rung, and `adopt()` previously had no way to apply either.
+`shuffled(prefs)` became `shuffled(depth)`: the old version always returned
+every field (harmlessly re-applying the current value when a rung wasn't
+reached), which would have been actively wrong for mapping specifically —
+`onMapping` re-creates the live `Mapping` instance and discards its envelope
+state, so a shuffle that didn't reach the top rung would have thrown that
+state away for nothing on every single shake. The new version omits a field
+entirely below its rung, and `adopt()`'s existing `if (next.x)` guards do the
+rest. Confirmed on screen via `hud-probe.html`: called `hud.adopt()` directly
+(a shuffle isn't reachable through a pointer gesture) with all four top-rung
+fields set, and every HUD band — geo/atm Opacity, cam R/G/B, the Listening
+group's Map selection — showed the adopted values after opening. `pnpm
+probe:shake`'s new depth column matches the entry's own worked numbers
+exactly: the 12 m/s² sustained case depths at 0.00, the 28 m/s² deliberate
+case at 0.36 (entry estimated 0.37), the 45 m/s² violent case at 0.94, and
+every double case at 1.00 regardless of its own measured peak.
+`pnpm probe:haptics` unchanged after moving `PEAK_CEILING` into `shake.ts`.
 
 ### 16. Start reads bigger, and the disc breathes instead of ticking
 `status: ready` · added 2026-08-29

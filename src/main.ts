@@ -27,7 +27,7 @@ import { mountShare } from './share'
 import { Director } from './director'
 import { createVisualiser } from './scene'
 import { SlowAnalysis } from './engine'
-import { startShake } from './shake'
+import { intensity, startShake } from './shake'
 import { confirmBuzz, doubleBuzz, hapticStatus } from './haptics'
 import { IdlePreview } from './idle-preview'
 import { mountReleaseName, mountVersionHud, versionHudRunning } from './version'
@@ -167,43 +167,85 @@ function idleParams(t: number, spectrum: Uint8Array): VisualParams {
   }
 }
 
+/** What a shuffle changes at each rung. Each rung includes everything below
+ *  it — see shuffled()'s own comment for the reasoning behind the order and
+ *  the numbers. */
+const SHUFFLE_COLOUR = 0.2
+const SHUFFLE_MERGE = 0.45
+const SHUFFLE_VIEWS = 0.7
+const SHUFFLE_EVERYTHING = 0.9
+
+interface Shuffle {
+  geometricView?: GeometricViewName
+  atmosphericView?: AtmosphericViewName
+  mergeMode?: MergeModeName
+  atmMergeMode?: MergeModeName
+  geoColour?: GeoColour
+  atmColour?: GeoColour
+  camColour?: GeoColour
+  geoAlpha?: number
+  atmAlpha?: number
+  mapping?: MappingName
+}
+
 /**
- * A new picture, from a double shake.
+ * A new picture, graded by how hard the shake that asked for it was.
  *
- * Views, merge mode and all three layers' colour, and deliberately nothing
- * else. Opacity is not rolled: a shuffle that can hand back a black screen
- * looks like a crash, and the only way out would be shaking again at a screen
- * showing nothing. Mapping is not rolled either — that is how it *hears*, not
- * what it looks like — and the camera is never switched on, which is not a
- * taste call but the capture hard stop: nothing may reach for a sensor without
- * a gesture asking for it.
+ * `depth` is the 0-1 scale shake.ts's `intensity()` computes from a peak —
+ * see docs/todo.md entry 15. Every rung includes the ones below it, ordered
+ * by how little of what you had survives: a colour shift is recognisably the
+ * same picture, a view change is a different instrument.
  *
- * Colour channels are floored at 0.2 rather than spanning the full range, for
- * the same reason opacity is left alone: three channels that all land near
- * zero make a layer black, which is the blank-screen failure arriving by
- * another route.
+ *   any qualifying shake   re-seed only (handled by the caller)
+ *   0.20                   both layers' colours
+ *   0.45                   + both merge modes
+ *   0.70                   + both views
+ *   0.90                   + opacity, mapping, the camera layer's colour
+ *
+ * Opacity and mapping were excluded entirely when this was a single on/off
+ * shuffle (entry 6) — opacity because a shuffle that can hand back a black
+ * screen looks like a crash recoverable only by shaking at nothing, mapping
+ * because it is how the picture *hears*, not what it looks like. Both are
+ * back at the top rung: opacity floored at 0.35 rather than spanning 0-1, for
+ * the same reason colour channels are floored at 0.2, and mapping because at
+ * the top of the scale the ask is a genuinely different instrument, not a
+ * different palette — overturning entry 6's exclusion on purpose rather than
+ * by oversight.
+ *
+ * The camera is never switched on at any depth — not a taste call, the
+ * capture hard stop. Its *colour* rolls at the top rung, which changes a
+ * tint, not a permission.
+ *
+ * A field is present only when its rung is reached, so `Hud.adopt()`'s
+ * "only touch what's given" guards do the rest — a shuffle that doesn't
+ * reach mapping must never re-create the live Mapping instance and discard
+ * its envelope state for nothing.
  */
-function shuffled(prefs: Prefs): {
-  geometricView: GeometricViewName
-  atmosphericView: AtmosphericViewName
-  mergeMode: MergeModeName
-  atmMergeMode: MergeModeName
-  geoColour: GeoColour
-  atmColour: GeoColour
-  camColour: GeoColour
-} {
+function shuffled(depth: number): Shuffle {
   const pick = <T,>(xs: readonly T[]): T => xs[Math.floor(Math.random() * xs.length)]
   const channel = (): number => 0.2 + Math.random() * 0.8
   const colour = (): GeoColour => ({ r: channel(), g: channel(), b: channel() })
-  return {
-    geometricView: pick(Object.keys(GEOMETRIC_VIEWS) as GeometricViewName[]),
-    atmosphericView: pick(Object.keys(ATMOSPHERIC_VIEWS) as AtmosphericViewName[]),
-    mergeMode: pick(Object.keys(MERGE_MODES) as MergeModeName[]),
-    atmMergeMode: pick(Object.keys(MERGE_MODES) as MergeModeName[]),
-    geoColour: colour(),
-    atmColour: colour(),
-    camColour: prefs.camColour,
+
+  const next: Shuffle = {}
+  if (depth >= SHUFFLE_COLOUR) {
+    next.geoColour = colour()
+    next.atmColour = colour()
   }
+  if (depth >= SHUFFLE_MERGE) {
+    next.mergeMode = pick(Object.keys(MERGE_MODES) as MergeModeName[])
+    next.atmMergeMode = pick(Object.keys(MERGE_MODES) as MergeModeName[])
+  }
+  if (depth >= SHUFFLE_VIEWS) {
+    next.geometricView = pick(Object.keys(GEOMETRIC_VIEWS) as GeometricViewName[])
+    next.atmosphericView = pick(Object.keys(ATMOSPHERIC_VIEWS) as AtmosphericViewName[])
+  }
+  if (depth >= SHUFFLE_EVERYTHING) {
+    next.geoAlpha = 0.35 + Math.random() * 0.65
+    next.atmAlpha = 0.35 + Math.random() * 0.65
+    next.camColour = colour()
+    next.mapping = pick(Object.keys(MAPPINGS) as MappingName[])
+  }
+  return next
 }
 
 /**
@@ -338,10 +380,11 @@ async function main(): Promise<void> {
 
   const shake = startShake(motion)
 
-  /** Roll a new picture and let the panel adopt it, so the HUD opened
-   *  afterwards shows what is actually on screen rather than what was. */
-  const shuffle = (): void => {
-    const next = shuffled(prefs)
+  /** Roll a new picture at the given depth and let the panel adopt it, so the
+   *  HUD opened afterwards shows what is actually on screen rather than what
+   *  was. The seed always re-rolls, whatever the depth — see shuffled(). */
+  const shuffle = (depth: number): void => {
+    const next = shuffled(depth)
     panel.adopt(next)
     visualiser.randomise()
   }
@@ -448,7 +491,11 @@ async function main(): Promise<void> {
       const doublePeak = shake.takeDouble()
       if (doublePeak) {
         if (prefs.showStats) flashShake(true)
-        shuffle()
+        // A double is always a full scramble, regardless of peak — see
+        // shuffled()'s file comment: the deterministic route matters because
+        // an accelerometer that clips low can never report a peak near
+        // PEAK_CEILING, and would otherwise have no way to ask for everything.
+        shuffle(1)
         // A shake is a manual gesture. The autopilot standing down is the same
         // courtesy every HUD control gets, and without it the director could
         // start walking the views back a moment later.
@@ -458,9 +505,10 @@ async function main(): Promise<void> {
         const strongPeak = shake.takeStrong()
         if (strongPeak) {
           if (prefs.showStats) flashShake(false)
-          visualiser.randomise()
-          // The one action here with no legible cause and effect: the picture
-          // was already moving and is replaced by a different moving picture.
+          // Graded: a bare re-seed at the gentlest qualifying shake, up to
+          // everything at the hardest. shuffle() always re-seeds regardless
+          // of depth — see its own comment.
+          shuffle(intensity(strongPeak))
           // The buzz is what distinguishes "the phone heard me" from "the
           // image happened to wander". Android only — see haptics.ts.
           confirmBuzz(strongPeak)
