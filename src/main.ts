@@ -19,6 +19,7 @@ import { Director } from './director'
 import { createVisualiser } from './scene'
 import { SlowAnalysis } from './engine'
 import { startShake } from './shake'
+import { confirmBuzz } from './haptics'
 import { mountVersionHud } from './version'
 import {
   DEFAULT_ATMOSPHERIC_VIEW,
@@ -176,7 +177,14 @@ async function main(): Promise<void> {
 
       const tumble = shake.frame(audio.dt)
       visualiser.setTumble(tumble)
-      if (shake.takeStrong()) visualiser.randomise()
+      if (shake.takeStrong()) {
+        visualiser.randomise()
+        // The one action here with no legible cause and effect: the picture
+        // was already moving and is replaced by a different moving picture.
+        // The buzz is what distinguishes "the phone heard me" from "the
+        // image happened to wander". Android only — see haptics.ts.
+        confirmBuzz()
+      }
 
       visualiser.render(params, audio.freq)
       panel.update(params, { ...visualiser.stats(), disturb: tumble.disturb })
