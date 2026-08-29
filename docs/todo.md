@@ -63,6 +63,11 @@ reading and is not any more: two answers closed it without the trip.
   half of this entry that was about `motion`/`peak`: `takeStrong()` fires,
   `confirmBuzz()` is called, and the accelerometer path is fine. Two bugs, not
   one, and only the buzz is left.
+- Where it ends → **one more attempt, then drop the haptic.** Try the pattern;
+  if it still cannot be felt, delete `confirmBuzz()` rather than leave code
+  that pretends to do something. The re-roll is its own confirmation. Chosen
+  over adding a visual confirmation and over leaving it as best-effort — this
+  bounds the chase to one round instead of a third guess.
 
 **Lands in** — `src/haptics.ts`, `CONFIRM_MS` and the `navigator.vibrate` call.
 **Done when** — a shake is felt on Victor's phone. If it still is not, the
@@ -112,6 +117,11 @@ paid for.
 - Preview vs battery → keep the live preview, over reverting to a static gate.
   It is what made the screen work.
 - Cap vs stop → both: throttle immediately, stop after idle, over choosing one.
+- After it stops → **any touch or pointermove restarts it**, over staying
+  stopped until Start. A gate left a minute would otherwise go permanently
+  static, which looks like a crash on a screen whose whole point is that it is
+  already running. Costs one listener and makes the first frame after a touch
+  one tick late.
 
 **Lands in** — `src/main.ts`, the `idleFrame` loop added in build 63.
 **Done when** — the gate's frame interval is ~33ms rather than ~16ms, and the
@@ -134,6 +144,10 @@ keeps its authority by being the filled violet disc rather than by being bigger.
 - How big → bigger than Start, ~155px, over matching Start at ~115px and over
   filling the width at ~272px. Deliberately reorders the hierarchy: the code
   becomes the largest object and Start stays dominant by colour and fill.
+- Composition → **keep the order, QR last**, over putting it above Start and
+  over a side-by-side row. The largest object lowest is stable rather than
+  bottom-heavy, and side-by-side needs 270px of the 272 available at 320px and
+  breaks the single right-hand axis everything else follows.
 
 **Lands in** — `index.html`, `.gate-qr` (one `clamp`, and its twin on `height`).
 **Done when** — the QR renders at ~155px at 320×568, is still the right-hand
@@ -167,6 +181,13 @@ has never been adjustable at all.
   so putting it on one would repeat exactly the mistake this entry fixes.
   Layers are what you see; Listening is how it hears, and naming the category
   is what makes a one-band group make sense.
+- The Listening icon → **three concentric arcs, like sound arriving**, over
+  keeping the diagonal-and-blocks and over a level meter. It is the only group
+  that is not about what is drawn, and the meter shape is already taken by the
+  numeric readout icon.
+- The atmospheric layer's default merge → **screen**. Not a fork: that is what
+  the shader hardcodes today, so defaulting to anything else would change every
+  existing picture the moment the control shipped.
 
 **Lands in**
 - `src/shaders/composite.frag.glsl` — `uMode` becomes the geometric layer's
@@ -216,6 +237,11 @@ gesture for "give me something else entirely".
   hears, not what it looks like.
 - The camera is never switched on by a shuffle. Not asked, not a fork: turning
   a sensor on without a gesture is the capture hard stop.
+- Does a double feel different → **yes, a distinct double pulse.** Single keeps
+  one, the escalation gets two, so you can tell which happened without looking —
+  which matters because the picture changed either way. Depends on entry 1
+  landing first; a vocabulary of one buzz and two is worthless while neither is
+  perceptible.
 
 **Lands in**
 - `src/shake.ts` — a second strong inside the existing `STRONG_COOLDOWN` window
@@ -261,6 +287,12 @@ no information at all.
   one-line pointer from CLAUDE.md, over a section inside CLAUDE.md. That file
   is a rules list and is already long; a design language with worked reasoning
   wants room.
+- Texture on the thick option bands → **no, thin value bands only.** Victor had
+  no preference, so this is my call and the reason is on the record: an option
+  band is a 30px track with words on it, and texturing it puts pattern directly
+  under text. That is the class of problem POPUP_DIM exists for, and this HUD
+  has been made illegible by exactly it once already. Identity is carried by the
+  value bands, which have no text to compete with.
 
 **Lands in**
 - `src/hud.ts` — the band drawing in `build()`. A texture per group, applied to
