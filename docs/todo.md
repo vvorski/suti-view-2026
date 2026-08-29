@@ -2202,3 +2202,66 @@ the seventh chip.
 validates and falls back for; no existing field changes type or meaning · url
 no · capture no (the accelerometer is already running; nothing new is read) ·
 dependency no.
+
+### 31. `?debug` writes itself into stored preferences and never leaves
+`status: ready` · added 2026-08-29
+
+**Do** — keep the diagnostic readout's URL flag out of the saved preferences,
+so it lasts for the load that asked for it and no longer.
+**Why** — visiting once with `?debug` turns the numeric readout on for every
+future visit, with nothing in the URL to explain why and no memory of having
+asked.
+
+**Decided**
+- The mechanism → **the flag is merged into the prefs object itself.**
+  `main.ts:129` is `showStats: query.has('debug') || stored.showStats`, which
+  makes a per-load switch indistinguishable from a stored setting. `save()`
+  then writes the whole object (`hud.ts:476`), so the first HUD interaction
+  after a `?debug` visit persists `showStats: true` for good.
+- Why it looks like the menu did it → because the menu is what saves.
+  Nothing writes preferences until the HUD is touched, so the readout appears
+  on that load and becomes *permanent* the first time a chip or band is used.
+  "Clicking the menu turned it on" is the right observation about the wrong
+  step: opening the menu is when the flag stopped being temporary.
+- Scope → **`?debug` only.** `?mapping=` and `?auto=` are merged the same way
+  and so are the appearance parameters, and for those the behaviour is
+  defensible: opening someone's link, adjusting it and keeping the result is
+  what a shared link should do. A diagnostic switch is not an appearance
+  parameter, and it is the only one nobody would expect to inherit.
+  **Mine**, and deliberately narrow — changing link-sharing semantics is not
+  what was reported.
+- The shape → **`prefs.showStats` goes back to meaning "the setting this
+  person chose", and a separate session value drives what is on screen.** It
+  starts as `debugFromUrl || stored.showStats`; the readout reads the session
+  value; the `num` chip flips the session value *and* writes it to prefs,
+  because a chip tap is an explicit choice and should persist. A `?debug`
+  visit with the chip untouched writes nothing about stats at all.
+- Turning it off today → the `num` chip already does it: it toggles
+  `prefs.showStats` and saves. Worth knowing before this lands, since anyone
+  who has ever loaded `?debug` is currently stuck with the readout.
+- `flashShake` follows the session value too → `main.ts:822` and `:838` gate
+  the shake flash on `prefs.showStats`, and that flash is diagnostics rather
+  than feedback (unlike the capture flash, which is deliberately ungated). It
+  should follow what is actually on screen, not what was stored.
+
+**Lands in**
+- `src/main.ts:129` — `showStats` stops reading the query; the flag becomes a
+  separate value passed to `createHud`.
+- `src/main.ts:822`, `:838` — the two `prefs.showStats` reads become the
+  session value.
+- `src/hud.ts:446`, `:808-810`, `:992`, `:1053` — the four places that read or
+  write `prefs.showStats` for display; one accessor rather than four copies of
+  the OR.
+
+**Done when** — loading `?debug`, opening the panel and turning a band, then
+reloading *without* `?debug`, leaves the readout off; toggling the `num` chip
+still persists across reloads in both directions; and `?debug` still shows the
+readout on the load that carries it.
+**Verify** — in a browser with devtools' storage inspector, which is the only
+way to see the difference between "not shown" and "not stored". Both cases:
+arriving with the flag and toggling the chip, and arriving with it and not.
+Also `pnpm build`, `pnpm lint`.
+**Hard stops** — prefs **no**: `showStats` keeps its type and its meaning —
+this restores the meaning it was supposed to have — and nothing is added or
+removed · url **no**: `?debug` keeps its name and its effect for the load that
+carries it, and is not repurposed · capture no · dependency no.
