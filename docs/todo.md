@@ -52,7 +52,7 @@ in Decided, and without it the status is `blocked`, not `ready`.
 ## Entries
 
 ### 1. Make the shake's buzz actually perceptible
-`status: ready` · added 2026-08-29 · unblocked 2026-08-29
+`status: done` · added 2026-08-29 · shipped at build 68 — awaiting Victor's phone
 
 **Do** — replace the single 40ms pulse with a pattern, so the confirmation is
 felt on an Android actuator that cannot spin up inside 40ms.

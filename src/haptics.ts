@@ -20,19 +20,38 @@
  * platform, absent on the other, and nothing may be built to depend on it.
  */
 
-/** A short confirmation buzz, in ms.
+/**
+ * A short confirmation buzz, as a pattern rather than one pulse.
  *
- *  Was 22, on the reasoning that anything under ~15 is imperceptible and a
- *  confirmation should not read as an alert. The floor was the right idea and
- *  the margin above it was far too thin: plenty of Android actuators are
- *  rotational-mass motors that need 30-40ms simply to spin up far enough to
- *  be felt, so 22 is a request the hardware honours by doing almost nothing.
- *  A buzz that fires correctly and cannot be felt is indistinguishable from
- *  no buzz at all, and that is how this shipped.
+ * The history matters, because each step was reasonable and each was still
+ * imperceptible. 22ms first, on the reasoning that anything under ~15 cannot
+ * be felt and a confirmation should not read as an alert. Then 40ms, once it
+ * was clear that plenty of Android actuators are rotational-mass motors
+ * needing 30-40ms simply to spin up far enough to be felt — so 22 was a
+ * request the hardware honoured by doing almost nothing. 40 was still not
+ * felt on Victor's phone.
  *
- *  40 is still one short pulse, not a pattern — a double-buzz reads as an
- *  error on most phones. */
-const CONFIRM_MS = 40
+ * The mistake in both was reaching for duration. A rotational-mass motor
+ * spends most of a short pulse accelerating, so a flat pulse is mostly
+ * spin-up and barely any output whatever its length; making it longer buys a
+ * bigger buzz, not a *sharper* one, and a long single buzz reads as an error
+ * rather than a confirmation. A short pulse followed by a longer one solves
+ * the actual problem: the first primes the motor, the gap lets it settle, and
+ * the second lands on a mass already moving.
+ *
+ * The gap is the load-bearing number and it is deliberately short. Two pulses
+ * separated by less than roughly 50ms fuse into one textured event rather
+ * than reading as two, which is what keeps this a confirmation and not a
+ * double-tap — and, more to the point, keeps the *deliberate* double buzz
+ * that a double shake will want (see docs/todo.md entry 6) distinguishable
+ * from this one. If this pattern already felt like two things, that gesture
+ * would have nothing left to say.
+ *
+ * The earlier comment here claimed a double-buzz "reads as an error on most
+ * phones". That is true of two equal pulses far apart and not of this, and it
+ * was written before there was any reason to want a second signal.
+ */
+const CONFIRM_PATTERN = [26, 34, 62]
 
 /** Whether the platform has a vibrator we are allowed to use. Read once:
  *  this cannot change within a session, and `vibrate` being present is a
@@ -77,7 +96,7 @@ export function confirmBuzz(): void {
     // of a prior user gesture on the page. Recorded rather than ignored: a
     // declined call and a call the hardware fulfilled but the user could not
     // feel are different faults with different fixes.
-    accepted += navigator.vibrate(CONFIRM_MS) ? 1 : 0
+    accepted += navigator.vibrate(CONFIRM_PATTERN) ? 1 : 0
   } catch {
     // No vibrator, or a webview that lied about having one.
   }
