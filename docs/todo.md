@@ -267,7 +267,7 @@ physical gesture and no probe knows whether it is comfortable.
 explicitly**: the shuffle must never raise `passthrough` · dependency no.
 
 ### 7. Give each layer type its own ring texture, and write down the design language
-`status: ready` · added 2026-08-29
+`status: done` · added 2026-08-29 · shipped at build 90
 
 **Do** — make the stroke treatment of a band say what kind of layer it belongs
 to, and record the resulting design language in `docs/hud-design.md`.
@@ -322,7 +322,20 @@ filter over the page for the test above.
 **Watch for:** the segmented camera texture and the enum band's option labels
 compete for the same arc. Check the camera group specifically, where the
 opacity band is outermost and carries no labels, against the geometric group,
-where a segmented-looking band would sit under text.
+where a segmented-looking band would sit under text. **Checked and clear:**
+texture only ever lands on `Opacity`, which never sits under an option band's
+text in any group — the concern doesn't materialise given the final scope.
+
+**Build note:** Listening has no scalar band at all — its one control, Map, is
+an enum band, and enum bands are the ones explicitly excluded from texture
+above. So "ticked, like a measure" was never drawn as new stroke treatment;
+Listening's identity rests on being the only single-band group and its own
+icon instead. Recorded in `docs/hud-design.md` rather than silently dropped —
+see "Listening — no texture, because it has no value band" there. Confirmed
+this doesn't fail the greyscale test: Listening (1 band) and Camera (4 bands)
+are structurally distinct from the 6-band geo/atm pair on sight, and geo vs
+atm — the one pair identical in band count and type — are told apart by
+Opacity's solid-vs-halo texture, checked directly in greyscale.
 
 ### 8. Let the buzz report how hard you shook
 `status: ready` · added 2026-08-29
@@ -633,3 +646,71 @@ so no 320×568 / 360×640 check is owed — but the phone check above is not
 optional, because a window tuned for a hand cannot be proven by a synthetic
 sinusoid.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 14. Both ends of every value band are off the screen
+`status: ready` · added 2026-08-29
+
+**Do** — give scalar bands their own angular span, inside the quadrant the
+screen actually occupies, and use it for the track, the fill, the knob and the
+drag alike.
+**Why** — 100% cannot be set on any colour or opacity band, because the angle
+it lives at is off the right edge of the screen; 0% has the same problem off
+the bottom.
+
+**Decided**
+- Is this really unreachable, or just fiddly → **unreachable, and both ends,
+  not one.** Measured rather than eyeballed: the hinge is at `(w+10, h+10)`
+  (`hud.ts:746`) and the sweep is 165°–285° (`hud.ts:52`), so at 320×568 the
+  on-screen part of every scalar band runs 14%–86%, and at the innermost
+  radius only 17%–83%. The same at 360×640 and 390×844 — it barely moves,
+  because both the radii and the hinge scale with the viewport.
+- Root cause → **a 120° sweep about a corner hinge cannot fit in a 90°
+  corner.** From a bottom-right hinge the screen occupies exactly the angles
+  between 180° and 270°; the sweep is 30° wider than that, so 15° hangs off
+  each end, and the `+10`px offset takes a little more. This is why no drag
+  technique fixes it: `angleFrom` uses only the angle, and the 285° ray is
+  outside the viewport at *every* radius, not just at the band's.
+- Why RGB and not the enum bands → enum bands are read at the notch (225°),
+  dead centre of the quadrant, and are spun past it. Their ends being
+  off-screen costs nothing. Only `ScalarBand` maps a value onto the sweep's
+  ends, which is why this presents as "can't set RGB to 100".
+- Span → **190°–260°**, symmetric about the 225° notch as the current one is,
+  so 50% stays where it is. **Mine**, over 186°–264° and 192°–258°: at 320×568
+  it puts both ends 8.3px inside the viewport (10.6px at 360×640), where 186°
+  leaves 1px — no margin at all — and 192° spends another 4° of travel to buy
+  margin the 24px grab arc already provides.
+- The drawn track shrinks too, rather than keeping the full sweep as a rail →
+  **shrinks.** **Mine**, because a track whose end cannot be reached is lying
+  about its range, which is the actual bug rather than a side effect of it.
+  Scalar bands will therefore be visibly shorter arcs than the enum bands and
+  the tick rim; that reads as the two kinds of control being different kinds,
+  which they are.
+- Cost, named rather than discovered later → the full range now spans 70°
+  instead of 120°, so every value band is about 1.7× more sensitive per degree
+  of thumb travel. At the innermost band that is still ~129px of arc for
+  0–100%, or under 1% per pixel. Acceptable for a colour gain; if it ever is
+  not, the answer is a finer band, not a wider sweep.
+
+**Lands in**
+- `src/hud.ts:52` — a `SCALAR_A`/`SCALAR_B` pair beside `SWEEP_A`/`SWEEP_B`,
+  carrying the quadrant reasoning above. `SWEEP_*` keeps the wedge, the tick
+  rim and the enum bands.
+- `src/hud.ts:588`, `angleToUnit` — the only place a pointer angle becomes a
+  value; it reads `SWEEP_*` today and must read `SCALAR_*`.
+- `src/hud.ts:879-885`, `paint`'s scalar branch — `va`, `fillD` and the knob
+  all derive from the `a0`/`a1` set at line 849; the scalar branch needs the
+  scalar pair instead.
+- `src/hud.ts:778` and `:833` — the drawn track and the `GRAB_PX`-wide hit arc
+  for scalar bands, both currently `arcPath(r, a0, a1)`.
+
+**Done when** — on `hud-probe.html` at 320×568 and at 360×640, dragging any
+colour band to each end reads `R 100` and `R 0` in its caption, with the knob
+visibly inside the screen at both; and the same for an opacity band. Today the
+same drag stops at roughly 85 and 15.
+**Verify** — the on-screen check above is the evidence, at both sizes, per
+CLAUDE.md; `hud-probe.html` reaches the HUD without the mic gate and can be
+driven from `javascript_tool`. Also `pnpm build`, `pnpm lint`. Check one enum
+band still spins across its full sweep afterwards — that is the property most
+at risk from touching shared angle constants.
+**Hard stops** — prefs no (values stay 0–1; only the angle they sit at moves)
+· url no · capture no · dependency no.

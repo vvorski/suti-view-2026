@@ -250,6 +250,9 @@ const CSS = `
 
 .hud-fill { fill: none; stroke-linecap: round; }
 .hud-knob { stroke: none; }
+/* The atmospheric texture: a soft, wide field behind the fill it belongs to —
+   a continuous layer reads as a glow, not an edge. See docs/hud-design.md. */
+.hud-halo { fill: none; stroke-linecap: round; opacity: 0.22; }
 /* A band's own name and value, on the notch line just inside its radius —
    clear of the option labels, which sit on the radius itself. */
 .hud-band-label {
@@ -319,11 +322,19 @@ interface EnumBand {
   rot: number
 }
 
-/** A continuous 0-1 value, dragged along its arc. */
+/**
+ * A continuous 0-1 value, dragged along its arc.
+ *
+ * `texture` is what says which layer this is, for the one band type where
+ * that matters — see docs/hud-design.md. Left undefined it means "colour
+ * channel": every layer's R/G/B stays visually identical on purpose, because
+ * a colour band must read as a colour band wherever it appears.
+ */
 interface ScalarBand {
   readonly kind: 'scalar'
   readonly name: string
   readonly tint: string
+  readonly texture?: 'solid' | 'halo' | 'segmented'
   current(): number
   /** Live, on every pointermove. */
   apply(v: number): void
@@ -421,6 +432,11 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
       kind: 'scalar',
       name: 'Opacity',
       tint,
+      // Geometric is drawn line work — solid, square-capped, the plainest
+      // reading of "a stroke". Atmospheric is a continuous field, so its
+      // opacity band carries a soft halo behind it rather than a hard edge.
+      // See docs/hud-design.md.
+      texture: layer === 'geo' ? 'solid' : 'halo',
       current: () => (layer === 'geo' ? prefs.geoAlpha : prefs.atmAlpha),
       apply: (v) => {
         if (layer === 'geo') prefs.geoAlpha = v
@@ -492,6 +508,9 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
           kind: 'scalar',
           name: 'Opacity',
           tint: '#ffcf8a',
+          // Sampled reality, not drawn — a broken line rather than a
+          // continuous one. See docs/hud-design.md.
+          texture: 'segmented',
           current: () => camShown,
           apply: (v) => {
             camShown = v
@@ -659,6 +678,8 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     knob?: SVGCircleElement
     caption: SVGTextElement
     selector?: SVGPathElement
+    /** The atmospheric texture's wide, faint path, drawn behind `fill`. */
+    halo?: SVGPathElement
   }
   let drawn: Drawn[] = []
 
@@ -785,8 +806,17 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
         })
         svg.appendChild(d.selector)
       } else {
+        // The halo goes in first, so it sits behind the fill it belongs to —
+        // see docs/hud-design.md for what each texture means.
+        if (band.texture === 'halo') {
+          d.halo = el('path', { class: 'hud-halo', 'stroke-width': base * 0.05 })
+          d.halo.style.stroke = band.tint
+          svg.appendChild(d.halo)
+        }
         d.fill = el('path', { class: 'hud-fill', 'stroke-width': 7 })
         d.fill.style.stroke = band.tint
+        if (band.texture === 'solid') d.fill.style.strokeLinecap = 'square'
+        if (band.texture === 'segmented') d.fill.style.strokeDasharray = '9 6'
         svg.appendChild(d.fill)
         d.knob = el('circle', { r: 7, class: 'hud-knob' })
         d.knob.style.fill = band.tint
@@ -847,7 +877,9 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
       } else {
         const v = band.current()
         const va = a0 + v * (a1 - a0)
-        d.fill?.setAttribute('d', arcPath(r, a0, Math.max(a0 + 0.001, va)))
+        const fillD = arcPath(r, a0, Math.max(a0 + 0.001, va))
+        d.fill?.setAttribute('d', fillD)
+        d.halo?.setAttribute('d', fillD)
         const [kx, ky] = polar(r, va)
         d.knob?.setAttribute('cx', String(kx))
         d.knob?.setAttribute('cy', String(ky))

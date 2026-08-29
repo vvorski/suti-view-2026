@@ -231,6 +231,11 @@ Read a few files before writing any.
   laid along an arc, and text placed on the notch line. If a new control does
   not fit that vocabulary, the vocabulary is the constraint — change the
   control, not the rule.
+
+  The full design language beyond shape — what each layer's texture means,
+  why `BAND_R` has the radii it has, colour roles, forbidden examples — is
+  `docs/hud-design.md`, not here: this file is a rules list, and that reasoning
+  wants room a rules list doesn't have.
 - **Audio never leaves the device.** No recording, no upload, no backend.
 - **Mobile is the target.** Bundle size and fill rate matter; a desktop-only
   regression is a regression. Nothing needing COOP/COEP headers can ever work,
