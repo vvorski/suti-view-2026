@@ -1463,7 +1463,7 @@ shaking hard enough to reach the top rung repeatedly.
 · dependency no.
 
 ### 22. A hard shake may raise the camera
-`status: ready` · added 2026-08-29
+`status: done` · added 2026-08-29 · shipped at build 112
 
 **Do** — at the top rung only, sometimes roll the passthrough level, including
 up from zero.
@@ -1522,6 +1522,46 @@ desktop browser's permission model is not the one that matters. Also `pnpm
 build`, `pnpm lint`.
 **Hard stops** — prefs no (existing field) · url no · capture **yes, licensed
 above** · dependency no.
+
+**Build note.** `applyPassthrough` and a new `hasCameraPermission()` were
+factored out of the HUD's own `onPassthrough` handler in `main.ts` rather
+than duplicated for the shake path — the two differ only in *who is allowed
+to call this with a non-zero level*, which is `hasCameraPermission()`'s job,
+not the passthrough logic's own. `hasCameraPermission()` tracks its own
+`cameraEverGranted` session flag rather than relying solely on
+`navigator.permissions.query`, since that API's 'camera' descriptor is not
+universally implemented and the flag is the only answer available within a
+single session before the very first grant.
+
+The roll lives in a new `maybeRollCamera()`, not inside `shuffled()` itself:
+raising the camera needs an async permission check `shuffled()` cannot make,
+since it stays synchronous and pure for every other field. It runs as a
+second, independent async step after `shuffle()` returns, and calls
+`panel.adopt({ passthrough })` a second time once resolved — `Hud.adopt()`
+gained a `passthrough` field for this, deliberately the only field in it
+that never itself calls a handler: the caller has already done the asking
+and the visualiser call by the time `adopt()` sees it, so `adopt()` only
+ever needs to make the HUD's own opacity band agree with what already
+happened.
+
+The stale "the camera is never switched on at any depth" comment in
+`shuffled()`'s own docstring — asserted by entries 6, 15 and 20 as
+non-negotiable — is rewritten to say what the rule became and who changed
+it, per this entry's own instruction not to leave code and comments
+disagreeing.
+
+Confirmed on screen via `hud-probe.html`: `hud.adopt({ passthrough: 0.42 })`
+updates `prefs.passthrough` and the camera group's Opacity band caption
+reads "Opacity 42" immediately. `pnpm build`, `pnpm lint`, `pnpm
+probe:shake` all clean, the last unchanged — this entry adds a side effect
+alongside an existing shuffle, not a new detection path.
+
+**Not verified here, and said so rather than claimed otherwise:** the actual
+permission-gated behaviour — a granted camera eventually getting raised and
+lowered by repeated top-rung shakes, and a never-granted one never producing
+a prompt or a non-zero passthrough — needs a real phone in both permission
+states, which a desktop automation browser cannot meaningfully stand in for.
+Exactly what the entry's own Verify section already requires a device for.
 
 ### 23. The picture answers the light in the room
 `status: ready` · added 2026-08-29

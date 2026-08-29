@@ -219,6 +219,12 @@ export interface Hud {
     geoAlpha?: number
     atmAlpha?: number
     mapping?: MappingName
+    /** 0-1, the camera's actual, already-resolved passthrough level — see
+     *  docs/todo.md entry 22. The caller has already done whatever asking
+     *  or permission-checking was needed before this is set; `adopt()` only
+     *  ever records the result, the same way it never itself asks for a
+     *  colour or a merge mode. */
+    passthrough?: number
   }): void
   /** Whether the user has the autopilot switched on. */
   autopilot(): boolean
@@ -1164,6 +1170,15 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
       if (next.mapping) {
         prefs.mapping = next.mapping
         handlers.onMapping(next.mapping)
+      }
+      if (next.passthrough !== undefined) {
+        // No handler call here, unlike every other field above: the caller
+        // already resolved the actual level (including any permission check
+        // and the visualiser call that follows from it) before calling
+        // adopt() at all — see docs/todo.md entry 22. This only makes the
+        // camera opacity band agree with what is already on screen.
+        camShown = next.passthrough
+        prefs.passthrough = next.passthrough
       }
       save()
       // Only redraw what is visible; the HUD is closed most of the time and

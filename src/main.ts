@@ -183,6 +183,16 @@ const SHUFFLE_MERGE = 0.45
 const SHUFFLE_VIEWS = 0.7
 const SHUFFLE_EVERYTHING = 0.9
 
+/** How often the top rung also rolls the camera, and how high it may go —
+ *  docs/todo.md entry 22. One in three, not always: the shuffle at this
+ *  depth already changes a great deal, and raising the room every single
+ *  time would make the camera read as part of the ladder's own logic rather
+ *  than as the separate, licensed exception it is. Capped at 0.6, not 1 —
+ *  passthrough at 1 leaves the room and no visualiser, which is not a
+ *  picture the shuffle should be able to hand back. */
+const CAMERA_ROLL_CHANCE = 1 / 3
+const CAMERA_ROLL_MAX = 0.6
+
 interface Shuffle {
   geometricView?: GeometricViewName
   atmosphericView?: AtmosphericViewName
@@ -221,9 +231,16 @@ interface Shuffle {
  * genuinely different instrument, not a different palette — overturning
  * entry 6's exclusion on purpose rather than by oversight.
  *
- * The camera is never switched on at any depth — not a taste call, the
- * capture hard stop. Its *colour* rolls at the top rung, which changes a
- * tint, not a permission.
+ * The camera may also be raised at the top rung — see maybeRollCamera()
+ * below. This overturns what this comment used to say, and what entries 6
+ * and 15 both said: that the camera could never be switched on by a
+ * shuffle, "not a taste call, the capture hard stop." Licensed by Victor
+ * 2026-08-29 (entry 22), narrowly: only at the top rung, only sometimes, and
+ * only where permission was already granted — a `devicemotion` event
+ * carries no user activation, so this can raise the level but never itself
+ * ask for the camera the first time. `shuffled()` itself is unchanged by
+ * this; the roll lives in `maybeRollCamera()` because it needs an async
+ * permission check this function cannot make.
  *
  * A field is present only when its rung is reached, so `Hud.adopt()`'s
  * "only touch what's given" guards do the rest — a shuffle that doesn't
@@ -510,6 +527,36 @@ async function main(): Promise<void> {
     panel.adopt(next)
     visualiser.randomise()
   }
+
+  /**
+   * At the top shuffle rung only, sometimes rolls the passthrough level,
+   * including up from zero — docs/todo.md entry 22, licensed by Victor
+   * 2026-08-29. This overturns what entries 6, 15 and 20 all said and
+   * `shuffled()`'s own file comment used to say: the camera is *not*
+   * unconditionally excluded from every rung any more, only from every
+   * rung below the top one, and from ever being raised without permission
+   * already granted.
+   *
+   * Deliberately not part of `shuffled()`, which is synchronous and pure:
+   * raising the camera needs `hasCameraPermission()`'s async check first, a
+   * kind of gate no other field in the shuffle has, since a `devicemotion`
+   * event carries no user activation for `getUserMedia` to spend. Runs after
+   * `shuffle()` rather than inside it, and updates the panel itself once
+   * resolved rather than folding into the same `adopt()` call — the level
+   * is not known yet when `shuffle()` returns.
+   */
+  function maybeRollCamera(depth: number): void {
+    if (depth < SHUFFLE_EVERYTHING) return
+    if (Math.random() >= CAMERA_ROLL_CHANCE) return
+    void (async () => {
+      const level = Math.random() * CAMERA_ROLL_MAX
+      // Turning it off never needs permission — only raising it does.
+      if (level > 0 && !(await hasCameraPermission())) return
+      const actual = await applyPassthrough(level)
+      panel.adopt({ passthrough: actual })
+    })()
+  }
+
   let mapping: Mapping = MAPPINGS[prefs.mapping]()
 
   // The minutes tier and the thing that acts on it. Kept out of `mapping` on
@@ -519,8 +566,80 @@ async function main(): Promise<void> {
   const slow = new SlowAnalysis()
   const director = new Director()
 
-  /** Held open only while passthrough is actually showing. See onPassthrough. */
+  /** Held open only while passthrough is actually showing. See applyPassthrough. */
   let cameraSource: CameraSource | null = null
+
+  /**
+   * Set once a camera stream has actually opened. The shake path (entry 22)
+   * reads it rather than `cameraSource` itself, because the check has to
+   * survive turning the camera back off — `cameraSource` goes null the
+   * moment `applyPassthrough(0)` closes the stream, but the *permission* an
+   * OS prompt already granted does not, and that permission is what the
+   * shake path is licensed to use.
+   */
+  let cameraEverGranted = false
+
+  /**
+   * Whether the camera may be raised without a live user gesture behind it —
+   * only where permission already exists. `navigator.permissions.query` is
+   * the real answer where supported; `cameraEverGranted` is the fallback
+   * everywhere it is not (older Safari has no 'camera' permission descriptor
+   * at all) and the only answer within a single session before the first
+   * grant. See docs/todo.md entry 22 for why this gate exists at all: a
+   * `devicemotion` event carries no user activation, so `getUserMedia`
+   * called from the shake path has none either, however hard the shake was.
+   */
+  async function hasCameraPermission(): Promise<boolean> {
+    if (cameraEverGranted) return true
+    if (!('permissions' in navigator)) return false
+    try {
+      const status = await navigator.permissions.query({ name: 'camera' as PermissionName })
+      return status.state === 'granted'
+    } catch {
+      // Some engines throw for a descriptor they don't recognise rather than
+      // resolving 'prompt' — 'camera' is not universally implemented.
+      return false
+    }
+  }
+
+  /**
+   * Turning it down to nothing releases the camera outright rather than
+   * leaving it running behind a zero. Holding an open stream that nothing
+   * draws keeps the sensor powered and the OS camera indicator lit, which is
+   * the most visible possible way to break the start gate's promise.
+   *
+   * Factored out of the HUD's own `onPassthrough` handler so the shake path
+   * (entry 22) can call the exact same logic rather than a second copy of
+   * it — the two differ only in what is allowed to call this with a
+   * non-zero `mix` in the first place, which is `hasCameraPermission()`'s
+   * job, not this function's.
+   */
+  async function applyPassthrough(mix: number): Promise<number> {
+    if (mix <= 0) {
+      visualiser.setPassthrough(null, 0)
+      cameraSource?.close()
+      cameraSource = null
+      return 0
+    }
+
+    // First non-zero value is what asks, when called from the control's own
+    // pointer handler — the gesture getUserMedia requires is still live
+    // there. The shake path never reaches this branch without
+    // hasCameraPermission() already true, so it never spends a gesture it
+    // does not have.
+    if (!cameraSource) {
+      try {
+        cameraSource = await startCamera()
+        cameraEverGranted = true
+      } catch {
+        // Declined, or no camera. Report the truth — 0 — and let the HUD put
+        // its control back rather than leaving it somewhere it is not.
+        return 0
+      }
+    }
+    visualiser.setPassthrough(cameraSource, mix)
+    return mix
+  }
 
   const panel = createHud(prefs, {
     onGeometricView: (name: GeometricViewName) => visualiser.setGeometricView(name),
@@ -537,32 +656,7 @@ async function main(): Promise<void> {
     onMapping: (name: MappingName) => {
       mapping = MAPPINGS[name]()
     },
-    onPassthrough: async (mix: number) => {
-      // Turning it down to nothing releases the camera outright rather than
-      // leaving it running behind a zero. Holding an open stream that nothing
-      // draws keeps the sensor powered and the OS camera indicator lit, which
-      // is the most visible possible way to break the start gate's promise.
-      if (mix <= 0) {
-        visualiser.setPassthrough(null, 0)
-        cameraSource?.close()
-        cameraSource = null
-        return 0
-      }
-
-      // First non-zero value is what asks. This runs inside the control's own
-      // pointer handler, so the gesture getUserMedia requires is still live.
-      if (!cameraSource) {
-        try {
-          cameraSource = await startCamera()
-        } catch {
-          // Declined, or no camera. Report the truth — 0 — and let the HUD put
-          // its control back rather than leaving it somewhere it is not.
-          return 0
-        }
-      }
-      visualiser.setPassthrough(cameraSource, mix)
-      return mix
-    },
+    onPassthrough: applyPassthrough,
     onManualChange: () => director.suspend(),
   })
 
@@ -701,6 +795,7 @@ async function main(): Promise<void> {
           // an accelerometer that clips low can never report a peak near
           // PEAK_CEILING, and would otherwise have no way to ask for everything.
           shuffle(1)
+          maybeRollCamera(1)
           // A shake is a manual gesture. The autopilot standing down is the same
           // courtesy every HUD control gets, and without it the director could
           // start walking the views back a moment later.
@@ -714,7 +809,9 @@ async function main(): Promise<void> {
           // Graded: a bare re-seed at the gentlest qualifying shake, up to
           // everything at the hardest. shuffle() always re-seeds regardless
           // of depth — see its own comment.
-          shuffle(intensity(strongPeak))
+          const depth = intensity(strongPeak)
+          shuffle(depth)
+          maybeRollCamera(depth)
           // The buzz is what distinguishes "the phone heard me" from "the
           // image happened to wander". Android only — see haptics.ts.
           confirmBuzz(strongPeak)
