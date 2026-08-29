@@ -2235,7 +2235,7 @@ phone, which needs a device this harness does not have. `pnpm build`, `pnpm
 lint` both clean.
 
 ### 31. `?debug` writes itself into stored preferences and never leaves
-`status: ready` · added 2026-08-29
+`status: done` · added 2026-08-29 · shipped at build 127
 
 **Do** — keep the diagnostic readout's URL flag out of the saved preferences,
 so it lasts for the load that asked for it and no longer.
@@ -2296,3 +2296,34 @@ Also `pnpm build`, `pnpm lint`.
 this restores the meaning it was supposed to have — and nothing is added or
 removed · url **no**: `?debug` keeps its name and its effect for the load that
 carries it, and is not repurposed · capture no · dependency no.
+
+**Build note.** Landed close to the plan, with one shape decision the plan
+left implicit: the session value lives inside `createHud` itself (a private
+`showStats` variable, seeded from a new `debugFromUrl` parameter), rather
+than in `main.ts`, since every read and write the entry lists — the initial
+`stats.hidden`, the `num` chip, `paint()`'s chip state, and `update()`'s
+gate — are already inside that closure and `prefs` was the only thing
+crossing the boundary. A new `Hud.showingStats()` accessor, mirroring the
+existing `autopilot()`, is what lets `main.ts`'s two `flashShake` call sites
+follow the session value instead of `prefs.showStats` directly, per the
+entry's own note that the flash should follow what's on screen rather than
+what's stored. `resolvePrefs()` now returns `stored.showStats` unmodified;
+`?debug` is read a second time at the `createHud` call site instead of
+threaded through `Prefs`, which is exactly the point — a per-load flag has
+no business being carried in the object that gets written to storage.
+
+Verified directly against the `hud.ts` module rather than through the live
+app: this harness cannot get past the Start button's microphone gate (see
+entries 20/22/23's build notes for the same limitation), and `createHud`
+itself is only constructed after Start, so `?debug` on the real page can't
+be exercised end-to-end here. Instead, imported the module fresh and built
+two independent instances — one with `debugFromUrl: false`, one `true` —
+against separate dummy `prefs` objects. Confirmed all three Done-when
+claims directly: the `false` instance starts with `showingStats() === false`
+and an untouched `prefs.showStats`; the `true` instance starts with
+`showingStats() === true` while `prefs.showStats` stays `false`, which is
+the load-carries-it-but-doesn't-persist behaviour the whole entry is about;
+and tapping the `num` chip on each persists the *new* session value to
+`prefs` in both directions (off→on and on→off), including turning a
+`?debug`-forced readout off and having that stick. `pnpm build`, `pnpm
+lint` both clean.

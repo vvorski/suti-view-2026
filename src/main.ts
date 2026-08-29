@@ -127,7 +127,12 @@ function resolvePrefs(): Prefs {
     passthrough: 0,
     mapping: mapping && mapping in MAPPINGS ? (mapping as MappingName) : stored.mapping,
     autopilot: auto === null ? stored.autopilot : auto !== '0' && auto !== 'off',
-    showStats: query.has('debug') || stored.showStats,
+    // `?debug` is deliberately NOT merged in here any more — docs/todo.md
+    // entry 31. This field is "the setting this person chose", full stop;
+    // what a `?debug` load shows on screen is a separate, per-load session
+    // value the HUD tracks itself, passed to createHud below rather than
+    // folded into a Prefs field that gets written back to storage.
+    showStats: stored.showStats,
     // No URL parameter, deliberately — this changes the picture's motion at
     // rest rather than its appearance, and every parameter here today is the
     // latter. Reached from the HUD like autopilot and the numeric readout.
@@ -330,9 +335,12 @@ function shuffled(depth: number): Shuffle {
  * one thing a probe cannot supply: whether *anything* is firing on this
  * particular phone at all, and if so, which kind.
  *
- * Gated on `prefs.showStats` rather than a second `?debug` flag — that
+ * Gated on `panel.showingStats()` rather than a second `?debug` flag — that
  * already means "diagnostics are visible" and a flash on every shake once
- * this ships permanently would turn a quiet instrument into a strobe.
+ * this ships permanently would turn a quiet instrument into a strobe. Reads
+ * the HUD's own session value rather than `prefs.showStats` directly, so a
+ * `?debug` load gets the flash for that load without it persisting past a
+ * reload — see docs/todo.md entry 31.
  *
  * A DOM overlay, not a shader uniform: it must be visible even if the render
  * path itself is the thing broken, and it must cost nothing when off.
@@ -700,7 +708,7 @@ async function main(): Promise<void> {
     },
     onPassthrough: applyPassthrough,
     onManualChange: () => director.suspend(),
-  })
+  }, new URLSearchParams(window.location.search).has('debug'))
 
   bindKeyboard({
     onRandomise: () => visualiser.randomise(),
@@ -824,7 +832,7 @@ async function main(): Promise<void> {
         if (panelOpen) {
           // Consumed, not acted on.
         } else {
-          if (prefs.showStats) flashShake(true)
+          if (panel.showingStats()) flashShake(true)
           // A double is always a full scramble, regardless of peak — see
           // shuffled()'s file comment: the deterministic route matters because
           // an accelerometer that clips low can never report a peak near
@@ -840,7 +848,7 @@ async function main(): Promise<void> {
       } else {
         const strongPeak = shake.takeStrong()
         if (strongPeak && !panelOpen) {
-          if (prefs.showStats) flashShake(false)
+          if (panel.showingStats()) flashShake(false)
           // Graded: a colour shift at the gentlest qualifying shake, up to
           // everything at the hardest. shuffle() always rolls colours
           // regardless of depth, and re-seeds once SHUFFLE_RESEED is

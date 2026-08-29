@@ -227,6 +227,14 @@ export interface Hud {
   }): void
   /** Whether the user has the autopilot switched on. */
   autopilot(): boolean
+  /**
+   * Whether the numeric readout is showing this session — docs/todo.md
+   * entry 31. Not the same as `prefs.showStats`: a `?debug` load shows the
+   * readout for that load only, without writing the choice back, so a
+   * caller gating other diagnostics (main.ts's shake flash) on "is it on
+   * screen right now" needs this rather than the stored preference.
+   */
+  showingStats(): boolean
 }
 
 interface Handlers {
@@ -438,7 +446,14 @@ interface ScalarBand {
 
 type Band = EnumBand | ScalarBand
 
-export function createHud(prefs: Prefs, handlers: Handlers): Hud {
+/**
+ * `debugFromUrl` forces the readout on for this load only, without touching
+ * `prefs.showStats` — docs/todo.md entry 31. Kept as its own parameter
+ * rather than folded into `prefs`, which is exactly the mistake this entry
+ * exists to undo: `prefs` is what persists, and a per-load URL flag is not
+ * a persisted fact.
+ */
+export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false): Hud {
   const style = document.createElement('style')
   style.textContent = CSS
   document.head.appendChild(style)
@@ -448,9 +463,14 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
   scrim.setAttribute('role', 'dialog')
   scrim.setAttribute('aria-label', 'Controls')
 
+  /** What is actually on screen this session — see docs/todo.md entry 31.
+   *  Starts from the stored preference or, for this load only, `?debug`;
+   *  only the `num` chip below ever writes it back to `prefs`. */
+  let showStats = debugFromUrl || prefs.showStats
+
   const stats = document.createElement('pre')
   stats.className = 'hud-stats'
-  stats.hidden = !prefs.showStats
+  stats.hidden = !showStats
   scrim.appendChild(stats)
 
   const svg = el('svg', { class: 'hud-dial' })
@@ -812,9 +832,13 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     // happen would read as broken.
   })
   const statsChip = mkChip('num', 'Numeric readout', '#9d9bf0', () => {
-    prefs.showStats = !prefs.showStats
-    stats.hidden = !prefs.showStats
-    if (!prefs.showStats) stats.textContent = ''
+    // A tap is an explicit choice, so it is the one thing that writes back
+    // to prefs — arriving via ?debug and never touching this chip writes
+    // nothing about stats at all. See docs/todo.md entry 31.
+    showStats = !showStats
+    prefs.showStats = showStats
+    stats.hidden = !showStats
+    if (!showStats) stats.textContent = ''
     save()
     paint()
   })
@@ -1008,7 +1032,7 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
         id === 'auto'
           ? prefs.autopilot
           : id === 'num'
-            ? prefs.showStats
+            ? showStats
             : id === 'grav'
               ? prefs.gravity
               : group === id
@@ -1073,7 +1097,7 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
   return {
     update(p, s) {
       // The one per-frame DOM write in the app, and only when asked for.
-      if (!open || !prefs.showStats) return
+      if (!open || !showStats) return
       stats.textContent = [
         `${(1000 / s.frameMs).toFixed(0)} fps   ${s.frameMs.toFixed(1)} ms   @${s.pixelRatio}x`,
         `level ${bar(p.level)} ${p.level.toFixed(2)}`,
@@ -1134,6 +1158,7 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     },
 
     autopilot: () => prefs.autopilot,
+    showingStats: () => showStats,
 
     adopt(next) {
       if (next.geometricView) {
