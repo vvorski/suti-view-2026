@@ -136,7 +136,7 @@ existing probes do not cover the gate loop and are not expected to.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 4. Make the QR bigger than Start on the gate
-`status: ready` · added 2026-08-29
+`status: done` · added 2026-08-29 · shipped at build 85
 
 **Do** — grow `.gate-qr` from `clamp(5rem, 24vw, 7rem)` (80px at 320) to about
 155px at 320, so the code is the largest object on the start screen.

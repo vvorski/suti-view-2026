@@ -180,9 +180,15 @@
       #start:active { transform: scale(0.97); }
       #start:disabled { background: #4a4870; color: #14141f; cursor: default; animation: none; }
 
+      /* Bigger than Start on purpose (queue entry 4): handing the link to
+         someone in the room is one of two things this screen is for, and at
+         the old 80px the code was a footnote. clamp(9rem, 48vw, 10.5rem) is
+         ~154px at 320px width, ~154px at 360, capped at 168px above that —
+         chosen to land close to the ~155px target without depending on any
+         one viewport width exactly. */
       .gate-qr {
-        width: clamp(5rem, 24vw, 7rem);
-        height: clamp(5rem, 24vw, 7rem);
+        width: clamp(9rem, 48vw, 10.5rem);
+        height: clamp(9rem, 48vw, 10.5rem);
         display: block;
         opacity: 0.9;
       }
