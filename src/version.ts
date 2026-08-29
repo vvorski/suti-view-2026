@@ -45,7 +45,90 @@ const CSS = `
 #version-hud button:focus-visible {
   color: #f2f4f8;
 }
+/* The whole point of the thing. Green is doing real work here — it is the only
+   saturated colour anywhere outside the visualiser, so it reads as "something
+   changed" without a label explaining it. */
+#version-hud button.fresh {
+  color: #5fe3a1;
+  animation: version-pulse 2.4s ease-in-out infinite;
+}
+@keyframes version-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+/* A pulsing dot in the corner of a piece meant to be left running on a propped
+   phone is exactly the kind of motion someone turns this off for. It still
+   goes green; it just stops blinking. */
+@media (prefers-reduced-motion: reduce) {
+  #version-hud button.fresh {
+    animation: none;
+  }
+}
 `
+
+/**
+ * How often to look for a new build.
+ *
+ * Two minutes, and the tab-visible check below is what actually catches most
+ * updates — someone who has just been told "it's deployed" picks the phone up,
+ * and that is the moment the answer needs to be current. The interval only
+ * matters for a phone left propped up and running, where being two minutes
+ * late costs nothing.
+ */
+const POLL_MS = 120_000
+
+/** Our own bundle, e.g. "index-P6Qyn5Kh.js". */
+const HASHED = /assets\/(index-[A-Za-z0-9_-]+\.js)/
+
+/**
+ * Watch for a newer deploy, and light the reload button when there is one.
+ *
+ * Deliberately not an automatic reload. Reloading drops whoever is watching
+ * back to the "Begin" gate and kills the microphone session — a hostile thing
+ * to do unprompted to a piece that is running. The button going green says the
+ * same thing and leaves the decision where it belongs.
+ *
+ * The check needs no build-time support and no extra endpoint: `import.meta.url`
+ * is this bundle's own hashed filename, and index.html names the current one.
+ * If those disagree, a deploy has landed since this page loaded.
+ */
+function watchForNewBuild(button: HTMLButtonElement): void {
+  const mine = HASHED.exec(import.meta.url)?.[1]
+  // In dev there is no hashed bundle to compare against, and every check would
+  // report a difference forever. Nothing to watch, so nothing runs.
+  if (!mine) return
+
+  let stop = false
+
+  const check = async (): Promise<void> => {
+    if (stop) return
+    try {
+      // Cache-busted and no-store, or this reads back the very bundle it is
+      // trying to notice has been replaced.
+      const res = await fetch(`./?v=${Date.now()}`, { cache: 'no-store' })
+      if (!res.ok) return
+      const theirs = HASHED.exec(await res.text())?.[1]
+      if (theirs && theirs !== mine) {
+        button.classList.add('fresh')
+        button.setAttribute('aria-label', 'A new version is available. Reload')
+        button.title = 'A new version is available'
+        stop = true // Nothing further to learn; it cannot become stale twice.
+      }
+    } catch {
+      // Offline, or the deploy host is briefly unhappy. Silence is a feature —
+      // there is nothing useful to say about a failed check for a new version.
+    }
+  }
+
+  void check()
+  window.setInterval(() => void check(), POLL_MS)
+  // The one that matters: picking the phone back up is when the answer needs
+  // to be current, and a backgrounded tab's timers are throttled to roughly
+  // 1 Hz anyway, so the interval alone cannot be relied on.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') void check()
+  })
+}
 
 export function mountVersionHud(): void {
   const style = document.createElement('style')
@@ -56,12 +139,17 @@ export function mountVersionHud(): void {
   el.id = 'version-hud'
 
   const label = document.createElement('span')
-  // The build number is the git commit count at build time (see
-  // vite.config.ts) — it can only ever move forward, and nobody has to
-  // remember to bump it.
-  // The name beside the number is what makes two builds tellable apart across
-  // a room, which consecutive integers are not. See release-name.ts.
-  label.textContent = `v${__BUILD_NUMBER__} · ${RELEASE_NAME}`
+  // The name, and no longer the number.
+  //
+  // The number answered "is this newer than what I had", and the green button
+  // below now answers that better — it answers it without anyone having to
+  // remember what they had. What is left is the question a number was never
+  // any good at: which build is this. See release-name.ts.
+  //
+  // __BUILD_NUMBER__ stays defined and stays in the bundle: it is what the
+  // deploy checks grep for, and it costs nothing.
+  label.textContent = RELEASE_NAME
+  label.title = `build ${__BUILD_NUMBER__}`
   el.appendChild(label)
 
   const button = document.createElement('button')
@@ -70,6 +158,8 @@ export function mountVersionHud(): void {
   button.textContent = '⟳'
   button.addEventListener('click', () => window.location.reload())
   el.appendChild(button)
+
+  watchForNewBuild(button)
 
   // Keep a tap here from also being read as a tap or swipe on the canvas
   // underneath — it would otherwise pop the control panel open, or worse,
