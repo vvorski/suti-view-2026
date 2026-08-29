@@ -195,7 +195,12 @@ class CommonAnalysis {
   // to crawl out, so the first thing you ever see is the wrong colour.
   private readonly tiltEnv = new Envelope(2.2, 2.8, 0.5)
   private readonly shortEnergy = new Envelope(0.05, 0.12)
-  private readonly longEnergy = new Envelope(1.5, 4.0)
+  // Attack matches release: a "recent history" floor that rose faster than it
+  // fell (1.5s attack against a 4.0s release) chased a new loud section
+  // almost as fast as `level` itself moves, so a sustained section relaxed
+  // back toward baseline within ~2s of arriving — see docs/todo.md entry 12,
+  // where pnpm probe's own "Full track" table is the evidence.
+  private readonly longEnergy = new Envelope(4.0, 4.0)
   // A 0.3s attack is what separates a breakdown from the gap between two
   // beats. Anything faster fires on every kick pattern.
   private readonly breakEnv = new Envelope(0.3, 0.5)

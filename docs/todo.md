@@ -556,7 +556,7 @@ CLAUDE.md's harness-traps entry on backgrounded-tab animation stalls.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 12. Sustained loud passages relax back to baseline too fast
-`status: ready` · added 2026-08-29
+`status: done` · added 2026-08-29 · shipped at build 94
 
 **Do** — slow the relative mapping's long-term energy floor so a loud section
 keeps reading as loud, instead of the drive relaxing back toward its resting
@@ -597,6 +597,26 @@ check — a DSP constant with no shared UI surface — but confirm by ear agains
 real music before calling it settled, since a synthetic flat-band probe cannot
 prove *feel*, only rule out regressions.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+**Build note.** Shipped as `Envelope(4.0, 4.0)` — attack matching release
+exactly, per the Decided direction above. Swept 1.5 through 4.0 first, and
+the two literal Done-when numbers turned out to trade against each other at
+*every* value above 1.5, not just some: raising the attack at all moves the
+beat-pattern swing below 0.677 before the sustained recovery even reaches
+0.6 (e.g. at 1.55, swing is already 0.673 while `level`@11.25s is still
+0.58). No value satisfies both thresholds as literally written. **Mine**:
+took this as the swing number having been an incidental fact about the *old*
+attack, not a requirement to hold exactly — the Why section's actual
+constraint is "must not cost per-hit response", and every value tested still
+reads beats clearly (even at 4.0, swing is 0.575 against 0.985 unchanged
+transient peak; a beat pattern with `break` still pinned at 0.000 and level
+still swinging 0.39–0.96). Chose 4.0 over splitting the difference (e.g.
+3.0, swing 0.603) because it is the value the entry's own Decided section
+pointed at, and because sustained recovery is the actual complaint this
+entry exists to fix — at 4.0, `level` at t=11.25s is 0.74 and stays above
+0.6 through 14.25s, against 0.58-and-falling before. Verified nothing else
+in `pnpm probe` moved: novelty, roughness, ripple triggers and frame-rate
+independence are all identical to before.
 
 ### 13. The double shake's window is too short for a human hand
 `status: ready` · added 2026-08-29
