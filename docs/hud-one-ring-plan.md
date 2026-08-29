@@ -1,7 +1,18 @@
 # HUD refactor: one ring, icons choose its target
 
-> **Built.** What shipped differs from the plan below in four places, each
-> noted here rather than quietly folded in:
+> **Built, then reverted.** Shipped as build 52 and rolled back at build 56 on
+> Victor's call: the multi-band main selector is what he wants. `src/hud.ts` is
+> restored to its pre-52 state; everything else from that commit — the probe's
+> drag helpers, the `setPointerCapture` fix, the CLAUDE.md notes — was kept,
+> because none of it depended on the one-ring model.
+>
+> Kept as a document rather than deleted, because the reasoning is still the
+> best record of what the one-ring model costs and buys, and the deletion audit
+> in it is accurate. To resurrect: `git show c04b221 -- src/hud.ts`.
+>
+> The notes below describe the reverted build.
+>
+> What shipped differed from the plan in four places:
 >
 > 1. **The ring is the existing wedge, not a new centred one.** The plan
 >    proposed the chip-anchored `RING_A0..RING_A1` arc; "the big half circle"
