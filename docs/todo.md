@@ -684,7 +684,7 @@ sinusoid.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 14. Both ends of every value band are off the screen
-`status: ready` · added 2026-08-29
+`status: done` · added 2026-08-29 · shipped at build 97
 
 **Do** — give scalar bands their own angular span, inside the quadrant the
 screen actually occupies, and use it for the track, the fill, the knob and the
@@ -750,6 +750,17 @@ band still spins across its full sweep afterwards — that is the property most
 at risk from touching shared angle constants.
 **Hard stops** — prefs no (values stay 0–1; only the angle they sit at moves)
 · url no · capture no · dependency no.
+
+**Build note.** `hud-probe.html`'s `bandPoint(i, t)` gained a third param,
+`scalar` (default `false`, matching every existing enum-band call site
+unchanged), since it now has to know which span to aim at. **Mine**: a
+default that preserves every prior call rather than requiring every caller
+to be touched. Verified on screen at 320×568 and 360×640 via
+`hud-narrow.html`: dragging the R band to each extreme now reads `R 100`
+and `R 0` with the knob clearly inside the viewport both times (previously
+stopped short of both ends), and a `View` enum band still spins its full
+range and commits correctly — confirms `SWEEP_*` and `SCALAR_*` didn't
+cross-contaminate.
 
 ### 15. Shuffle depth follows how hard you shook
 `status: ready` · added 2026-08-29

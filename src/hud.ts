@@ -48,9 +48,29 @@ const SVG_NS = 'http://www.w3.org/2000/svg'
 const DEG = Math.PI / 180
 const TAU = Math.PI * 2
 
-/** The wedge's opening, in degrees about the hinge. */
+/** The wedge's opening, in degrees about the hinge. Drives the tick rim and
+ *  the enum bands, which are read at the notch and never need their ends —
+ *  see SCALAR_A/SCALAR_B for why a scalar band cannot use this directly. */
 const SWEEP_A = 165
 const SWEEP_B = 285
+/**
+ * A scalar band's own, narrower span — its track, its knob's travel, and the
+ * angle a drag maps back to a value all use this instead of SWEEP_*.
+ *
+ * From a bottom-right hinge the screen occupies exactly 180°-270°; SWEEP_*
+ * is 30° wider than that on purpose, so an enum band's ends can sit off-
+ * screen with nothing lost, since they're only ever read at the notch. A
+ * scalar band maps its *whole range* onto that arc, so its own ends — 100%
+ * and 0% — landed off-screen too, at roughly 15%/85% reachable rather than
+ * 0%/100%. Symmetric about the 225° notch, like SWEEP_*, so 50% stays put:
+ * 8.3px inside the viewport at 320×568 (10.6px at 360×640), which 186°-264°
+ * does not quite clear and 192°-258° clears with 4° more travel spent than
+ * needed. Costs sensitivity — the full range is 70° now instead of 120°,
+ * about 1.7x more value per degree of thumb travel — which is worth it for
+ * ends that are actually reachable. See docs/todo.md entry 14.
+ */
+const SCALAR_A = 190
+const SCALAR_B = 260
 /** Where a selection is read off. Midway along the sweep. */
 const NOTCH = 225 * DEG
 /** Angular spacing between adjacent options on an enum band. */
@@ -582,11 +602,13 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     return Math.atan2(e.clientY - r.top - cy, e.clientX - r.left - cx)
   }
 
-  /** Where an angle falls along the sweep, as 0-1, clamped to its ends. Built
-   *  on delta() rather than "(a-a0)/(a1-a0)" so it survives a0/a1 straddling
-   *  the 0/360 wrap. */
+  /** Where an angle falls along a scalar band's own span, as 0-1, clamped to
+   *  its ends. Only ever called from a scalar band's drag — see SCALAR_A/
+   *  SCALAR_B for why that span is narrower than the wedge's own SWEEP_*.
+   *  Built on delta() rather than "(a-a0)/(a1-a0)" so it survives a0/a1
+   *  straddling the 0/360 wrap. */
   function angleToUnit(a: number): number {
-    const t = delta(a, SWEEP_A * DEG) / delta(SWEEP_B * DEG, SWEEP_A * DEG)
+    const t = delta(a, SCALAR_A * DEG) / delta(SCALAR_B * DEG, SCALAR_A * DEG)
     return Math.max(0, Math.min(1, t))
   }
 
@@ -752,6 +774,8 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
 
     const a0 = SWEEP_A * DEG
     const a1 = SWEEP_B * DEG
+    const s0 = SCALAR_A * DEG
+    const s1 = SCALAR_B * DEG
 
     // Ticks along the outer edge, as a rim for the whole wedge.
     const outer = base * BAND_R[0] + base * 0.07
@@ -772,10 +796,14 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     const bands = GROUPS[group].bands
     bands.forEach((band, i) => {
       const r = base * BAND_R[i]
+      // Enum bands are read at the notch and spin past the wedge's full
+      // sweep; scalar bands map a value onto their own, narrower span so
+      // both of its ends land on screen — see SCALAR_A/SCALAR_B.
+      const [ba0, ba1] = band.kind === 'enum' ? [a0, a1] : [s0, s1]
 
       svg.appendChild(
         el('path', {
-          d: arcPath(r, a0, a1),
+          d: arcPath(r, ba0, ba1),
           class: 'hud-track',
           'stroke-width': band.kind === 'enum' ? Math.max(30, base * 0.09) : 7,
         }),
@@ -829,8 +857,9 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
 
     // Grab arcs last, so they sit above everything they control.
     drawn.forEach(({ band, r }) => {
+      const [ba0, ba1] = band.kind === 'enum' ? [a0, a1] : [s0, s1]
       const hit = el('path', {
-        d: arcPath(r, a0, a1),
+        d: arcPath(r, ba0, ba1),
         class: 'hit',
         fill: 'none',
         stroke: 'transparent',
@@ -846,8 +875,8 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
   }
 
   function paint(): void {
-    const a0 = SWEEP_A * DEG
-    const a1 = SWEEP_B * DEG
+    const s0 = SCALAR_A * DEG
+    const s1 = SCALAR_B * DEG
 
     for (const d of drawn) {
       const { band, r } = d
@@ -876,8 +905,8 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
         d.caption.style.fill = '#5d5a78'
       } else {
         const v = band.current()
-        const va = a0 + v * (a1 - a0)
-        const fillD = arcPath(r, a0, Math.max(a0 + 0.001, va))
+        const va = s0 + v * (s1 - s0)
+        const fillD = arcPath(r, s0, Math.max(s0 + 0.001, va))
         d.fill?.setAttribute('d', fillD)
         d.halo?.setAttribute('d', fillD)
         const [kx, ky] = polar(r, va)

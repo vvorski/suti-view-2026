@@ -90,14 +90,19 @@
     return target.getAttribute('class')
   }
 
-  /** A point on band `i` at `t` (0-1) along the wedge's sweep, in screen
-   *  coordinates — what a drag along that band has to be aimed at. */
-  window.bandPoint = (i, t) => {
+  /** A point on band `i` at `t` (0-1) along its own arc, in screen
+   *  coordinates — what a drag along that band has to be aimed at. Scalar
+   *  bands (opacity, R/G/B) map their value onto SCALAR_A-SCALAR_B, a
+   *  narrower span than enum bands' SWEEP_A-SWEEP_B, so both ends actually
+   *  land on screen — see docs/todo.md entry 14. Pass `scalar: true` for
+   *  those; enum bands (View, Merge, Map) still use the wedge's full sweep. */
+  window.bandPoint = (i, t, scalar = false) => {
     const w = window.innerWidth, h = window.innerHeight
     const base = Math.min(w, h)
     const cx = w + 10, cy = h + 10
     const r = base * [0.88, 0.75, 0.63, 0.53, 0.43, 0.33][i]
-    const a = (165 + t * (285 - 165)) * (Math.PI / 180)
+    const [lo, hi] = scalar ? [190, 260] : [165, 285]
+    const a = (lo + t * (hi - lo)) * (Math.PI / 180)
     return [cx + r * Math.cos(a), cy + r * Math.sin(a)]
   }
 
