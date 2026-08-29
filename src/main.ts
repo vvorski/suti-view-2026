@@ -214,11 +214,12 @@ interface Shuffle {
  * shuffle (entry 6) — opacity because a shuffle that can hand back a black
  * screen looks like a crash recoverable only by shaking at nothing, mapping
  * because it is how the picture *hears*, not what it looks like. Both are
- * back at the top rung: opacity floored at 0.35 rather than spanning 0-1, for
- * the same reason colour channels are floored at 0.2, and mapping because at
- * the top of the scale the ask is a genuinely different instrument, not a
- * different palette — overturning entry 6's exclusion on purpose rather than
- * by oversight.
+ * back at the top rung: opacity floored at 0.5 (raised from an initial 0.35
+ * by entry 21, once the *product* of opacity and colour turned out to be
+ * what actually goes dark — see SHUFFLE_MIN_ALPHA's own comment) rather than
+ * spanning 0-1, and mapping because at the top of the scale the ask is a
+ * genuinely different instrument, not a different palette — overturning
+ * entry 6's exclusion on purpose rather than by oversight.
  *
  * The camera is never switched on at any depth — not a taste call, the
  * capture hard stop. Its *colour* rolls at the top rung, which changes a
@@ -229,10 +230,36 @@ interface Shuffle {
  * reach mapping must never re-create the live Mapping instance and discard
  * its envelope state for nothing.
  */
+/**
+ * A layer's actual brightness is its opacity times its colour gain's peak
+ * channel (composite.frag.glsl: `base = atmosphere * uAtmAlpha *
+ * uAtmColour`) — a product, not either number in isolation. Flooring each
+ * independently (0.35 for opacity, 0.2 per colour channel) left the product
+ * as low as 0.07, which read as the screen going dark for no reason anyone
+ * could trace back to a shake. Both floors rise here, and the colour floor
+ * is enforced on the *dominant* channel specifically — see colour()'s own
+ * comment for why. Worst case becomes 0.5 x 0.5 = 0.25. See docs/todo.md
+ * entry 21.
+ */
+const SHUFFLE_MIN_ALPHA = 0.5
+const SHUFFLE_MIN_DOMINANT_CHANNEL = 0.5
+
 function shuffled(depth: number): Shuffle {
   const pick = <T,>(xs: readonly T[]): T => xs[Math.floor(Math.random() * xs.length)]
   const channel = (): number => 0.2 + Math.random() * 0.8
-  const colour = (): GeoColour => ({ r: channel(), g: channel(), b: channel() })
+  const colour = (): GeoColour => {
+    const c = { r: channel(), g: channel(), b: channel() }
+    const dominant = Math.max(c.r, c.g, c.b)
+    if (dominant >= SHUFFLE_MIN_DOMINANT_CHANNEL) return c
+    // Only the channel that already leads is lifted, not all three — scaling
+    // every channel toward a floor washes each dim roll toward grey and
+    // quietly removes half the palette this exists to explore. Lifting just
+    // the one that already dominates keeps the hue the roll chose and only
+    // adds strength to it.
+    if (c.r === dominant) return { ...c, r: SHUFFLE_MIN_DOMINANT_CHANNEL }
+    if (c.g === dominant) return { ...c, g: SHUFFLE_MIN_DOMINANT_CHANNEL }
+    return { ...c, b: SHUFFLE_MIN_DOMINANT_CHANNEL }
+  }
 
   const next: Shuffle = {}
   if (depth >= SHUFFLE_COLOUR) {
@@ -248,8 +275,8 @@ function shuffled(depth: number): Shuffle {
     next.atmosphericView = pick(Object.keys(ATMOSPHERIC_VIEWS) as AtmosphericViewName[])
   }
   if (depth >= SHUFFLE_EVERYTHING) {
-    next.geoAlpha = 0.35 + Math.random() * 0.65
-    next.atmAlpha = 0.35 + Math.random() * 0.65
+    next.geoAlpha = SHUFFLE_MIN_ALPHA + Math.random() * (1 - SHUFFLE_MIN_ALPHA)
+    next.atmAlpha = SHUFFLE_MIN_ALPHA + Math.random() * (1 - SHUFFLE_MIN_ALPHA)
     next.camColour = colour()
     next.mapping = pick(Object.keys(MAPPINGS) as MappingName[])
   }

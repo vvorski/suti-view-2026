@@ -1408,7 +1408,7 @@ section already flags as needing a real phone, both platforms if one is
 reachable.
 
 ### 21. The shuffle's floors multiply, and the screen goes dark
-`status: ready` · added 2026-08-29
+`status: done` · added 2026-08-29 · shipped at build 108
 
 **Do** — floor what a layer's brightness actually *is*, rather than flooring
 each of the two numbers that produce it.
