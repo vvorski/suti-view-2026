@@ -177,8 +177,10 @@ function idleParams(t: number, spectrum: Uint8Array): VisualParams {
 
 /** What a shuffle changes at each rung. Each rung includes everything below
  *  it — see shuffled()'s own comment for the reasoning behind the order and
- *  the numbers. */
-const SHUFFLE_COLOUR = 0.2
+ *  the numbers. Colours have no threshold of their own any more (entry 29):
+ *  they roll on every qualifying shake, at the very bottom of what survives,
+ *  below even the re-seed. */
+const SHUFFLE_RESEED = 0.3
 const SHUFFLE_MERGE = 0.45
 const SHUFFLE_VIEWS = 0.7
 const SHUFFLE_EVERYTHING = 0.9
@@ -214,11 +216,23 @@ interface Shuffle {
  * by how little of what you had survives: a colour shift is recognisably the
  * same picture, a view change is a different instrument.
  *
- *   any qualifying shake   re-seed only (handled by the caller)
- *   0.20                   both layers' colours
+ *   any qualifying shake   both layers' colours (this function only)
+ *   0.30                   + re-seed (the caller's own job — see shuffle())
  *   0.45                   + both merge modes
  *   0.70                   + both views
  *   0.90                   + opacity, mapping, the camera layer's colour
+ *
+ * Colours used to have no threshold check at all, which sounds the same as
+ * "always" but is not: the *re-seed* was what actually had no threshold
+ * (`shuffle()` called `visualiser.randomise()` unconditionally, outside
+ * every depth test below), and a re-seed replaces the arrangement entirely
+ * while keeping only the palette and the view — the biggest change the
+ * ladder can make, sitting where the smallest one belongs. Entry 29 gives
+ * the re-seed its own threshold (`SHUFFLE_RESEED`, 0.30 — above the old
+ * colour boundary, so a shake that used to re-seed silently now shifts the
+ * palette instead) and puts colours at the true bottom of the ladder, with
+ * no threshold of their own, so the gentlest qualifying shake still visibly
+ * does *something* rather than reading as a shake that did nothing.
  *
  * Opacity and mapping were excluded entirely when this was a single on/off
  * shuffle (entry 6) — opacity because a shuffle that can hand back a black
@@ -278,10 +292,11 @@ function shuffled(depth: number): Shuffle {
     return { ...c, b: SHUFFLE_MIN_DOMINANT_CHANNEL }
   }
 
-  const next: Shuffle = {}
-  if (depth >= SHUFFLE_COLOUR) {
-    next.geoColour = colour()
-    next.atmColour = colour()
+  // Colours roll unconditionally — the ladder's true bottom rung, below even
+  // the re-seed. See this function's own file comment.
+  const next: Shuffle = {
+    geoColour: colour(),
+    atmColour: colour(),
   }
   if (depth >= SHUFFLE_MERGE) {
     next.mergeMode = pick(Object.keys(MERGE_MODES) as MergeModeName[])
@@ -541,11 +556,13 @@ async function main(): Promise<void> {
 
   /** Roll a new picture at the given depth and let the panel adopt it, so the
    *  HUD opened afterwards shows what is actually on screen rather than what
-   *  was. The seed always re-rolls, whatever the depth — see shuffled(). */
+   *  was. The colours always roll, whatever the depth; the seed only
+   *  re-rolls once SHUFFLE_RESEED is reached — see shuffled()'s own file
+   *  comment for why the two used to be backwards from each other. */
   const shuffle = (depth: number): void => {
     const next = shuffled(depth)
     panel.adopt(next)
-    visualiser.randomise()
+    if (depth >= SHUFFLE_RESEED) visualiser.randomise()
   }
 
   /**
@@ -819,9 +836,10 @@ async function main(): Promise<void> {
         const strongPeak = shake.takeStrong()
         if (strongPeak && !panelOpen) {
           if (prefs.showStats) flashShake(false)
-          // Graded: a bare re-seed at the gentlest qualifying shake, up to
-          // everything at the hardest. shuffle() always re-seeds regardless
-          // of depth — see its own comment.
+          // Graded: a colour shift at the gentlest qualifying shake, up to
+          // everything at the hardest. shuffle() always rolls colours
+          // regardless of depth, and re-seeds once SHUFFLE_RESEED is
+          // reached — see its own comment.
           const depth = intensity(strongPeak)
           shuffle(depth)
           maybeRollCamera(depth)

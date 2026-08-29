@@ -2012,7 +2012,7 @@ disc → title → release name → byline order from entry 10 still holds.
 `pnpm build`, `pnpm lint` both clean.
 
 ### 29. A light shake changes the colours and nothing else
-`status: ready` · added 2026-08-29
+`status: done` · added 2026-08-29 · shipped at build 121
 
 **Do** — make the colour roll the ladder's bottom rung and give the re-seed a
 threshold of its own, instead of firing it on every shake regardless of depth.
@@ -2074,3 +2074,18 @@ same picture rather than replacing it.
 distinction this entry exists to create is between two things that both look
 like "the picture changed" in a still frame. Also `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+**Build note.** `scripts/probe-shake.ts` needed no code change: it already
+prints `depth` per case (entry 15), and `depth` is peak-derived only —
+untouched by where any of `SHUFFLE_RESEED`/`SHUFFLE_MERGE`/etc. sit, since
+those constants live in `main.ts`, which the probe cannot safely import
+(it calls `main()` at module scope on load, same reason `probe-shake.ts`
+already avoids anything but `shake.ts`). The printed depths already prove
+the ladder against the new thresholds by inspection, exactly as entry 15's
+own Done-when did for the original ones: gentle sustained at 0.00 (below
+0.30 — colours only, confirmed), deliberate at 0.36 (above 0.30, below
+0.45 — colours plus a new pattern, confirmed), violent at 0.94 (above 0.90
+— everything, confirmed), every double at 1.00 (everything, unaffected).
+`pnpm probe:shake`'s own table is otherwise byte-for-byte identical to
+before this entry, `pnpm probe:fullscreen` and `pnpm probe:haptics`
+likewise, `pnpm build` and `pnpm lint` both clean.
