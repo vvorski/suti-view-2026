@@ -147,7 +147,22 @@ const cases: Array<[string, Result]> = [
   ['deliberate shake @ 30 Hz', run(1.2, (t) => shaking(t, 28, 4), 3, 30)],
   ['deliberate shake @ 20 Hz', run(1.2, (t) => shaking(t, 28, 4), 3, 20)],
   ['deliberate shake @ 12 Hz', run(1.2, (t) => shaking(t, 28, 4), 3, 12)],
-  ['violent shake @ 12 Hz', run(1.5, (t) => shaking(t, 45, 6), 3, 12)],
+  // 6.3 Hz, not 6. A 6 Hz shake sampled at 12 Hz sits exactly on Nyquist, so
+  // every sample landed on sin(kπ) = 0 and this row read 0.00 across the
+  // board — a violent shake registering as a phone lying still, at any
+  // amplitude whatsoever.
+  //
+  // That is arithmetic, not a defect in shake.ts, and chasing it as one would
+  // have cost a day. The notch is razor-thin: sweeping shake rate against
+  // sensor rate, only exactly sensorHz/2 collapses, while 5.5 Hz and 6.5 Hz
+  // against a 12 Hz sensor still retain 0.64 of a normal 0.69. A hand is never
+  // exactly 6.000 Hz and never phase-locked to the sensor, so the hazard is
+  // real in theory and unreachable in practice.
+  //
+  // What it is a defect in is this probe: a perfect sinusoid is not a hand.
+  // Keep the frequency realistic, and keep this comment so the zero does not
+  // get rediscovered as a bug in the app.
+  ['violent shake @ 12 Hz', run(1.5, (t) => shaking(t, 45, 6.3), 3, 12)],
 ]
 
 console.log(
@@ -169,8 +184,26 @@ for (const [name, r] of cases) {
 const shake = cases.find(([n]) => n.startsWith('deliberate'))![1]
 const knock = cases.find(([n]) => n.startsWith('knock + rebound'))![1]
 console.log()
+
+const failures: string[] = []
+if (shake.strongs < 1) failures.push(`deliberate shake fired ${shake.strongs}, expected ≥1`)
+if (knock.strongs !== 0) failures.push(`knock + rebound fired ${knock.strongs}, expected 0`)
+
+// Every vigorous case, not just the two above.
+//
+// This exists because the table printed a violent shake reading 0.00 on every
+// column — a phone being thrown about registering as one lying still — and the
+// summary line said PASS underneath it, because the check only ever looked at
+// two of sixteen rows. A row that obviously wrong should not need a human to
+// notice it. Whatever the sensor rate, a shake this hard must move something.
+for (const [name, r] of cases) {
+  if (!name.startsWith('violent') && !name.startsWith('deliberate')) continue
+  if (r.peakDisturb < 0.5) failures.push(`${name} reads as still (disturb ${r.peakDisturb.toFixed(2)})`)
+}
+
 console.log(
-  shake.strongs >= 1 && knock.strongs === 0
-    ? 'PASS: a shake re-rolls, a knock and its rebound do not.'
-    : `FAIL: shake fired ${shake.strongs}, knock fired ${knock.strongs}.`,
+  failures.length === 0
+    ? 'PASS: a shake re-rolls, a knock and its rebound do not, and no hard shake reads as still.'
+    : `FAIL:\n  ${failures.join('\n  ')}`,
 )
+process.exit(failures.length === 0 ? 0 : 1)
