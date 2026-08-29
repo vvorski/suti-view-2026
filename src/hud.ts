@@ -140,6 +140,25 @@ const LABEL_PAD = 26
  *  as a ghost, so the wedge still looks like one object. */
 const POPUP_DIM = 0.12
 
+/**
+ * How far the bands you are not using recede.
+ *
+ * Three bands at three radii, each already fading by angle from the notch,
+ * means three sets of labels competing for one glance — and on a 320px screen
+ * the outer band's text sits near the edge while the inner two crowd together.
+ * In practice you read the band you are turning and guess the rest.
+ *
+ * So the band last touched holds full contrast and the other two drop back.
+ * 0.3 rather than something deeper because they must stay *readable*: the
+ * whole reason for showing three at once is seeing what the others are set to
+ * without going hunting. This is emphasis, not POPUP_DIM's near-blanking, and
+ * the two multiply — a popup over a recessed band dims it further still.
+ *
+ * Nothing is focused until something is touched, so opening the HUD looks
+ * exactly as it always did. See `focused`.
+ */
+const FOCUS_DIM = 0.3
+
 /** The camera ring's colour. Deliberately not one of CHANNELS' three tints —
  *  those say "this is the red channel", and a fourth ring in a fourth hue
  *  would read as a fourth channel. A near-white amber says "this is not one
@@ -414,6 +433,9 @@ interface Band<K extends string> {
   /** Filled in on layout. */
   labels: SVGTextElement[]
   hit?: SVGPathElement
+  /** This band's own arc. Held per-band rather than in one shared list because
+   *  each now dims independently — see FOCUS_DIM. */
+  track?: SVGPathElement
   r: number
 }
 
@@ -605,9 +627,17 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
    *  flag on the way rgbPanel's class does it for the colour popup. */
   let camRingOpen = false
 
-  /** The band arcs, kept only so a popup can fade them back — see POPUP_DIM.
-   *  Their labels already live on each band as b.labels. */
-  let bandTracks: SVGPathElement[] = []
+  /** The selector trapezoid and its tip — the reading window, which spans every
+   *  band. Dimmed by a popup along with everything else, but never by
+   *  FOCUS_DIM: it marks where the selection is read off, which is true of
+   *  whichever band is in front. The band arcs themselves are now held
+   *  per-band as b.track. */
+  let selectorParts: SVGPathElement[] = []
+
+  /** The band the thumb last landed on, or null before anything is touched.
+   *  Drives FOCUS_DIM; reset when the HUD closes so reopening is never already
+   *  emphasising something from a previous session. */
+  let focused: Band<string> | null = null
 
   /** True while either popup is up. They are mutually exclusive (see
    *  closeColourPopup()/closeMapDial()), so this is "is anything covering
@@ -775,7 +805,7 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     svg.appendChild(el('path', { d: arcPath(outer + 4, a0, a1), class: 'hud-rule' }))
 
     // Bands, outermost first.
-    bandTracks = []
+    selectorParts = []
     for (const b of bands) {
       b.r = base * b.radius
       b.rot = restingRot(b)
@@ -785,10 +815,10 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
         'stroke-width': Math.max(30, base * 0.09),
       })
       svg.appendChild(bandTrack)
-      // Held onto only so a popup can fade them — see POPUP_DIM. Rebuilt on
-      // every resize along with everything else in here, hence the reset
-      // above rather than a push onto a stale array.
-      bandTracks.push(bandTrack)
+      // Held per-band, because a popup fades all of them (POPUP_DIM) but focus
+      // fades only the ones not in use (FOCUS_DIM). Reassigned on every resize
+      // along with everything else in here.
+      b.track = bandTrack
       b.labels = b.keys.map(() => {
         const t = el('text', { class: 'hud-item' })
         svg.appendChild(t)
@@ -807,8 +837,10 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
       const [lx1, ly1] = polar(r1, NOTCH - Math.atan2(w1 / 2, r1))
       const [rx1, ry1] = polar(r1, NOTCH + Math.atan2(w1 / 2, r1))
       // Fades with the bands it reads — it marks which band option is
-      // selected, so leaving it lit over faded bands points at nothing.
-      bandTracks.push(
+      // selected, so leaving it lit over faded bands points at nothing. Only
+      // with a popup, though: it spans every band, so it is never the thing
+      // that recedes when one band is focused.
+      selectorParts.push(
         svg.appendChild(
           el('path', {
             d: `M${lx0} ${ly0}L${lx1} ${ly1}L${rx1} ${ry1}L${rx0} ${ry0}Z`,
@@ -819,7 +851,7 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
       const [tx, ty] = polar(r0 - 10, NOTCH)
       const [bx, by] = polar(r0 - 24, NOTCH)
       const perp = NOTCH + Math.PI / 2
-      bandTracks.push(
+      selectorParts.push(
         svg.appendChild(
           el('path', {
             d:
@@ -1238,10 +1270,18 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
   function paintBands(): void {
     // A popup anchored to the chip column lies across these, so they yield
     // while one is up rather than fighting it for the same pixels.
-    const dim = popupOpen() ? POPUP_DIM : 1
-    for (const t of bandTracks) t.setAttribute('opacity', dim.toFixed(3))
+    const popDim = popupOpen() ? POPUP_DIM : 1
+    for (const t of selectorParts) t.setAttribute('opacity', popDim.toFixed(3))
 
     for (const b of bands) {
+      // Two independent reasons to fade, multiplied rather than picked
+      // between: a popup covers everything, focus recedes everything the thumb
+      // is not on. A band that is both covered and unfocused is fainter than
+      // either alone, which is right — it is the least relevant thing on
+      // screen at that moment.
+      const dim = popDim * (focused === null || focused === b ? 1 : FOCUS_DIM)
+      b.track?.setAttribute('opacity', dim.toFixed(3))
+
       const sel = b.current()
       b.keys.forEach((k, i) => {
         const a = NOTCH + i * PITCH + b.rot
@@ -1425,6 +1465,16 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
   }
 
   function bindBandDrag(hit: SVGPathElement, b: Band<string>): void {
+    // Touching a band promotes it and pushes the other two back — see
+    // FOCUS_DIM. A separate listener rather than a hook inside bindTurnDrag,
+    // because the mapping dial shares that binder and has no band to focus.
+    // Fires on pointerdown, not on settle: the emphasis has to be there for
+    // the drag itself, which is the whole moment it exists for.
+    hit.addEventListener('pointerdown', () => {
+      if (focused === b) return
+      focused = b
+      paintBands()
+    })
     bindTurnDrag(
       hit,
       () => [cx, cy],
@@ -1477,10 +1527,14 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
       paintButtons()
       paintColourPopup()
     } else {
-      // Both are modes; leaving either open across a close would mean the HUD
-      // reopens showing something the last tap did not ask for.
+      // All three are modes; leaving any of them set across a close would mean
+      // the HUD reopens showing something the last tap did not ask for. Focus
+      // is the third: reopening already emphasising whatever was touched
+      // minutes ago would be asserting something about this glance that is not
+      // true. See FOCUS_DIM.
       closeColourPopup()
       closeMapDial()
+      focused = null
       stats.textContent = ''
     }
   }
