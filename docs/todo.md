@@ -352,6 +352,14 @@ where the threshold is except by trial.
   pattern, not a whisper. **Mine**: a confirmation that can be too faint to
   feel is the bug builds 68 and 76 were both about, and reintroducing it as a
   feature would be absurd.
+- A haptics library instead of hand-written patterns → **no library, improve
+  the patterns here.** Asked and answered 2026-08-29. It is the dependency
+  hard stop, and it buys nothing that would help: Safari implements no
+  Vibration API at all, so no library can produce an iPhone buzz, and on
+  Android every one of them is a wrapper over `navigator.vibrate` — which
+  `haptics.ts` already wraps, with motor spin-up patterns, reduced-motion
+  suppression and instrumented status that a generic wrapper would not have.
+  This entry is where that effort goes instead.
 
 **Lands in** — `src/shake.ts` (`takeStrong`/`takeDouble` return the peak, or a
 sibling reports it), `src/haptics.ts` (pattern scaled by intensity),
@@ -559,4 +567,69 @@ problem and what proves the fix). Also `pnpm build`, `pnpm lint`. No on-screen
 check — a DSP constant with no shared UI surface — but confirm by ear against
 real music before calling it settled, since a synthetic flat-band probe cannot
 prove *feel*, only rule out regressions.
+**Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 13. The double shake's window is too short for a human hand
+`status: ready` · added 2026-08-29
+
+**Do** — give the escalation its own timer instead of borrowing
+`STRONG_COOLDOWN`, and set it long enough that two deliberate shakes with a
+natural pause between them still read as a double.
+**Why** — on Victor's phone with `?debug`, two shakes flash white and never
+red: singles are detected and the escalation never fires.
+
+**Decided**
+- Is this a detector fault or a window fault → **window.** Confirmed on the
+  phone before writing this: the flash goes white, so `detectStrong` is firing
+  and only the escalation is missing. That rules out the whole family of
+  sensor faults `SUSTAIN_LEVEL` exists to cover, and rules out `QUIET_GAP`,
+  which arms *earlier* the longer the pause is.
+- Why the window is the suspect → arithmetic, not a hunch. `STRONG_COOLDOWN`
+  is 1.5s measured from the *first* fire (`shake.ts:347`), and the second
+  shake has to be fully earned inside what is left of it — three reversals at
+  a hand's ~4 Hz is about 0.75s on its own. That leaves under 0.75s for the
+  pause, and a deliberate pause between two shakes is longer than that. The
+  probe never caught it because its only double case spaces them **0.35s**
+  apart (`probe-shake.ts:175`), which is faster than a hand can pause.
+- Two timers or one longer one → **two.** **Mine**, because one constant is
+  currently doing two unrelated jobs — "one shake must not fire twice" and
+  "how long the escalation stays armed" — and simply raising it would weaken
+  the first to fix the second. This is the second-tenant refactor CLAUDE.md
+  asks for as part of the change, not after it.
+- `DOUBLE_WINDOW` = 3.0s → **Mine**, over 2.0 and 4.0. It has to hold a pause
+  (~1s) plus a second shake earning itself (~0.75s) plus hesitation, which 2.0
+  barely does and is what the current 1.5 fails at. Above ~4s a person who
+  shakes, looks at the result, and shakes again gets an unasked-for shuffle;
+  3.0 sits below that.
+- What "two shakes, 2s apart" means → **a double, where today it is asserted
+  to be two singles** (`probe-shake.ts:218`). **Mine**, and the one call here
+  worth disagreeing with: it changes what the gesture *is*. Two shakes two
+  seconds apart is a person asking twice, not a person shaking twice by
+  coincidence. The rejection case it currently provides is replaced by the
+  same pair spaced 4s, which keeps the property that matters — that unrelated
+  shakes minutes or seconds apart do not shuffle the picture.
+- Does the buzz change → **no.** `DOUBLE_PATTERN` is already distinct and
+  already ships; nothing about it depends on the window.
+
+**Lands in**
+- `src/shake.ts:80` — `STRONG_COOLDOWN` keeps its 1.5s and its current job; a
+  new `DOUBLE_WINDOW` sits beside it with the reasoning above.
+- `src/shake.ts:343-385`, `detectStrong` — `escalating` currently reads
+  `this.cooldown > 0` (line 346). It needs its own countdown, set alongside
+  the cooldown at lines 322 and 381, and read at 375. `armedForDouble` and
+  `quietFor` are unchanged.
+- `scripts/probe-shake.ts:173-184` — the 0.35s case stays (a fast double must
+  keep working); add one at a human cadence, ~0.9s of quiet between the two
+  bursts; change the 2s case's expectation to a double and add a 4s case
+  expecting none.
+
+**Done when** — `pnpm probe:shake` reports ≥1 double for the 0.35s case, ≥1
+for the new 0.9s case, ≥1 for the 2s case, and 0 for the 4s case, with the
+knock-plus-rebound row still at 0 strongs and 0 doubles. Then on the phone:
+two shakes with a comfortable pause flash **red**.
+**Verify** — `pnpm probe:shake` is the primary evidence and the knock rows are
+the regression guard. Also `pnpm build`, `pnpm lint`. No HUD surface changes,
+so no 320×568 / 360×640 check is owed — but the phone check above is not
+optional, because a window tuned for a hand cannot be proven by a synthetic
+sinusoid.
 **Hard stops** — prefs no · url no · capture no · dependency no.
