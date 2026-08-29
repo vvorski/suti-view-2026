@@ -269,6 +269,23 @@ else on an approved issue is yours to build.
 A "no" to all four means implement directly and let `pnpm build` be the gate.
 Any "yes" means the work stops and becomes a proposal.
 
+## Capturing an idea without stopping
+
+`docs/todo.md` is a capture buffer: ideas written down in a state somebody can
+pick up cold, so catching one does not mean dropping what is being built.
+`/aaa <idea>` does the interrogating and appends the entry.
+
+It is not the issue queue. `spec-to-issue` and `auto-issue-gogo` remain the
+path for work handed to an agent unattended — a full spec, `status:` labels, a
+branch per issue. An entry in `docs/todo.md` can graduate to an issue; nothing
+there has to.
+
+The rule for both is the same, and it is the only one that matters: **an entry
+is ready when someone with no memory of the conversation can build it without
+making a judgement call you could have made for them.** In a visual project
+almost every interesting fork is a taste question wearing a technical costume,
+and those go to the user rather than into your rationale.
+
 ## Commands
 
 ```bash
