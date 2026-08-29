@@ -2089,3 +2089,94 @@ own Done-when did for the original ones: gentle sustained at 0.00 (below
 `pnpm probe:shake`'s own table is otherwise byte-for-byte identical to
 before this entry, `pnpm probe:fullscreen` and `pnpm probe:haptics`
 likewise, `pnpm build` and `pnpm lint` both clean.
+
+### 30. Gravity mode: the picture has weight and pools downhill
+`status: ready` · added 2026-08-29
+
+**Do** — add a switchable mode in which the phone's tilt gives the generated
+layers a steady offset toward the low side, on top of the existing tumble.
+**Why** — the tumble answers *motion* and settles back to centre; nothing
+answers where the phone is being held, so the picture has no weight.
+
+**Decided**
+- "How should each Viz respond" → **all of them identically, and this needs no
+  per-shader work at all.** The tumble is not applied per view: it is one
+  `uTumble` uniform consumed once in `composite.frag.glsl:87-90`, which
+  rotates, scales and offsets the sampling coordinate for the *finished*
+  geometry and atmosphere textures. Thirteen shaders inherit it without
+  knowing it exists, exactly as they inherit the merge modes. So gravity rides
+  the same path and the thirteen-way design question the ask anticipated does
+  not arise.
+- The one layer that must **not** slide, and already does not → the camera.
+  `composite.frag.glsl:122` samples it as `(vUv - 0.5) * uCameraFit + 0.5`,
+  from the untumbled coordinate, so the room stays put while the generated
+  layers move over it. That is the correct behaviour — a real room does not
+  slide when you tilt the phone, and a passthrough that did would read as a
+  bug — and it costs nothing because it is already true.
+- The tilt vector already exists → `shake.ts:241-321` maintains `gravX/gravY/
+  gravZ` as a slow low-pass of the raw reading (`GRAVITY_TAU` 0.5s) purely so
+  it can be *subtracted* to leave the AC part. The direction of gravity is
+  computed on every sample and thrown away. Same shape as entry 15's `peak`:
+  the number is there, unused, and already smoothed — so the slide arrives
+  damped for free and needs no envelope of its own.
+- How it composes with the tumble → **added, then clamped to the existing
+  `MAX_OFFSET`.** The tumble is a transient kick that springs back; gravity is
+  a steady bias. Summing them and clamping to the cap the tumble already
+  respects means `shake.ts:506-509`'s overscan formula keeps covering the
+  exposed corner with no change — and the `clamp()` at
+  `composite.frag.glsl:90`, which smears edge pixels when the offset outruns
+  the overscan, never gets the chance.
+- How far → **up to 0.6 × `MAX_OFFSET`, about 0.033 uv, at 90° of tilt.**
+  **Mine**: it leaves the remaining 40% of the cap for the tumble to kick into,
+  so shaking a tilted phone still visibly kicks rather than sitting pinned
+  against the clamp. Whether that reads as enough weight is a phone question,
+  and the constant is the one thing here worth re-tuning on the device.
+- Direction → **toward the low side**, so the picture pools like something with
+  mass rather than sliding uphill. The sign of `gravX/gravY` against screen
+  axes is not stated here on purpose: `DeviceMotionEvent`'s axis conventions
+  are worth confirming against `?debug` on the handset rather than asserting
+  from memory, and getting it backwards is a one-character fix once seen.
+- Rotation too, or only offset → **offset only.** **Mine**: the tumble already
+  owns `angle`, and a steady rotation toward level would fight the device's own
+  orientation handling and turn a moving picture into a spirit level. Weight is
+  the metaphor, not gimbals.
+- The control → **a seventh chip on the icon arc**, toggling a new
+  `prefs.gravity` boolean. Adding a `Prefs` field is explicitly the safe half
+  of that hard stop — `loadPrefs` validates each field and falls back — so no
+  licence is needed, and a boolean needs a chip rather than a band.
+- **Depends on entry 25.** The arc's seventh slot is currently spoken for by
+  the fullscreen chip, and entry 25 moves that off the arc. It also keeps
+  `CHIP_ARC_MIN_START` on the grounds that the clamp is correct "if a seventh
+  chip ever does join the row" — this is that chip, and building this before
+  25 would put two things in one slot.
+- One view to look at specifically → `spectrogram`, which maps an axis to the
+  screen rather than filling it with texture. A 3% steady shift is small and
+  the overscan hides the edge, but it is the one programme where a persistent
+  offset changes what the frame is *of* rather than merely where it sits.
+
+**Lands in**
+- `src/shake.ts` — expose the normalised gravity direction beside
+  `TumbleState`; `frame()` already has it and currently returns only what it
+  derived from it.
+- `src/main.ts` — pass the mode through to `setTumble`, and the chip.
+- `src/scene.ts:602-603`, `setTumble` — the offset it packs into `uTumble.yz`
+  becomes tumble plus gravity, clamped.
+- `src/prefs.ts` — `gravity: boolean`, defaulting off.
+- `src/hud.ts` — the chip, and its icon.
+
+**Done when** — with the mode on, tilting the phone slides the generated layers
+toward the low edge and holds them there, returning to centre when the phone is
+level; the camera passthrough does not move at any tilt; a shake still kicks
+visibly on top of a held tilt; and no frame edge or smeared border appears at
+maximum tilt on any view. With the mode off, `uTumble` is bit-identical to
+today.
+**Verify** — the phone, for all of it: no probe has an accelerometer and no
+desktop browser can be tilted. `pnpm probe:shake` must pass unchanged, since
+detection is untouched and the offset cap is shared. Check `spectrogram` and
+one radial view specifically at full tilt, plus the camera layer up. Also
+`pnpm build`, `pnpm lint`, and the on-screen check at 320×568 and 360×640 for
+the seventh chip.
+**Hard stops** — prefs **yes but safe**: one added boolean, which `loadPrefs`
+validates and falls back for; no existing field changes type or meaning · url
+no · capture no (the accelerometer is already running; nothing new is read) ·
+dependency no.
