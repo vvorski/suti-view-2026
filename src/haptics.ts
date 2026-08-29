@@ -53,6 +53,18 @@
  */
 const CONFIRM_PATTERN = [26, 34, 62]
 
+/**
+ * Two events, deliberately — the double shake's confirmation.
+ *
+ * The gap is 130ms where CONFIRM_PATTERN's is 34, and that difference is the
+ * entire signal. Under roughly 50ms two pulses fuse into one textured buzz;
+ * well above it they read as two separate things. So a single shake feels like
+ * one confirmation and a double feels like two, and you can tell which
+ * happened without looking — which matters precisely because the picture
+ * changed either way and the buzz is the only thing that says how much.
+ */
+const DOUBLE_PATTERN = [26, 34, 62, 130, 26, 34, 62]
+
 /** Whether the platform has a vibrator we are allowed to use. Read once:
  *  this cannot change within a session, and `vibrate` being present is a
  *  property of the browser, not of the moment. */
@@ -85,6 +97,15 @@ function reducedMotion(): boolean {
  * branch at the call site — a missing buzz is a missing nicety.
  */
 export function confirmBuzz(): void {
+  buzz(CONFIRM_PATTERN)
+}
+
+/** Confirm the bigger gesture. See DOUBLE_PATTERN. */
+export function doubleBuzz(): void {
+  buzz(DOUBLE_PATTERN)
+}
+
+function buzz(pattern: readonly number[]): void {
   attempts++
   if (!supported) return
   if (reducedMotion()) {
@@ -96,7 +117,7 @@ export function confirmBuzz(): void {
     // of a prior user gesture on the page. Recorded rather than ignored: a
     // declined call and a call the hardware fulfilled but the user could not
     // feel are different faults with different fixes.
-    accepted += navigator.vibrate(CONFIRM_PATTERN) ? 1 : 0
+    accepted += navigator.vibrate([...pattern]) ? 1 : 0
   } catch {
     // No vibrator, or a webview that lied about having one.
   }

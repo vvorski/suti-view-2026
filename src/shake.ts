@@ -80,6 +80,22 @@ const STRONG_WINDOW = 1.2
 const STRONG_COOLDOWN = 1.5
 
 /**
+ * How long the motion has to fall quiet before a second shake counts as one.
+ *
+ * Without this the escalation fires on *continued* shaking rather than on a
+ * second gesture: one long shake trips the reversal counter over and over
+ * inside the cooldown, and the probe duly reported four doubles from a single
+ * sustained shake and two more from a pair spaced two seconds apart.
+ *
+ * A gap is what makes two shakes two. 0.15s is chosen against the oscillation
+ * rather than picked round: during a 4 Hz shake the magnitude sits below
+ * STRONG_DOWN for only about 0.04s per half-cycle, so a continuous shake can
+ * never accumulate this much quiet, while an actual pause between two shakes
+ * clears it almost immediately.
+ */
+const QUIET_GAP = 0.15
+
+/**
  * The second way to earn a re-roll: sustained agitation, rather than counted
  * peaks.
  *
@@ -203,6 +219,13 @@ export class Tumble {
   private windowLeft = 0
   private cooldown = 0
   private strongPending = false
+  private doublePending = false
+  /** Quiet accumulated since the last time the motion was above STRONG_DOWN.
+   *  Only meaningful inside a cooldown; see QUIET_GAP. */
+  private quietFor = 0
+  /** The motion has stopped since the last shake, so the next one is a second
+   *  gesture rather than a continuation of the first. */
+  private armedForDouble = false
 
   /** Diagnostics, not physics.
    *
@@ -301,13 +324,36 @@ export class Tumble {
     // part-accumulated reversals behind to fire again a moment later.
     this.reversals = 0
     this.windowLeft = 0
+    this.quietFor = 0
+    this.armedForDouble = false
   }
 
-  /** Count the oscillations that separate a shake from a knock. */
+  /**
+   * Count the oscillations that separate a shake from a knock.
+   *
+   * The counter keeps running during the cooldown, where it used to return
+   * early. That is what makes a second shake detectable at all, and it is safe
+   * because the cooldown was never what rejects knocks — STRONG_REVERSALS is.
+   * Three crossings inside STRONG_WINDOW is a thing you do on purpose; a knock,
+   * a rebound, or a phone set down hard produces one or two and always has.
+   * The cooldown's actual job is stopping one shake from firing twice, and it
+   * still does that: a detection inside the window becomes a *double* rather
+   * than a second single.
+   */
   private detectStrong(mag: number, dt: number): void {
-    if (this.cooldown > 0) {
-      this.cooldown -= dt
-      return
+    // Read before decrementing: a detection on this sample belongs to the
+    // state the previous one left behind.
+    const escalating = this.cooldown > 0
+    if (escalating) this.cooldown -= dt
+
+    // A second shake only counts once the first has actually stopped. Below
+    // STRONG_DOWN the hand is between strokes or at rest; only a run of that
+    // longer than QUIET_GAP means the gesture ended rather than continued.
+    if (mag < STRONG_DOWN) {
+      this.quietFor += dt
+      if (this.quietFor >= QUIET_GAP) this.armedForDouble = true
+    } else {
+      this.quietFor = 0
     }
 
     if (this.windowLeft > 0) {
@@ -322,9 +368,16 @@ export class Tumble {
       // a slow build does not eat it.
       if (this.reversals === 1) this.windowLeft = STRONG_WINDOW
       if (this.reversals >= STRONG_REVERSALS) {
-        this.strongPending = true
+        // Inside the cooldown, and only after a real pause, this is the second
+        // shake of a double; otherwise it is a fresh single. Shaking straight
+        // through the cooldown without stopping is one long shake and fires
+        // nothing further, which is what it always did.
+        if (escalating && this.armedForDouble) this.doublePending = true
+        else if (!escalating) this.strongPending = true
         this.reversals = 0
         this.windowLeft = 0
+        this.quietFor = 0
+        this.armedForDouble = false
         this.cooldown = STRONG_COOLDOWN
       }
     } else if (this.above && mag < STRONG_DOWN) {
@@ -406,6 +459,20 @@ export class Tumble {
     return v
   }
 
+  /**
+   * True once per second hard shake inside STRONG_COOLDOWN of the first.
+   *
+   * Only the reversal path escalates. The sustained path (see SUSTAIN_LEVEL)
+   * deliberately does not: it exists to catch gentle continuous agitation, and
+   * escalating it would mean a long soft shake silently randomising everything
+   * — which is not the gesture anyone made. A double is two deliberate shakes.
+   */
+  takeDouble(): boolean {
+    const v = this.doublePending
+    this.doublePending = false
+    return v
+  }
+
   /** See the fields' own comment. Read-only; nothing here drives the picture. */
   diagnostics(): { samples: number; peak: number } {
     return { samples: this.samples, peak: this.peak }
@@ -451,6 +518,8 @@ export interface ShakeSensor {
   frame(dt: number): TumbleState
   /** True once per detected hard shake. */
   takeStrong(): boolean
+  /** True once per *second* hard shake inside the cooldown of the first. */
+  takeDouble(): boolean
   /** Sample count, recent peak, and events discarded as unusable. For the
    *  numeric readout only. See Tumble. */
   diagnostics(): { samples: number; peak: number; rejected: number }
@@ -470,6 +539,7 @@ export function startShake(granted: boolean): ShakeSensor {
     return {
       frame: () => STILL,
       takeStrong: () => false,
+      takeDouble: () => false,
       diagnostics: () => ({ samples: 0, peak: 0, rejected: 0 }),
       close: () => {},
     }
@@ -521,6 +591,7 @@ export function startShake(granted: boolean): ShakeSensor {
   return {
     frame: (dt) => tumble.advance(dt),
     takeStrong: () => tumble.takeStrong(),
+    takeDouble: () => tumble.takeDouble(),
     diagnostics: () => ({ ...tumble.diagnostics(), rejected }),
     close: () => window.removeEventListener('devicemotion', onMotion),
   }

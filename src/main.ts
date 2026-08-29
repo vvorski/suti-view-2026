@@ -8,11 +8,17 @@
  */
 
 import { bindGestures } from './gestures'
-import { DEFAULT_GEO_COLOUR, parseGeoColour } from './geo-colour'
+import { DEFAULT_GEO_COLOUR, parseGeoColour, type GeoColour } from './geo-colour'
 import { startCamera, type CameraSource } from './camera'
 import { createHud } from './hud'
 import { MAPPINGS, type Mapping, type MappingName, type VisualParams } from './engine'
-import { DEFAULT_MERGE_MODE, DEFAULT_MIX, isMergeModeName, type MergeModeName } from './merge-modes'
+import {
+  DEFAULT_MERGE_MODE,
+  DEFAULT_MIX,
+  isMergeModeName,
+  MERGE_MODES,
+  type MergeModeName,
+} from './merge-modes'
 import { checkWebGL, fullscreenStatus, keepAwake, waitForStart } from './permission-gate'
 import { loadPrefs, type Prefs } from './prefs'
 import { applyReleaseTone } from './release-tone'
@@ -21,11 +27,13 @@ import { Director } from './director'
 import { createVisualiser } from './scene'
 import { SlowAnalysis } from './engine'
 import { startShake } from './shake'
-import { confirmBuzz, hapticStatus } from './haptics'
+import { confirmBuzz, doubleBuzz, hapticStatus } from './haptics'
 import { mountReleaseName, mountVersionHud, versionHudRunning } from './version'
 import {
+  ATMOSPHERIC_VIEWS,
   DEFAULT_ATMOSPHERIC_VIEW,
   DEFAULT_GEOMETRIC_VIEW,
+  GEOMETRIC_VIEWS,
   isAtmosphericViewName,
   isGeometricViewName,
   type AtmosphericViewName,
@@ -153,6 +161,43 @@ function idleParams(t: number, spectrum: Uint8Array): VisualParams {
   }
 }
 
+/**
+ * A new picture, from a double shake.
+ *
+ * Views, merge mode and all three layers' colour, and deliberately nothing
+ * else. Opacity is not rolled: a shuffle that can hand back a black screen
+ * looks like a crash, and the only way out would be shaking again at a screen
+ * showing nothing. Mapping is not rolled either — that is how it *hears*, not
+ * what it looks like — and the camera is never switched on, which is not a
+ * taste call but the capture hard stop: nothing may reach for a sensor without
+ * a gesture asking for it.
+ *
+ * Colour channels are floored at 0.2 rather than spanning the full range, for
+ * the same reason opacity is left alone: three channels that all land near
+ * zero make a layer black, which is the blank-screen failure arriving by
+ * another route.
+ */
+function shuffled(prefs: Prefs): {
+  geometricView: GeometricViewName
+  atmosphericView: AtmosphericViewName
+  mergeMode: MergeModeName
+  geoColour: GeoColour
+  atmColour: GeoColour
+  camColour: GeoColour
+} {
+  const pick = <T,>(xs: readonly T[]): T => xs[Math.floor(Math.random() * xs.length)]
+  const channel = (): number => 0.2 + Math.random() * 0.8
+  const colour = (): GeoColour => ({ r: channel(), g: channel(), b: channel() })
+  return {
+    geometricView: pick(Object.keys(GEOMETRIC_VIEWS) as GeometricViewName[]),
+    atmosphericView: pick(Object.keys(ATMOSPHERIC_VIEWS) as AtmosphericViewName[]),
+    mergeMode: pick(Object.keys(MERGE_MODES) as MergeModeName[]),
+    geoColour: colour(),
+    atmColour: colour(),
+    camColour: prefs.camColour,
+  }
+}
+
 async function main(): Promise<void> {
   const canvas = document.getElementById('canvas')
   const gate = document.getElementById('gate')
@@ -219,6 +264,14 @@ async function main(): Promise<void> {
   void keepAwake()
 
   const shake = startShake(motion)
+
+  /** Roll a new picture and let the panel adopt it, so the HUD opened
+   *  afterwards shows what is actually on screen rather than what was. */
+  const shuffle = (): void => {
+    const next = shuffled(prefs)
+    panel.adopt(next)
+    visualiser.randomise()
+  }
   let mapping: Mapping = MAPPINGS[prefs.mapping]()
 
   // The minutes tier and the thing that acts on it. Kept out of `mapping` on
@@ -315,7 +368,18 @@ async function main(): Promise<void> {
 
       const tumble = shake.frame(audio.dt)
       visualiser.setTumble(tumble)
-      if (shake.takeStrong()) {
+      // Order matters: a double is also a strong, and the second shake set both
+      // flags. Reading the double first means the escalation wins and the
+      // re-seed does not also fire — a shuffle that re-seeded on top of itself
+      // would be the same picture change twice.
+      if (shake.takeDouble()) {
+        shuffle()
+        // A shake is a manual gesture. The autopilot standing down is the same
+        // courtesy every HUD control gets, and without it the director could
+        // start walking the views back a moment later.
+        director.suspend()
+        doubleBuzz()
+      } else if (shake.takeStrong()) {
         visualiser.randomise()
         // The one action here with no legible cause and effect: the picture
         // was already moving and is replaced by a different moving picture.

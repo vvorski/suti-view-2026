@@ -220,7 +220,7 @@ is reachable and does not collide with its neighbour. Look at it at 320x568 and
 name and meaning) · url no · capture no · dependency no.
 
 ### 6. Double shake shuffles the whole picture
-`status: ready` · added 2026-08-29
+`status: done` · added 2026-08-29 · shipped at build 77
 
 **Do** — a second hard shake within ~1.5s of the first escalates from the
 current re-seed to a full shuffle of both views, the merge mode, and all three

@@ -43,6 +43,7 @@ function shaking(t: number, amp: number, hz: number): MotionSample {
 
 interface Result {
   strongs: number
+  doubles: number
   peakAngle: number
   peakOffset: number
   peakDisturb: number
@@ -67,6 +68,7 @@ function run(
   const dt = 1 / hz
   const tumble = new Tumble()
   let strongs = 0
+  let doubles = 0
   let peakAngle = 0
   let peakOffset = 0
   let peakDisturb = 0
@@ -76,6 +78,7 @@ function run(
     tumble.sample(m, dt)
     const s = tumble.advance(dt)
     if (tumble.takeStrong()) strongs++
+    if (tumble.takeDouble()) doubles++
     peakAngle = Math.max(peakAngle, Math.abs(s.angle))
     peakOffset = Math.max(peakOffset, Math.hypot(s.offsetX, s.offsetY))
     peakDisturb = Math.max(peakDisturb, s.disturb)
@@ -94,10 +97,12 @@ function run(
     tumble.sample(still(), dt)
     last = tumble.advance(dt)
     if (tumble.takeStrong()) strongs++
+    if (tumble.takeDouble()) doubles++
   }
 
   return {
     strongs,
+    doubles,
     peakAngle,
     peakOffset,
     peakDisturb,
@@ -163,15 +168,30 @@ const cases: Array<[string, Result]> = [
   // Keep the frequency realistic, and keep this comment so the zero does not
   // get rediscovered as a bug in the app.
   ['violent shake @ 12 Hz', run(1.5, (t) => shaking(t, 45, 6.3), 3, 12)],
+  // Two deliberate shakes with a short pause between them. The second falls
+  // inside STRONG_COOLDOWN, which used to make it undetectable; it must now
+  // read as a double rather than as a second single.
+  [
+    'double shake (0.35s apart)',
+    run(2.2, (t) => (t < 0.8 || t > 1.15 ? shaking(t, 28, 4) : still())),
+  ],
+  // The same two shakes, spaced beyond the cooldown. Two singles, no double —
+  // otherwise every pair of shakes a few seconds apart would shuffle the whole
+  // picture.
+  [
+    'two shakes, 2s apart',
+    run(4, (t) => (t < 0.8 || (t > 2.8 && t < 3.6) ? shaking(t, 28, 4) : still())),
+  ],
 ]
 
 console.log(
-  'case                                    strong  angle°  drift   disturb  rest∠   restΔ',
+  'case                                    strong  dbl  angle°  drift   disturb  rest∠   restΔ',
 )
 for (const [name, r] of cases) {
   console.log(
     name.padEnd(40),
     String(r.strongs).padStart(5),
+    String(r.doubles).padStart(4),
     ((r.peakAngle * 180) / Math.PI).toFixed(1).padStart(7),
     r.peakOffset.toFixed(4).padStart(7),
     r.peakDisturb.toFixed(2).padStart(8),
@@ -188,6 +208,15 @@ console.log()
 const failures: string[] = []
 if (shake.strongs < 1) failures.push(`deliberate shake fired ${shake.strongs}, expected ≥1`)
 if (knock.strongs !== 0) failures.push(`knock + rebound fired ${knock.strongs}, expected 0`)
+// The escalation must not have cost the knock rejection. Letting the reversal
+// counter run during the cooldown is what makes a double detectable, and this
+// is the assertion that it did not also make a rebound detectable.
+if (knock.doubles !== 0) failures.push(`knock + rebound fired ${knock.doubles} doubles, expected 0`)
+const dbl = cases.find(([n]) => n.startsWith('double shake'))![1]
+if (dbl.doubles < 1) failures.push(`double shake fired ${dbl.doubles} doubles, expected ≥1`)
+const spaced = cases.find(([n]) => n.startsWith('two shakes'))![1]
+if (spaced.doubles !== 0) failures.push(`two shakes 2s apart fired ${spaced.doubles} doubles, expected 0`)
+if (spaced.strongs < 2) failures.push(`two shakes 2s apart fired ${spaced.strongs} singles, expected 2`)
 
 // Every vigorous case, not just the two above.
 //

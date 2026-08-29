@@ -134,9 +134,18 @@ export interface Hud {
   /** Step the atmospheric layer's programme forward (1) or back (-1), wrapping.
    *  Bound to a swipe in gestures.ts via main.ts. */
   cycleAtmosphericView(direction: 1 | -1): void
-  /** Adopt a change decided elsewhere (see director.ts) — updates the stored
-   *  preference and the dial without reporting it as a manual change. */
-  adopt(next: { geoColour?: GeoColour; atmosphericView?: AtmosphericViewName }): void
+  /** Adopt a change decided elsewhere — the autopilot (director.ts) or a
+   *  shake-driven shuffle (main.ts). Updates the stored preferences and the
+   *  dial without itself reporting a manual change; whether the autopilot
+   *  should stand down is the caller's decision, not this one's. */
+  adopt(next: {
+    geometricView?: GeometricViewName
+    atmosphericView?: AtmosphericViewName
+    mergeMode?: MergeModeName
+    geoColour?: GeoColour
+    atmColour?: GeoColour
+    camColour?: GeoColour
+  }): void
   /** Whether the user has the autopilot switched on. */
   autopilot(): boolean
 }
@@ -959,13 +968,28 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     autopilot: () => prefs.autopilot,
 
     adopt(next) {
-      if (next.geoColour) {
-        prefs.geoColour = next.geoColour
-        handlers.onColour('geo', prefs.geoColour)
+      if (next.geometricView) {
+        prefs.geometricView = next.geometricView
+        handlers.onGeometricView(prefs.geometricView)
       }
       if (next.atmosphericView) {
         prefs.atmosphericView = next.atmosphericView
         handlers.onAtmosphericView(prefs.atmosphericView)
+      }
+      if (next.mergeMode) {
+        prefs.mergeMode = next.mergeMode
+        handlers.onMergeMode(prefs.mergeMode)
+      }
+      for (const [layer, colour] of [
+        ['geo', next.geoColour],
+        ['atm', next.atmColour],
+        ['cam', next.camColour],
+      ] as const) {
+        if (!colour) continue
+        if (layer === 'geo') prefs.geoColour = colour
+        else if (layer === 'atm') prefs.atmColour = colour
+        else prefs.camColour = colour
+        handlers.onColour(layer, colour)
       }
       save()
       // Only redraw what is visible; the HUD is closed most of the time and
