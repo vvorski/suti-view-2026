@@ -1621,7 +1621,7 @@ lint`.
 narrowly: measurement only, never activation** · dependency no.
 
 ### 24. The fullscreen chip cannot be hidden, so it arrives at Start and stays
-`status: ready` · added 2026-08-29
+`status: done` · added 2026-08-29 · shipped at build 113
 
 **Do** — make `hidden` actually hide a `.hud-chip`, and stop the fullscreen
 chip claiming fullscreen was lost before anything has asked for it.
@@ -1681,6 +1681,22 @@ returning to `active` removes it again.
 grows a member and the probe asserts on the others. Also `pnpm build`, `pnpm
 lint`. The real lost-and-regained cycle still needs a handset.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+**Build note.** Wrote the fix in plain CSS without a single backtick in the
+comment, on purpose after getting it wrong once: `CSS` in `hud.ts` is a JS
+template literal, so a backtick anywhere inside it — even inside a CSS
+comment, meant purely as inline-code formatting — terminates the literal
+early and turns the rest of the block into invalid JavaScript. `tsc` caught
+it immediately as a syntax error, not a runtime bug, but worth naming so the
+next comment in this file reaches for single quotes instead.
+
+Confirmed directly in a browser rather than only reasoned about, per the
+entry's own instruction: created a bare `.hud-chip` with `hidden` set and
+read `getComputedStyle(el).display` — `none`, confirming the fix — and the
+same element without `hidden` still computes to `flex`, confirming nothing
+regressed for every chip that was already working. `pnpm probe:fullscreen`'s
+full thirteen checks pass unchanged with the new `'unasked'` state added.
+`pnpm build`, `pnpm lint` both clean.
 
 ### 25. The fullscreen chip belongs in the utility corner, not on the arc
 `status: ready` · added 2026-08-29

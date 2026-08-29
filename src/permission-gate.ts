@@ -76,10 +76,14 @@ export function checkWebGL(): boolean {
  * retry arms only while we have never got in.
  */
 
-/** Where the fullscreen request got to. Diagnostics only — see the readout. */
-type FullscreenState = 'unsupported' | 'active' | 'refused' | 'armed' | 'exited'
+/** Where the fullscreen request got to. Diagnostics only — see the readout.
+ *  `'unasked'` is distinct from `'refused'` — see docs/todo.md entry 24: the
+ *  fullscreen chip shows on `'refused'`, and starting there before any
+ *  request had been made showed the chip at Start, before anything could
+ *  have gone wrong yet. */
+type FullscreenState = 'unsupported' | 'active' | 'refused' | 'armed' | 'exited' | 'unasked'
 
-let fsState: FullscreenState = 'refused'
+let fsState: FullscreenState = 'unasked'
 let fsError = ''
 let fsAttempts = 0
 let fsArmed = false

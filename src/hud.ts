@@ -370,6 +370,14 @@ const CSS = `
 .hud-chip[aria-pressed='true'] {
   background: rgba(26,24,48,0.9); border-color: var(--tint, #9d9bf0); color: #f0eeff;
 }
+/* (0,2,0) specificity — one class plus one attribute — beats .hud-chip's own
+   (0,1,0) display:flex without needing !important. Without this, the UA
+   stylesheet's own [hidden] display:none rule (0,1,0) loses to this file's
+   later, equal-specificity .hud-chip rule, and an element's own hidden
+   attribute does nothing. Missing this made a hidden fullscreen chip
+   (docs/todo.md entry 19) visible from the moment the HUD's CSS loaded,
+   which reads as fullscreen having been lost the instant it was entered. */
+.hud-chip[hidden] { display: none; }
 .hud-icon { width: 19px; height: 19px; display: block; }
 
 .hud-stats {
