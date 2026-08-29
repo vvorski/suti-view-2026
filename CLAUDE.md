@@ -67,6 +67,46 @@ picture is right, and reviewing your own diff proves less than that.
   cap. That was not the shader; it was the probe's own synthetic spin being a
   constant regardless of amplitude, plus kicks that were not scaled by `dt`.
   Results that are suspiciously uniform are results to distrust.
+- **Compiling is not rendering, and rendering is not right.** `Fringe` compiled
+  cleanly, passed a centre-pixel readback, and drew a lattice of dots instead of
+  the hyperbolae it was supposed to. Its two-source sum factored into a
+  path-difference term and a concentric carrier, and drawing both beaded the
+  fringes — which looked exactly like a moire artefact, so it nearly shipped.
+  `views-probe.html` renders every atmospheric view side by side from identical
+  synthetic audio; the existing views are the baseline. Use it, and look at it.
+
+## Check the assembly, not only the parts
+
+Three separate pieces of work each added one control to the HUD. Each was
+verified on its own and each was correct: the fan opened and committed, the
+rings dragged and persisted, the dial snapped and closed. Assembled, the colour
+rings were drawn straight across the band labels and the whole HUD was
+illegible on a phone.
+
+Nobody's task included "does the whole thing still look right", so nobody
+looked. Reviewing the three diffs did not catch it either, and could not have —
+each diff was clean.
+
+- After any change that adds to a shared surface, open the **assembled** thing at
+  320x568 and 360x640 and look at it, in every state it has. `hud-narrow.html`
+  loads the HUD in iframes at those sizes, which is the only way to get a true
+  phone viewport here — `resize_window` reports success and leaves `innerWidth`
+  at 800.
+- A popup anchored to one corner will reach across whatever is behind it.
+  `POPUP_DIM` in `hud.ts` exists because that was discovered from a photograph
+  of a phone, not from a test.
+
+## Two identical symptoms need two different numbers
+
+"The shake doesn't work" is either no `devicemotion` events arriving or a shake
+that never reaches `STRONG_UP`, and from outside those are the same bug report.
+Guessing costs either a hunt for a permission problem that is not there, or a
+lowered threshold that was right — and lowering that one buys back knocks and
+set-downs firing a re-roll, which the reversal counter exists to prevent.
+
+The numeric readout therefore carries `motion N ev  peak X/18`. When a symptom
+has two candidate causes, put the number that separates them on screen rather
+than reasoning about which is more likely.
 
 ## Deleting code deletes what it was doing
 

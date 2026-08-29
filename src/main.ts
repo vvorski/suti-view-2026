@@ -187,7 +187,11 @@ async function main(): Promise<void> {
       }
 
       visualiser.render(params, audio.freq)
-      panel.update(params, { ...visualiser.stats(), disturb: tumble.disturb })
+      panel.update(params, {
+        ...visualiser.stats(),
+        disturb: tumble.disturb,
+        ...shake.diagnostics(),
+      })
     }
     requestAnimationFrame(frame)
   }

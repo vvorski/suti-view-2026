@@ -144,7 +144,15 @@ export interface Hud {
   /** Call every frame with the current state; only does work while visible. */
   update(
     params: VisualParams,
-    stats: { frameMs: number; pixelRatio: number; disturb?: number },
+    stats: {
+      frameMs: number
+      pixelRatio: number
+      disturb?: number
+      /** Accelerometer readings accepted so far, and the recent peak AC
+       *  magnitude in m/s². Diagnostics only — see the readout's comment. */
+      samples?: number
+      peak?: number
+    },
   ): void
   /** Step the atmospheric layer's programme forward (1) or back (-1), wrapping. */
   cycleAtmosphericView(direction: 1 | -1): void
@@ -1331,6 +1339,15 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
         // forever and say nothing; on a phone it is the only way to see what
         // the shake thresholds are actually being fed.
         ...(s.disturb === undefined ? [] : [`shake ${bar(s.disturb)} ${s.disturb.toFixed(2)}`]),
+        // The two numbers that tell a dead sensor apart from a shake that is
+        // simply not hard enough. `samples` counts accelerometer readings
+        // ever accepted — stuck at 0 means no devicemotion is arriving at
+        // all. `peak` is the recent high-water AC magnitude in m/s²; the
+        // re-roll needs it over 18, three times inside 1.2s. Without both,
+        // "the shake doesn't work" is two indistinguishable bug reports.
+        ...(s.samples === undefined
+          ? []
+          : [`motion ${s.samples} ev  peak ${(s.peak ?? 0).toFixed(1)}/18`]),
       ].join('\n')
     },
 

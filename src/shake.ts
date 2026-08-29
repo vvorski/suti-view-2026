@@ -154,6 +154,22 @@ export class Tumble {
   private cooldown = 0
   private strongPending = false
 
+  /** Diagnostics, not physics.
+   *
+   *  "The shake doesn't work" has two causes that are indistinguishable from
+   *  outside: no `devicemotion` events arriving at all, or events arriving
+   *  from a shake that never reaches STRONG_UP. Guessing between them means
+   *  either chasing a permission problem that is not there, or lowering a
+   *  threshold that was right — and lowering STRONG_UP is not free, because
+   *  what it buys back is knocks and set-downs firing a re-roll, which the
+   *  reversal counter exists to prevent.
+   *
+   *  With both numbers on screen it is one glance: `samples` still at 0 is a
+   *  dead sensor; a `peak` well under STRONG_UP is a real sensor and a shake
+   *  that is not hard enough. */
+  private samples = 0
+  private peak = 0
+
   /**
    * Feed one sensor reading. `dt` is the time since the previous sample.
    */
@@ -177,6 +193,9 @@ export class Tumble {
     const ay = s.y - this.gravY
     const az = s.z - this.gravZ
     const mag = Math.sqrt(ax * ax + ay * ay + az * az)
+
+    this.samples++
+    if (mag > this.peak) this.peak = mag
 
     this.disturb = clamp01((mag - FLOOR) / (FULL - FLOOR))
 
@@ -274,6 +293,12 @@ export class Tumble {
     // tab hidden) must not leave the picture permanently agitated.
     this.disturb *= Math.exp(-dt / 0.7)
 
+    // The reported peak decays too, so the readout shows what the last few
+    // seconds reached rather than the loudest event of the whole session — a
+    // high-water mark from three minutes ago answers no question anyone is
+    // asking while holding the phone and shaking it.
+    this.peak *= Math.exp(-dt / 2.5)
+
     // Enough overscan to cover the corner that rotation and drift expose.
     // Rotating a unit-square frame by θ about its centre needs roughly θ of
     // extra scale at these small angles; drift needs twice its own size,
@@ -297,6 +322,11 @@ export class Tumble {
     const v = this.strongPending
     this.strongPending = false
     return v
+  }
+
+  /** See the fields' own comment. Read-only; nothing here drives the picture. */
+  diagnostics(): { samples: number; peak: number } {
+    return { samples: this.samples, peak: this.peak }
   }
 }
 
@@ -339,6 +369,8 @@ export interface ShakeSensor {
   frame(dt: number): TumbleState
   /** True once per detected hard shake. */
   takeStrong(): boolean
+  /** Sample count and recent peak, for the numeric readout. See Tumble. */
+  diagnostics(): { samples: number; peak: number }
   close(): void
 }
 
@@ -350,7 +382,14 @@ export function startShake(granted: boolean): ShakeSensor {
   const tumble = new Tumble()
 
   if (!granted || typeof window === 'undefined') {
-    return { frame: () => STILL, takeStrong: () => false, close: () => {} }
+    // Reports zero samples forever, which is exactly the reading that says
+    // "refused or unavailable" rather than "not shaken hard enough".
+    return {
+      frame: () => STILL,
+      takeStrong: () => false,
+      diagnostics: () => ({ samples: 0, peak: 0 }),
+      close: () => {},
+    }
   }
 
   let last = performance.now()
@@ -381,6 +420,7 @@ export function startShake(granted: boolean): ShakeSensor {
   return {
     frame: (dt) => tumble.advance(dt),
     takeStrong: () => tumble.takeStrong(),
+    diagnostics: () => tumble.diagnostics(),
     close: () => window.removeEventListener('devicemotion', onMotion),
   }
 }

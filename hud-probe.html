@@ -1,0 +1,95 @@
+<!doctype html>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>hud probe</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #05060c; overflow: hidden; }
+  #tag {
+    position: fixed; top: 4px; left: 6px; z-index: 99;
+    font: 11px ui-monospace, monospace; color: #0f0; background: #000a; padding: 2px 5px;
+  }
+</style>
+<div id="tag">boot</div>
+<script type="module">
+  import { createHud } from '/src/hud.ts'
+
+  const calls = []
+  const prefs = {
+    geometricView: 'circles',
+    geoColour: { r: 1, g: 0.3, b: 0.4 },
+    atmosphericView: 'field',
+    mergeMode: 'normal',
+    mix: 0.62,
+    mapping: 'relative',
+    autopilot: true,
+    showStats: false,
+  }
+  const log = (n) => (...a) => calls.push([n, JSON.stringify(a)])
+  const hud = createHud(prefs, {
+    onGeometricView: log('geometricView'),
+    onGeoColour: log('geoColour'),
+    onAtmosphericView: log('atmosphericView'),
+    onMergeMode: log('mergeMode'),
+    onMix: log('mix'),
+    onMapping: log('mapping'),
+    onManualChange: log('manualChange'),
+  })
+
+  // The HUD opens on a document-level pointerup whose travel is under
+  // TAP_SLOP_PX. Synthesise a real tap rather than reaching inside the module:
+  // this file uses setPointerCapture, so anything that bypasses real
+  // PointerEvents proves less than it looks like it does.
+  const at = (type, x, y) =>
+    document.elementFromPoint(x, y)?.dispatchEvent(
+      new PointerEvent(type, { clientX: x, clientY: y, pointerId: 1, bubbles: true, cancelable: true }),
+    )
+
+  window.tap = (x, y) => {
+    document.dispatchEvent(new PointerEvent('pointerdown', { clientX: x, clientY: y, pointerId: 1, bubbles: true }))
+    at('pointerdown', x, y)
+    at('pointerup', x, y)
+    document.dispatchEvent(new PointerEvent('pointerup', { clientX: x, clientY: y, pointerId: 1, bubbles: true }))
+    return describe()
+  }
+
+  window.openHud = () => window.tap(window.innerWidth / 2, window.innerHeight / 2)
+
+  // What is actually on screen, and whether any of it has escaped the viewport.
+  // This is the check the implementer said it could only do by arithmetic.
+  window.describe = () => {
+    const vw = window.innerWidth, vh = window.innerHeight
+    const out = { viewport: [vw, vh], offscreen: [], chips: [], svgBits: [] }
+    for (const b of document.querySelectorAll('.hud-btns button, .hud-btns > *')) {
+      const r = b.getBoundingClientRect()
+      if (r.width === 0 && r.height === 0) continue
+      const rec = {
+        cls: b.className,
+        text: (b.textContent || '').trim().slice(0, 24),
+        x: Math.round(r.left), y: Math.round(r.top),
+        w: Math.round(r.width), h: Math.round(r.height),
+      }
+      out.chips.push(rec)
+      if (r.left < 0 || r.top < 0 || r.right > vw || r.bottom > vh) out.offscreen.push(rec)
+    }
+    // Anything the popup drew into the dial SVG.
+    for (const n of document.querySelectorAll('.hud-dial [class*="pop"], .hud-dial [class*="fan"], .hud-dial [class*="opt"]')) {
+      const r = n.getBoundingClientRect()
+      if (r.width === 0 && r.height === 0) continue
+      const rec = {
+        cls: n.getAttribute('class'),
+        text: (n.textContent || '').trim().slice(0, 16),
+        x: Math.round(r.left), y: Math.round(r.top),
+        w: Math.round(r.width), h: Math.round(r.height),
+      }
+      out.svgBits.push(rec)
+      if (r.left < 0 || r.top < 0 || r.right > vw || r.bottom > vh) out.offscreen.push(rec)
+    }
+    out.calls = calls.slice(-6)
+    out.prefs = { mapping: prefs.mapping, autopilot: prefs.autopilot, showStats: prefs.showStats }
+    return out
+  }
+
+  window.prefsRef = prefs
+  document.getElementById('tag').textContent = `${window.innerWidth}x${window.innerHeight}`
+  document.title = 'ready'
+</script>

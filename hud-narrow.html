@@ -1,0 +1,65 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>hud narrow</title>
+<style>
+  html, body { margin: 0; background: #222; font: 11px ui-monospace, monospace; color: #8f8; }
+  .row { display: flex; gap: 14px; padding: 10px; align-items: flex-start; }
+  figure { margin: 0; }
+  figcaption { padding: 2px 0; }
+  /* The HUD reads window.innerWidth/innerHeight. Inside an iframe that IS the
+     iframe's own viewport, which is the only way to get a true phone-sized
+     viewport here — resize_window reported success and left innerWidth at 800. */
+  iframe { border: 1px solid #555; display: block; background: #05060c; }
+</style>
+<div class="row">
+  <figure>
+    <figcaption id="c1">320 x 568 — iPhone SE</figcaption>
+    <iframe id="f1" src="/hud-probe.html" width="320" height="568"></iframe>
+  </figure>
+  <figure>
+    <figcaption id="c2">360 x 640 — common Android</figcaption>
+    <iframe id="f2" src="/hud-probe.html" width="360" height="640"></iframe>
+  </figure>
+</div>
+<script type="module">
+  const ready = (f) =>
+    new Promise((res) => {
+      if (f.contentDocument?.title === 'ready') return res()
+      f.addEventListener('load', () => setTimeout(res, 250))
+    })
+
+  // Drive each frame's own HUD through its own window object, then report
+  // whether anything escaped that frame's viewport.
+  window.run = async () => {
+    const out = {}
+    for (const [id, cap] of [['f1', 'c1'], ['f2', 'c2']]) {
+      const f = document.getElementById(id)
+      await ready(f)
+      const w = f.contentWindow
+      w.openHud()
+      const chip = w.describe().chips.find((c) => c.text.startsWith('MAP'))
+      w.tap(chip.x + chip.w / 2, chip.y + chip.h / 2)
+      await new Promise((r) => setTimeout(r, 400))
+
+      const vw = w.innerWidth
+      const vh = w.innerHeight
+      const d = f.contentDocument
+      const bits = [...d.querySelectorAll('.hud-btns > *, .hud-dial [class*=fan]')]
+        .map((n) => {
+          const r = n.getBoundingClientRect()
+          return {
+            cls: n.getAttribute('class') || '',
+            t: (n.textContent || '').trim().slice(0, 8),
+            l: Math.round(r.left), top: Math.round(r.top),
+            right: Math.round(r.right), bot: Math.round(r.bottom),
+          }
+        })
+        .filter((b) => b.right !== b.l || b.bot !== b.top)
+      const esc = bits.filter((b) => b.l < 0 || b.top < 0 || b.right > vw || b.bot > vh)
+      out[id] = { viewport: [vw, vh], escaped: esc, worstRight: Math.max(...bits.map((b) => b.right)), worstBottom: Math.max(...bits.map((b) => b.bot)) }
+      document.getElementById(cap).textContent += `  -> vp ${vw}x${vh}, escaped ${esc.length}`
+    }
+    return out
+  }
+  document.title = 'ready'
+</script>
