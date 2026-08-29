@@ -131,6 +131,19 @@ const cases: Array<[string, Result]> = [
   // The same deliberate shake every phone is supposed to answer, sampled at
   // the rates Android actually delivers. If these differ from the 60 Hz row
   // above, the detector is rate-dependent and the thresholds are innocent.
+  // A gentler shake than the "deliberate" one, and the case the reversal
+  // counter alone cannot answer: peaks at 12 m/s² never reach STRONG_UP's 18,
+  // so before the sustained path existed this did nothing at all however long
+  // it went on. A phone whose accelerometer reads low makes every real shake
+  // look like this one.
+  ['gentle sustained shake (12 m/s², 3 Hz)', run(1.5, (t) => shaking(t, 12, 3))],
+  ['gentle sustained shake @ 12 Hz', run(1.5, (t) => shaking(t, 12, 3), 3, 12)],
+  // Held agitation with no oscillation at all: carried at a fast walk, a
+  // pocket on a bumpy road. Must still not re-roll.
+  [
+    'sustained low agitation (5 m/s², 2.5 Hz)',
+    run(3, (t) => shaking(t, 5, 2.5)),
+  ],
   ['deliberate shake @ 30 Hz', run(1.2, (t) => shaking(t, 28, 4), 3, 30)],
   ['deliberate shake @ 20 Hz', run(1.2, (t) => shaking(t, 28, 4), 3, 20)],
   ['deliberate shake @ 12 Hz', run(1.2, (t) => shaking(t, 28, 4), 3, 12)],

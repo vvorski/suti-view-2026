@@ -79,6 +79,56 @@ const STRONG_WINDOW = 1.2
  *  again immediately still works. */
 const STRONG_COOLDOWN = 1.5
 
+/**
+ * The second way to earn a re-roll: sustained agitation, rather than counted
+ * peaks.
+ *
+ * The reversal counter above is precise and brittle. It asks the *instant-
+ * aneous* magnitude to exceed 18, fall under 7, and do so three times — and
+ * every one of those numbers is a thing that can quietly not happen on a real
+ * handset. A device whose accelerometer reads low never reaches 18. A device
+ * that reports only `acceleration` rather than `accelerationIncludingGravity`
+ * delivered nothing at all until this was fixed. A device that samples slowly
+ * can land between a shake's peaks. Each failure is invisible and each one
+ * presents identically: shaking the phone does nothing, forever.
+ *
+ * So this path asks a much weaker question that is far harder to answer
+ * accidentally: has the device been *continuously agitated* for a moment?
+ * `disturb` is already normalised against FLOOR and FULL, so it does not care
+ * what absolute numbers the sensor reports, and it is computed from every
+ * sample regardless of rate.
+ *
+ * The levels come straight from the probe table, which is why they reject
+ * what they need to reject: walking peaks at disturb 0.15, well under LEVEL.
+ * A nudge reaches 0.54 and a hard jolt 0.57, but both are over inside 0.2s,
+ * well under TIME. A single knock and a knock-plus-rebound both hit 0.98 and
+ * last 0.09s and 0.18s respectively — the two cases the whole design exists
+ * to reject, and TIME is more than twice the longer of them. A deliberate
+ * shake holds 0.98 for as long as it goes on.
+ *
+ * TIME is therefore the load-bearing value, not LEVEL: it is what separates
+ * an impact from shaking, and shortening it toward 0.3 lets a knock and its
+ * rebound through.
+ *
+ * The level is tested against a decaying envelope of `disturb`, not against
+ * `disturb` itself. That is not a refinement, it is the difference between
+ * working and not: acceleration magnitude is oscillatory, so during a real
+ * shake `disturb` returns to near zero twice per cycle. Timing the raw signal
+ * above a level therefore resets every ~0.17s at 3 Hz and never accumulates,
+ * and the first version of this fired on nothing at all. The probe's gentle-
+ * shake rows are what showed it.
+ *
+ * ENVELOPE_TAU is then constrained from both sides. Too fast and it tracks
+ * those same dips and nothing accumulates; too slow and an impact's decay
+ * tail keeps the envelope up long enough to look sustained. At 0.5s a 3 Hz
+ * shake stays above LEVEL between peaks, while a knock plus its rebound tops
+ * out around 0.47s of apparent agitation — which is why TIME is 0.6 and not
+ * the 0.45 it was before the tail was accounted for.
+ */
+const SUSTAIN_LEVEL = 0.55
+const SUSTAIN_TIME = 0.6
+const ENVELOPE_TAU = 0.5
+
 // --- Tumble spring ---------------------------------------------------------
 
 /**
@@ -170,6 +220,12 @@ export class Tumble {
   private samples = 0
   private peak = 0
 
+  /** Seconds of unbroken agitation above SUSTAIN_LEVEL. */
+  private sustained = 0
+  /** Peak-hold envelope of `disturb`, so a shake's own half-cycle dips do not
+   *  read as the shake stopping. See SUSTAIN_LEVEL. */
+  private envelope = 0
+
   /**
    * Feed one sensor reading. `dt` is the time since the previous sample.
    */
@@ -218,7 +274,33 @@ export class Tumble {
         (s.spin !== 0 ? -s.spin * ROT_KICK : -ax * ROT_KICK * 0.12) * dt
     }
 
+    this.detectSustained(dt)
     this.detectStrong(mag, dt)
+  }
+
+  /** The robust path to a re-roll: agitation held, rather than peaks counted.
+   *  See SUSTAIN_LEVEL. Runs before detectStrong so it reads the cooldown the
+   *  previous sample left, rather than one this sample already decremented. */
+  private detectSustained(dt: number): void {
+    // Peak-hold: jump straight to a new high, decay toward it otherwise.
+    this.envelope *= Math.exp(-dt / ENVELOPE_TAU)
+    if (this.disturb > this.envelope) this.envelope = this.disturb
+
+    if (this.envelope <= SUSTAIN_LEVEL) {
+      this.sustained = 0
+      return
+    }
+
+    this.sustained += dt
+    if (this.sustained < SUSTAIN_TIME || this.cooldown > 0) return
+
+    this.strongPending = true
+    this.sustained = 0
+    this.cooldown = STRONG_COOLDOWN
+    // Clear the other path's state too, or a shake that fired here can leave
+    // part-accumulated reversals behind to fire again a moment later.
+    this.reversals = 0
+    this.windowLeft = 0
   }
 
   /** Count the oscillations that separate a shake from a knock. */
