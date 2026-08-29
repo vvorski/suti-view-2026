@@ -619,7 +619,7 @@ in `pnpm probe` moved: novelty, roughness, ripple triggers and frame-rate
 independence are all identical to before.
 
 ### 13. The double shake's window is too short for a human hand
-`status: ready` · added 2026-08-29
+`status: done` · added 2026-08-29 · shipped at build 96
 
 **Do** — give the escalation its own timer instead of borrowing
 `STRONG_COOLDOWN`, and set it long enough that two deliberate shakes with a

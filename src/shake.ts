@@ -83,6 +83,25 @@ const STRONG_WINDOW = 1.2
 const STRONG_COOLDOWN = 1.5
 
 /**
+ * How long the escalation stays armed for a second shake to land inside.
+ *
+ * Separate from STRONG_COOLDOWN on purpose — that constant was doing two
+ * unrelated jobs. One shake earning three reversals at a hand's ~4Hz takes
+ * about 0.75s by itself, so a 1.5s cooldown left under 0.75s of actual pause
+ * available before the second shake had to be fully earned too — less than a
+ * deliberate pause between two shakes, which is why a real double never
+ * escalated on a phone even though every synthetic one in probe-shake.ts did
+ * (its only double case spaces the two bursts 0.35s apart, faster than a hand
+ * can pause).
+ *
+ * 3.0s: enough to hold a pause (~1s) plus the second shake earning itself
+ * (~0.75s) plus hesitation, which 2.0 barely covers. Above ~4s a person who
+ * shakes, looks at the result, and shakes again unrelated gets an unasked-for
+ * shuffle; 3.0 sits below that.
+ */
+const DOUBLE_WINDOW = 3.0
+
+/**
  * How long the motion has to fall quiet before a second shake counts as one.
  *
  * Without this the escalation fires on *continued* shaking rather than on a
@@ -221,6 +240,9 @@ export class Tumble {
   private reversals = 0
   private windowLeft = 0
   private cooldown = 0
+  /** Counts down from DOUBLE_WINDOW alongside `cooldown`, but on its own
+   *  clock — see DOUBLE_WINDOW's comment for why one timer had to become two. */
+  private doubleWindow = 0
   private strongPending = false
   private doublePending = false
   /** `peak` at the instant each pending flag above was set, so the caller can
@@ -331,6 +353,7 @@ export class Tumble {
     this.strongPeak = this.peak
     this.sustained = 0
     this.cooldown = STRONG_COOLDOWN
+    this.doubleWindow = DOUBLE_WINDOW
     // Clear the other path's state too, or a shake that fired here can leave
     // part-accumulated reversals behind to fire again a moment later.
     this.reversals = 0
@@ -347,15 +370,20 @@ export class Tumble {
    * because the cooldown was never what rejects knocks — STRONG_REVERSALS is.
    * Three crossings inside STRONG_WINDOW is a thing you do on purpose; a knock,
    * a rebound, or a phone set down hard produces one or two and always has.
-   * The cooldown's actual job is stopping one shake from firing twice, and it
-   * still does that: a detection inside the window becomes a *double* rather
-   * than a second single.
+   *
+   * Escalation reads `doubleWindow`, not `cooldown` — see DOUBLE_WINDOW. The
+   * cooldown's own job is only ever "stop one shake from firing twice"; a
+   * detection while `doubleWindow` is still armed and a real pause happened
+   * (`armedForDouble`) becomes a *double* rather than a second single.
    */
   private detectStrong(mag: number, dt: number): void {
     // Read before decrementing: a detection on this sample belongs to the
-    // state the previous one left behind.
-    const escalating = this.cooldown > 0
-    if (escalating) this.cooldown -= dt
+    // state the previous one left behind. `cooldown` and `doubleWindow` are
+    // independent timers now (see DOUBLE_WINDOW) — one shake fired here can
+    // have `cooldown` lapse while `doubleWindow` is still armed.
+    const escalating = this.doubleWindow > 0
+    if (this.cooldown > 0) this.cooldown -= dt
+    if (escalating) this.doubleWindow -= dt
 
     // A second shake only counts once the first has actually stopped. Below
     // STRONG_DOWN the hand is between strokes or at rest; only a run of that
@@ -395,6 +423,7 @@ export class Tumble {
         this.quietFor = 0
         this.armedForDouble = false
         this.cooldown = STRONG_COOLDOWN
+        this.doubleWindow = DOUBLE_WINDOW
       }
     } else if (this.above && mag < STRONG_DOWN) {
       this.above = false

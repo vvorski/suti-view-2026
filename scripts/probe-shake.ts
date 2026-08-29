@@ -175,12 +175,30 @@ const cases: Array<[string, Result]> = [
     'double shake (0.35s apart)',
     run(2.2, (t) => (t < 0.8 || t > 1.15 ? shaking(t, 28, 4) : still())),
   ],
-  // The same two shakes, spaced beyond the cooldown. Two singles, no double —
-  // otherwise every pair of shakes a few seconds apart would shuffle the whole
-  // picture.
+  // A pause at an actual hand's cadence — look at the picture, shake again —
+  // rather than the 0.35s gap above, which is closer to a hiccup than a
+  // pause. This is the case that was silently failing on a real phone while
+  // every synthetic case above kept passing: DOUBLE_WINDOW exists because
+  // this needs to read as a double too, not just the fast one.
+  [
+    'double shake (0.9s apart, a real pause)',
+    run(2.7, (t) => (t < 0.8 || t > 1.7 ? shaking(t, 28, 4) : still())),
+  ],
+  // The same two shakes, spaced 2s apart. DOUBLE_WINDOW (3.0s) is armed from
+  // the first shake's own fire, not from when the burst starts, so this
+  // lands inside it — see docs/todo.md entry 13. This used to be asserted as
+  // two singles; a person shaking twice with an ordinary pause is asking
+  // twice, not producing an unrelated coincidence.
   [
     'two shakes, 2s apart',
     run(4, (t) => (t < 0.8 || (t > 2.8 && t < 3.6) ? shaking(t, 28, 4) : still())),
+  ],
+  // Spaced past DOUBLE_WINDOW. This is the case "2s apart" used to be: two
+  // shakes far enough apart that shuffling the whole picture in response
+  // would surprise someone who made two unrelated gestures.
+  [
+    'two shakes, 4s apart',
+    run(5.6, (t) => (t < 0.8 || (t > 4.8 && t < 5.6) ? shaking(t, 28, 4) : still())),
   ],
 ]
 
@@ -212,11 +230,23 @@ if (knock.strongs !== 0) failures.push(`knock + rebound fired ${knock.strongs}, 
 // counter run during the cooldown is what makes a double detectable, and this
 // is the assertion that it did not also make a rebound detectable.
 if (knock.doubles !== 0) failures.push(`knock + rebound fired ${knock.doubles} doubles, expected 0`)
-const dbl = cases.find(([n]) => n.startsWith('double shake'))![1]
-if (dbl.doubles < 1) failures.push(`double shake fired ${dbl.doubles} doubles, expected ≥1`)
-const spaced = cases.find(([n]) => n.startsWith('two shakes'))![1]
-if (spaced.doubles !== 0) failures.push(`two shakes 2s apart fired ${spaced.doubles} doubles, expected 0`)
-if (spaced.strongs < 2) failures.push(`two shakes 2s apart fired ${spaced.strongs} singles, expected 2`)
+// Exact names, not prefixes: there are now two "double shake" cases (a fast
+// gap and a human one) and two "two shakes" cases (inside DOUBLE_WINDOW and
+// past it), and a prefix match would silently only ever check the first.
+const byName = (name: string): Result => cases.find(([n]) => n === name)![1]
+
+const dblFast = byName('double shake (0.35s apart)')
+if (dblFast.doubles < 1) failures.push(`double shake (0.35s) fired ${dblFast.doubles} doubles, expected ≥1`)
+
+const dblHuman = byName('double shake (0.9s apart, a real pause)')
+if (dblHuman.doubles < 1) failures.push(`double shake (0.9s) fired ${dblHuman.doubles} doubles, expected ≥1`)
+
+const spaced2s = byName('two shakes, 2s apart')
+if (spaced2s.doubles < 1) failures.push(`two shakes 2s apart fired ${spaced2s.doubles} doubles, expected ≥1`)
+
+const spaced4s = byName('two shakes, 4s apart')
+if (spaced4s.doubles !== 0) failures.push(`two shakes 4s apart fired ${spaced4s.doubles} doubles, expected 0`)
+if (spaced4s.strongs < 2) failures.push(`two shakes 4s apart fired ${spaced4s.strongs} singles, expected 2`)
 
 // Every vigorous case, not just the two above.
 //
