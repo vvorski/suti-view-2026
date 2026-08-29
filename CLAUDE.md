@@ -211,6 +211,20 @@ Read a few files before writing any.
 
 ## Constraints that are not negotiable
 
+- **The control surface is circular. No straight lines.** Every control in the
+  HUD is an arc about the wedge's hinge, and every icon sits on an arc too.
+  Not a preference and not open to a redesign that happens to be tidier: a
+  rectangular panel of sliders was built, shipped and rejected, because it read
+  as a settings screen bolted onto a piece of work rather than as part of it.
+  Arcs are also what a thumb can reach on a phone held one-handed, which is why
+  the wedge exists at all.
+
+  What this rules out, concretely: linear sliders, list rows, tables, cards,
+  bottom sheets, and any panel whose edges are the controls' edges. What it
+  permits: bands turned past a notch, arcs dragged for a value, circular chips
+  laid along an arc, and text placed on the notch line. If a new control does
+  not fit that vocabulary, the vocabulary is the constraint — change the
+  control, not the rule.
 - **Audio never leaves the device.** No recording, no upload, no backend.
 - **Mobile is the target.** Bundle size and fill rate matter; a desktop-only
   regression is a regression. Nothing needing COOP/COEP headers can ever work,

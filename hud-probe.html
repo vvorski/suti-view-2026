@@ -21,6 +21,8 @@
     mergeMode: 'normal',
     mix: 0.62,
     geoAlpha: 0.62,
+    atmColour: { r: 1, g: 1, b: 1 },
+    camColour: { r: 1, g: 1, b: 1 },
     atmAlpha: 1,
     mapping: 'relative',
     passthrough: 0,
@@ -30,11 +32,10 @@
   const log = (n) => (...a) => calls.push([n, JSON.stringify(a)])
   const hud = createHud(prefs, {
     onGeometricView: log('geometricView'),
-    onGeoColour: log('geoColour'),
+    onColour: log('colour'),
     onAtmosphericView: log('atmosphericView'),
     onMergeMode: log('mergeMode'),
-    onGeoAlpha: log('geoAlpha'),
-    onAtmAlpha: log('atmAlpha'),
+    onAlpha: log('alpha'),
     onMapping: log('mapping'),
     onManualChange: log('manualChange'),
     // Grants whatever is asked for. The refusal path is the camera probe's
@@ -88,54 +89,48 @@
     return target.getAttribute('class')
   }
 
-  /** The horizontal midline of a layer row's own opacity bar, in screen
-   *  coordinates — what a drag along that bar has to be aimed at. */
-  window.barPoint = (layerIndex, t) => {
-    const row = document.querySelectorAll('.hud-layer')[layerIndex]
-    const bar = row.querySelector(':scope > .hud-bar')
-    const r = bar.getBoundingClientRect()
-    return [r.left + r.width * t, r.top + r.height / 2]
-  }
-
-  /** The colour bars inside the geometric row, same idea. */
-  window.colourPoint = (channelIndex, t) => {
-    const bar = document.querySelectorAll('.hud-colours .hud-bar')[channelIndex]
-    const r = bar.getBoundingClientRect()
-    return [r.left + r.width * t, r.top + r.height / 2]
+  /** A point on band `i` at `t` (0-1) along the wedge's sweep, in screen
+   *  coordinates — what a drag along that band has to be aimed at. */
+  window.bandPoint = (i, t) => {
+    const w = window.innerWidth, h = window.innerHeight
+    const base = Math.min(w, h)
+    const cx = w + 10, cy = h + 10
+    const r = base * [0.88, 0.75, 0.63, 0.53, 0.43][i]
+    const a = (165 + t * (285 - 165)) * (Math.PI / 180)
+    return [cx + r * Math.cos(a), cy + r * Math.sin(a)]
   }
 
   // What is on screen, and whether any of it has escaped the viewport.
   window.describe = () => {
     const vw = window.innerWidth, vh = window.innerHeight
-    const out = { viewport: [vw, vh], offscreen: [], layers: [], opts: [] }
-    for (const row of document.querySelectorAll('.hud-layer')) {
-      const r = row.getBoundingClientRect()
-      out.layers.push({
-        name: row.querySelector('.hud-layer-name').textContent,
-        val: row.querySelector('.hud-layer-val').textContent,
-        pct: row.querySelector('.hud-layer-top .hud-layer-pct').textContent,
-        selected: row.getAttribute('aria-selected') === 'true',
-        off: row.dataset.off === 'true',
+    const out = { viewport: [vw, vh], offscreen: [], chips: [], bands: [], captions: [] }
+    for (const b of document.querySelectorAll('.hud-chip')) {
+      const r = b.getBoundingClientRect()
+      const rec = {
+        label: b.getAttribute('aria-label'),
+        on: b.getAttribute('aria-pressed') === 'true',
         x: Math.round(r.left), y: Math.round(r.top),
         w: Math.round(r.width), h: Math.round(r.height),
-      })
+      }
+      out.chips.push(rec)
       if (r.left < -0.5 || r.top < -0.5 || r.right > vw + 0.5 || r.bottom > vh + 0.5) {
-        out.offscreen.push(row.querySelector('.hud-layer-name').textContent)
+        out.offscreen.push(rec)
       }
     }
-    for (const b of document.querySelectorAll('.hud-opt')) {
-      if (b.offsetParent === null) continue
-      out.opts.push({ text: b.textContent, on: b.getAttribute('aria-pressed') === 'true' })
-    }
-    const panel = document.querySelector('.hud-panel')
-    if (panel) {
-      const r = panel.getBoundingClientRect()
-      out.panel = { h: Math.round(r.height), top: Math.round(r.top), fits: r.top >= -0.5 }
-    }
+    // Straight edges are forbidden in the control surface — see CLAUDE.md.
+    out.straightEdges = document.querySelectorAll(
+      '.hud-dial rect, .hud-dial line:not(.hud-tick)').length
+    out.captions = [...document.querySelectorAll('.hud-band-label')].map(t => t.textContent)
+    out.bands = [...document.querySelectorAll('.hud-dial .hud-track')].length
+    out.items = [...document.querySelectorAll('.hud-item')]
+      .filter(t => +(t.getAttribute('opacity') || 0) > 0.5)
+      .map(t => ({ text: t.textContent, on: t.classList.contains('on') }))
     out.calls = calls.slice(-6)
     out.prefs = {
       geoAlpha: prefs.geoAlpha, atmAlpha: prefs.atmAlpha, passthrough: prefs.passthrough,
-      mix: prefs.mix, mapping: prefs.mapping, autopilot: prefs.autopilot, showStats: prefs.showStats,
+      geoColour: prefs.geoColour, atmColour: prefs.atmColour, camColour: prefs.camColour,
+      mergeMode: prefs.mergeMode, mapping: prefs.mapping,
+      autopilot: prefs.autopilot, showStats: prefs.showStats,
     }
     return out
   }

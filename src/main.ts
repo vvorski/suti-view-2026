@@ -52,6 +52,10 @@ function resolvePrefs(): Prefs {
   const stored = loadPrefs({
     geometricView: DEFAULT_GEOMETRIC_VIEW,
     geoColour: DEFAULT_GEO_COLOUR,
+    // White is identity for a colour gain, so a layer nobody has tinted looks
+    // exactly as it always did.
+    atmColour: { r: 1, g: 1, b: 1 },
+    camColour: { r: 1, g: 1, b: 1 },
     atmosphericView: DEFAULT_ATMOSPHERIC_VIEW,
     mergeMode: DEFAULT_MERGE_MODE,
     mix: DEFAULT_MIX,
@@ -80,6 +84,8 @@ function resolvePrefs(): Prefs {
   return {
     geometricView: isGeometricViewName(geometric) ? geometric : stored.geometricView,
     geoColour: rgb ?? stored.geoColour,
+    atmColour: stored.atmColour,
+    camColour: stored.camColour,
     atmosphericView: isAtmosphericViewName(atmospheric) ? atmospheric : stored.atmosphericView,
     mergeMode: isMergeModeName(merge) ? merge : stored.mergeMode,
     mix: pct(mix, stored.mix),
@@ -185,6 +191,8 @@ async function main(): Promise<void> {
   const visualiser = createVisualiser(canvas, {
     geometricView: prefs.geometricView,
     geoColour: prefs.geoColour,
+    atmColour: prefs.atmColour,
+    camColour: prefs.camColour,
     atmosphericView: prefs.atmosphericView,
     mergeMode: prefs.mergeMode,
     geoAlpha: prefs.geoAlpha,
@@ -225,11 +233,13 @@ async function main(): Promise<void> {
 
   const panel = createHud(prefs, {
     onGeometricView: (name: GeometricViewName) => visualiser.setGeometricView(name),
-    onGeoColour: (colour) => visualiser.setGeoColour(colour),
+    onColour: (layer, colour) => visualiser.setLayerColour(layer, colour),
     onAtmosphericView: (name: AtmosphericViewName) => visualiser.setAtmosphericView(name),
     onMergeMode: (mode: MergeModeName) => visualiser.setMergeMode(mode),
-    onGeoAlpha: (a: number) => visualiser.setGeoAlpha(a),
-    onAtmAlpha: (a: number) => visualiser.setAtmAlpha(a),
+    onAlpha: (layer, a) => {
+      if (layer === 'geo') visualiser.setGeoAlpha(a)
+      else visualiser.setAtmAlpha(a)
+    },
     // Mappings carry several seconds of internal state (running means, feature
     // history), none of which is transferable, so switching starts a fresh one
     // rather than trying to hand the old state over.

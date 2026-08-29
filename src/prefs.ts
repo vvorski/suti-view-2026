@@ -53,6 +53,17 @@ export interface Prefs {
    */
   atmAlpha: number
   /**
+   * Per-layer colour gains, the same shape as `geoColour`.
+   *
+   * Added rather than folded into one structure, because `geoColour` is
+   * already stored under that name on every device that has ever run this and
+   * moving it would be a change of meaning, not an addition. White is
+   * identity, so an older visitor who has never touched these gets exactly the
+   * picture they had.
+   */
+  atmColour: GeoColour
+  camColour: GeoColour
+  /**
    * 0-1. How much of the passthrough camera shows beneath everything.
    *
    * Stored so the value survives a session, but **never restored above 0** —
@@ -113,6 +124,12 @@ export function loadPrefs(fallback: Prefs): Prefs {
       // split invisible to anyone upgrading: geoAlpha was mix, and atmAlpha at
       // 1 is what the crossfade always implied about the atmosphere.
       geoAlpha: unit(parsed.geoAlpha, unit(parsed.mix, fallback.geoAlpha)),
+      atmColour: isGeoColour(parsed.atmColour)
+        ? clampGeoColour(parsed.atmColour)
+        : fallback.atmColour,
+      camColour: isGeoColour(parsed.camColour)
+        ? clampGeoColour(parsed.camColour)
+        : fallback.camColour,
       atmAlpha: unit(parsed.atmAlpha, fallback.atmAlpha),
       // Always 0 on load, whatever was stored. Every other field here restores
       // what the user last chose; this one deliberately does not, because

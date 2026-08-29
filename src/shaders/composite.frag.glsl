@@ -22,9 +22,17 @@ uniform sampler2D uGeometry;
 uniform float uGeoAlpha; // 0-1, the geometric layer's own opacity
 uniform float uAtmAlpha; // 0-1, the atmospheric layer's own opacity
 uniform int uMode;  // 0 normal, 1 add, 2 screen, 3 multiply, 4 overlay, 5 difference
-// The geometric layer is drawn in white; all of its colour is this gain,
+// Every layer is drawn in white by its own shader; all of its colour is a gain
 // applied here rather than inside each view. See geo-colour.ts.
+//
+// One per layer, including the camera. A tint on a real image is not the same
+// gesture as a tint on generated line work — it is a filter over something that
+// already has colours of its own — but it is the same arithmetic and the same
+// control, and having the layers differ in what you can do to them was the
+// thing that made the stack feel arbitrary.
 uniform vec3 uGeoColour;
+uniform vec3 uAtmColour;
+uniform vec3 uCamColour;
 
 // Physical disturbance of the device, as (angle, offsetX, offsetY, overscan).
 // Applied here rather than in each view so every programme tumbles, including
@@ -66,7 +74,7 @@ void main() {
   // and the geometric alpha below both operate on the layer as it will
   // actually appear. Dimming afterwards would make a faint atmosphere still
   // blend as though it were solid.
-  vec3 base = texture2D(uAtmosphere, uv).rgb * uAtmAlpha;
+  vec3 base = texture2D(uAtmosphere, uv).rgb * uAtmAlpha * uAtmColour;
   vec3 top = texture2D(uGeometry, uv).rgb * uGeoColour;
 
   vec3 blended;
@@ -98,7 +106,7 @@ void main() {
   // is the path to a readable camera, and it did not exist before.
   if (uCameraMix > 0.0) {
     vec2 camUv = (vUv - 0.5) * uCameraFit + 0.5;
-    vec3 cam = texture2D(uCamera, camUv).rgb;
+    vec3 cam = texture2D(uCamera, camUv).rgb * uCamColour;
     vec3 lit = 1.0 - (1.0 - cam) * (1.0 - col);
     col = mix(col, lit, uCameraMix);
   }

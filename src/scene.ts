@@ -98,6 +98,8 @@ const STRUCTURE_COOLDOWN = 8
 export interface VisualiserOptions {
   geometricView: GeometricViewName
   geoColour: GeoColour
+  atmColour: GeoColour
+  camColour: GeoColour
   atmosphericView: AtmosphericViewName
   mergeMode: MergeModeName
   /** 0-1. The geometric layer's opacity: 0 is pure atmosphere, 1 the full
@@ -117,8 +119,8 @@ export interface Visualiser {
   /** Swap the atmospheric layer's programme. Recompiles a shader; not a per-frame call. */
   setAtmosphericView(name: AtmosphericViewName): void
   setMergeMode(mode: MergeModeName): void
-  /** Recolour the geometric layer. Cheap: a uniform, not a recompile. */
-  setGeoColour(colour: GeoColour): void
+  /** Recolour a layer. Cheap: a uniform, not a recompile. */
+  setLayerColour(layer: 'geo' | 'atm' | 'cam', colour: GeoColour): void
   /** How far the device has been knocked about. See shake.ts. */
   setTumble(t: TumbleState): void
   /** 0-1, the geometric layer's opacity. Formerly setMix. */
@@ -261,11 +263,17 @@ export function createVisualiser(
     uGeoAlpha: { value: options.geoAlpha },
     uAtmAlpha: { value: options.atmAlpha },
     uMode: { value: MERGE_MODES[options.mergeMode].index },
-    // Seeded from options, not left at white for setGeoColour to correct
+    // Seeded from options, not left at white for setLayerColour to correct
     // later: nothing calls that until the HUD is touched, so a stored or
     // URL-supplied colour would be ignored for the whole session.
     uGeoColour: {
       value: new Vector3(options.geoColour.r, options.geoColour.g, options.geoColour.b),
+    },
+    uAtmColour: {
+      value: new Vector3(options.atmColour.r, options.atmColour.g, options.atmColour.b),
+    },
+    uCamColour: {
+      value: new Vector3(options.camColour.r, options.camColour.g, options.camColour.b),
     },
     // (angle, offsetX, offsetY, overscan) — at rest this is the identity, so
     // a device with no accelerometer costs one unused uniform and nothing else.
@@ -521,10 +529,16 @@ export function createVisualiser(
       compositeUniforms.uTumble.value.set(t.angle, t.offsetX, t.offsetY, t.zoom)
     },
 
-    setGeoColour(colour) {
+    setLayerColour(layer, colour) {
       // Three fixed gains, so this is a uniform write on input rather than
       // anything the render loop has to recompute.
-      compositeUniforms.uGeoColour.value.set(colour.r, colour.g, colour.b)
+      const u =
+        layer === 'geo'
+          ? compositeUniforms.uGeoColour
+          : layer === 'atm'
+            ? compositeUniforms.uAtmColour
+            : compositeUniforms.uCamColour
+      u.value.set(colour.r, colour.g, colour.b)
     },
 
     setGeoAlpha(a) {
