@@ -47,6 +47,35 @@ export function checkWebGL(): boolean {
 }
 
 /**
+ * Go fullscreen, if this browser will.
+ *
+ * The visuals are meant to be left running on a phone propped up somewhere,
+ * and an address bar and toolbar across a dark field ruin exactly that. The
+ * viewport meta already carries `viewport-fit=cover` so the canvas runs under
+ * the notch, but that only reclaims the inset — the browser chrome itself
+ * needs the Fullscreen API.
+ *
+ * Called from inside the start gesture and never awaited before the audio
+ * path, for two reasons. The obvious one is that fullscreen needs a live user
+ * gesture, and this app has exactly one. The other is that it must not be
+ * able to fail the start: iPhone Safari has no element fullscreen at all
+ * (iPad does, and so does Android Chrome), so on the single most likely
+ * device this rejects, and a rejection here means the visualiser simply runs
+ * with the browser's chrome — not that it refuses to run.
+ *
+ * Deliberately not retried or offered again later: a second prompt for
+ * something the platform has already refused is noise, and there is no
+ * further gesture to hang it on anyway.
+ */
+export function goFullscreen(): void {
+  const target = document.documentElement
+  if (!target.requestFullscreen) return
+  // Swallowed, not surfaced — same posture as keepAwake() below, and for the
+  // same reason: what the user loses is chrome, not the app.
+  void target.requestFullscreen({ navigationUI: 'hide' }).catch(() => {})
+}
+
+/**
  * Keep the screen awake.
  *
  * Once started there is no further interaction, so the phone will dim and sleep
@@ -103,6 +132,10 @@ export function waitForStart(els: GateElements): Promise<Started> {
       // the microphone first spends the gesture. Both calls are made
       // synchronously inside the handler and only then awaited.
       const motion = requestMotionAccess()
+
+      // Same rule, same reason: it needs the gesture, so it is asked for here
+      // and not awaited. See goFullscreen() for why a refusal is not an error.
+      goFullscreen()
 
       try {
         const source = await startMicrophone()
