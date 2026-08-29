@@ -10,7 +10,7 @@
 import { bindGestures } from './gestures'
 import { DEFAULT_GEO_COLOUR, parseGeoColour, type GeoColour } from './geo-colour'
 import { startCamera, type CameraSource } from './camera'
-import { createHud } from './hud'
+import { createHud, TAP_SLOP_PX } from './hud'
 import { MAPPINGS, type Mapping, type MappingName, type VisualParams } from './engine'
 import {
   DEFAULT_ATM_MERGE_MODE,
@@ -25,7 +25,8 @@ import { loadPrefs, type Prefs } from './prefs'
 import { applyReleaseTone } from './release-tone'
 import { mountShare } from './share'
 import { Director } from './director'
-import { createVisualiser } from './scene'
+import { createVisualiser, type Visualiser } from './scene'
+import { RELEASE_NAME } from './release-name'
 import { SlowAnalysis } from './engine'
 import { intensity, startShake } from './shake'
 import { confirmBuzz, doubleBuzz, hapticStatus } from './haptics'
@@ -280,6 +281,66 @@ function flashShake(double: boolean): void {
   }
 }
 
+/** One white flash confirming a screenshot was saved — reuses #shake-flash's
+ *  `.on` fade, which already does exactly this and needs no new DOM. Unlike
+ *  flashShake, never gated behind `showStats`: this is feedback for an
+ *  action just taken, not a diagnostic. */
+function flashCapture(): void {
+  const el = document.getElementById('shake-flash')
+  if (!el) return
+  el.classList.remove('on', 'double')
+  el.classList.add('on')
+  requestAnimationFrame(() => el.classList.remove('on'))
+}
+
+/** The bottom band's height, as a fraction of the viewport — docs/todo.md
+ *  entry 18. */
+const CAPTURE_BAND_FRACTION = 0.15
+
+/** `env(safe-area-inset-bottom)` has no JS equivalent; read back the custom
+ *  property index.html sets from it on `:root`. */
+function safeBottomInset(): number {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue('--safe-bottom')
+  return parseFloat(raw) || 0
+}
+
+/** Whether a point sits in the screenshot band: the bottom
+ *  CAPTURE_BAND_FRACTION of the viewport, held clear of the home indicator
+ *  or gesture bar by the safe-area inset. */
+function inCaptureBand(clientY: number): boolean {
+  const bottom = window.innerHeight - safeBottomInset()
+  const top = bottom - window.innerHeight * CAPTURE_BAND_FRACTION
+  return clientY >= top && clientY <= bottom
+}
+
+/**
+ * Save the current frame as a PNG, named with the build it came from — the
+ * difference between a bug report that can be acted on and one that cannot.
+ */
+function saveCapture(visualiser: Visualiser): void {
+  visualiser.requestCapture((blob) => {
+    if (!blob) return
+    const stamp = new Date()
+      .toISOString()
+      .replace(/[-:]/g, '')
+      .replace(/T(\d{2})(\d{2}).*/, '-$1$2')
+    const name = `suti-${__BUILD_NUMBER__}-${RELEASE_NAME.replace(/\s+/g, '-')}-${stamp}.png`
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = name
+    // Not added to the DOM: Chrome and Firefox both fire a synthetic click
+    // on a detached <a> without complaint, and this element has no reason to
+    // outlive the click that triggers it.
+    a.click()
+    // Revoked on a delay rather than immediately: revoking before the
+    // browser has actually started the download can cancel it, especially
+    // on the platforms this matters most for (a slower phone under load).
+    setTimeout(() => URL.revokeObjectURL(url), 30_000)
+    flashCapture()
+  })
+}
+
 async function main(): Promise<void> {
   const canvas = document.getElementById('canvas')
   const gate = document.getElementById('gate')
@@ -448,6 +509,43 @@ async function main(): Promise<void> {
     onRandomise: () => visualiser.randomise(),
     onSwipeAtmospheric: (direction) => panel.cycleAtmosphericView(direction),
   })
+
+  // The screenshot band: a tap low on the screen saves the frame instead of
+  // opening the HUD. Registered on the capturing phase and *ahead* of
+  // hud.ts's own tap-to-open listener in the traversal — capture always runs
+  // before bubble regardless of registration order — so stopPropagation()
+  // here reaches hud.ts's bubble-phase document listener before it can also
+  // open the panel for the same tap. A swipe starting in the band needs no
+  // such guard: gestures.ts's own threshold (60px) is already far past
+  // TAP_SLOP_PX, so nothing here can satisfy both at once.
+  {
+    let bandDownX = 0
+    let bandDownY = 0
+    let bandDownInBand = false
+    document.addEventListener(
+      'pointerdown',
+      (e) => {
+        bandDownX = e.clientX
+        bandDownY = e.clientY
+        bandDownInBand = inCaptureBand(e.clientY)
+      },
+      true,
+    )
+    document.addEventListener(
+      'pointerup',
+      (e) => {
+        // Inert while the HUD is open: the panel owns the screen then, and a
+        // tap here is what closes it, exactly as gestures.ts already treats
+        // `.hud-scrim` as off-limits.
+        if (document.querySelector('.hud-scrim.open')) return
+        if (!bandDownInBand || !inCaptureBand(e.clientY)) return
+        if (Math.hypot(e.clientX - bandDownX, e.clientY - bandDownY) > TAP_SLOP_PX) return
+        e.stopPropagation()
+        saveCapture(visualiser)
+      },
+      true,
+    )
+  }
 
   window.addEventListener('resize', visualiser.resize)
   // iOS fires resize before the viewport has settled after a rotation, so the

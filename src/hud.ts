@@ -103,8 +103,10 @@ const CHIP_ARC_MID = 232 * DEG
 /** Gap between neighbouring icons along their arc, in px. */
 const CHIP_GAP = 5
 
-/** A tap that travels further than this is a swipe, and belongs to gestures.ts. */
-const TAP_SLOP_PX = 12
+/** A tap that travels further than this is a swipe, and belongs to gestures.ts.
+ *  Exported so main.ts's screenshot band uses the exact same boundary rather
+ *  than a second copy of the same number. */
+export const TAP_SLOP_PX = 12
 /** Half-width of an invisible grab arc. The thumb-safe minimum this file is
  *  built around; the drawn tracks are far thinner. */
 const GRAB_PX = 24

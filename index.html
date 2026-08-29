@@ -19,6 +19,10 @@
         color-scheme: dark;
         /* Overwritten per-build by release-tone.ts before the gate paints. */
         --tone-hue: 220;
+        /* Read from JS (main.ts, the screenshot band) via getComputedStyle —
+           env() has no JS-side equivalent, and the band is a hit test, not
+           an element, so it needs a number rather than a rule to sit above. */
+        --safe-bottom: env(safe-area-inset-bottom, 0px);
       }
       * {
         margin: 0;

@@ -145,6 +145,17 @@ export interface Visualiser {
   randomise(): void
   /** Smoothed frame time in ms, and the pixel ratio currently in use. */
   stats(): { frameMs: number; pixelRatio: number }
+  /**
+   * Save the next composited frame as a PNG blob, once. `onReady` runs after
+   * the frame after this call renders — capture happens inside the render
+   * loop, right after the canvas is painted, not synchronously here: this
+   * renderer is built without `preserveDrawingBuffer` (a cost paid on every
+   * frame forever to serve a tap that happens twice a session), so the
+   * buffer is undefined the instant `render()` returns and a `toBlob()` from
+   * outside the loop reads back nothing. `onReady(null)` if the blob could
+   * not be produced.
+   */
+  requestCapture(onReady: (blob: Blob | null) => void): void
 }
 
 export function createVisualiser(
@@ -331,6 +342,10 @@ export function createVisualiser(
    *  rare is the wrong trade. 30 frames is twice a second, which bounds any
    *  visible distortion to about half that without adding a real cost. */
   let sizeCheckFrames = 0
+  /** Set by requestCapture(), read and cleared inside the render loop once
+   *  the composited frame is actually on the canvas. See requestCapture's
+   *  own comment for why this cannot just call toBlob() synchronously. */
+  let pendingCapture: ((blob: Blob | null) => void) | null = null
 
   const onContextLost = (event: Event) => {
     // Without preventDefault, Three never gets the restore event. Mobile
@@ -542,9 +557,22 @@ export function createVisualiser(
       mesh.material = compositeMaterial
       renderer.setRenderTarget(null)
       renderer.render(scene, camera)
+
+      // Right after the canvas is painted and before anything else can clear
+      // it — see requestCapture's own comment on why this cannot happen
+      // synchronously at the call site instead.
+      if (pendingCapture) {
+        const onReady = pendingCapture
+        pendingCapture = null
+        canvas.toBlob((blob) => onReady(blob), 'image/png')
+      }
     },
 
     resize: applySize,
+
+    requestCapture(onReady) {
+      pendingCapture = onReady
+    },
 
     setGeometricView(name) {
       const next = new ShaderMaterial({

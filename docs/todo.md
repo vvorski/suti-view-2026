@@ -1053,7 +1053,7 @@ entry's own Verify section already flags as needing a real device — still
 owed there.
 
 ### 18. A tap along the bottom saves the frame
-`status: ready` · added 2026-08-29
+`status: done` · added 2026-08-29 · shipped at build 102
 
 **Do** — a tap in a band across the bottom of the screen writes the current
 canvas to a PNG the phone saves, instead of opening the HUD.
@@ -1135,3 +1135,39 @@ on-screen check at 320×568 and 360×640 to confirm the band does not eat
 tap-to-open, `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs no · url no · capture **yes, licensed above** ·
 dependency no.
+
+**Build note.** `TAP_SLOP_PX` exported from `hud.ts` rather than a second
+copy of 12 in `main.ts`. The band-vs-panel conflict is real: both the
+screenshot tap and hud.ts's tap-to-open use the identical travel threshold,
+so any qualifying screenshot tap would also qualify to open the HUD. Solved
+by registering the band's `pointerdown`/`pointerup` pair on the *capturing*
+phase — capture always runs before bubble regardless of registration order —
+and calling `stopPropagation()` there when a tap both lands in the band and
+qualifies, which halts the dispatch before it ever reaches hud.ts's
+bubble-phase listener on `document`. A swipe starting in the band needs no
+such guard: gestures.ts's own 60px threshold is already far past
+`TAP_SLOP_PX` (12px), so nothing can satisfy both a screenshot tap and a
+swipe on the same gesture. `env(safe-area-inset-bottom)` has no JS
+equivalent, so `index.html` publishes it as a `--safe-bottom` custom
+property on `:root`, read back via `getComputedStyle` — no new visible
+element, matching the entry's own "the band is a hit test, not an element."
+
+**Verified**: the filename format and the band's hit-test math, both checked
+in isolation against the entry's own worked example (`suti-91-soft-breathe-
+20260829-1432.png` — the isolated check reproduced this exact shape) and
+against boundary cases with and without a safe-area inset. `pnpm build`,
+`pnpm lint`, `pnpm probe:fullscreen`, `pnpm probe:shake`, `pnpm
+probe:haptics` all clean.
+
+**Not verified here, and said so rather than claimed otherwise:** the actual
+save-a-PNG path needs the render loop to tick at least once after a capture
+is requested (rAF, which never fires in this session's non-frontmost
+automation window — CLAUDE.md's harness-traps list) and needs microphone
+access to get past the gate at all, which the automated browser here left
+permanently pending with no visible prompt. Both are exactly what this
+entry's own Verify section already requires a real phone for — "a blank
+capture is exactly what a desktop browser with a different compositing path
+can fail to reproduce" — so this was never going to be fully provable here.
+Still owed on a real device: an actual saved PNG with correct, non-blank
+pixels, and confirming a tap above the band still opens the HUD and a swipe
+starting in the band still fires.
