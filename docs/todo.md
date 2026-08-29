@@ -1699,7 +1699,7 @@ full thirteen checks pass unchanged with the new `'unasked'` state added.
 `pnpm build`, `pnpm lint` both clean.
 
 ### 25. The fullscreen chip belongs in the utility corner, not on the arc
-`status: ready` · added 2026-08-29
+`status: done` · added 2026-08-29 · shipped at build 115
 
 **Do** — move the fullscreen chip off the icon arc to the top-left, beside the
 version and reload marks, and drop the seventh-slot reservation that only
@@ -1766,6 +1766,33 @@ any more.
 the app itself for the corner. `pnpm probe:fullscreen` unchanged. Also `pnpm
 build`, `pnpm lint`.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+**Build note.** Positioned at `left: 0.75rem` (matching `.hud-stats`, as
+specified) but `top: 3.5rem` rather than `.hud-stats`'s own `0.75rem` —
+**Mine**: `#version-hud`'s reload glyph already occupies roughly
+`0.6rem`-`3.3rem` down that same left edge (measured: its rendered box
+spans y 9.6px-52.8px at the root font size), so matching `.hud-stats`'s top
+inset exactly would sit this 48px chip directly over it. 3.5rem (56px)
+clears that box with a few pixels to spare. `.hud-stats` itself is hidden
+by default (`showStats` is off), so the two sharing a left edge was never
+going to collide in the common case regardless.
+
+Confirmed via `hud-narrow.html` that the six-chip row is back to its
+pre-entry-19 positions exactly — `bands: 6`, `escaped: []`, and the same
+`worstRight`/`worstBottom` figures as every check before entry 19 introduced
+the reservation, at both 320×568 and 360×640. Confirmed in `index.html`
+itself that the chip's computed `top`/`left` place it clear of the measured
+`#version-hud` rect. `pnpm build`, `pnpm lint`, `pnpm probe:fullscreen`
+(unchanged) all clean.
+
+**Not verified here:** `.hud-chip`'s own sizing/shape rules are injected by
+`createHud()`, which only runs after Start — a raw fetch of `index.html`
+before Start renders the button unstyled, so the *visual* corner placement
+(a round 48px chip, properly sized) could only be confirmed by computed
+`top`/`left` values and by reasoning against the measured `#version-hud`
+box, not by looking at the fully-styled result. That needs a real Start on
+a real device, same as everything else this entry and entry 19 before it
+already flagged as needing one.
 
 ### 26. Two screenshots in the same minute get the same filename
 `status: ready` · added 2026-08-29

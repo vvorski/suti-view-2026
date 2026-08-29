@@ -265,6 +265,19 @@
         #start { animation: none; }
       }
 
+      /* Fixed in the top-left utility corner rather than placed by script on
+         the HUD's own icon arc (docs/todo.md entry 25) — an arc of one chip,
+         which is what the closed panel's arc always was while this was on
+         it, reads as a button dropped on the picture rather than as one of a
+         row. Same left inset as .hud-stats (hud.ts); stacked below
+         #version-hud rather than sharing its exact top, since that corner
+         already holds the reload glyph and the two would otherwise overlap.
+         Still a circular chip — the control-surface rule governs controls
+         being arcs, not where a round chip may sit. */
+      #fullscreen-chip {
+        left: calc(0.75rem + env(safe-area-inset-left, 0px));
+        top: calc(3.5rem + env(safe-area-inset-top, 0px));
+      }
     </style>
   </head>
   <body>
@@ -282,8 +295,11 @@
          chips go inert while its panel is closed
          (`.hud-scrim:not(.open) .hud-chip`), and this one has to work at the
          moment fullscreen is lost, not only once the panel is opened.
-         Positioned by main.ts using hud.ts's own chipPosition() so it reads
-         as one of the arc's chips despite living outside that file. -->
+         Fixed in the top-left utility corner (see the style rule above),
+         not placed on the HUD's own icon arc — entry 25 moved it there
+         after entry 19's own arc placement read as a button dropped on the
+         picture whenever the panel was closed, which is the only state
+         this chip is ever shown in. -->
     <button id="fullscreen-chip" class="hud-chip" type="button" hidden
       style="--tint: #9d9bf0" aria-label="Return to fullscreen">
       <svg class="hud-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">

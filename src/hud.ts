@@ -228,14 +228,6 @@ export interface Hud {
   }): void
   /** Whether the user has the autopilot switched on. */
   autopilot(): boolean
-  /**
-   * Reserve or release the arc's last slot for the fullscreen chip — a
-   * sibling element outside this HUD's own container (see docs/todo.md
-   * entry 19), which is why this exists rather than that chip just being
-   * one more `mkChip()`. Repositions this HUD's own chips immediately so
-   * the row makes room before the caller's own element is shown.
-   */
-  setFullscreenChipShown(shown: boolean): void
 }
 
 interface Handlers {
@@ -821,19 +813,16 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     paint()
   })
 
-  /** Whether the caller's own fullscreen chip (entry 19, index.html) is
-   *  currently on the arc — it takes a slot in this row's count without
-   *  being one of `chips`, since it lives outside the HUD's own container. */
-  let fullscreenChipShown = false
-
   /** Lay the icons along their own arc. Spacing comes from the measured chip
-   *  size, so a larger root font spreads them rather than overlapping them. */
+   *  size, so a larger root font spreads them rather than overlapping them.
+   *  Always six — the fullscreen chip moved off this arc entirely in entry
+   *  25, so nothing reserves a seventh slot on it any more; see
+   *  chipPosition's own comment for why the function stays anyway. */
   function placeChips(): void {
     const all = [...chips.values()]
     const size = all[0]?.offsetWidth || 48
-    const n = all.length + (fullscreenChipShown ? 1 : 0)
     all.forEach((chip, i) => {
-      const [x, y] = chipPosition(i, n, size)
+      const [x, y] = chipPosition(i, all.length, size)
       chip.style.left = `${x - size / 2}px`
       chip.style.top = `${y - size / 2}px`
     })
@@ -1132,12 +1121,6 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     },
 
     autopilot: () => prefs.autopilot,
-
-    setFullscreenChipShown(shown) {
-      if (fullscreenChipShown === shown) return
-      fullscreenChipShown = shown
-      placeChips()
-    },
 
     adopt(next) {
       if (next.geometricView) {

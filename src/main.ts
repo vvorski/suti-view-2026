@@ -10,7 +10,7 @@
 import { bindGestures } from './gestures'
 import { DEFAULT_GEO_COLOUR, parseGeoColour, type GeoColour } from './geo-colour'
 import { startCamera, type CameraSource } from './camera'
-import { chipPosition, createHud, TAP_SLOP_PX } from './hud'
+import { createHud, TAP_SLOP_PX } from './hud'
 import { MAPPINGS, type Mapping, type MappingName, type VisualParams } from './engine'
 import {
   DEFAULT_ATM_MERGE_MODE,
@@ -703,23 +703,18 @@ async function main(): Promise<void> {
   }
 
   // The way back into fullscreen once it has been lost — docs/todo.md entry
-  // 19. Shown only for `exited`/`refused`, never `active` (nothing to offer)
-  // or `unsupported` (a button that can never work is worse than no button).
+  // 19. Shown only for `exited`/`refused`, never `active` (nothing to offer),
+  // `unasked` (nothing has gone wrong yet) or `unsupported` (a button that
+  // can never work is worse than no button). Fixed in the top-left utility
+  // corner by index.html's own CSS (entry 25) rather than placed on the
+  // HUD's icon arc, so this only ever toggles visibility — no positioning,
+  // no resize listener, and no reserved slot on a row this chip is no
+  // longer part of.
   {
     const chip = document.getElementById('fullscreen-chip')
     if (chip instanceof HTMLButtonElement) {
       const updateFullscreenChip = (): void => {
-        const show = ['exited', 'refused'].includes(fullscreenStatus().state)
-        // Reserves the arc's last slot before the chip itself moves into it,
-        // so the HUD's own chips have already made room by the time this one
-        // is shown — see Hud.setFullscreenChipShown's own comment.
-        panel.setFullscreenChipShown(show)
-        chip.hidden = !show
-        if (!show) return
-        const size = chip.offsetWidth || 48
-        const [x, y] = chipPosition(6, 7, size)
-        chip.style.left = `${x - size / 2}px`
-        chip.style.top = `${y - size / 2}px`
+        chip.hidden = !['exited', 'refused'].includes(fullscreenStatus().state)
       }
       chip.addEventListener('pointerup', (e) => {
         // Stops here, at the target, before hud.ts's own bubble-phase
@@ -729,7 +724,6 @@ async function main(): Promise<void> {
         goFullscreen()
       })
       onFullscreenChange(updateFullscreenChip)
-      window.addEventListener('resize', updateFullscreenChip)
       updateFullscreenChip()
     }
   }
