@@ -170,12 +170,16 @@
         background: #9d9bf0;
         color: #05060a;
         font-family: 'Chakra Petch', ui-sans-serif, system-ui, sans-serif;
-        font-size: clamp(0.82rem, 3.4vw, 1rem);
+        font-size: clamp(0.95rem, 4vw, 1.15rem);
         font-weight: 700;
         letter-spacing: 0.14em;
         text-indent: 0.14em;
         text-transform: uppercase;
-        animation: start-pulse 3.4s ease-out infinite;
+        /* Two periods that don't divide into one another (3.4s, 5.9s), so the
+           pair returns to the same phase roughly every 200s rather than every
+           cycle — what keeps this reading as alive rather than as a metronome. */
+        animation: start-pulse 3.4s ease-out infinite,
+          start-breathe 5.9s cubic-bezier(0.4, 0, 0.2, 1) infinite alternate;
         transition: background 180ms ease, transform 180ms ease;
       }
       /* One slow ring leaving the button — the only motion this screen adds to
@@ -185,6 +189,16 @@
         0% { box-shadow: 0 0 0 0 rgba(157, 155, 240, 0.4); }
         70% { box-shadow: 0 0 0 18px rgba(157, 155, 240, 0); }
         100% { box-shadow: 0 0 0 0 rgba(157, 155, 240, 0); }
+      }
+      /* A slow breathe, lightly — about 4px of growth on a 114px disc. The
+         `scale` property, not `transform: scale()`: #start:active already
+         animates `transform`, which would silently outrank and delete the
+         press feedback if this used the same property. `alternate` mirrors
+         the easing at both ends, so it dwells the way breathing does, where a
+         0-100% keyframe loop would snap back instead. */
+      @keyframes start-breathe {
+        from { scale: 1; }
+        to { scale: 1.035; }
       }
       #start:hover,
       #start:focus-visible { background: #b9b7ff; }

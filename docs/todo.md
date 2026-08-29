@@ -876,7 +876,7 @@ every double case at 1.00 regardless of its own measured peak.
 `pnpm probe:haptics` unchanged after moving `PEAK_CEILING` into `shake.ts`.
 
 ### 16. Start reads bigger, and the disc breathes instead of ticking
-`status: ready` · added 2026-08-29
+`status: done` · added 2026-08-29 · shipped at build 99
 
 **Do** — raise the Start label's type a step, and add a slow scale breathe to
 the disc on a period that does not divide into the ring's, so the two never
@@ -947,6 +947,16 @@ page to reach. Emulate reduced motion in devtools for the last clause. Also
 `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs no · url no · capture no · dependency no. All of it is
 CSS in `index.html`.
+
+**Build note.** Verified on screen via a fresh iframe pair sized exactly
+320×568 and 360×640 (the same technique `hud-narrow.html` uses, since
+`resize_window` doesn't reliably change what `index.html` itself measures
+here — see CLAUDE.md's harness-traps list). `getComputedStyle(#start).fontSize`
+reads exactly 15.2px at both sizes (up from the old 13.1px), the disc stays
+~114px/~128px, `getAnimations()` shows both `start-pulse` and `start-breathe`
+running, and the `@media (prefers-reduced-motion: reduce) { #start }` rule
+still resolves to a full `animation: none` shorthand, confirmed by reading
+its serialised `cssText` directly rather than only trusting the source.
 
 ### 17. In fullscreen the circles are ellipses
 `status: ready` · added 2026-08-29
