@@ -61,7 +61,13 @@ picture is right, and reviewing your own diff proves less than that.
   `requestAnimationFrame` never fires in a non-frontmost automation window, and
   Three sizes the drawing buffer to the *window*, not the canvas CSS box, so
   `readPixels` must use `gl.drawingBufferWidth/Height`. Without a baseline that
-  should pass, both would have been read as shader bugs.
+  should pass, both would have been read as shader bugs. The same stall hits
+  **CSS transitions and animations**: `getAnimations()` reports one `running`
+  and the class list is exactly right, but the opacity never advances, because
+  `document.visibilityState` is `hidden` in that window and Chrome throttles
+  frame-driven work there regardless of what triggers it — rAF, a transition,
+  or a `@keyframes` animation. Confirmed by checking `hasFocus()`/
+  `visibilityState` before concluding the CSS itself is wrong.
 - **A plausible-looking table is the dangerous kind of wrong.** The shake probe's
   first run showed every case from a hand tremor upward pinned at the rotation
   cap. That was not the shader; it was the probe's own synthetic spin being a

@@ -198,6 +198,38 @@ function shuffled(prefs: Prefs): {
   }
 }
 
+/**
+ * Flash the screen white on a detected shake, when the numeric readout is on.
+ *
+ * Built for one report: "the shake isn't working, no double detection" — with
+ * nothing to check it against but the eye. `probe:shake` passes every
+ * synthetic case for both single and double, and `main.ts` calls `takeDouble`
+ * correctly, so nothing in the code points at a bug. What is missing is the
+ * one thing a probe cannot supply: whether *anything* is firing on this
+ * particular phone at all, and if so, which kind.
+ *
+ * Gated on `prefs.showStats` rather than a second `?debug` flag — that
+ * already means "diagnostics are visible" and a flash on every shake once
+ * this ships permanently would turn a quiet instrument into a strobe.
+ *
+ * A DOM overlay, not a shader uniform: it must be visible even if the render
+ * path itself is the thing broken, and it must cost nothing when off.
+ */
+function flashShake(double: boolean): void {
+  const el = document.getElementById('shake-flash')
+  if (!el) return
+  el.classList.remove('on', 'double')
+  if (double) {
+    // Restart the animation: removing and re-adding the class in the same
+    // tick would be coalesced by the browser into no change at all.
+    void el.offsetWidth
+    el.classList.add('double')
+  } else {
+    el.classList.add('on')
+    requestAnimationFrame(() => el.classList.remove('on'))
+  }
+}
+
 async function main(): Promise<void> {
   const canvas = document.getElementById('canvas')
   const gate = document.getElementById('gate')
@@ -373,6 +405,7 @@ async function main(): Promise<void> {
       // re-seed does not also fire — a shuffle that re-seeded on top of itself
       // would be the same picture change twice.
       if (shake.takeDouble()) {
+        if (prefs.showStats) flashShake(true)
         shuffle()
         // A shake is a manual gesture. The autopilot standing down is the same
         // courtesy every HUD control gets, and without it the director could
@@ -380,6 +413,7 @@ async function main(): Promise<void> {
         director.suspend()
         doubleBuzz()
       } else if (shake.takeStrong()) {
+        if (prefs.showStats) flashShake(false)
         visualiser.randomise()
         // The one action here with no legible cause and effect: the picture
         // was already moving and is replaced by a different moving picture.

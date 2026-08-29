@@ -48,6 +48,38 @@
         height: 100%;
         display: block;
       }
+      /* Opacity, not display: a shake fires inside the render loop and the
+         transition needs a frame to actually animate rather than jumping
+         straight to invisible. Layered above the canvas, below the gate. */
+      #shake-flash {
+        position: fixed;
+        inset: 0;
+        z-index: 5;
+        background: #fff;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 260ms ease-out;
+      }
+      #shake-flash.on {
+        opacity: 0.9;
+        transition: none;
+      }
+      /* A double gets a second pulse rather than a longer one, so the two
+         read as two events on screen the same way the buzz makes them read
+         as two events by feel. */
+      #shake-flash.double {
+        animation: shake-flash-double 340ms ease-out;
+      }
+      @keyframes shake-flash-double {
+        0%   { opacity: 0.9; }
+        35%  { opacity: 0.15; }
+        55%  { opacity: 0.9; }
+        100% { opacity: 0; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #shake-flash { transition: none; }
+        #shake-flash.double { animation: none; }
+      }
       /* The gate is an overlay on the running piece, not a page in front of it.
          The canvas behind is already drawing (see idleParams in main.ts), so
          this screen's job is to stay out of its way and still be readable.
@@ -195,6 +227,11 @@
   </head>
   <body>
     <canvas id="canvas"></canvas>
+
+    <!-- Debug-only: flashes white on a detected shake, so "did anything fire"
+         is answerable by eye when the phone that reported the bug is not
+         wired to a console. See shakeFlash() in main.ts. -->
+    <div id="shake-flash" aria-hidden="true"></div>
 
     <div id="gate">
       <!-- Share, top right. An icon rather than a labelled button: the only

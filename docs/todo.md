@@ -413,3 +413,49 @@ it and only the call site changes. It also lists iOS Core Haptics in its
 platform mapping, so it is the one route by which an iPhone might ever feel any
 of this. Nothing to do now; a reason to keep the intensity value as a plain
 0–1 number rather than baking it into a duration.
+
+### 9. Flash the screen on a detected shake, for debugging
+`status: done` · added 2026-08-29 · shipped at build 81
+
+**Do** — a white flash on any detected shake, single or double, when the
+numeric readout is on.
+**Why** — Victor reported the shake not working and no double detection, with
+nothing to check it against. `pnpm probe:shake` passes every synthetic case
+for both, and `main.ts` calls `takeDouble()` correctly — nothing in the code
+points at a bug. What was missing is the one thing a probe cannot supply:
+whether anything fires on this particular phone at all, and which kind.
+
+**Decided**
+- Gate → **`prefs.showStats`**, over a second `?debug` flag. **Mine**: that
+  flag already means "diagnostics are visible", and a flash on every shake
+  once this ships permanently would turn a quiet instrument into a strobe.
+- Single vs double → **visually distinct**, a plain fade for one and a double
+  pulse for the other, over one flash for both. **Mine**, for the same reason
+  the buzz is two different patterns: the ambiguity in the report was
+  specifically "is a double even detected", so the two cases have to be
+  told apart by eye as well as by feel.
+- Mechanism → a DOM overlay, over a shader uniform. **Mine**: it must stay
+  visible even if the render path itself is what's broken, and cost nothing
+  when off.
+
+**Lands in** — `index.html` (`#shake-flash`, its CSS), `src/main.ts`
+(`flashShake()`, called from both branches of the shake handler).
+**Done when** — `?debug` on Victor's phone, a single shake washes the screen
+white and fades; a shake-pause-shake pulses twice. Whichever fails to appear
+is the same information entry 1 was blocked on before it was unblocked by
+asking: a code-level fact rather than another guess.
+**Verify** — `pnpm build`, `pnpm lint`. Confirmed by class/CSS inspection and a
+screenshot with the gate hidden, both showing the intended state; the fade and
+pulse *timing* could not be observed live in this session — see the note
+below, now in CLAUDE.md.
+**Hard stops** — prefs no · url no · capture no · dependency no.
+
+**Harness note, recorded because it cost real time to diagnose:** driving this
+in the browser tool reported the transition "stuck" at full opacity —
+`getAnimations()` showed one `running`, the classes were exactly right, and it
+never advanced. `document.visibilityState` was `hidden`: Chrome throttles
+frame-driven work in a non-frontmost automation window regardless of what
+drives it — `requestAnimationFrame`, a CSS transition, or a `@keyframes`
+animation — which is the same family as the already-documented rAF trap, one
+step further. Added to CLAUDE.md's harness-traps list so it is not
+rediscovered as a CSS bug.
