@@ -1253,3 +1253,82 @@ on-screen check at 320×568 and 360×640 covers the arc arithmetic. Also `pnpm
 probe:fullscreen` unchanged, `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs no · url no · capture no (fullscreen prompts nothing
 and captures nothing) · dependency no.
+
+### 20. Shake answers before Start, and stands down while the panel is open
+`status: ready` · added 2026-08-29
+
+**Do** — start the motion listener on load wherever it needs no permission, so
+shaking the start screen visibly tumbles the preview behind it, and drop the
+discrete shuffle while the HUD is open.
+**Why** — the shake is the app's signature gesture and nothing announces it;
+the one screen where a person is holding the phone and not yet doing anything
+is the one screen it does not work on.
+
+**Decided**
+- Teaching it → **wordlessly, by answering on the gate.** Asked, and the
+  answer was the preview tumble over any copy. The canvas behind the gate is
+  already drawing (`main.ts`'s idle params), so a shake that visibly knocks it
+  about teaches the gesture before anything has been pressed, and build 66's
+  decision to strip the gate to Start and the code stands untouched.
+- What a gate shake does → **tumbles, and nothing else.** No re-seed, no
+  shuffle, at any intensity. **Mine**: before Start there is no audio and the
+  preview is a fixed idle programme, so re-rolling views would change what the
+  person is about to walk into for reasons they cannot connect to anything.
+  The tumble is already the continuous, thresholdless half of `shake.ts`,
+  written to say "the device is being listened to" — this is that half doing
+  exactly its stated job, not a new behaviour.
+- Where it works → **Android on load, iOS still at the tap.**
+  `DeviceMotionEvent.requestPermission` exists only on iOS and iPadOS, so
+  feature-detect it: present means defer to the gate gesture exactly as today,
+  absent means add the listener immediately. On iOS this is not a limitation
+  to work around but a rule — the accelerometer is behind the same live-gesture
+  requirement as the microphone, and `permission-gate.ts:236-255` documents the
+  load-bearing order the three gesture-spending calls already have. Do not add
+  a fourth claimant to it.
+- A gesture that only works on one platform → accepted, consistent with how
+  this project already treats the split: fullscreen is `unsupported` on
+  iPhone, haptics are "a bonus on one platform, absent on the other". Nothing
+  is lost on iOS that works there today.
+- Reaching for a sensor before any gesture → **named rather than waved
+  through.** Entry 6's rule is "nothing may reach for a sensor without a
+  gesture asking for it", and this does. It is licensed by the answer above,
+  and it differs from the camera case in every way that made that rule: no
+  permission prompt, no OS indicator, nothing recorded, no network, and
+  nothing persisted. If that reasoning does not hold, the fix is to drop the
+  gate half and keep the panel half — they are independent.
+- Shake while the HUD is open → **the discrete shuffle stands down; the tumble
+  continues.** **Mine**: the tumble is ambient and harmless, but a shuffle
+  rewrites the values the person currently has a finger on, which is the same
+  fault as a control lying about its state. `gestures.ts` already excludes
+  anything landing on `.hud-scrim`, and `main.ts:540` already tests
+  `.hud-scrim.open` — reuse that selector rather than adding a second notion
+  of "the panel is up".
+- Dropped, not queued → the pending flags must still be **consumed and
+  discarded** while the panel is open. Leaving them set means a shake made
+  during editing fires the instant the panel closes, which is worse than
+  either behaviour: the picture changes with no gesture anywhere near it.
+- No buzz on the gate → `haptics.ts` is deliberately not a
+  vibrate-on-everything layer, and a tumble is continuous, so there is no
+  discrete event for a buzz to confirm.
+
+**Lands in**
+- `src/main.ts:442` — `startShake(motion)` moves earlier behind the
+  feature test; the gate path keeps passing its own `motion` result.
+- `src/main.ts`, the render loop's shake branch — the `.hud-scrim.open` guard
+  around the `takeStrong`/`takeDouble` handling, consuming both regardless.
+- `src/permission-gate.ts:255` — unchanged. Read the comment above it first;
+  it explains why nothing new may be added to that gesture.
+
+**Done when** — on an Android phone, shaking the start screen visibly tumbles
+the picture behind the gate and changes nothing else about it; on iPhone the
+start screen is unchanged. After Start, a shake with the panel open leaves
+every band exactly where it was, and closing the panel afterwards does not
+then fire a shuffle. The tumble still responds in both cases.
+**Verify** — on the phone, both platforms if one is reachable, because a
+desktop browser has no accelerometer and the whole entry is about when the
+listener exists. `pnpm probe:shake` must pass unchanged — nothing here touches
+detection. Also `pnpm build`, `pnpm lint`.
+**Hard stops** — prefs no (nothing stored; the wordless route avoids a
+first-run flag) · url no · capture **yes, narrowly: the accelerometer starts
+without a gesture on Android** — licensed above, with the reasoning and the
+fallback recorded · dependency no.
