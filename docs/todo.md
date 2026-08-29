@@ -140,3 +140,51 @@ own background, and decode it back — bigger should not break scanning but it i
 the check every change near this control has had, and the gradient behind it
 differs at the new size. Look at it at 320×568, 360×640 and 412×915.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 5. Merge becomes a per-layer property; Mapping becomes its own "Listening" group
+`status: ready` · added 2026-08-29
+
+**Do** — give the geometric and atmospheric layers each their own merge mode
+band, replacing the single global one, and rename the settings group to
+Listening so the mapping band it is left holding reads as a category rather
+than a leftover.
+**Why** — a blend mode describes how one layer combines with what is beneath
+it, so filing it as a global picture setting was a miscategorisation. The
+atmosphere's combination with the camera is currently hardcoded to screen and
+has never been adjustable at all.
+
+**Decided**
+- Move vs per-layer → per-layer, over simply moving the existing single control
+  into the geometric group. That is new capability rather than a relabelling:
+  the atmosphere gains a blend mode it has never had.
+- Where mapping goes → its own group, renamed Listening, over duplicating it on
+  every layer and over dropping it from the HUD. It drives every layer equally,
+  so putting it on one would repeat exactly the mistake this entry fixes.
+  Layers are what you see; Listening is how it hears, and naming the category
+  is what makes a one-band group make sense.
+
+**Lands in**
+- `src/shaders/composite.frag.glsl` — `uMode` becomes the geometric layer's
+  mode; add `uAtmMode` and a second blend block for atmosphere-over-camera,
+  replacing the hardcoded screen at the `uCameraMix` branch.
+- `src/scene.ts` — `setMergeMode` takes a layer, like `setLayerColour` already
+  does. New uniform beside `uMode`.
+- `src/prefs.ts` — add `atmMergeMode`. Adding a field is safe; `mergeMode`
+  keeps its name and meaning as the geometric layer's, so no stored value
+  changes meaning.
+- `src/hud.ts` — a merge band inside the `geo` and `atm` groups; the `set`
+  group becomes `ear`, keeping only mapping. Its icon changes with it.
+- `BAND_R` needs a **sixth radius**. Geometric becomes View, Merge, Opacity, R,
+  G, B. About 0.33 is the value to use: the old mix arc lived at 0.30, so an
+  arc that small is already proven draggable on a phone.
+
+**Done when** — the geometric and atmospheric layers each show six and six
+bands respectively, changing the atmospheric merge visibly changes how the
+field sits over the camera, and the Listening group holds mapping alone.
+**Verify** — `pnpm build`, `pnpm lint`, `pnpm probe:fullscreen`,
+`pnpm probe:shake`. Then in `hud-probe.html`: drive every band in all four
+groups, confirm `describe().straightEdges` is still 0, and check the sixth band
+is reachable and does not collide with its neighbour. Look at it at 320x568 and
+360x640 — six bands is one more than this wedge has ever drawn.
+**Hard stops** — prefs **no** (adding `atmMergeMode`; `mergeMode` unchanged in
+name and meaning) · url no · capture no · dependency no.
