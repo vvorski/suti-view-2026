@@ -371,9 +371,19 @@ conclusion for a normal website is "no library is the best library", which
 matches what is already here:
 
 - **web-haptics / pulsar-haptics** — presets and pattern composition over
-  `navigator.vibrate`. `haptics.ts` is 100 lines, has the two patterns this app
-  needs, and already records why each number is what it is. A dependency would
-  add bundle weight against Hard Stop 4 to replace code that exists and works.
+  `navigator.vibrate`. Checked against the npm registry rather than taken on
+  description: `web-haptics` is **v0.0.6**, 65KB unpacked, published 2026-03-02;
+  `pulsar-haptics` is **v0.2.0**, 8.6KB unpacked, published 2026-06-17. Both
+  are pre-1.0, and 65KB is not a small thing to add to a bundle whose whole
+  budget argument is Three.js at 117KB gzipped. `haptics.ts` is 100 lines, has
+  the two patterns this app needs, and records why each number is what it is.
+  (The research described `web-haptics` as having "substantial npm usage";
+  v0.0.6 published in March is early software whatever the download count.)
+
+  I could not read pulsar-haptics' actual intensity technique — npm returned
+  403 — so nothing is claimed about how it does it. If entry 8's own approach
+  turns out awkward, that page is worth a second look for the *method*, which
+  is borrowable without the package.
 - **browser-haptic** — pitched for its iOS `<label>`/switch-control trick.
   `haptics.ts:18` already names that trick and rejects it as not usable here,
   reached independently. It is also moot: the target phone is Android Chrome.
@@ -388,3 +398,18 @@ matches what is already here:
 The one thing worth taking from the research is the idea above — continuous
 shake energy driving the response rather than a boolean — and it needs no
 dependency at all, because the number is already being computed.
+
+**The WICG Web Haptics proposal is worth knowing about and not worth building
+on.** Its own status text says the API "is in the early ideation and
+interest-gauging stage, and the solution/design will likely evolve"; there are
+no implementations and no timeline, and it notes that extending
+`navigator.vibrate` "lacks broad engine support (absent in Safari/WebKit)".
+
+What matters here is the shape it proposes: `navigator.playHaptics(effect,
+intensity)` with intensity 0.0–1.0. That is the same axis entry 8 adds, which
+means the work is forward-compatible by accident rather than by design — if
+the API ever ships, the intensity number this entry computes maps straight onto
+it and only the call site changes. It also lists iOS Core Haptics in its
+platform mapping, so it is the one route by which an iPhone might ever feel any
+of this. Nothing to do now; a reason to keep the intensity value as a plain
+0–1 number rather than baking it into a duration.
