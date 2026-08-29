@@ -1171,3 +1171,85 @@ can fail to reproduce" — so this was never going to be fully provable here.
 Still owed on a real device: an actual saved PNG with correct, non-blank
 pixels, and confirming a tap above the band still opens the HUD and a swipe
 starting in the band still fires.
+
+### 19. A way back into fullscreen once it has been lost
+`status: ready` · added 2026-08-29
+
+**Do** — show a single circular fullscreen chip, on the icon arc, whenever
+fullscreen has been lost and the platform supports getting it back.
+**Why** — coming back to the browser drops you out of fullscreen and there is
+no route back in: the exit is recorded and deliberately not acted on, so
+nothing re-enters and nothing offers to.
+
+**Decided**
+- Do not simply re-arm the silent retry → **the deliberate-exit decision
+  stands.** `permission-gate.ts:110` records an exit and says in as many words
+  that it does not act on it, which is right: a tap that silently drags
+  someone back into fullscreen they chose to leave is hostile. That decision
+  is exactly *why* this wants a chip. An explicit control is the only way to
+  offer the way back without fighting the person who left.
+- When it shows → **`exited` and `refused` only.** Never `active`, and never
+  `unsupported`: iPhone Safari has no element fullscreen at all
+  (`permission-gate.ts:61`), and a button that can never work is worse than no
+  button. The state is already tracked and already surfaced —
+  `fullscreenStatus()` feeds the `full <state>` line in the debug readout
+  (`hud.ts:1007-1012`).
+- Where it sits → **the icon arc, in the slot a seventh chip would take.**
+  Circular chips along an arc are the permitted vocabulary, and reusing the
+  chips' own radius and step means it reads as one of them rather than as a
+  floating button bolted on.
+- Visible with the panel closed → **yes, and this is the implementation
+  consequence worth planning for.** The point is to offer the way back the
+  moment you notice, not after opening a panel. The chips live in the HUD's
+  container, so this one has to be a sibling that borrows the arc geometry —
+  which means `placeChips`'s maths gets exported rather than copied. That is
+  CLAUDE.md's export-rather-than-duplicate rule, same as entry 15's intensity
+  scale.
+- **`placeChips` has to fit the row, not assume it.** It centres on
+  `CHIP_ARC_MID` (`hud.ts:761`), so a seventh chip does not append a slot — it
+  re-centres all seven and pushes the first one off the left edge. At 320×568
+  the arc radius is 345.6px and the step is 8.8°, so six chips start at 210°
+  and a seventh would start at 205.6°, putting the leading chip's left edge at
+  **-5.7px**. The fix is to clamp the start angle to the smallest one that
+  keeps that edge on screen — about 209° with a 4px margin — and lay out from
+  there, so the row slides toward the reachable end instead of centring blind.
+  **Mine**, and it is the refactor the repo asks to be part of the change:
+  `CHIP_ARC_MID` is a hand-tuned constant chosen against a 320px screen, and
+  this is the seventh of something.
+- Nothing moves today → with six chips the centred start is 210°, already
+  clear of the 209° clamp, so the clamp is inert until the seventh appears.
+  That is the property to assert rather than to hope for.
+- Room for exactly one more → the eighth slot would land at 271.6°, whose chip
+  runs off the right edge. Worth recording so the next chip is not added on
+  the assumption that the last one fitted.
+- The glyph → four corner brackets, the universal fullscreen mark. Straight
+  lines inside a chip are fine: the non-negotiable governs the *control
+  surface*, and the `cam` icon (`hud.ts:225-228`) is already two straight
+  brackets around a circle.
+- Tapping it → calls the existing `goFullscreen()` (`permission-gate.ts:137`)
+  unchanged. A chip tap is a user gesture, which is the one condition that
+  call has.
+
+**Lands in**
+- `src/hud.ts:755-768`, `placeChips` — the start-angle clamp, and exporting
+  the placement so a non-HUD element can sit on the same arc.
+- `src/hud.ts:217`, `ICONS` — the new glyph.
+- `src/permission-gate.ts` — nothing changes in `goFullscreen()`; the module
+  needs to notify when `fsState` changes so the chip can appear and vanish
+  without polling.
+- `index.html` — the chip element, as a sibling of the HUD rather than inside
+  it.
+
+**Done when** — leaving fullscreen (switch apps and come back, or swipe out)
+makes the chip appear within a frame or two; tapping it returns to fullscreen
+and the chip disappears; on a platform reporting `unsupported` it never
+appears at all. At 320×568 with the chip showing, all seven icons are fully on
+screen, and with it hidden the six sit exactly where they do today — same
+pixels, not merely similar.
+**Verify** — on the phone, because leaving and re-entering fullscreen by
+switching apps is the case that cannot be reproduced in a desktop browser, and
+Chrome refuses fullscreen to a window that is not frontmost anyway. The
+on-screen check at 320×568 and 360×640 covers the arc arithmetic. Also `pnpm
+probe:fullscreen` unchanged, `pnpm build`, `pnpm lint`.
+**Hard stops** — prefs no · url no · capture no (fullscreen prompts nothing
+and captures nothing) · dependency no.
