@@ -134,6 +134,27 @@ colour was ignored for entire sessions and the type checker was perfectly
 happy. Before removing a line that writes state, ask what else was relying on it
 having been written.
 
+## Every release gets a two-word name, not just a number
+
+The build number is the git commit count (`vite.config.ts`), so it moves on its
+own and can never fall out of sync. What it cannot do is answer the question
+people actually ask, which is not "is this newer" but "is this the one with the
+camera in it". Consecutive integers are also genuinely hard to tell apart at a
+glance across a room — an entire session went into establishing that a phone
+was showing 22 rather than 45, and a name would have settled that in a second.
+
+So `src/release-name.ts` holds `RELEASE_NAME`, and the version chip reads
+`v48 · false calm`.
+
+- **Two words, lowercase.** Evocative, not descriptive. Descriptive names go
+  stale the moment the next release touches the same thing; a name only has to
+  be memorable and distinct from its neighbours.
+- **Changed in the same commit as the work it names.** Every commit that
+  reaches `main` deploys, so every commit that reaches `main` renames. It is one
+  line, and a release sharing its predecessor's name is worse than useless —
+  it actively lies about which build is on screen.
+- Say the name when reporting a deploy, alongside the number.
+
 ## House style
 
 Read a few files before writing any.

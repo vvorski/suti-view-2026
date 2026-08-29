@@ -11,6 +11,8 @@
  * reloading would help.
  */
 
+import { RELEASE_NAME } from './release-name'
+
 const CSS = `
 #version-hud {
   position: fixed;
@@ -57,7 +59,9 @@ export function mountVersionHud(): void {
   // The build number is the git commit count at build time (see
   // vite.config.ts) — it can only ever move forward, and nobody has to
   // remember to bump it.
-  label.textContent = `v${__BUILD_NUMBER__}`
+  // The name beside the number is what makes two builds tellable apart across
+  // a room, which consecutive integers are not. See release-name.ts.
+  label.textContent = `v${__BUILD_NUMBER__} · ${RELEASE_NAME}`
   el.appendChild(label)
 
   const button = document.createElement('button')
