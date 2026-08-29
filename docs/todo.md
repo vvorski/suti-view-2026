@@ -1292,7 +1292,7 @@ exactly what the entry's own Verify section already requires a real device
 for.
 
 ### 20. Shake answers before Start, and stands down while the panel is open
-`status: ready` · added 2026-08-29
+`status: done` · added 2026-08-29 · shipped at build 106
 
 **Do** — start the motion listener on load wherever it needs no permission, so
 shaking the start screen visibly tumbles the preview behind it, and drop the
@@ -1369,3 +1369,41 @@ detection. Also `pnpm build`, `pnpm lint`.
 first-run flag) · url no · capture **yes, narrowly: the accelerometer starts
 without a gesture on Android** — licensed above, with the reasoning and the
 fallback recorded · dependency no.
+
+**Build note.** `hasMotionPermissionGate()` (exported from `shake.ts`) is the
+one feature test both the gate's early start and `requestMotionAccess()`'s
+own gating now share — previously that check existed only inlined inside
+`requestMotionAccess()`, and duplicating it in `main.ts` risked the two ever
+disagreeing about which platform needs a gesture. `shake` moved from `const`
+to `let`: on iOS/iPadOS it starts as the same harmless stub the
+permission-refused path already returns, then gets replaced once the gate
+gesture's own `motion` result is in — everywhere else it is the real sensor
+from load and that replacement is a no-op check that changes nothing.
+
+The panel-open guard wraps only the *actions* (shuffle, buzz, flash,
+`director.suspend()`), not the consumption: `shake.takeDouble()`/
+`takeStrong()` are still called every frame regardless, exactly preserving
+the original mutual-exclusion structure (`if (takeDouble()) … else { const
+strongPeak = takeStrong(); … }`) so a flag can never be left set to fire
+later when the panel closes.
+
+Verified what this harness can verify: `pnpm probe:shake`'s full table is
+byte-for-byte identical to before this entry, confirming nothing here
+touches detection, exactly as the entry requires. Unit-tested
+`hasMotionPermissionGate()` in isolation against all three platform shapes
+(no `DeviceMotionEvent` at all, `requestPermission` present, absent) since
+this session's own automation Chrome happens to expose
+`DeviceMotionEvent.requestPermission` and so cannot exercise the
+"Android, starts immediately" branch live — confirmed instead by forcing
+each shape directly. `pnpm build`, `pnpm lint`, `pnpm probe:fullscreen`,
+`pnpm probe:haptics` all clean.
+
+**Not verified here, and said so rather than claimed otherwise:** whether a
+real shake on a real gate visibly tumbles the idle preview needs an actual
+accelerometer and the render loop actually advancing (`requestAnimationFrame`
+never fires in this session's non-frontmost automation window), so the
+described behaviour is confirmed by code review and by every gate the code
+does pass, not by watching it happen. Exactly what the entry's own Verify
+section already flags as needing a real phone, both platforms if one is
+reachable.
+

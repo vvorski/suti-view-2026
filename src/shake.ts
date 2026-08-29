@@ -558,6 +558,21 @@ export const STILL: TumbleState = {
 }
 
 /**
+ * Whether this platform gates the accelerometer behind a permission call at
+ * all — true only on iOS/iPadOS 13+. Exported so main.ts can start listening
+ * at load everywhere else (docs/todo.md entry 20: a shake on the gate should
+ * visibly tumble the idle preview, and nowhere but iOS needs a gesture spent
+ * to get there) without duplicating this feature test a second time.
+ */
+export function hasMotionPermissionGate(): boolean {
+  if (typeof DeviceMotionEvent === 'undefined') return false
+  return (
+    typeof (DeviceMotionEvent as unknown as { requestPermission?: unknown }).requestPermission ===
+    'function'
+  )
+}
+
+/**
  * Ask for motion access.
  *
  * iOS 13+ gates the accelerometer behind a permission call that must happen
@@ -569,12 +584,11 @@ export const STILL: TumbleState = {
  */
 export async function requestMotionAccess(): Promise<boolean> {
   if (typeof DeviceMotionEvent === 'undefined') return false
+  if (!hasMotionPermissionGate()) return true // no gate on this platform
 
   const request = (
     DeviceMotionEvent as unknown as { requestPermission?: () => Promise<string> }
-  ).requestPermission
-
-  if (typeof request !== 'function') return true // no gate on this platform
+  ).requestPermission!
 
   try {
     return (await request.call(DeviceMotionEvent)) === 'granted'

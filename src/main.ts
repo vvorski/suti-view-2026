@@ -35,7 +35,7 @@ import { Director } from './director'
 import { createVisualiser, type Visualiser } from './scene'
 import { RELEASE_NAME } from './release-name'
 import { SlowAnalysis } from './engine'
-import { intensity, startShake } from './shake'
+import { hasMotionPermissionGate, intensity, startShake } from './shake'
 import { confirmBuzz, doubleBuzz, hapticStatus } from './haptics'
 import { IdlePreview } from './idle-preview'
 import { mountReleaseName, mountVersionHud, versionHudRunning } from './version'
@@ -400,6 +400,19 @@ async function main(): Promise<void> {
   const idleSpectrum = new Uint8Array(256)
   const idleStart = performance.now()
 
+  // Started here rather than waiting for Start, wherever nothing gates the
+  // accelerometer at all — docs/todo.md entry 20. On iOS/iPadOS the same call
+  // needs a live user gesture this point in the page does not have, so it is
+  // skipped there (`startShake(false)` is the same harmless stub the
+  // permission-refused path already uses) and replaced once the gate gesture
+  // supplies its own `motion` result below. Never a fourth claimant on that
+  // gesture — see permission-gate.ts's own comment on why not.
+  let shake = hasMotionPermissionGate() ? startShake(false) : startShake(true)
+  // Only used to turn devicemotion's own irregular cadence into a proper dt
+  // for shake.frame() during the idle preview — the live loop already has
+  // audio.dt for this once the real render loop takes over below.
+  let lastGateShakeAt = idleStart
+
   // Capped well below the display's own rate, and stopped outright once nobody
   // is there to see it. The idle preview (build 63) put the visualiser behind
   // the gate so the screen would not be a poster for an absent piece — but it
@@ -426,6 +439,17 @@ async function main(): Promise<void> {
     if (live) return
     if (idle.tick(now)) {
       const t = (now - idleStart) / 1000
+      // The tumble, and nothing else: no re-seed, no shuffle, at any
+      // intensity. There is no audio yet and the idle programme is fixed, so
+      // rerolling anything here would change what the person is about to
+      // walk into for reasons they cannot connect to anything they did. Both
+      // pending flags are still consumed and discarded — not left to fire
+      // the instant the real loop starts reading them after Start.
+      const dt = (now - lastGateShakeAt) / 1000
+      lastGateShakeAt = now
+      visualiser.setTumble(shake.frame(dt))
+      shake.takeStrong()
+      shake.takeDouble()
       visualiser.render(idleParams(t, idleSpectrum), idleSpectrum)
     }
     // isStopped is read after tick(), which is what may have just set it —
@@ -446,7 +470,10 @@ async function main(): Promise<void> {
   versionHudRunning()
   void keepAwake()
 
-  const shake = startShake(motion)
+  // Replaces the gate's stub on iOS/iPadOS with a real sensor once the start
+  // gesture's own motion result is in; everywhere else `shake` already is
+  // the real thing and has been running since load, so this is a no-op.
+  if (hasMotionPermissionGate()) shake = startShake(motion)
 
   /** Roll a new picture at the given depth and let the panel adopt it, so the
    *  HUD opened afterwards shows what is actually on screen rather than what
@@ -621,26 +648,41 @@ async function main(): Promise<void> {
 
       const tumble = shake.frame(audio.dt)
       visualiser.setTumble(tumble)
+      // The discrete gesture stands down while the panel is open — a
+      // shuffle rewrites the values someone currently has a finger on, the
+      // same fault as a control lying about its state — but the tumble
+      // above keeps running regardless, and both pending flags are still
+      // consumed below whether or not they end up acting on anything.
+      // Leaving a flag set instead would mean a shake made while editing
+      // fires the instant the panel closes, with no gesture anywhere near
+      // that moment. See docs/todo.md entry 20 and gestures.ts's own
+      // `.hud-scrim` exclusion, which this reuses rather than adding a
+      // second notion of "the panel is up".
+      const panelOpen = document.querySelector('.hud-scrim.open') !== null
       // Order matters: a double is also a strong, and the second shake set both
       // flags. Reading the double first means the escalation wins and the
       // re-seed does not also fire — a shuffle that re-seeded on top of itself
       // would be the same picture change twice.
       const doublePeak = shake.takeDouble()
       if (doublePeak) {
-        if (prefs.showStats) flashShake(true)
-        // A double is always a full scramble, regardless of peak — see
-        // shuffled()'s file comment: the deterministic route matters because
-        // an accelerometer that clips low can never report a peak near
-        // PEAK_CEILING, and would otherwise have no way to ask for everything.
-        shuffle(1)
-        // A shake is a manual gesture. The autopilot standing down is the same
-        // courtesy every HUD control gets, and without it the director could
-        // start walking the views back a moment later.
-        director.suspend()
-        doubleBuzz(doublePeak)
+        if (panelOpen) {
+          // Consumed, not acted on.
+        } else {
+          if (prefs.showStats) flashShake(true)
+          // A double is always a full scramble, regardless of peak — see
+          // shuffled()'s file comment: the deterministic route matters because
+          // an accelerometer that clips low can never report a peak near
+          // PEAK_CEILING, and would otherwise have no way to ask for everything.
+          shuffle(1)
+          // A shake is a manual gesture. The autopilot standing down is the same
+          // courtesy every HUD control gets, and without it the director could
+          // start walking the views back a moment later.
+          director.suspend()
+          doubleBuzz(doublePeak)
+        }
       } else {
         const strongPeak = shake.takeStrong()
-        if (strongPeak) {
+        if (strongPeak && !panelOpen) {
           if (prefs.showStats) flashShake(false)
           // Graded: a bare re-seed at the gentlest qualifying shake, up to
           // everything at the hardest. shuffle() always re-seeds regardless
