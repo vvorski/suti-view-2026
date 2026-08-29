@@ -20,4 +20,4 @@
  * Changed in the same commit as the work it names. Every commit that reaches
  * main deploys, so every commit that reaches main renames. It is one line.
  */
-export const RELEASE_NAME = 'twice asked'
+export const RELEASE_NAME = 'paper trail'
