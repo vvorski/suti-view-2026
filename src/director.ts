@@ -93,13 +93,38 @@ export function colourFor(c: Character): GeoColour {
 /**
  * Flavour to atmospheric programme.
  *
- * Deliberately coarse — four buckets on two axes. A finer rule would need
- * confidence this measurement does not have, and every extra branch is another
- * boundary where two options can tie.
+ * This was four buckets on two axes, with a comment saying it was coarse on
+ * purpose: a finer rule would need confidence the measurement does not have,
+ * and every extra branch is another boundary where two options can tie. That
+ * argument still holds, and these buckets are still coarse.
+ *
+ * What changed is the cost on the other side. There are seven atmospheric
+ * views now, and a rule that can only ever name four means three of them are
+ * reachable solely by someone going looking through the HUD — the autopilot
+ * would never once show them, however long it ran. An unreachable programme
+ * is a worse failure than a branch that sometimes picks the second-best of
+ * two plausible answers.
+ *
+ * So: seven buckets, with every new split on an axis already in use rather
+ * than a new one. `noisy` is the tiebreaker in both halves because it is, per
+ * slow.ts, the one descriptor genuinely independent of the others — which
+ * makes it the cheapest axis to hang another branch on.
+ *
+ *   rhythmic + dense      lattice     the busiest picture for the busiest sound
+ *   rhythmic + noisy      cells       discrete tiles read a noisy spectrum as a chord
+ *   rhythmic              spectrogram pulse laid out as time
+ *   bright + noisy        caustics    texture, flowing, no fixed structure
+ *   bright                aurora      the one with a horizon
+ *   tonal + dense         fringe      interference needs sustained pitch to read
+ *   otherwise             field       the default, and the quietest
  */
 export function viewFor(c: Character): AtmosphericViewName {
-  if (c.rhythmic > 0.5) return c.dense > 0.4 ? 'lattice' : 'spectrogram'
-  return c.bright > 0.55 ? 'aurora' : 'field'
+  if (c.rhythmic > 0.5) {
+    if (c.dense > 0.4) return 'lattice'
+    return c.noisy > 0.5 ? 'cells' : 'spectrogram'
+  }
+  if (c.bright > 0.55) return c.noisy > 0.45 ? 'caustics' : 'aurora'
+  return c.dense > 0.45 && c.noisy < 0.4 ? 'fringe' : 'field'
 }
 
 const distance = (a: GeoColour, b: GeoColour): number =>
@@ -120,6 +145,38 @@ export class Director {
   /** Seconds until the autopilot resumes, 0 when it is live. */
   get quietFor(): number {
     return this.suspended
+  }
+
+  /**
+   * What the autopilot is currently thinking, for the numeric readout.
+   *
+   * This exists because the three rules at the top of this file add up to
+   * something that is, during any hands-on session, completely silent — and
+   * indistinguishable from broken. Touching any control suspends it for
+   * SUSPEND (180s). A programme swap then additionally needs a warm buffer,
+   * a boundary over BOUNDARY, VIEW_HOLD (120s) since the last one, and the
+   * same suggestion held for VIEW_STABLE (30s). Every one of those is
+   * deliberate and defensible; together they mean someone adjusting the HUD
+   * and watching for a change will wait forever and conclude nothing is
+   * connected.
+   *
+   * Reporting the timers does not weaken any of the rules. It just stops
+   * "restrained" being indistinguishable from "not running".
+   */
+  status(): {
+    suspended: number
+    tillColour: number
+    tillView: number
+    candidate: AtmosphericViewName | null
+    candidateHeld: number
+  } {
+    return {
+      suspended: Math.max(0, this.suspended),
+      tillColour: Math.max(0, COLOUR_HOLD - this.sinceColour),
+      tillView: Math.max(0, VIEW_HOLD - this.sinceView),
+      candidate: this.candidate,
+      candidateHeld: this.candidateHeld,
+    }
   }
 
   /**

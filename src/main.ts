@@ -191,6 +191,10 @@ async function main(): Promise<void> {
         ...visualiser.stats(),
         disturb: tumble.disturb,
         ...shake.diagnostics(),
+        // Reported whether or not autopilot is on, so the readout answers
+        // "why has nothing changed" in both cases: off, or on and waiting.
+        director: director.status(),
+        warm: character.warm,
       })
     }
     requestAnimationFrame(frame)

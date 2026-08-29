@@ -154,6 +154,16 @@ export interface Hud {
       peak?: number
       /** Motion events that arrived carrying no usable acceleration. */
       rejected?: number
+      /** What the autopilot is waiting for. See Director.status(). */
+      director?: {
+        suspended: number
+        tillColour: number
+        tillView: number
+        candidate: string | null
+        candidateHeld: number
+      }
+      /** Whether the long-scale buffer has enough history to act on. */
+      warm?: boolean
     },
   ): void
   /** Step the atmospheric layer's programme forward (1) or back (-1), wrapping. */
@@ -1354,6 +1364,20 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
                 // Only shown when it is non-zero, because on a healthy device
                 // it always is zero and a permanent "drop 0" teaches nothing.
                 (s.rejected ? `  drop ${s.rejected}` : ''),
+            ]),
+        // Why the autopilot has not done anything. Without this the three
+        // restraint rules in director.ts are indistinguishable from a broken
+        // feature — see Director.status().
+        ...(s.director === undefined
+          ? []
+          : [
+              s.director.suspended > 0
+                ? `auto held ${Math.ceil(s.director.suspended)}s (manual)`
+                : !s.warm
+                  ? 'auto warming'
+                  : `auto ${s.director.candidate ?? '—'} ` +
+                    `${Math.floor(s.director.candidateHeld)}s  ` +
+                    `next ${Math.ceil(s.director.tillView)}s`,
             ]),
       ].join('\n')
     },
