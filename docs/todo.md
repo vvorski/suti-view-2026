@@ -1032,3 +1032,87 @@ not frontmost and an automated one therefore proves nothing — the reason
 `probe-fullscreen.ts` stubs the API rather than driving it. Also `pnpm
 probe:fullscreen` unchanged, `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 18. A tap along the bottom saves the frame
+`status: ready` · added 2026-08-29
+
+**Do** — a tap in a band across the bottom of the screen writes the current
+canvas to a PNG the phone saves, instead of opening the HUD.
+**Why** — the picture is the point of the app and there is no way to keep one.
+
+**Decided**
+- **Capture hard stop → licensed by Victor, 2026-08-29, camera included.**
+  Asked as "a screenshot persists a frame to the device — do you license it?",
+  answered **"Yes — including camera frames"**. So the saved PNG is whatever
+  the canvas holds, live passthrough and all, and this entry deliberately does
+  not refuse the capture while camera opacity is non-zero. Nothing uploads,
+  no network request, no new permission prompt; the file goes to the phone
+  the person is holding.
+- Gestures → **unchanged.** Asked, answered "leave swipes alone, only add the
+  screenshot tap". Vertical swipe still re-rolls, horizontal still moves the
+  atmospheric programme, and the camera is still raised by its opacity band in
+  the HUD — there is no camera *mode* and no gesture for it, which is worth
+  writing down because the request assumed otherwise.
+- The blank-PNG trap → **capture inside the render loop, not in the tap
+  handler.** `WebGLRenderer` is built without `preserveDrawingBuffer`
+  (`scene.ts:154-159`), so the buffer is cleared after compositing and
+  `canvas.toBlob()` from an event handler returns an empty image. The tap sets
+  a flag; the loop calls `toBlob` immediately after `renderer.render()` on the
+  next frame. **Mine**, over setting `preserveDrawingBuffer: true`: that costs
+  a buffer copy on every frame forever, on a mobile target, to serve a tap
+  that happens twice a session.
+- Where the band is → **full width, the bottom 15% of the viewport, sitting
+  above `env(safe-area-inset-bottom)`.** **Mine**: 15% is about 85px at
+  320×568, big enough to hit one-handed without taking tap-to-open away from
+  the rest of the screen, and the inset keeps it clear of the home indicator
+  and the Android gesture bar, which own the very bottom edge. `index.html`
+  already uses that inset in two places.
+- Tap versus swipe → the band fires only if the pointer went down *and* up
+  inside it having travelled less than `TAP_SLOP_PX` (12, already defined in
+  `hud.ts:88` as exactly this boundary). A swipe that starts in the band still
+  belongs to `gestures.ts`.
+- While the HUD is open → **the band is inert.** The panel owns the screen
+  then, and `gestures.ts` already sets the precedent by ignoring anything
+  landing on `.hud-scrim`.
+- Confirmation → **one white flash, reusing `#shake-flash`.** **Mine**: the
+  shutter flash is the universal idiom, the element exists with an `.on` class
+  that does exactly this, and it needs no new DOM. Unlike the shake flash it
+  is not gated behind `showStats` — this one is feedback, not diagnostics.
+  No buzz: `haptics.ts` is deliberately narrow about not becoming a
+  vibrate-on-every-interaction layer, and a tap you are looking at does not
+  need one.
+- Filename → **`suti-<build>-<release-name>-<timestamp>.png`**, e.g.
+  `suti-91-soft-breathe-20260829-1432.png`. **Mine**, because `RELEASE_NAME`
+  and `__BUILD_NUMBER__` are already in the bundle, and a screenshot that
+  names the build it came from is the difference between a bug report you can
+  act on and one you cannot.
+- iOS Safari → **accepted as degraded, not worked around.** `<a download>` is
+  not honoured there; it opens the image in a tab and the user long-presses to
+  save. That matches how this project already treats the platform split —
+  fullscreen is `unsupported` on iPhone and haptics are "a bonus on one
+  platform, absent on the other". A `navigator.share({ files })` route would
+  fix it and is deliberately **not** in this entry: it hands the file to an OS
+  sheet that can send it somewhere, which is further than the licence asked
+  for. Worth a separate ask if the tab behaviour proves annoying.
+
+**Lands in**
+- `src/scene.ts` — a `requestCapture()` on the visualiser interface
+  (`scene.ts:118` is where `resize` sits) and the `toBlob` call after
+  `renderer.render()` in the loop.
+- `src/main.ts` — the bottom-band pointer listener, next to where
+  `bindGestures` is wired, and the flash.
+- `index.html` — nothing new to draw; the band is a hit test, not an element,
+  so the screen gains no furniture. `#shake-flash` is reused as-is.
+
+**Done when** — a tap in the bottom band on a phone produces a saved PNG whose
+pixels match what was on screen (not a blank or black image), named with the
+build number, while a tap anywhere above the band still opens the HUD and a
+swipe starting in the band still re-rolls or changes the programme. With the
+camera up, the saved file contains the camera frame — that is the licensed
+behaviour, not a defect.
+**Verify** — on the phone, because a blank capture is exactly what a desktop
+browser with a different compositing path can fail to reproduce. Also the
+on-screen check at 320×568 and 360×640 to confirm the band does not eat
+tap-to-open, `pnpm build`, `pnpm lint`.
+**Hard stops** — prefs no · url no · capture **yes, licensed above** ·
+dependency no.
