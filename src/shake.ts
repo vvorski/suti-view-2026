@@ -71,7 +71,10 @@ const GRAVITY_TAU = 0.5
  * REVERSALS times inside WINDOW seconds. A single impact gives one crossing
  * and its rebound gives at most two; three means the phone is being shaken.
  */
-const STRONG_UP = 18
+// Exported: haptics.ts's intensity scaling needs the same floor a shake has
+// to clear to fire at all, so "the gentlest qualifying shake" means the same
+// m/s² value in both files rather than two constants that can drift apart.
+export const STRONG_UP = 18
 const STRONG_DOWN = 7
 const STRONG_REVERSALS = 3
 const STRONG_WINDOW = 1.2
@@ -220,6 +223,13 @@ export class Tumble {
   private cooldown = 0
   private strongPending = false
   private doublePending = false
+  /** `peak` at the instant each pending flag above was set, so the caller can
+   *  tell a shake that barely qualified from one that nearly threw the phone.
+   *  Snapshotted rather than read fresh in `takeStrong`/`takeDouble`, because
+   *  `peak` keeps decaying every `advance()` between the sample that detected
+   *  the shake and whichever later frame actually polls for it. */
+  private strongPeak = 0
+  private doublePeak = 0
   /** Quiet accumulated since the last time the motion was above STRONG_DOWN.
    *  Only meaningful inside a cooldown; see QUIET_GAP. */
   private quietFor = 0
@@ -318,6 +328,7 @@ export class Tumble {
     if (this.sustained < SUSTAIN_TIME || this.cooldown > 0) return
 
     this.strongPending = true
+    this.strongPeak = this.peak
     this.sustained = 0
     this.cooldown = STRONG_COOLDOWN
     // Clear the other path's state too, or a shake that fired here can leave
@@ -372,8 +383,13 @@ export class Tumble {
         // shake of a double; otherwise it is a fresh single. Shaking straight
         // through the cooldown without stopping is one long shake and fires
         // nothing further, which is what it always did.
-        if (escalating && this.armedForDouble) this.doublePending = true
-        else if (!escalating) this.strongPending = true
+        if (escalating && this.armedForDouble) {
+          this.doublePending = true
+          this.doublePeak = this.peak
+        } else if (!escalating) {
+          this.strongPending = true
+          this.strongPeak = this.peak
+        }
         this.reversals = 0
         this.windowLeft = 0
         this.quietFor = 0
@@ -452,23 +468,28 @@ export class Tumble {
     }
   }
 
-  /** True once per detected shake; clears on read. */
-  takeStrong(): boolean {
-    const v = this.strongPending
+  /**
+   * The peak (m/s²) of the shake just detected, or 0 if there wasn't one.
+   * Clears on read. `peak` never reaches 0 for a real detection — it takes at
+   * least STRONG_UP to fire — so a plain truthiness check at the call site
+   * still works exactly as the old boolean did.
+   */
+  takeStrong(): number {
+    const v = this.strongPending ? this.strongPeak : 0
     this.strongPending = false
     return v
   }
 
   /**
-   * True once per second hard shake inside STRONG_COOLDOWN of the first.
+   * The peak (m/s²) of the second shake in a double, or 0 if there wasn't one.
    *
    * Only the reversal path escalates. The sustained path (see SUSTAIN_LEVEL)
    * deliberately does not: it exists to catch gentle continuous agitation, and
    * escalating it would mean a long soft shake silently randomising everything
    * — which is not the gesture anyone made. A double is two deliberate shakes.
    */
-  takeDouble(): boolean {
-    const v = this.doublePending
+  takeDouble(): number {
+    const v = this.doublePending ? this.doublePeak : 0
     this.doublePending = false
     return v
   }
@@ -516,10 +537,12 @@ export async function requestMotionAccess(): Promise<boolean> {
 export interface ShakeSensor {
   /** Advance and read. Call once per frame. */
   frame(dt: number): TumbleState
-  /** True once per detected hard shake. */
-  takeStrong(): boolean
-  /** True once per *second* hard shake inside the cooldown of the first. */
-  takeDouble(): boolean
+  /** The shake's peak (m/s²) once per detected hard shake, 0 otherwise. See
+   *  Tumble.takeStrong. */
+  takeStrong(): number
+  /** The peak (m/s²) once per *second* hard shake inside the cooldown of the
+   *  first, 0 otherwise. See Tumble.takeDouble. */
+  takeDouble(): number
   /** Sample count, recent peak, and events discarded as unusable. For the
    *  numeric readout only. See Tumble. */
   diagnostics(): { samples: number; peak: number; rejected: number }
@@ -538,8 +561,8 @@ export function startShake(granted: boolean): ShakeSensor {
     // "refused or unavailable" rather than "not shaken hard enough".
     return {
       frame: () => STILL,
-      takeStrong: () => false,
-      takeDouble: () => false,
+      takeStrong: () => 0,
+      takeDouble: () => 0,
       diagnostics: () => ({ samples: 0, peak: 0, rejected: 0 }),
       close: () => {},
     }

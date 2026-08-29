@@ -445,22 +445,26 @@ async function main(): Promise<void> {
       // flags. Reading the double first means the escalation wins and the
       // re-seed does not also fire — a shuffle that re-seeded on top of itself
       // would be the same picture change twice.
-      if (shake.takeDouble()) {
+      const doublePeak = shake.takeDouble()
+      if (doublePeak) {
         if (prefs.showStats) flashShake(true)
         shuffle()
         // A shake is a manual gesture. The autopilot standing down is the same
         // courtesy every HUD control gets, and without it the director could
         // start walking the views back a moment later.
         director.suspend()
-        doubleBuzz()
-      } else if (shake.takeStrong()) {
-        if (prefs.showStats) flashShake(false)
-        visualiser.randomise()
-        // The one action here with no legible cause and effect: the picture
-        // was already moving and is replaced by a different moving picture.
-        // The buzz is what distinguishes "the phone heard me" from "the
-        // image happened to wander". Android only — see haptics.ts.
-        confirmBuzz()
+        doubleBuzz(doublePeak)
+      } else {
+        const strongPeak = shake.takeStrong()
+        if (strongPeak) {
+          if (prefs.showStats) flashShake(false)
+          visualiser.randomise()
+          // The one action here with no legible cause and effect: the picture
+          // was already moving and is replaced by a different moving picture.
+          // The buzz is what distinguishes "the phone heard me" from "the
+          // image happened to wander". Android only — see haptics.ts.
+          confirmBuzz(strongPeak)
+        }
       }
 
       visualiser.render(params, audio.freq)

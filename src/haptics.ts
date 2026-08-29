@@ -20,6 +20,11 @@
  * platform, absent on the other, and nothing may be built to depend on it.
  */
 
+// .ts extension kept explicit: a probe script needs to import this file
+// directly under `node --experimental-strip-types`, which requires it for
+// any value import inside src/ — see CLAUDE.md.
+import { STRONG_UP } from './shake.ts'
+
 /**
  * A short confirmation buzz, as a pattern rather than one pulse.
  *
@@ -52,6 +57,52 @@
  * was written before there was any reason to want a second signal.
  */
 const CONFIRM_PATTERN = [26, 34, 62]
+
+/**
+ * Scaling the pattern by how hard the shake was.
+ *
+ * `CONFIRM_PATTERN`/`DOUBLE_PATTERN` above are hard-won: two previous
+ * durations were tried and neither was felt, and these were the first that
+ * were. That makes them a floor, not a baseline to shrink from — scaling
+ * intensity *down* for a merely-qualifying shake would reintroduce the exact
+ * imperceptibility bug builds 68 and 76 were about. So intensity only ever
+ * scales the patterns *up*: 1x at the quietest shake that still fires at all,
+ * up to MAX_SCALE at a shake as hard as this app has been tested with.
+ *
+ * `STRONG_UP` (imported from shake.ts, not duplicated) is the least peak that
+ * can ever reach here — Tumble never sets `strongPending`/`doublePending`
+ * below it — so it is the correct zero point for "gentlest qualifying",
+ * rather than an arbitrary guess. `PEAK_CEILING` matches probe-shake.ts's own
+ * "violent shake" case (45 m/s², 6 Hz): the hardest shake this app's test
+ * suite models, not a real physical limit, which does not exist.
+ */
+// Exported so scripts/probe-haptics.ts can compute expected values from the
+// real numbers rather than duplicating them as a second copy that could
+// silently drift out of step with this file.
+export const PEAK_CEILING = 45
+export const MAX_SCALE = 1.8
+
+/**
+ * `peak` in, a 1..MAX_SCALE multiplier out. Kept separate from the pattern
+ * scaling itself so the WICG Web Haptics proposal's `intensity` (a plain
+ * 0-1 number, see docs/todo.md entry 8) has somewhere to plug in later
+ * without this file's internal pattern-scaling logic changing at all.
+ */
+function intensityMultiplier(peak: number): number {
+  const t = Math.min(1, Math.max(0, (peak - STRONG_UP) / (PEAK_CEILING - STRONG_UP)))
+  return 1 + t * (MAX_SCALE - 1)
+}
+
+/**
+ * Stretches only the *on* pulses, at even indices — a vibrate() pattern
+ * always starts with an on duration and alternates. The gaps (odd indices)
+ * are left untouched: `CONFIRM_PATTERN`'s 34ms and `DOUBLE_PATTERN`'s 130ms
+ * are what make a single read as one event and a double read as two, and
+ * that signal must survive at any intensity, not just the one it was tuned at.
+ */
+function scalePattern(pattern: readonly number[], multiplier: number): number[] {
+  return pattern.map((ms, i) => (i % 2 === 0 ? Math.round(ms * multiplier) : ms))
+}
 
 /**
  * Two events, deliberately — the double shake's confirmation.
@@ -96,13 +147,13 @@ function reducedMotion(): boolean {
  * false, and some embedded webviews throw outright. Neither is worth a
  * branch at the call site — a missing buzz is a missing nicety.
  */
-export function confirmBuzz(): void {
-  buzz(CONFIRM_PATTERN)
+export function confirmBuzz(peak: number): void {
+  buzz(scalePattern(CONFIRM_PATTERN, intensityMultiplier(peak)))
 }
 
 /** Confirm the bigger gesture. See DOUBLE_PATTERN. */
-export function doubleBuzz(): void {
-  buzz(DOUBLE_PATTERN)
+export function doubleBuzz(peak: number): void {
+  buzz(scalePattern(DOUBLE_PATTERN, intensityMultiplier(peak)))
 }
 
 function buzz(pattern: readonly number[]): void {

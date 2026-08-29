@@ -338,7 +338,7 @@ atm — the one pair identical in band count and type — are told apart by
 Opacity's solid-vs-halo texture, checked directly in greyscale.
 
 ### 8. Let the buzz report how hard you shook
-`status: ready` · added 2026-08-29
+`status: done` · added 2026-08-29 · shipped at build 91
 
 **Do** — scale the confirmation pattern by the shake's own intensity, so a
 firm shake feels different from a barely-qualifying one. `Tumble` already
@@ -385,6 +385,22 @@ established as perceptible.
 anything fires, only what it feels like. The vibrate-stub check from build 76,
 extended to assert two intensities differ. Then the phone.
 **Hard stops** — prefs no · url no · capture no · dependency **no — see below**.
+
+**Build note.** `takeStrong`/`takeDouble` return `number` in place of
+`boolean` — the peak in m/s², or 0 for "nothing fired" — rather than adding a
+sibling getter: `peak` never reaches 0 for a real detection (it takes at
+least `STRONG_UP` to fire), so every existing `if (shake.takeStrong())`
+call site keeps working unchanged. `STRONG_UP` is now exported from
+`shake.ts` so `haptics.ts` shares the exact same floor rather than a second
+copy of the number that could drift. Scaling only ever multiplies *up* from
+the existing baseline patterns (1x at the floor, up to 1.8x at
+`PEAK_CEILING` = 45 m/s², matching `probe-shake.ts`'s own "violent shake"
+case) and only touches the *on* pulses — never the gaps, which are the
+entire signal that tells a single confirmation from a double. `pnpm
+probe:haptics` is new: stubs `navigator.vibrate`, imports `haptics.ts`
+directly, and asserts the floor reproduces the untouched baseline, the
+ceiling scales by exactly `MAX_SCALE`, scaling is monotonic, and nothing
+ever drops below baseline.
 
 **On the libraries in the research.** All four are declined, and declining a
 dependency needs no licence — only adding one does. The research's own
