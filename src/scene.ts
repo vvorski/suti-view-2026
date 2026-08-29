@@ -100,8 +100,12 @@ export interface VisualiserOptions {
   geoColour: GeoColour
   atmosphericView: AtmosphericViewName
   mergeMode: MergeModeName
-  /** 0-1. Universal opacity: 0 is pure atmosphere, 1 is the full blend. */
-  mix: number
+  /** 0-1. The geometric layer's opacity: 0 is pure atmosphere, 1 the full
+   *  blend. This is what `mix` used to be, under a name that says what it
+   *  actually does now that the atmosphere has one of its own. */
+  geoAlpha: number
+  /** 0-1. The atmospheric layer's opacity, applied before the merge mode. */
+  atmAlpha: number
 }
 
 export interface Visualiser {
@@ -117,8 +121,10 @@ export interface Visualiser {
   setGeoColour(colour: GeoColour): void
   /** How far the device has been knocked about. See shake.ts. */
   setTumble(t: TumbleState): void
-  /** 0-1. */
-  setMix(mix: number): void
+  /** 0-1, the geometric layer's opacity. Formerly setMix. */
+  setGeoAlpha(a: number): void
+  /** 0-1, the atmospheric layer's opacity. */
+  setAtmAlpha(a: number): void
   /**
    * Attach or detach the passthrough camera, and set how much of it shows.
    *
@@ -252,7 +258,8 @@ export function createVisualiser(
   const compositeUniforms = {
     uAtmosphere: { value: atmosphereTarget.texture },
     uGeometry: { value: geometryTarget.texture },
-    uMix: { value: options.mix },
+    uGeoAlpha: { value: options.geoAlpha },
+    uAtmAlpha: { value: options.atmAlpha },
     uMode: { value: MERGE_MODES[options.mergeMode].index },
     // Seeded from options, not left at white for setGeoColour to correct
     // later: nothing calls that until the HUD is touched, so a stored or
@@ -520,8 +527,12 @@ export function createVisualiser(
       compositeUniforms.uGeoColour.value.set(colour.r, colour.g, colour.b)
     },
 
-    setMix(mix) {
-      compositeUniforms.uMix.value = Math.min(1, Math.max(0, mix))
+    setGeoAlpha(a) {
+      compositeUniforms.uGeoAlpha.value = Math.min(1, Math.max(0, a))
+    },
+
+    setAtmAlpha(a) {
+      compositeUniforms.uAtmAlpha.value = Math.min(1, Math.max(0, a))
     },
 
     setPassthrough(source, mix) {

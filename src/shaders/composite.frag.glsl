@@ -1,17 +1,26 @@
-// Composites the geometric layer over the atmospheric one.
+// Composites the three layers: geometric over atmospheric, both over the room.
 //
-// Opacity is applied before the merge mode gets a say — the familiar
-// Photoshop-layer contract. 0% mix is "just the atmosphere," 100% is "the
-// full blend," and the merge mode only decides what "full" looks like in
-// between. Keeping mix universal, rather than only meaningful for Normal,
-// means switching modes never requires also touching the slider to get back
-// to something legible.
+// Each layer has its own opacity, which is the whole point. The old single
+// `mix` was a crossfade — it moved weight from the atmosphere to the geometry
+// and back, and could not turn *either* down. That made the camera underneath
+// unreadable at every setting, because something was always landing on it at
+// full strength. Two independent alphas fix that, and uGeoAlpha is exactly the
+// old uMix under a truer name, so every picture the crossfade could make is
+// still reachable with uAtmAlpha at 1.
+//
+// Geometric opacity is still applied before the merge mode gets a say — the
+// familiar Photoshop-layer contract. 0 is "just the atmosphere", 1 is "the
+// full blend", and the merge mode only decides what "full" looks like in
+// between. Keeping it universal, rather than only meaningful for Normal, means
+// switching modes never requires also touching the slider to get back to
+// something legible.
 
 varying vec2 vUv;
 
 uniform sampler2D uAtmosphere;
 uniform sampler2D uGeometry;
-uniform float uMix; // 0-1
+uniform float uGeoAlpha; // 0-1, the geometric layer's own opacity
+uniform float uAtmAlpha; // 0-1, the atmospheric layer's own opacity
 uniform int uMode;  // 0 normal, 1 add, 2 screen, 3 multiply, 4 overlay, 5 difference
 // The geometric layer is drawn in white; all of its colour is this gain,
 // applied here rather than inside each view. See geo-colour.ts.
@@ -53,7 +62,11 @@ void main() {
   p = vec2(c * p.x - s * p.y, s * p.x + c * p.y) / (1.0 + uTumble.w);
   vec2 uv = clamp(p + uTumble.yz + 0.5, 0.0, 1.0);
 
-  vec3 base = texture2D(uAtmosphere, uv).rgb;
+  // The atmosphere is dimmed before anything else sees it, so the merge mode
+  // and the geometric alpha below both operate on the layer as it will
+  // actually appear. Dimming afterwards would make a faint atmosphere still
+  // blend as though it were solid.
+  vec3 base = texture2D(uAtmosphere, uv).rgb * uAtmAlpha;
   vec3 top = texture2D(uGeometry, uv).rgb * uGeoColour;
 
   vec3 blended;
@@ -64,7 +77,7 @@ void main() {
   else if (uMode == 5) blended = abs(base - top);
   else blended = top; // normal
 
-  vec3 col = clamp(mix(base, blended, uMix), 0.0, 1.0);
+  vec3 col = clamp(mix(base, blended, uGeoAlpha), 0.0, 1.0);
 
   // The room goes underneath, and the picture becomes light falling on it.
   //
@@ -80,7 +93,9 @@ void main() {
   // double-count that motion and read as broken rather than physical.
   //
   // At uCameraMix == 0 this collapses to `col` exactly — no cost, no drift in
-  // what every existing view already looks like.
+  // what every existing view already looks like. And with both alphas low,
+  // `col` is near black, so the screen leaves the room almost untouched: that
+  // is the path to a readable camera, and it did not exist before.
   if (uCameraMix > 0.0) {
     vec2 camUv = (vUv - 0.5) * uCameraFit + 0.5;
     vec3 cam = texture2D(uCamera, camUv).rgb;

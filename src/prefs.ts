@@ -25,8 +25,33 @@ export interface Prefs {
   geoColour: GeoColour
   atmosphericView: AtmosphericViewName
   mergeMode: MergeModeName
-  /** 0-1. Universal opacity: 0 is pure atmosphere, 1 is the full blend. */
+  /**
+   * 0-1. The old crossfade, kept and still honoured.
+   *
+   * Superseded by `geoAlpha`/`atmAlpha`, and deliberately *not* repurposed:
+   * this field is a contract with every visitor's localStorage, and quietly
+   * changing what a stored number means would reset or corrupt the picture of
+   * everyone who has ever loaded the page, with no way for them to tell. It is
+   * still written, still read, and is what seeds `geoAlpha` for anyone whose
+   * storage predates the split. See loadPrefs.
+   */
   mix: number
+  /**
+   * 0-1. The geometric layer's own opacity — what `mix` used to control.
+   *
+   * Absent from older storage, in which case it is seeded from `mix` so the
+   * picture someone left behind is the picture they come back to.
+   */
+  geoAlpha: number
+  /**
+   * 0-1. The atmospheric layer's own opacity.
+   *
+   * New capability rather than a renamed one: nothing before this could turn
+   * the atmosphere down, which is why the camera underneath was unreadable at
+   * every setting. Defaults to 1, which is exactly how the old crossfade
+   * behaved.
+   */
+  atmAlpha: number
   /**
    * 0-1. How much of the passthrough camera shows beneath everything.
    *
@@ -55,6 +80,11 @@ function pick<K extends string>(
   return valid(v) ? v : fallback
 }
 
+/** A stored 0-1, or the given fallback when it is absent or out of range. */
+function unit(raw: unknown, fallback: number): number {
+  return typeof raw === 'number' && raw >= 0 && raw <= 1 ? raw : fallback
+}
+
 export function loadPrefs(fallback: Prefs): Prefs {
   try {
     const raw = localStorage.getItem(STORE_KEY)
@@ -79,6 +109,11 @@ export function loadPrefs(fallback: Prefs): Prefs {
         typeof parsed.mix === 'number' && parsed.mix >= 0 && parsed.mix <= 1
           ? parsed.mix
           : fallback.mix,
+      // Seeded from the stored crossfade when absent, which is what makes the
+      // split invisible to anyone upgrading: geoAlpha was mix, and atmAlpha at
+      // 1 is what the crossfade always implied about the atmosphere.
+      geoAlpha: unit(parsed.geoAlpha, unit(parsed.mix, fallback.geoAlpha)),
+      atmAlpha: unit(parsed.atmAlpha, fallback.atmAlpha),
       // Always 0 on load, whatever was stored. Every other field here restores
       // what the user last chose; this one deliberately does not, because
       // restoring it would have the page reach for the camera on arrival with

@@ -42,6 +42,12 @@ function fail(message: string): void {
   if (button instanceof HTMLButtonElement) button.disabled = true
 }
 
+/** A 0-100 URL parameter as a 0-1 value, or the fallback when absent or junk. */
+function pct(raw: string | null, fallback: number): number {
+  if (raw === null || Number.isNaN(Number(raw))) return fallback
+  return Math.min(1, Math.max(0, Number(raw) / 100))
+}
+
 function resolvePrefs(): Prefs {
   const stored = loadPrefs({
     geometricView: DEFAULT_GEOMETRIC_VIEW,
@@ -49,6 +55,8 @@ function resolvePrefs(): Prefs {
     atmosphericView: DEFAULT_ATMOSPHERIC_VIEW,
     mergeMode: DEFAULT_MERGE_MODE,
     mix: DEFAULT_MIX,
+    geoAlpha: DEFAULT_MIX,
+    atmAlpha: 1,
     passthrough: 0,
     mapping: DEFAULT_MAPPING,
     autopilot: true,
@@ -64,6 +72,8 @@ function resolvePrefs(): Prefs {
   const atmospheric = query.get('atmospheric') ?? query.get('view')
   const merge = query.get('merge')
   const mix = query.get('mix')
+  const geo = query.get('geo')
+  const atm = query.get('atm')
   const mapping = query.get('mapping')
   const auto = query.get('auto')
 
@@ -72,7 +82,13 @@ function resolvePrefs(): Prefs {
     geoColour: rgb ?? stored.geoColour,
     atmosphericView: isAtmosphericViewName(atmospheric) ? atmospheric : stored.atmosphericView,
     mergeMode: isMergeModeName(merge) ? merge : stored.mergeMode,
-    mix: mix !== null && !Number.isNaN(Number(mix)) ? Math.min(1, Math.max(0, Number(mix) / 100)) : stored.mix,
+    mix: pct(mix, stored.mix),
+    // ?mix= keeps meaning exactly what it always meant, because it is in links
+    // already in the world: the geometric layer's opacity, with the atmosphere
+    // full. ?geo= and ?atm= are the new pair and win when both are present —
+    // new parameters are free, renaming or repurposing one is not.
+    geoAlpha: pct(geo, pct(mix, stored.geoAlpha)),
+    atmAlpha: pct(atm, mix !== null ? 1 : stored.atmAlpha),
     // Deliberately no `?camera=` parameter, though the Hard Stop on URL shape
     // would allow adding one freely. Every other parameter here sets how the
     // page *looks*; this one would set whether it reaches for a sensor, and a
@@ -171,7 +187,8 @@ async function main(): Promise<void> {
     geoColour: prefs.geoColour,
     atmosphericView: prefs.atmosphericView,
     mergeMode: prefs.mergeMode,
-    mix: prefs.mix,
+    geoAlpha: prefs.geoAlpha,
+    atmAlpha: prefs.atmAlpha,
   })
 
   // Flipped by the real loop taking over, which is what stops the idle frames.
@@ -211,7 +228,8 @@ async function main(): Promise<void> {
     onGeoColour: (colour) => visualiser.setGeoColour(colour),
     onAtmosphericView: (name: AtmosphericViewName) => visualiser.setAtmosphericView(name),
     onMergeMode: (mode: MergeModeName) => visualiser.setMergeMode(mode),
-    onMix: (mix: number) => visualiser.setMix(mix),
+    onGeoAlpha: (a: number) => visualiser.setGeoAlpha(a),
+    onAtmAlpha: (a: number) => visualiser.setAtmAlpha(a),
     // Mappings carry several seconds of internal state (running means, feature
     // history), none of which is transferable, so switching starts a fresh one
     // rather than trying to hand the old state over.
