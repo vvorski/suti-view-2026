@@ -48,316 +48,236 @@
         height: 100%;
         display: block;
       }
-      /* The gate speaks the HUD's language — same ink, same violet, same tick
-         rims and corner-hinged arcs, same letterspaced caps — because it is
-         the first thing anyone sees and it used to look like a default browser
-         page wearing the app's background colour. The wedge in the corner is
-         the HUD's own silhouette, so the control surface is already familiar
-         before it is ever opened. */
+      /* Constructivist: hard edges, heavy masses, one accent, and a composition
+         built off-axis instead of stacked down the middle. The previous gate was
+         a centred column, which is calm and anonymous; this one has a direction.
+
+         The rules that make it that rather than just dark: nothing is rounded
+         except the one circle that is meant to be pressed, type is tight and
+         heavy where it used to be airy and letterspaced, blocks are anchored to
+         a left edge rather than floating, and exactly one element is filled with
+         the accent so it cannot be mistaken for anything else. */
       #gate {
         position: fixed;
         inset: 0;
         display: flex;
         flex-direction: column;
-        align-items: center;
+        align-items: stretch;
         justify-content: center;
-        gap: var(--gap);
-        /* The old 4rem of top padding existed only to clear a large name pill
-           at the top-left. The name moved into the layout and the pill became a
-           single glyph at the top-right, so the column can sit where it wants:
-           optically centred, with just enough room for the notch. */
-        padding: calc(1.5rem + env(safe-area-inset-top, 0px)) 1.5rem 1.25rem;
-        text-align: center;
+        gap: clamp(0.9rem, 3.2vh, 1.6rem);
+        padding: calc(1.75rem + env(safe-area-inset-top, 0px)) 1.5rem 1.5rem;
+        text-align: left;
         background: #05060a;
         z-index: 10;
         overflow: hidden;
         transition: opacity 600ms ease;
-        /* The per-release glow: a soft ring inset from the viewport edges,
-           tinted by --tone-hue. Subtle enough not to read as "coloured
-           screen", visible enough to notice a fresh build landed. */
-        box-shadow: inset 0 0 min(22vh, 200px) hsla(var(--tone-hue), 65%, 55%, 0.16);
       }
-      #gate[hidden] {
-        display: none;
-      }
-      #gate.fading {
-        opacity: 0;
-        pointer-events: none;
-      }
-      /* The HUD's wedge, as a ghost: concentric dark tracks and a tick rim
-         hinged just off the bottom-right corner, exactly where the real one
-         opens. Decoration with a purpose — it is a preview of the controls. */
-      .gate-corner {
-        position: absolute;
-        /* Pushed further out and faded well down. At its old size and opacity
-           the arcs crossed the middle of the copy, so every paragraph had a
-           curve running through it — texture where the eye wanted a clean
-           line. It should be felt at the corner, not read across the text. */
-        right: -22%;
-        bottom: -20%;
-        width: min(78vmin, 560px);
-        height: min(78vmin, 560px);
-        opacity: 0.5;
-        pointer-events: none;
-      }
-      /* One vertical rhythm for the whole gate: blocks separated by --gap,
-         lines inside a block separated by a fraction of it. The screen was
-         previously five independent elements each with its own spacing, which
-         is why it read as a stack rather than a composition. */
-      #gate {
-        --gap: clamp(0.85rem, 3.5vh, 1.9rem);
-      }
-      .gate-head,
-      .gate-copy,
-      .gate-take {
-        z-index: 1;
-      }
-      .gate-head {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 0.5rem;
-      }
-      #gate h1 {
-        font-family: 'Chakra Petch', ui-sans-serif, system-ui, sans-serif;
-        font-size: clamp(1.2rem, 6.2vw, 1.6rem);
-        font-weight: 500;
-        letter-spacing: 0.34em;
-        /* Optical centring: the tracking adds a phantom space after the last
-           glyph; this eats it. */
-        margin-right: -0.34em;
-        text-transform: uppercase;
-        color: #b6b3d6;
-        margin: 0;
-      }
-      /* The release name, sitting under the title as its subtitle. Monospace
-         against the title's spaced caps so the two read as different kinds of
-         thing — a name for the piece, and a name for this particular build —
-         rather than as one heading in two sizes. */
-      .gate-name {
-        font: 500 0.95rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
-        letter-spacing: 0.06em;
-        color: #7d79b4;
-      }
-      .gate-name::before,
-      .gate-name::after {
-        content: '';
-        display: inline-block;
-        width: 1.1rem;
-        height: 1px;
-        vertical-align: middle;
-        margin: 0 0.6rem;
-        background: rgba(157, 155, 240, 0.28);
-      }
-      /* The start dial: the HUD's ring idiom at gate scale. A tick ring turns
-         slowly around a circular button — the same picture as a band waiting
-         to be dragged, which is what everything after this tap is. */
-      .gate-dial {
-        position: relative;
-        width: min(46vw, min(30vh, 10.5rem));
-        aspect-ratio: 1;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 1;
-        margin: calc(var(--gap) * 0.35) 0;
-      }
-      .gate-dial svg {
+      #gate[hidden] { display: none; }
+      #gate.fading { opacity: 0; pointer-events: none; }
+
+      /* The field: two heavy diagonals and the HUD's corner arcs, thickened.
+         Low contrast on purpose — it is the ground the blocks sit on, and the
+         previous version's thin arcs ran through the middle of the copy. */
+      .gate-field {
         position: absolute;
         inset: 0;
         width: 100%;
         height: 100%;
         pointer-events: none;
       }
-      .dial-rule {
-        fill: none;
-        stroke: rgba(255, 255, 255, 0.07);
-        stroke-width: 1;
+      .field-bar { fill: #9d9bf0; opacity: 0.055; }
+      .field-arc { fill: none; stroke: #9d9bf0; opacity: 0.12; }
+
+      .gate-head { position: relative; z-index: 1; }
+      #gate h1 {
+        font-family: 'Chakra Petch', ui-sans-serif, system-ui, sans-serif;
+        /* Tight and heavy. The airy 0.34em tracking it had was the opposite
+           instinct — elegant, and completely without force. */
+        font-size: clamp(2rem, 11.5vw, 3.1rem);
+        font-weight: 700;
+        letter-spacing: -0.01em;
+        line-height: 0.92;
+        text-transform: uppercase;
+        color: #f0eeff;
+        margin: 0;
       }
-      /* Radial ticks via dasharray — 1-unit marks on a thick stroke read as a
-         tick rim without thirty hand-authored lines. Period 4 against the
-         circle's pathLength of 120 gives exactly 30 evenly spaced ticks. */
-      .dial-ticks {
-        fill: none;
-        stroke: rgba(169, 166, 232, 0.35);
-        stroke-width: 7;
-        stroke-dasharray: 1 3;
-        animation: dial-spin 120s linear infinite;
-        transform-origin: 50% 50%;
+      /* A slab, not a hairline. Full width, and the thing the title sits on. */
+      .gate-rule {
+        height: 5px;
+        background: #9d9bf0;
+        margin: 0.55rem 0 0.5rem;
       }
-      @keyframes dial-spin {
-        to {
-          transform: rotate(360deg);
-        }
+      .gate-name {
+        font: 500 0.82rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        color: #6f6b8c;
+      }
+
+      /* The one round thing on the screen, and the only thing filled with the
+         accent — so the action is unmistakable without a word of instruction.
+         Left-anchored rather than centred, which is what keeps the composition
+         off-axis. */
+      .gate-dial {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        align-items: center;
+        gap: 1rem;
       }
       #start {
         appearance: none;
         cursor: pointer;
-        width: 74%;
+        flex: none;
+        width: min(38vw, min(24vh, 8.5rem));
         aspect-ratio: 1;
         border-radius: 50%;
-        border: 1px solid #2f3448;
-        background: rgba(12, 12, 26, 0.6);
-        color: #e4e7ef;
+        border: none;
+        background: #9d9bf0;
+        color: #05060a;
         font-family: 'Chakra Petch', ui-sans-serif, system-ui, sans-serif;
-        font-size: 0.95rem;
-        font-weight: 500;
-        letter-spacing: 0.22em;
-        text-indent: 0.22em; /* same phantom-space correction as the title */
+        font-size: clamp(0.85rem, 3.6vw, 1rem);
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-indent: 0.12em;
         text-transform: uppercase;
-        transition:
-          border-color 200ms ease,
-          color 200ms ease,
-          box-shadow 200ms ease;
+        transition: background 180ms ease, transform 180ms ease;
       }
       #start:hover,
-      #start:focus-visible {
-        border-color: #9d9bf0;
-        color: #fff;
-        box-shadow: inset 0 0 42px rgba(157, 155, 240, 0.12);
+      #start:focus-visible { background: #b9b7ff; }
+      #start:active { transform: scale(0.97); }
+      #start:disabled { background: #4a4870; color: #14141f; cursor: default; }
+      /* Ticks beside the button rather than around it: a measure mark against
+         the mass, which is the constructivist move, and it also stops the
+         button competing with a ring for the same silhouette. */
+      .dial-ticks-bar {
+        flex: 1;
+        height: min(24vw, 5rem);
+        min-width: 0;
       }
-      #start:disabled {
-        opacity: 0.5;
-        cursor: default;
-      }
-      /* Two paragraphs, one block. Measure is capped near 42 characters, which
-         on a phone is four short lines rather than the six-line grey wall this
-         used to be — the copy is a disclosure, and a wall of it does not get
-         read, which defeats the point of disclosing. */
+      .tick-line { stroke: #9d9bf0; stroke-width: 2; opacity: 0.5; }
+      .tick-line.tall { opacity: 0.9; }
+
+      /* Copy hangs off a heavy left bar, so the block is anchored rather than
+         floating in the middle of the screen. */
       .gate-copy {
+        position: relative;
+        z-index: 1;
+        border-left: 4px solid rgba(157, 155, 240, 0.42);
+        padding-left: 0.85rem;
         display: flex;
         flex-direction: column;
-        gap: 0.55rem;
-        max-width: 23rem;
+        gap: 0.4rem;
+        max-width: 26rem;
       }
       #gate p {
-        font-size: 0.8rem;
-        line-height: 1.6;
-        color: #6b7183;
-        text-wrap: balance;
+        font-size: 0.78rem;
+        line-height: 1.55;
+        color: #767d92;
         margin: 0;
       }
-      /* The camera note is subordinate to the microphone one: the mic is what
-         the app is, the camera is an option that has not been asked for yet.
-         Dimmer says that without a heading. It must stay legible — this is a
-         disclosure, not fine print, and it is here so nothing about the camera
-         is a surprise later. */
-      #gate .gate-aside {
-        font-size: 0.74rem;
-        color: #545a6b;
-      }
-      /* QR and share as one card. The QR alone was the brightest thing on a
-         near-black screen and pulled the eye straight off the Start button; a
-         hairline container, a caption, and a smaller code make it read as an
-         offer rather than an interruption. */
+      /* The camera note stays legible — a disclosure, not fine print. */
+      #gate .gate-aside { font-size: 0.72rem; color: #565d70; }
+
+      /* Square, bordered, and sharing the left edge with everything else. */
       .gate-take {
+        position: relative;
+        z-index: 1;
         display: flex;
-        align-items: center;
-        gap: 0.85rem;
-        padding: 0.7rem 0.9rem 0.7rem 0.7rem;
-        border: 1px solid #191d2b;
-        border-radius: 14px;
-        background: rgba(10, 11, 20, 0.6);
+        align-items: stretch;
+        gap: 0;
+        border: 2px solid #1e2231;
+        align-self: flex-start;
       }
       .gate-qr {
-        width: 4.25rem;
-        height: 4.25rem;
+        width: 4rem;
+        height: 4rem;
         display: block;
-        border-radius: 3px;
-        /* Held just off full white. A QR needs contrast to scan and this keeps
-           plenty, but paper-white on this ground is a hole in the screen. */
-        opacity: 0.82;
+        opacity: 0.85;
       }
-      .gate-qr[hidden] {
-        display: none;
-      }
+      .gate-qr[hidden] { display: none; }
       .take-side {
         display: flex;
         flex-direction: column;
-        align-items: flex-start;
-        gap: 0.45rem;
+        justify-content: center;
+        gap: 0.3rem;
+        padding: 0 0.9rem;
+        border-left: 2px solid #1e2231;
       }
       .take-cap {
-        font: 400 0.62rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
-        letter-spacing: 0.16em;
+        font: 400 0.58rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+        letter-spacing: 0.18em;
         text-transform: uppercase;
         color: #4e5464;
       }
       .gate-btn {
         appearance: none;
         cursor: pointer;
-        border: 1px solid #2f3448;
+        border: none;
         background: transparent;
-        color: #9aa0b2;
+        color: #cfd3dd;
         font-family: 'Chakra Petch', ui-sans-serif, system-ui, sans-serif;
-        font-size: 0.72rem;
-        font-weight: 500;
-        letter-spacing: 0.18em;
-        text-indent: 0.18em;
+        font-size: 0.8rem;
+        font-weight: 700;
+        letter-spacing: 0.16em;
+        text-indent: 0.16em;
         text-transform: uppercase;
-        padding: 0.5rem 1.05rem;
-        border-radius: 999px;
-        transition:
-          border-color 200ms ease,
-          color 200ms ease;
+        padding: 0;
+        text-align: left;
+        transition: color 160ms ease;
       }
       .gate-btn:hover,
-      .gate-btn:focus-visible {
-        border-color: #9d9bf0;
-        color: #f0eeff;
-      }
-      /* No reserved height — an error re-centres the column, which is a jump
-         nobody minds at the moment they are told the microphone was refused,
-         and the gate has no spare rows to hold open for it. */
+      .gate-btn:focus-visible { color: #9d9bf0; }
+
       #error {
-        color: #8a6b6b;
-        font-size: 0.8rem;
-        max-width: 23rem;
+        position: relative;
         z-index: 1;
+        color: #d08a8a;
+        background: #2a1414;
+        border-left: 4px solid #d08a8a;
+        padding: 0.5rem 0.7rem;
+        font-size: 0.78rem;
+        max-width: 26rem;
       }
-      #error:empty {
-        display: none;
-      }
-      @media (prefers-reduced-motion: reduce) {
-        .dial-ticks {
-          animation: none;
-        }
-      }
+      #error:empty { display: none; }
+
     </style>
   </head>
   <body>
     <canvas id="canvas"></canvas>
 
     <div id="gate">
-      <!-- The HUD's wedge, hinged off the bottom-right corner exactly where the
-           real one opens. viewBox is 0 0 100 100 with the hinge at (100,100), so
-           the radii below are percentages of the square and it scales with the
-           element rather than the viewport. -->
-      <svg class="gate-corner" viewBox="0 0 100 100" aria-hidden="true">
-        <g fill="none" stroke-linecap="butt">
-          <circle cx="100" cy="100" r="88" class="dial-rule" />
-          <circle cx="100" cy="100" r="72" stroke="rgba(18,18,35,0.72)" stroke-width="9" />
-          <circle cx="100" cy="100" r="56" stroke="rgba(18,18,35,0.55)" stroke-width="7" />
-          <circle cx="100" cy="100" r="30" stroke="rgba(29,28,51,0.9)" stroke-width="2" />
+      <!-- The ground. Two heavy diagonals crossing the frame, plus the HUD's own
+           corner arcs thickened up — the wedge is still previewed here, it just
+           reads as mass now rather than as a hairline drawn across the text. -->
+      <svg class="gate-field" viewBox="0 0 100 160" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+        <path class="field-bar" d="M-40 168 92 -8h30L-10 168z" />
+        <path class="field-bar" d="M-40 190 78 -8h14L-26 190z" />
+        <g class="field-arc">
+          <circle cx="104" cy="164" r="86" stroke-width="10" />
+          <circle cx="104" cy="164" r="64" stroke-width="7" />
+          <circle cx="104" cy="164" r="44" stroke-width="4" />
         </g>
       </svg>
 
-      <div class="gate-head">
+      <header class="gate-head">
         <h1>suti&#8202;&middot;&#8202;view</h1>
+        <div class="gate-rule"></div>
         <div class="gate-name"><span id="release-name"></span></div>
-      </div>
+      </header>
 
       <div class="gate-dial">
-        <svg viewBox="0 0 100 100" aria-hidden="true">
-          <circle cx="50" cy="50" r="47" class="dial-rule" />
-          <!-- pathLength renormalises the circumference to 120 units, so the
-               dasharray period of 4 (see .dial-ticks) divides it exactly 30
-               times. Without it the dashes are measured against the real
-               circumference of 2πr ≈ 295.3, which no round period divides —
-               leaving a visibly wrong last tick where the path closes. -->
-          <circle cx="50" cy="50" r="47" class="dial-ticks" pathLength="120" />
-        </svg>
         <button id="start" type="button">Start</button>
+        <!-- A measure mark beside the mass rather than a ring around it: the
+             button is already a circle and does not need a second one. -->
+        <svg class="dial-ticks-bar" viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden="true">
+          <g class="tick-line">
+            <path d="M2 40V22M10 40V26M18 40V26M26 40V26M34 40V26M42 40V26M50 40V26M58 40V26M66 40V26M74 40V26M82 40V26M90 40V26M98 40V26" />
+          </g>
+          <g class="tick-line tall">
+            <path d="M2 40V14M26 40V18M50 40V18M74 40V18M98 40V18" />
+          </g>
+        </svg>
       </div>
 
       <div class="gate-copy">
@@ -372,9 +292,6 @@
         </p>
       </div>
 
-      <!-- One object, not two loose ones: a bordered card is what stops the QR
-           reading as a bright slab dropped on the screen, and it gives the pair
-           a reason to be next to each other. -->
       <div class="gate-take">
         <svg id="qr" class="gate-qr" role="img" aria-label="QR code linking to this page"></svg>
         <div class="take-side">

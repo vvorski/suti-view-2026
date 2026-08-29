@@ -378,6 +378,8 @@ const CSS = `
   color: #8a86a4; text-align: center; line-height: 1.1;
 }
 .hud-chip[aria-pressed='true'] { background: rgba(26,24,48,0.9); border-color: #9d9bf0; }
+/* 20px inside a 52px chip, leaving room for the value line under it. */
+.hud-icon { width: 20px; height: 20px; display: block; }
 .hud-chip b { font-weight: 400; color: #9d9bf0; display: block; }
 .hud-chip[aria-pressed='true'] b { color: #f0eeff; }
 /* The colour chip's value line is a swatch, not text — "100/100/100" does not
@@ -464,6 +466,47 @@ interface Band<K extends string> {
   r: number
 }
 
+/**
+ * The chip glyphs.
+ *
+ * Bold geometric masses rather than outlines: a chip is 52px with a 20px
+ * drawing inside it, sitting over a moving visualiser, and at that size a
+ * silhouette survives where a hairline does not. Each is a 24-unit box and
+ * fills `currentColor`, so the chip's own pressed rule recolours the icon with
+ * no second copy of anything.
+ *
+ * They replaced three-letter words (RGB, AUTO, MAP, CAM, NUM). The live value
+ * line underneath stays — that is state, not a label, and losing it would mean
+ * opening a control to find out what it is already set to.
+ */
+type IconName = 'rgb' | 'auto' | 'map' | 'cam' | 'num'
+
+const ICONS: Record<IconName, string> = {
+  // A disc cut into three wedges, one per channel, at three weights.
+  rgb:
+    '<path d="M12.9 1.2a10.8 10.8 0 0 1 9.3 16.1l-9.3-5.4z"/>' +
+    '<path d="M22.2 17.3a10.8 10.8 0 0 1-18.6 0l9.3-5.4z" fill-opacity=".6"/>' +
+    '<path d="M3.6 17.3A10.8 10.8 0 0 1 11.1 1.2v10.7z" fill-opacity=".34"/>',
+  // A ring that has come round on its own, with the arrowhead off its start.
+  auto:
+    '<path d="M12 1.4a10.6 10.6 0 1 1-10.4 12.7l4.5-.9A6 6 0 1 0 12 6z"/>' +
+    '<path d="M13.4 0 7.6 4.2l5.8 4.2z"/>',
+  // One heavy diagonal between two blocks: in, transform, out.
+  map:
+    '<path d="M1.6 22.4 17.2 1.6h5.2L6.8 22.4z"/>' +
+    '<path d="M1.6 9.8h6.2v4.4H1.6z" fill-opacity=".55"/>' +
+    '<path d="M16.2 9.8h6.2v4.4h-6.2z" fill-opacity=".55"/>',
+  // A lens held in two heavy brackets.
+  cam:
+    '<path d="M1.4 2.6h6v3.4H4.8v12H7.4v3.4h-6z"/>' +
+    '<path d="M22.6 2.6h-6V6h2.6v12h-2.6v3.4h6z"/>' +
+    '<circle cx="12" cy="12" r="5.6"/>',
+  // Three rising blocks on a baseline.
+  num:
+    '<path d="M1.6 21V13.4h5.2V21zM9.4 21V6.6h5.2V21zM17.2 21V1.4h5.2V21z"/>' +
+    '<path d="M1 22.4h22v1.6H1z" fill-opacity=".45"/>',
+}
+
 export function createHud(prefs: Prefs, handlers: Handlers): Hud {
   const style = document.createElement('style')
   style.textContent = CSS
@@ -495,13 +538,16 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
    *  arc. See placeChips(). */
   const chips: HTMLButtonElement[] = []
 
-  function mkButton(name: string, glyph: string, onTap: () => void): HTMLButtonElement {
+  function mkButton(name: string, icon: IconName, onTap: () => void): HTMLButtonElement {
     const b = document.createElement('button')
     b.type = 'button'
     b.className = 'hud-chip'
     b.setAttribute('aria-label', name)
-    b.innerHTML = '<span></span><b></b>'
-    b.querySelector('span')!.textContent = glyph
+    // aria-hidden on the drawing: the accessible name is on the button, and a
+    // screen reader announcing the shape as well as the name would be worse
+    // than the three letters this replaced.
+    b.innerHTML =
+      `<svg class="hud-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">${ICONS[icon]}</svg><b></b>`
     b.addEventListener('pointerup', (e) => {
       e.stopPropagation()
       onTap()
@@ -671,7 +717,7 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
   const popupOpen = (): boolean =>
     mapDialOpen || camRingOpen || colourOpen
 
-  const rgbBtn = mkButton('Geometric layer colour', 'RGB', () => {
+  const rgbBtn = mkButton('Geometric layer colour', 'rgb', () => {
     const wasOpen = colourOpen
     closeMapDial()
     closeCamRing()
@@ -686,7 +732,7 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
   const rgbSwatch = rgbBtn.querySelector('b')!
   rgbSwatch.classList.add('hud-chip-swatch')
 
-  const autoBtn = mkButton('Autopilot', 'AUTO', () => {
+  const autoBtn = mkButton('Autopilot', 'auto', () => {
     closeColourPopup()
     closeMapDial()
     closeCamRing()
@@ -698,7 +744,7 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     // do anything would read as broken.
   })
 
-  const mapBtn = mkButton('Mapping', 'MAP', () => {
+  const mapBtn = mkButton('Mapping', 'map', () => {
     const wasOpen = mapDialOpen
     closeColourPopup()
     closeCamRing()
@@ -713,7 +759,7 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     paintBands()
   })
 
-  const camBtn = mkButton('Camera passthrough', 'CAM', () => {
+  const camBtn = mkButton('Camera passthrough', 'cam', () => {
     const wasOpen = camRingOpen
     closeColourPopup()
     closeMapDial()
@@ -730,7 +776,7 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     paintBands()
   }
 
-  const statsBtn = mkButton('Numeric readout', 'NUM', () => {
+  const statsBtn = mkButton('Numeric readout', 'num', () => {
     closeColourPopup()
     closeMapDial()
     closeCamRing()
