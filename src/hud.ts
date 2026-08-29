@@ -152,6 +152,8 @@ export interface Hud {
        *  magnitude in m/s². Diagnostics only — see the readout's comment. */
       samples?: number
       peak?: number
+      /** Motion events that arrived carrying no usable acceleration. */
+      rejected?: number
     },
   ): void
   /** Step the atmospheric layer's programme forward (1) or back (-1), wrapping. */
@@ -1347,7 +1349,12 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
         // "the shake doesn't work" is two indistinguishable bug reports.
         ...(s.samples === undefined
           ? []
-          : [`motion ${s.samples} ev  peak ${(s.peak ?? 0).toFixed(1)}/18`]),
+          : [
+              `motion ${s.samples} ev  peak ${(s.peak ?? 0).toFixed(1)}/18` +
+                // Only shown when it is non-zero, because on a healthy device
+                // it always is zero and a permanent "drop 0" teaches nothing.
+                (s.rejected ? `  drop ${s.rejected}` : ''),
+            ]),
       ].join('\n')
     },
 

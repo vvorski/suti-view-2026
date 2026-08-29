@@ -16,8 +16,9 @@
 
 import { Tumble, type MotionSample } from '../src/shake.ts'
 
+/** Default sensor rate: what iOS delivers. Each case may override it — see
+ *  run(), where the rate turned out to matter more than the thresholds. */
 const HZ = 60
-const DT = 1 / HZ
 /** Phone held upright: gravity along -y, as DeviceMotionEvent reports it. */
 const G = 9.81
 
@@ -49,12 +50,21 @@ interface Result {
   restOffset: number
 }
 
-/** Run `seconds` of motion, then `settle` seconds of stillness. */
+/** Run `seconds` of motion, then `settle` seconds of stillness.
+ *
+ *  `hz` is the *sensor's* rate, and it is a parameter because it turned out
+ *  to matter more than any threshold in here. iOS delivers `devicemotion` at
+ *  ~60 Hz; Android delivers whatever the vendor chose, and 10-20 Hz is
+ *  common. Every case below was originally run at 60 only, which is why a
+ *  detector that passes every one of them can still never fire on a real
+ *  Android phone. */
 function run(
   seconds: number,
   motion: (t: number) => MotionSample,
   settle = 3,
+  hz = HZ,
 ): Result {
+  const dt = 1 / hz
   const tumble = new Tumble()
   let strongs = 0
   let peakAngle = 0
@@ -63,26 +73,26 @@ function run(
   let t = 0
 
   const step = (m: MotionSample): void => {
-    tumble.sample(m, DT)
-    const s = tumble.advance(DT)
+    tumble.sample(m, dt)
+    const s = tumble.advance(dt)
     if (tumble.takeStrong()) strongs++
     peakAngle = Math.max(peakAngle, Math.abs(s.angle))
     peakOffset = Math.max(peakOffset, Math.hypot(s.offsetX, s.offsetY))
     peakDisturb = Math.max(peakDisturb, s.disturb)
-    t += DT
+    t += dt
   }
 
   // Half a second of stillness first, so the gravity estimate has settled and
   // the run is not measuring the filter's own start-up.
-  for (let i = 0; i < HZ / 2; i++) step(still())
+  for (let i = 0; i < hz / 2; i++) step(still())
 
   const start = t
   while (t - start < seconds) step(motion(t - start))
 
   let last = { angle: 0, offsetX: 0, offsetY: 0 }
-  for (let i = 0; i < settle * HZ; i++) {
-    tumble.sample(still(), DT)
-    last = tumble.advance(DT)
+  for (let i = 0; i < settle * hz; i++) {
+    tumble.sample(still(), dt)
+    last = tumble.advance(dt)
     if (tumble.takeStrong()) strongs++
   }
 
@@ -118,6 +128,13 @@ const cases: Array<[string, Result]> = [
     'knock + rebound (30 m/s², two hits)',
     run(3, (t) => (t < 0.18 ? shaking(t, 30, 5.5) : still())),
   ],
+  // The same deliberate shake every phone is supposed to answer, sampled at
+  // the rates Android actually delivers. If these differ from the 60 Hz row
+  // above, the detector is rate-dependent and the thresholds are innocent.
+  ['deliberate shake @ 30 Hz', run(1.2, (t) => shaking(t, 28, 4), 3, 30)],
+  ['deliberate shake @ 20 Hz', run(1.2, (t) => shaking(t, 28, 4), 3, 20)],
+  ['deliberate shake @ 12 Hz', run(1.2, (t) => shaking(t, 28, 4), 3, 12)],
+  ['violent shake @ 12 Hz', run(1.5, (t) => shaking(t, 45, 6), 3, 12)],
 ]
 
 console.log(

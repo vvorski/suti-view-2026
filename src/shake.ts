@@ -369,8 +369,9 @@ export interface ShakeSensor {
   frame(dt: number): TumbleState
   /** True once per detected hard shake. */
   takeStrong(): boolean
-  /** Sample count and recent peak, for the numeric readout. See Tumble. */
-  diagnostics(): { samples: number; peak: number }
+  /** Sample count, recent peak, and events discarded as unusable. For the
+   *  numeric readout only. See Tumble. */
+  diagnostics(): { samples: number; peak: number; rejected: number }
   close(): void
 }
 
@@ -387,16 +388,34 @@ export function startShake(granted: boolean): ShakeSensor {
     return {
       frame: () => STILL,
       takeStrong: () => false,
-      diagnostics: () => ({ samples: 0, peak: 0 }),
+      diagnostics: () => ({ samples: 0, peak: 0, rejected: 0 }),
       close: () => {},
     }
   }
 
   let last = performance.now()
+  /** Events that arrived but carried nothing usable. Counted separately from
+   *  Tumble's own sample count, because "no events at all" and "events with
+   *  empty payloads" are different faults with different fixes and both
+   *  present as a shake that does nothing. */
+  let rejected = 0
 
   const onMotion = (e: DeviceMotionEvent): void => {
-    const a = e.accelerationIncludingGravity
-    if (!a || a.x === null || a.y === null || a.z === null) return
+    // accelerationIncludingGravity first, since the gravity estimator wants
+    // the DC term. But some Android devices populate only `acceleration` —
+    // gravity already removed — and leave the other null. Reading just the
+    // one field means the whole feature is silently dead on those handsets,
+    // with a listener happily attached and every event discarded here.
+    //
+    // Falling back is safe: the estimator converges on whatever DC the signal
+    // has, which for a gravity-free feed is ~0, and it subtracts that. The
+    // AC part it actually measures is the same either way.
+    let a = e.accelerationIncludingGravity
+    if (!a || a.x === null || a.y === null || a.z === null) a = e.acceleration
+    if (!a || a.x === null || a.y === null || a.z === null) {
+      rejected++
+      return
+    }
 
     const now = performance.now()
     // Clamp: a backgrounded tab can deliver a sample after a long gap, and an
@@ -420,7 +439,7 @@ export function startShake(granted: boolean): ShakeSensor {
   return {
     frame: (dt) => tumble.advance(dt),
     takeStrong: () => tumble.takeStrong(),
-    diagnostics: () => tumble.diagnostics(),
+    diagnostics: () => ({ ...tumble.diagnostics(), rejected }),
     close: () => window.removeEventListener('devicemotion', onMotion),
   }
 }
