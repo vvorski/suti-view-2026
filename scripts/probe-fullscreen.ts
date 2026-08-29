@@ -122,9 +122,12 @@ function check(name: string, ok: boolean, detail: string): void {
   gate.goFullscreen()
   await settle()
   check('refused → armed', gate.fullscreenStatus().state === 'armed', gate.fullscreenStatus().state)
+  // Name *and* message: Chrome rejects with a bare TypeError whose only
+  // distinguishing content is "not granted", so the name alone is not enough
+  // to tell two very different causes apart.
   check(
     'refused → the reason is recorded',
-    gate.fullscreenStatus().error === 'NotAllowedError',
+    gate.fullscreenStatus().error === 'NotAllowedError: denied',
     gate.fullscreenStatus().error,
   )
 
@@ -200,6 +203,27 @@ function check(name: string, ok: boolean, detail: string): void {
   void gate.waitForStart(els as never)
   check('gate binds a click handler', onClick !== null, 'no handler bound')
 
+  // iOS and iPadOS gate the accelerometer behind a dialog, and a dialog spends
+  // the gesture. Standing this up lets the probe assert the *order* of the two
+  // asks, not merely that both happen — on iPadOS, motion-first meant
+  // fullscreen asked with the activation already gone.
+  const order: string[] = []
+  ;(globalThis as Record<string, unknown>).DeviceMotionEvent = {
+    requestPermission: () => {
+      order.push('motion')
+      return Promise.resolve('granted')
+    },
+  }
+  const requestFullscreen = (
+    (globalThis as Record<string, unknown>).document as { documentElement: Record<string, unknown> }
+  ).documentElement.requestFullscreen as () => Promise<void>
+  ;(
+    (globalThis as Record<string, unknown>).document as { documentElement: Record<string, unknown> }
+  ).documentElement.requestFullscreen = (...a: unknown[]): Promise<void> => {
+    order.push('fullscreen')
+    return (requestFullscreen as (...x: unknown[]) => Promise<void>)(...a)
+  }
+
   if (onClick) {
     // Deliberately not awaited. The check below runs at the first await point
     // inside the handler, so a passing result means requestFullscreen was
@@ -209,6 +233,11 @@ function check(name: string, ok: boolean, detail: string): void {
       'start gesture asks for fullscreen before awaiting the microphone',
       stub.calls === 1,
       `calls=${stub.calls} — the request moved after an await and will be refused on a real device`,
+    )
+    check(
+      'fullscreen is asked for before the motion dialog spends the gesture',
+      order[0] === 'fullscreen',
+      `order=[${order.join(', ')}] — on iPadOS the motion prompt consumes the activation`,
     )
   }
 }

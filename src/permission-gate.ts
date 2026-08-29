@@ -142,10 +142,18 @@ export function goFullscreen(): void {
   }
   watchFullscreen()
   fsAttempts++
+  // The first ask carries `navigationUI: 'hide'`; every retry after it asks
+  // bare. Not superstition — an engine that dislikes the options dictionary
+  // rejects the call outright, and that failure is indistinguishable from a
+  // missing gesture from the outside. Since the retry is free, it may as well
+  // rule the dictionary out rather than repeat an identical request.
+  const options = fsAttempts === 1 ? [{ navigationUI: 'hide' }] : []
   // Still never surfaced as an error and never awaited before the audio path —
   // what the user loses is chrome, not the app. What changed is that a failure
   // now leaves a mark instead of vanishing into an empty catch.
-  void target.requestFullscreen({ navigationUI: 'hide' }).then(
+  void (target.requestFullscreen as (o?: FullscreenOptions) => Promise<void>)(
+    ...(options as [FullscreenOptions?]),
+  ).then(
     () => {
       // A resolve is not proof of arrival: some engines resolve and leave
       // fullscreenElement null. Trust the document, not the promise.
@@ -160,7 +168,14 @@ export function goFullscreen(): void {
     },
     (err: unknown) => {
       fsState = 'refused'
-      fsError = err instanceof DOMException ? err.name : 'unknown'
+      // Not `instanceof DOMException`. Chrome rejects this with a plain
+      // TypeError carrying "not granted" when the window is not focused, and
+      // narrowing to DOMException recorded that — the single most informative
+      // rejection there is — as "unknown". The message is kept because the
+      // name alone does not separate TypeError-because-unfocused from
+      // TypeError-because-the-options-dictionary.
+      fsError =
+        err instanceof Error ? `${err.name}: ${err.message}`.slice(0, 60) : String(err).slice(0, 60)
       armFullscreenRetry()
     },
   )
@@ -218,15 +233,26 @@ export function waitForStart(els: GateElements): Promise<Started> {
       els.button.disabled = true
       els.error.textContent = ''
 
+      // Fullscreen goes first, and the order is load-bearing.
+      //
+      // All three of these need the gesture, and the gesture is spent by
+      // whichever of them puts a dialog on screen. requestMotionAccess() calls
+      // DeviceMotionEvent.requestPermission() synchronously on iOS and iPadOS,
+      // which is exactly such a dialog — so asking for motion first left
+      // fullscreen asking with the activation already gone. iPhone Safari hid
+      // that by having no element fullscreen to refuse; iPadOS has it, and
+      // there this was a real and silent failure.
+      //
+      // Fullscreen is also the only one of the three that cannot recover from
+      // losing the gesture by explaining itself and offering a retry, so it
+      // gets first claim on it. Nothing is given up by this order.
+      goFullscreen()
+
       // Started before the await, not after: iOS gates the accelerometer
       // behind the same live-user-gesture rule as getUserMedia, and awaiting
       // the microphone first spends the gesture. Both calls are made
       // synchronously inside the handler and only then awaited.
       const motion = requestMotionAccess()
-
-      // Same rule, same reason: it needs the gesture, so it is asked for here
-      // and not awaited. See goFullscreen() for why a refusal is not an error.
-      goFullscreen()
 
       try {
         const source = await startMicrophone()
