@@ -2327,3 +2327,72 @@ and tapping the `num` chip on each persists the *new* session value to
 `prefs` in both directions (off→on and on→off), including turning a
 `?debug`-forced readout off and having that stick. `pnpm build`, `pnpm
 lint` both clean.
+
+### 32. The lattice hears the tune but not the beat
+`status: ready` · added 2026-08-29
+
+**Do** — give `uTransient` a term that reaches the whole structure, and deepen
+the two couplings that carry loudness and recent history into the geometry.
+**Why** — the lattice's colour swings hard with the music while its shape
+barely moves, so it reads as tinted rather than played.
+
+**Decided**
+- It is not under-wired → **the lattice reads eleven of the twelve audio
+  inputs**, second only to `field`. Counted across all thirteen shaders rather
+  than assumed: `chorus` reads three, `grid` and `shards` two apiece, and this
+  one reads every input except `uSpectrum`. So the fix is coupling depth, not
+  missing wiring, and no new uniform is needed.
+- Where the responsiveness actually is → **in the colour, and almost nowhere
+  else.** Line 311 swings intensity roughly threefold with `uMid` and `uSurge`,
+  and line 303 does the same for the rays with `uHigh`. Against that, the
+  geometry moves by tens of percent: node radius by 27% (`0.7 * uLow`), the
+  filament width by 35% (`9.0 * uLevel`), the field pinch by 12%. Tonal
+  response is strong; rhythmic response is what is missing.
+- The single biggest cause → **`uTransient` appears exactly once, and is
+  confined to a thin ring.** Line 264 multiplies it into a pulse that only
+  lights where `withinShell` matches `fract(uFlow * 0.9)`, so a drum hit
+  brightens one travelling shell rather than the network. That travelling ring
+  is a deliberate and good idea — the comment says a hit should be something
+  you watch move — but it means the fastest, most rhythmic signal in the whole
+  mapping touches the smallest part of the frame. `field`, the liveliest view,
+  uses `uTransient` at four separate sites.
+- Fix, in three specific terms → **keep the ring and add a global one.** A
+  transient also lifts node brightness across every shell, so a hit flashes the
+  network *and* launches the ring. Then `past`'s weight in the node radius
+  (line 200) rises from 0.5 toward 1.0, so the tunnel's shells visibly differ
+  by what was playing when they were the rim; and the filament width's
+  `9.0 * uLevel` (line 255) rises toward 14, so lines thicken audibly with
+  loudness. **Mine**, all three: they add response at the fast tier and in the
+  depth axis, which are the two places the shader is thin.
+- Deliberately **not** touched → line 134's `uv *= 1.0 + uBreak * 0.35 -
+  uSurge * 0.28`. Whole-frame scale is the one coupling that turns responsive
+  into nauseating, and it is already the largest single geometric swing in the
+  file. If the result still reads as flat, the answer is another emissive term,
+  not more zoom.
+- `uSpectrum` stays unused, and that is correct → the shader samples
+  `uHistory` at line 187 with an `age` of 0 at the rim, and the newest history
+  row *is* the live spectrum. Adding `uSpectrum` would be a second path to the
+  same numbers. Worth writing down so the unused uniform is not mistaken for
+  an oversight a third time.
+- Scope → **this view only.** `chorus`, `grid`, `shards`, `tide` and
+  `circles` are thinner still, and several of them read `uLevel` not at all.
+  Whether that is deliberate restraint or the same gap is a separate question
+  and a separate entry; nothing here should be applied to them by analogy.
+
+**Lands in**
+- `src/shaders/lattice.frag.glsl:200` — `past`'s coefficient in `nodeR`.
+- `:255` — the filament width's `uLevel` term.
+- `:264-270` — the new global transient term, added where light is
+  accumulated rather than inside the ring's own expression.
+
+**Done when** — driven from `views-probe.html` with synthetic params, a
+transient spike visibly brightens the whole network and not only one shell; a
+loudness sweep visibly thickens the filaments; and two shells carrying
+different history are distinguishable by node size. Then against real music: a
+kick reads as a hit rather than as a colour change.
+**Verify** — `views-probe.html` for the synthetic sweeps, because a real track
+never isolates one input, and then real music through the microphone, because
+this is the only test of whether it feels played. `pnpm probe` must still pass
+— the mapping is untouched, and if its numbers move, something other than this
+shader changed. Also `pnpm build`, `pnpm lint`.
+**Hard stops** — prefs no · url no · capture no · dependency no.
