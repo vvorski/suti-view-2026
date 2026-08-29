@@ -2397,7 +2397,7 @@ this is the only test of whether it feels played. `pnpm probe` must still pass
 shader changed. Also `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
-### 33. Touch drops a fading emitter into Circles
+### 33. Touch drops a fading emitter into any geometric view
 `status: ready` · added 2026-08-29
 
 **Do** — while Circles is the geometric programme, a press-and-hold or a drag
