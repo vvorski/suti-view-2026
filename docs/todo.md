@@ -1710,3 +1710,55 @@ any more.
 the app itself for the corner. `pnpm probe:fullscreen` unchanged. Also `pnpm
 build`, `pnpm lint`.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 26. Two screenshots in the same minute get the same filename
+`status: ready` · added 2026-08-29
+
+**Do** — give every capture a name nothing else can take, and stamp it in the
+phone's own time rather than UTC.
+**Why** — the stamp is cut to the minute, so a second tap inside sixty seconds
+produces a byte-identical filename.
+
+**Decided**
+- The mechanism → **`main.ts:374-378` truncates to the minute.**
+  `.replace(/T(\d{2})(\d{2}).*/, '-$1$2')` keeps the hour and the minute and
+  throws away seconds and milliseconds, so `suti-108-never-dark-20260829-1859`
+  is every capture taken between 18:59:00 and 18:59:59. Verified by running
+  the expression rather than reading it.
+- What actually happens then → the browser silently disambiguates, usually as
+  `… (1).png`, and on some Android download managers it overwrites. Neither is
+  data loss worth panicking about, but both defeat the reason entry 18 put the
+  build in the name: two captures that share a name cannot be told apart in a
+  bug report, which is the one job that name has.
+- Seconds are not enough → **add a per-session counter too.** **Mine**: two
+  taps inside one second are reachable — the capture is a tap, not a
+  long-running job — and, more to the point, wall-clock time is not monotonic
+  on a phone. A handset that picks up NTP mid-session can hand back an
+  *earlier* stamp than one it already used, which no amount of resolution
+  fixes. The counter guarantees uniqueness within a session on its own; the
+  timestamp is there to make the name meaningful, not to make it unique.
+- Local time, not UTC → `toISOString()` is UTC, so a capture taken at 19:52 on
+  the reported handset is named `1852`. **Mine**: the person who has to find
+  this file reads their own clock, and a name an hour off its own screenshot
+  is worse than no timestamp. Nothing here is compared across devices, so the
+  ambiguity a local stamp introduces costs nothing.
+- Shape → `suti-<build>-<release>-<YYYYMMDD>-<HHMMSS>-<nn>.png`, `nn` starting
+  at `01` and zero-padded to two digits, widening on its own past 99. Sorts
+  chronologically in a file listing, which is the order anyone browsing a
+  camera roll wants.
+
+**Lands in**
+- `src/main.ts:371-393`, `saveCapture` — the stamp expression and a
+  module-level counter beside it. Nothing else in the function changes; the
+  detached-anchor click and the 30-second revoke are both load-bearing and
+  documented.
+
+**Done when** — tapping the capture band five times in quick succession
+produces five files whose names differ, all sorting in the order they were
+taken, and each carrying the local time shown on the phone's own clock rather
+than a UTC one.
+**Verify** — on the phone, since a desktop browser's download manager
+disambiguates differently and would hide exactly the collision this is about.
+Also `pnpm build`, `pnpm lint`.
+**Hard stops** — prefs no (the counter lives for the session only) · url no ·
+capture no (what is captured is unchanged; only its name) · dependency no.
