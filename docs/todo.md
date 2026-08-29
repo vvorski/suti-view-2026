@@ -1818,3 +1818,68 @@ disambiguates differently and would hide exactly the collision this is about.
 Also `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs no (the counter lives for the session only) · url no ·
 capture no (what is captured is unchanged; only its name) · dependency no.
+
+### 27. Swipes stop changing the picture; the shake is the gesture
+`status: ready` · added 2026-08-29
+
+**Do** — delete both swipe gestures, leaving the shake as the only thing that
+changes what is on screen without opening the panel.
+**Why** — two gestures do what the shake already does better, and both fire by
+accident while simply handling the phone.
+
+**Decided**
+- Both swipes, not just the horizontal one → **both.** The vertical swipe
+  calls `onRandomise()`, which is exactly what any qualifying shake already
+  does, so it is a duplicate route to the same outcome; the horizontal one
+  cycles the atmospheric programme, which is what the ask calls changing
+  parameters. Removing one and keeping the other would leave the file's whole
+  pointer apparatus standing for a single gesture.
+- Nothing becomes unreachable → the re-seed is the shake's own bottom rung,
+  and the atmospheric programme is a band in the HUD. Both survive; only the
+  shortcuts go.
+- The space bar stays → **Mine**, and the one to argue with. `gestures.ts`'s
+  own docstring pairs it with the vertical swipe, and it is the shake for a
+  machine that cannot be shaken: a desktop has no accelerometer, and without
+  it there is no way to re-roll there except through the panel. It is also
+  not a swipe, which is what was actually asked about.
+- What goes dead with them → `cycleAtmosphericView` has exactly one caller,
+  the horizontal swipe (`main.ts:665`), so both its interface entry
+  (`hud.ts:204`) and its implementation (`hud.ts:1125`) go in the same change.
+  Machinery left without a caller is the thing CLAUDE.md asks not to leave
+  behind.
+- `gestures.ts` becomes a keyboard file → **rename it `keyboard.ts`, exporting
+  `bindKeyboard`.** **Mine**: with the pointer half gone the file holds one
+  `keydown` listener, and a file called `gestures.ts` containing no gesture is
+  precisely the shape-that-stopped-describing-the-thing this repo asks to fix
+  as part of the change rather than after it. One import moves.
+- A comment that goes stale → `main.ts`'s capture band explains that a swipe
+  starting in the band needs no guard because "gestures.ts's own threshold
+  (60px) is already far past TAP_SLOP_PX". The conclusion still holds — a drag
+  is still not a tap — but its reason will no longer exist. Rewrite it rather
+  than leaving a comment pointing at deleted code.
+- What this buys beyond the ask → the two `document` pointer listeners that go
+  are direct competitors of the capture band and of the HUD's tap-to-open, on
+  a screen where three separate things now read raw pointer events. Fewer
+  claimants on the same tap is worth more than the gestures were.
+
+**Lands in**
+- `src/gestures.ts` → `src/keyboard.ts` — everything above the `keydown`
+  listener is deleted, along with `SWIPE_MIN_PX`, `SWIPE_MAX_MS`,
+  `AXIS_DOMINANCE`, the `.hud-scrim` exclusion and the `GestureHandlers`
+  interface's `onSwipeAtmospheric`. The docstring's long account of why the
+  double tap was abandoned goes with the pointer code it explains.
+- `src/main.ts:10` and `:663-666` — the import and the call site.
+- `src/hud.ts:204` and `:1125` — `cycleAtmosphericView`, both halves.
+- `src/main.ts`, the capture band's comment about swipe thresholds.
+
+**Done when** — swiping anywhere on the picture, in any direction, at any
+speed, changes nothing; a shake still re-seeds and still shuffles by depth;
+space still re-seeds on a desktop; and the atmospheric programme is still
+changeable from its band in the panel.
+**Verify** — on the phone, since the accidental swipes this removes are a
+handling problem rather than a pointer-events one and a mouse does not
+reproduce them. `pnpm probe:shake` unchanged. Also `pnpm build`, `pnpm lint`,
+and the on-screen check at 320×568 and 360×640 to confirm the HUD's own drags
+still work with the exclusion gone — that is what the deleted `.hud-scrim`
+guard was protecting.
+**Hard stops** — prefs no · url no · capture no · dependency no.
