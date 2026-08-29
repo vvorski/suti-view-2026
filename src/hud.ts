@@ -121,6 +121,24 @@ const LABEL_OFFSET = 12 * DEG
  *  label's radius out by this much clears that case with margin and, being
  *  uniform across all three, keeps their radial spacing consistent too. */
 const LABEL_PAD = 26
+/** How far the bands fade back while a popup owns the screen.
+ *
+ *  Every control here was designed and checked on its own, and each one does
+ *  clear its own neighbours: the rings dodge the chip column, their labels
+ *  dodge each other, the dial dodges the mix readout. What none of them
+ *  could see alone is that a popup anchored to the chip column reaches right
+ *  across the bands behind it — at RING_R_INNER + 2*RING_PITCH the outermost
+ *  ring is 172px out, well inside the band arcs on any phone. Shipped, that
+ *  read as three coloured arcs lying over MULTIPLY / CHORUS / ADD with all
+ *  of it illegible.
+ *
+ *  Shrinking the rings does not fix it: a 0-100 drag wants a long arc to
+ *  resolve a value along, and the bands are 30px+ wide wherever they sit.
+ *  The two simply want the same pixels, so one has to yield while the other
+ *  is in use — and it is not the one the thumb is on. Zero would be cleaner
+ *  still but reads as the HUD having vanished mid-gesture; this keeps them
+ *  as a ghost, so the wedge still looks like one object. */
+const POPUP_DIM = 0.12
 
 export interface Hud {
   /** Call every frame with the current state; only does work while visible. */
@@ -522,12 +540,24 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
   // always closes both and only reopens the one that was tapped.
   let mapDialOpen = false
 
+  /** The band arcs, kept only so a popup can fade them back — see POPUP_DIM.
+   *  Their labels already live on each band as b.labels. */
+  let bandTracks: SVGPathElement[] = []
+
+  /** True while either popup is up. They are mutually exclusive (see
+   *  closeColourPopup()/closeMapDial()), so this is "is anything covering
+   *  the bands", not a count. */
+  const popupOpen = (): boolean =>
+    mapDialOpen || rgbPanel.classList.contains('open')
+
   const rgbBtn = mkButton('Geometric layer colour', 'RGB', () => {
     const wasOpen = rgbPanel.classList.contains('open')
     closeMapDial()
     rgbPanel.classList.toggle('open', !wasOpen)
     paintButtons()
     paintColourPopup()
+    // The bands sit under this popup and have to yield to it — see POPUP_DIM.
+    paintBands()
   })
   // The colour chip's value is a swatch dot, not text — see the CSS comment
   // on .hud-chip-swatch for why.
@@ -555,6 +585,8 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     if (mapDialOpen) mapRot = restingRotOf(mappingKeys, prefs.mapping, MAP_PITCH)
     paintMapDial()
     paintButtons()
+    // Same as the colour popup: the bands underneath yield while this is up.
+    paintBands()
   })
 
   const statsBtn = mkButton('Numeric readout', 'NUM', () => {
@@ -571,6 +603,9 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     if (!mapDialOpen) return
     mapDialOpen = false
     paintMapDial()
+    // Bands come back up — see POPUP_DIM. Harmless when the caller is a chip
+    // that is about to open the other popup: its own paintBands() follows.
+    paintBands()
   }
 
   // The colour popup's open/closed state lives on rgbPanel's own class,
@@ -582,6 +617,7 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     if (!rgbPanel.classList.contains('open')) return
     rgbPanel.classList.remove('open')
     paintColourPopup()
+    paintBands()
   }
 
   /** Position on a circle of radius r about (ox,oy). polar()/arcPath() are
@@ -653,16 +689,20 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
     svg.appendChild(el('path', { d: arcPath(outer + 4, a0, a1), class: 'hud-rule' }))
 
     // Bands, outermost first.
+    bandTracks = []
     for (const b of bands) {
       b.r = base * b.radius
       b.rot = restingRot(b)
-      svg.appendChild(
-        el('path', {
-          d: arcPath(b.r, a0, a1),
-          class: 'hud-track',
-          'stroke-width': Math.max(30, base * 0.09),
-        }),
-      )
+      const bandTrack = el('path', {
+        d: arcPath(b.r, a0, a1),
+        class: 'hud-track',
+        'stroke-width': Math.max(30, base * 0.09),
+      })
+      svg.appendChild(bandTrack)
+      // Held onto only so a popup can fade them — see POPUP_DIM. Rebuilt on
+      // every resize along with everything else in here, hence the reset
+      // above rather than a push onto a stale array.
+      bandTracks.push(bandTrack)
       b.labels = b.keys.map(() => {
         const t = el('text', { class: 'hud-item' })
         svg.appendChild(t)
@@ -680,23 +720,29 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
       const [rx0, ry0] = polar(r0, NOTCH + Math.atan2(w0 / 2, r0))
       const [lx1, ly1] = polar(r1, NOTCH - Math.atan2(w1 / 2, r1))
       const [rx1, ry1] = polar(r1, NOTCH + Math.atan2(w1 / 2, r1))
-      svg.appendChild(
-        el('path', {
-          d: `M${lx0} ${ly0}L${lx1} ${ly1}L${rx1} ${ry1}L${rx0} ${ry0}Z`,
-          class: 'hud-selector',
-        }),
+      // Fades with the bands it reads — it marks which band option is
+      // selected, so leaving it lit over faded bands points at nothing.
+      bandTracks.push(
+        svg.appendChild(
+          el('path', {
+            d: `M${lx0} ${ly0}L${lx1} ${ly1}L${rx1} ${ry1}L${rx0} ${ry0}Z`,
+            class: 'hud-selector',
+          }),
+        ) as SVGPathElement,
       )
       const [tx, ty] = polar(r0 - 10, NOTCH)
       const [bx, by] = polar(r0 - 24, NOTCH)
       const perp = NOTCH + Math.PI / 2
-      svg.appendChild(
-        el('path', {
-          d:
-            `M${bx + 6 * Math.cos(perp)} ${by + 6 * Math.sin(perp)}` +
-            `L${bx - 6 * Math.cos(perp)} ${by - 6 * Math.sin(perp)}` +
-            `L${tx} ${ty}Z`,
-          class: 'hud-tip',
-        }),
+      bandTracks.push(
+        svg.appendChild(
+          el('path', {
+            d:
+              `M${bx + 6 * Math.cos(perp)} ${by + 6 * Math.sin(perp)}` +
+              `L${bx - 6 * Math.cos(perp)} ${by - 6 * Math.sin(perp)}` +
+              `L${tx} ${ty}Z`,
+            class: 'hud-tip',
+          }),
+        ) as SVGPathElement,
       )
     }
 
@@ -989,12 +1035,17 @@ export function createHud(prefs: Prefs, handlers: Handlers): Hud {
   }
 
   function paintBands(): void {
+    // A popup anchored to the chip column lies across these, so they yield
+    // while one is up rather than fighting it for the same pixels.
+    const dim = popupOpen() ? POPUP_DIM : 1
+    for (const t of bandTracks) t.setAttribute('opacity', dim.toFixed(3))
+
     for (const b of bands) {
       const sel = b.current()
       b.keys.forEach((k, i) => {
         const a = NOTCH + i * PITCH + b.rot
         const d = Math.abs(delta(a, NOTCH))
-        const vis = d > CUTOFF ? 0 : 1 - (d / CUTOFF) * 0.72
+        const vis = (d > CUTOFF ? 0 : 1 - (d / CUTOFF) * 0.72) * dim
         const [x, y] = polar(b.r, a)
         const t = b.labels[i]
         t.setAttribute('x', String(x))
