@@ -4013,3 +4013,104 @@ that rescues the dark one may blow out the bright one. On-screen check at
 320×568 and 360×640 for the chip. `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs **no**: one boolean added, which is the safe half of the
 rule · url no · capture no · dependency no.
+
+### 48. Every view answers a touch, through the stream it already listens to
+`status: ready` · added 2026-08-30
+
+**Do** — a touch injects an event into the feature stream just before it
+reaches the uniforms: a transient on contact, a sustained level while the
+finger is down, and drag speed into roughness. Every view reacts, in its own
+idiom, with **no shader changed**.
+**Why** — asked for, and the app is already a machine for turning events into
+pictures. A touch should be an event.
+
+**Decided**
+- The measurement this rests on → the audio inputs each shader actually reads,
+  counted across all thirteen rather than estimated:
+
+  | views | audio inputs read |
+  |---|---|
+  | chorus, tide | 3 |
+  | circles, drift, grid, shards | 4 |
+  | aurora, spectrogram | 8 |
+  | caustics, fringe | 10 |
+  | cells | 11 |
+  | field, lattice | 12 |
+
+  The split is exact and it is the entry: **the six geometric views read 3–4
+  inputs and all six read `uRipples`; the seven atmospheric views read 8–12 and
+  none of them reads `uRipples`.** So the two halves of the app want opposite
+  mechanisms, and each already has the one it wants.
+- Which makes this and entry 33 **complementary, not overlapping** → entry 33
+  gives the geometric views a *positioned* ripple, which is the only way to
+  reach a view that reads four numbers. This entry gives the atmospheric views
+  an *event*, which is the only way to reach a view that reads twelve and has
+  no notion of a location. Together they are "every viz reacts". Neither alone
+  is, and neither is a substitute for the other.
+- One seam, and it is already there → `scene.ts:678-682` copies `params` into
+  the uniforms inside `render(params, spectrum)`. Injecting immediately before
+  that copy reaches all thirteen views at once. **No shader edit, no new
+  uniform, no per-view design.** **Mine**, and it is the reason this is one
+  entry rather than seven.
+- **Inject by `max`, never by adding** → `transient = max(transient,
+  touch.transient)`. A touch must not be able to *reduce* the music's own
+  response, and a sum would push past 1 into whatever each shader does at
+  saturation. **Mine.**
+- What a touch actually pushes → **a transient spike on contact** decaying over
+  about 250ms, **a level floor held while the finger is down**, and **drag
+  speed into `roughness`**. The transient is the hit; the held level is what
+  makes a resting finger keep the picture awake; the drag term is what makes
+  moving feel different from pressing. **Mine**, and "sensitive" is the reason
+  there is no threshold and no cooldown anywhere in it: every contact does
+  something, immediately.
+- **Diagnostics must stay honest** → the injection goes in at the render
+  boundary, *after* the mapping has produced its numbers. The numeric readout
+  reports the mapping's own output, so it keeps saying what the microphone
+  heard rather than what a finger faked. **Mine**, and it matters more than it
+  sounds: the readout is the instrument every audio entry in this queue is
+  debugged with, and a touch that could forge a transient in it would poison
+  entries 32, 37, 38 and 39 at once.
+- **The capture band is excluded** → a tap low on the screen saves a frame, and
+  the pulse fires on `pointerdown` while the save happens on `pointerup`. So
+  without this exclusion every screenshot would contain the flash the finger
+  just made. A screenshot should record the picture you were looking at, not
+  the picture your finger caused. **Mine**, and it is the kind of thing found
+  by someone looking at their photos a week later rather than by a test.
+- Everywhere else, every zone reacts → including the middle third that opens
+  the panel and the top third that entry 41 leaves inert. **Mine**: the point
+  of the feature is that the surface is alive under a finger, and a dead
+  region would be exactly the discoverability hole entry 41 already argues
+  about. Opening the panel *and* pulsing the picture is not a conflict; it is
+  two things a tap does.
+- The honest limitation → an atmospheric view will answer *that* it was
+  touched, not *where*. Four of the seven read enough inputs that a positioned
+  version is possible later, but it needs a new uniform and seven shader edits,
+  which is a separate entry and not this one.
+- What this inherits, and it is worth knowing before judging the result → a
+  view that reads three inputs will answer a touch about as thinly as it
+  answers music. `chorus` and `tide` will barely move. That is entry 32's
+  finding arriving from another direction, and the fix for it is entry 38 and
+  the per-view work, not more touch.
+
+**Lands in**
+- `src/engine/touch.ts` — new. The envelope: contact, hold, release, drag
+  speed.
+- `src/scene.ts:124, 678-682` — the injection, immediately before the copy.
+- `src/main.ts` — the recogniser feeds it; the capture band's zone does not.
+
+**Done when** — in every one of the thirteen views, touching the screen
+produces a visible change within a frame or two, and holding keeps the picture
+livelier than it is with no finger. Dragging fast looks different from
+dragging slowly. The numeric readout's audio figures do not move when the
+screen is touched in silence. A screenshot taken from the bottom band contains
+no touch flash.
+**Verify** — the phone, in silence first, because that is the only condition in
+which a touch's own contribution is separable from the music's. Then with music
+playing, to confirm a touch reads as *added to* the music rather than as a
+glitch in it. Walk all thirteen views. `views-probe.html?play` from entry 37
+once that exists, since it is the only way to drive every view at once.
+`pnpm build`, `pnpm lint`, and `pnpm probe` unchanged — the mapping is
+untouched by design, so if its numbers move, the injection is in the wrong
+place.
+**Hard stops** — prefs no · url no · capture no, and it protects the existing
+one · dependency no.
