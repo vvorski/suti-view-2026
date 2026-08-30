@@ -5036,3 +5036,80 @@ possibility on the target handset rather than an edge case. Check the byline
 over a bright preview, which is the state entry 28's measurement came from.
 `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 56. With the panel open, reload moves to the top right and names itself
+`status: ready` · added 2026-08-30
+
+**Do** — while the HUD panel is open, the reload control becomes a full chip in
+the top-right corner. Clicking it runs the name flip quickly and then reloads.
+**Why** — asked for. In the running state the reload is an 18%-opacity glyph in
+a corner that something else is already using, and pressing it produces a
+second of nothing.
+
+**Decided**
+- The right corner is genuinely free, and the code says why → `version.ts:19-24`
+  records that the reload "went to the right when the gate's type was
+  left-justified; the type is right-justified now and **the share icon has
+  taken that corner**, so it comes back to the left." That is true of the
+  **gate**. `#share` is markup *inside* `#gate` (`index.html:429`), so once the
+  gate goes the corner is empty. This does not contradict that comment; it
+  completes it — the sentence "both corners are only ever going to hold one
+  small round thing each" still holds, in both states.
+- **It also fixes a collision nobody has filed** → `.hud-stats` sits at
+  `left: 0.75rem; top: 0.75rem` and `#version-hud` at `0.6rem`/`0.6rem`. With
+  the numeric readout on, the reload glyph is **underneath the first line of
+  it**. Entry 25's comment already worked around this once by stacking the
+  fullscreen chip below rather than beside. Moving reload to the right while
+  the panel is open takes the two apart at exactly the moment both are on
+  screen.
+- **Only while the panel is open** → closed, it stays the faded 0.18 glyph in
+  its corner, unchanged. `version.ts:84-88` is explicit that this is "a piece
+  meant to be left running on a propped-up phone, and a permanent label in the
+  corner of it is litter", and a full chip visible at all times is that litter
+  with a border on it. The panel being open is already the signal that someone
+  is operating the thing rather than watching it. **Mine.**
+- The chip is entry 44's, reused → that entry extracted `.gate-chip` from
+  `.gate-share` for exactly this kind of second user, and it shipped at build
+  165. Nothing new is designed here; the class exists and the reload already
+  wears it on the gate.
+- **What the click does, and why it is not just decoration** → a reload
+  currently looks like nothing happening until the page goes. The flip is
+  feedback occupying that gap, and it names the build you are leaving. **About
+  600ms**, against entry 55's 1.4s on load: this one is a confirmation in front
+  of an action someone is waiting on, not an arrival.
+- Where the name appears, since there isn't one → `version.ts` drops the name
+  entirely in the running state. So the flip needs a surface, and it is a
+  transient line **beside the chip, right-aligned, set exactly like
+  `.gate-name`** — so it reads as the same object returning rather than a new
+  one appearing. It is removed when the reload fires. **Mine.**
+- **Requires entry 55** → the flip, the `RELEASE_NAMES` array and the
+  per-character machinery all come from there. Building this first means
+  writing that animation twice.
+- The `.fresh` case is the best version of this → when a new build is waiting
+  the glyph is already green and pulsing. Clicking it then flips to the name
+  you are *on*, reloads, and entry 55's load animation lands on a name you have
+  never seen. Two animations either side of the reload, and the pair says
+  exactly what happened. Nothing extra is needed to get this; it falls out.
+- Reduced motion reloads immediately → no flip, no delay. Unlike entries 54 and
+  55, there is nothing to soften here: the animation is pure feedback in front
+  of a navigation, and someone who asked for less motion is better served by
+  the navigation happening.
+
+**Lands in**
+- `src/version.ts:17-31` — a panel-open branch on `#version-hud`'s position,
+  and the `.gate-chip` class applied in that state.
+- `src/version.ts:208` — the click handler: flip, then `location.reload()`.
+- `src/hud.ts` — whatever signals "panel is open" to `version.ts`; the
+  `.hud-scrim.open` class is already the fact, it just is not visible outside
+  the HUD today.
+
+**Done when** — opening the panel moves the reload to the top right as a chip
+matching the share button's look, clear of the numeric readout; closing the
+panel returns it to the faint corner glyph; clicking it shows the name for
+about half a second and then reloads; with a new build waiting, the sequence
+ends on the new name. With reduced motion, it reloads at once.
+**Verify** — the phone with the numeric readout **on**, since the collision this
+also fixes is only visible in that state, at 320×568 and 360×640. Force a
+`.fresh` state by hand to see the two-animation sequence. `pnpm build`,
+`pnpm lint`.
+**Hard stops** — prefs no · url no · capture no · dependency no.
