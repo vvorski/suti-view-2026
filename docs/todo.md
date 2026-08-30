@@ -4637,7 +4637,7 @@ this can actually ship with. `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 50. Touch is generous: a tap plays, everywhere
-`status: ready` · added 2026-08-30
+`status: building` · added 2026-08-30 · started 2026-08-30 · built together with entry 57, per that entry's own instruction
 
 **Do** — make every contact leave something at the point it happened, with no
 threshold in front of it. This entry is the taste direction for entries 33, 41,
@@ -5233,7 +5233,7 @@ also fixes is only visible in that state, at 320×568 and 360×640. Force a
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 57. A drag lays a trail, and taps accumulate
-`status: ready` · added 2026-08-30
+`status: building` · added 2026-08-30 · started 2026-08-30 · built together with entry 50, per this entry's own instruction
 
 **Do** — spawn ripples by **distance travelled** as well as elapsed time, raise
 the touch slot count so a trail is longer than four rings, and let a finger
