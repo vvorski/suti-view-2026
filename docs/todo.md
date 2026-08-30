@@ -5072,7 +5072,7 @@ though this makes it far easier to trigger, which is the cost named above ·
 dependency no.
 
 ### 53. The picture follows the sky
-`status: ready` · added 2026-08-30
+`status: building` · added 2026-08-30 · started 2026-08-30
 
 **Do** — drive the picture's brightness and colour temperature from the local
 clock, on a continuous curve: cool and dark at night, warm at dawn, bright at
