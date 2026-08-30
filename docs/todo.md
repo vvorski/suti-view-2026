@@ -7646,3 +7646,107 @@ blue-white; and passthrough at any non-zero mix is unaffected.
 plus a phone in real daylight. The number to watch is `p5`: it should sit near
 0.03, where the original frames could not go below 0.606.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 75. A tempo every mapping can see, and geometry that lands on the beat
+`status: ready` · added 2026-08-30
+
+**Do** — promote the beat tracker out of one mapping into `CommonAnalysis`,
+replace its two-gap tempo test with autocorrelation over onset strength, report
+BPM, and give the shaders a beat phase. Add fields; change no existing
+behaviour.
+
+**Why** — asked for. There is already a beat tracker and it is better than
+nothing, but it is private to one of six mappings, it is fragile in three
+known ways, and the number it computes is never shown to anyone or to any
+shader.
+
+**Decided**
+- **What already exists, because none of it should be thrown away.**
+  `beatMapping()` (`fast.ts:549`) tracks inter-onset intervals: an onset when
+  `transient` crosses 0.5, a lock when two consecutive gaps agree within 15%,
+  `interval` smoothed 50/50, phase running 0→1 and reset on every onset, and a
+  1.8× grace before the lock drops. The design instinct in its docstring is
+  exactly right and is kept verbatim: *"a visualiser pulsing confidently at the
+  wrong tempo is a legible error; one that has stopped pulsing is not."*
+- **Fragility 1 — two consecutive gaps is the weakest possible estimator.**
+  One missed onset gives a doubled gap, one extra hit gives a halved one, and
+  either breaks the lock. Syncopation breaks it continuously. The standard
+  answer, and what the literature has settled on, is **autocorrelation of the
+  onset-strength signal** rather than clustering the interval list: it is
+  robust precisely because it does not depend on any single onset being located
+  correctly. Keep the onset detector; accumulate its strength into a rolling
+  buffer and autocorrelate that.
+- **Fragility 2 — octave errors, which are the known failure of every tempo
+  estimator.** Peaks in an autocorrelation are harmonically related, so a
+  140bpm track can lock at 70 or 280 and be internally consistent about it.
+  The standard fix is to take the top few candidate lags and **score each by
+  cross-correlating against an ideal pulse train**, then prefer the metrical
+  level nearest a resting tempo around 120bpm. Without this step the tracker is
+  right about the rhythm and wrong about the beat, which looks worse than not
+  locking.
+- **Fragility 3 — phase snaps to every onset.** `phase = 0` on any qualifying
+  onset means a syncopated hit drags the beat off. Nudge phase toward the
+  onset in proportion to how near it fell to the prediction, rather than
+  snapping — the picture then keeps time *through* an off-beat instead of being
+  pulled by it. A hit far from the prediction should barely move it.
+- **Two smaller ones, both cheap.** The onset threshold is a fixed `0.5`, so a
+  quiet source never crosses it and a loud one crosses constantly — make it a
+  rolling median plus a delta, with 0.5 kept as the floor. And beat onsets
+  should be weighted toward the **low band**, where the kick is, while
+  `transient` keeps its broadband meaning for everything else. Add
+  `beatStrength`; do not redefine `transient`.
+- **Where it lives, and this is the whole "add, don't rip out" answer** → the
+  tracker moves into **`CommonAnalysis`**, which all six mappings already
+  construct and call. Every mapping then gains a tempo for free, **none of
+  them changes what it returns**, and `beatMapping` keeps its exact behaviour
+  while its private copy is deleted in favour of the shared one. Nothing is
+  removed from the app; one thing is promoted.
+- **Three new fields on `VisualParams`** — `beatPhase` (0→1 across a beat),
+  `bpm` (0 when unlocked), `beatConfidence` (0-1, continuous). Purely additive:
+  every existing consumer ignores them, and `beatConfidence` replacing a
+  boolean `locked` is what lets a shader blend between beat-driven and
+  energy-driven rather than switching.
+- **Three new uniforms**, `uBeat`, `uBpm`, `uBeatConfidence`, beside the seven
+  already there. **At `uBeatConfidence == 0` every view must render exactly as
+  it does today** — the same algebraic-identity discipline entry 47 used for
+  `uDay`, and the reason this can ship without re-tuning thirteen shaders.
+- **One view first, then the rest.** Circles takes the beat; the other five
+  geometric views follow in their own entry once it is proven on a phone
+  against real music. **Mine**, and it is the same order entry 33 followed for
+  touch, for the same reason: thirteen shaders re-tuned at once against a
+  brand-new signal is not reviewable.
+- **What "on the beat" should mean for geometry**, so it is not left to taste
+  → an *event*, not a continuous drive. The bands already carry continuous
+  energy and duplicating that on a beat clock gains nothing. A ring spawning on
+  the beat, a rotation stepping a fixed amount, a colour advancing one notch —
+  something that visibly *lands* — is what energy-driven mappings structurally
+  cannot do, and it is the whole reason to have a tempo.
+- **Report the BPM.** The user asked to measure it, and a tempo nobody can see
+  cannot be debugged — the same argument that put `samples`/`peak` in
+  `shake.ts`'s diagnostics and `want`/`armed` in entry 66. The readout gains
+  `bpm` and confidence.
+
+**Lands in**
+- `src/engine/fast.ts:225-320` — `CommonAnalysis` gains the tracker;
+  `:549-620` — `beatMapping` reads it instead of keeping its own.
+- `src/engine/fast.ts:23-62` — the three `VisualParams` fields.
+- `src/scene.ts:343-351, 876-884` — the three uniforms.
+- `src/shaders/circles.frag.glsl` — the first consumer.
+- `scripts/probe-mapping.ts` — the accuracy suite below.
+
+**Done when** — against synthetic onset trains the tracker reports **120 ± 2
+BPM within 4 seconds**, holds through a **missed beat** and through an
+**inserted off-beat hit**, and does **not** report 60 or 240 for a 120 input —
+the octave case being the one that most needs asserting because it fails
+plausibly. All six mappings return byte-identical `level`/`low`/`mid`/`high` to
+today for a given input. Circles is visibly on the beat with real music, and
+identical to today when confidence is 0.
+**Verify** — the probe carries the tracker, since it is arithmetic over a
+synthetic onset signal and needs no audio. The phone carries "does it look like
+it is on the beat", which no probe can answer. Test against something with a
+weak or absent kick as well as a four-on-the-floor track — the honest failure
+mode is that it locks beautifully to dance music and reports nothing for a
+ballad, and that is acceptable only if it says so rather than guessing.
+**Hard stops** — prefs no (no new mapping, no stored field; the six mapping
+names are unchanged) · url no · capture no · dependency no — autocorrelation
+over a small rolling buffer is a loop, not a library.
