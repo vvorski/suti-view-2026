@@ -8151,7 +8151,7 @@ signal, which correctly reports no tempo, but a real recording's spectral
 texture is not that.
 
 ### 76. The channels lag behind the phone, and snap back
-`status: ready` · added 2026-08-30
+`status: building` · added 2026-08-30 · started 2026-08-30
 
 **Do** — move the picture apart into its red, green and blue when the phone
 moves, and let them spring back together when it stops. Its own module, its own
