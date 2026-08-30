@@ -9061,7 +9061,45 @@ untouched.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 84. Each layer drifts on its own clock
-`status: building` · added 2026-08-30
+`status: done` · added 2026-08-30 · build 290
+
+**Build note (Mine)** — the fix itself is two numbers: `COLOUR_HOLD` 30→25,
+`VIEW_HOLD` 30→45, in `src/director.ts`. Decided's own "the holds become
+per-layer, not the logic" is literally true here — `update()`'s two due-checks
+already gated `geoColour` and `atmosphericView` independently through their
+own `sinceColour`/`sinceView` timers; the only thing that ever made them read
+as one shared clock was both timers happening to carry the same value. Both
+constants are now exported (they weren't before) so `probe-slow.ts` can
+assert against them directly rather than a copied literal.
+
+Verify names `probe-slow.ts` over a long synthetic run for the lockstep
+claim, so I drove a bare `Director` directly through 8 alternating 90s-long
+"flavour" phases (12 simulated minutes) engineered to be due for both a
+colour and a view change on every switch, and recorded how far into each
+phase each axis actually fired. One honest surprise while building this:
+neither mean offset landed on `COLOUR_HOLD` or `VIEW_HOLD` themselves — 90s
+per phase is long enough that `sinceColour`/`sinceView` are already well
+past their own hold by the time each phase switches, so colour fires at
+offset ≈0 (nothing left gating it) and view fires at ≈30s, timed by
+`VIEW_STABLE` rather than `VIEW_HOLD` (the candidate itself only becomes new
+at the switch and has to persist 30s before the due-check's `candidateHeld`
+term is satisfied). I state this plainly in the probe's own comments rather
+than picking a phase length that would have hidden it — it doesn't weaken
+the entry's claim: the two axes still land at a persistent, non-closing gap
+(colour always first, view always ≥30s later, checked every single phase,
+never once at the same offset), which is exactly what "neither drifts into
+lockstep" asks for, and the two clocks being genuinely different values is
+what makes that gap exist at all rather than an artifact of one particular
+scenario.
+
+`pnpm build`, `pnpm lint`, and `pnpm probe:slow` all pass (10 pre-existing
+bar-quantisation checks plus 7 new ones, all green). Not independently
+verified on the phone this session — the "visibly change at different
+times" half of Done-when is exactly the kind of multi-minute perceptual
+claim `probe-slow.ts`'s own file comment says a screen can't be trusted to
+judge in real time, and Verify names the probe rather than the phone for
+that reason; SUSPEND-silences-both is covered by both the existing global
+suspend logic (untouched) and a dedicated new check.
 
 **Do** — split the director's holds so the atmosphere and the geometry change
 on independent schedules rather than together.

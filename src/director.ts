@@ -54,14 +54,30 @@ const BOUNDARY = 0.45
  *  wins early — the decay only matters once none arrives. */
 const BOUNDARY_RAMP = 30
 
-/** Minimum seconds between changes of each kind. Colour is cheap to accept and
- *  can move with the sections; a programme swap replaces the whole picture and
- *  should feel like it belongs to a movement, not a verse. Both used to be
- *  larger (45 and 120) before entry 45 capped every timer here at 30 — the
- *  distinction between them survives only in how quickly BOUNDARY_RAMP can
- *  still matter once each one clears. */
-const COLOUR_HOLD = 30
-const VIEW_HOLD = 30
+/**
+ * Minimum seconds between changes of each kind — and, since each kind only
+ * ever touches one layer (`COLOUR_HOLD` gates `geoColour`, the geometry's
+ * own axis; `VIEW_HOLD` gates `atmosphericView`, the atmosphere's), each
+ * layer's own clock. Both sat at the same 30s from entry 45 until entry 84,
+ * which is exactly what made the two layers read as one picture changing on
+ * a single shared beat rather than two independent ones — docs/todo.md
+ * entry 84, `docs/what-resolume-knew-about-layers.md` lesson 4.
+ *
+ * 25 and 45, geometry faster since it is the near plane and colour is cheap
+ * to accept, atmosphere slower since it is the ground and a programme swap
+ * replaces the whole picture. Deliberately not multiples of each other
+ * (`index.html`'s start-button animation uses the same 3.4s/5.9s reasoning)
+ * so the two do not resynchronise into the behaviour this replaces. The
+ * logic that reads these — the two independent `sinceX >= X_HOLD` checks in
+ * `update()` below — was already per-layer; only the two numbers being
+ * equal was ever shared.
+ *
+ * Exported so probe-slow.ts's entry-84 check can assert the actual gap
+ * against these values directly rather than a hand-copied literal that could
+ * drift out of sync with them.
+ */
+export const COLOUR_HOLD = 25
+export const VIEW_HOLD = 45
 
 /** A suggested programme must be the suggestion for this long before it is
  *  acted on — the dead band that stops two near-tied options alternating.
@@ -218,8 +234,8 @@ export class Director {
    * something that is, during any hands-on session, completely silent — and
    * indistinguishable from broken. Touching any control suspends it for
    * SUSPEND (30s). A programme swap then additionally needs a warm buffer,
-   * VIEW_HOLD (30s) since the last one, the same suggestion held for
-   * VIEW_STABLE (30s), and a boundary that is either over BOUNDARY or has
+   * VIEW_HOLD (45s, entry 84) since the last one, the same suggestion held
+   * for VIEW_STABLE (30s), and a boundary that is either over BOUNDARY or has
    * simply waited long enough (BOUNDARY_RAMP). Every one of those is
    * deliberate and defensible; together they mean someone adjusting the HUD
    * and watching for a change will wait forever and conclude nothing is

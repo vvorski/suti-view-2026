@@ -17,7 +17,7 @@
  */
 
 import type { AudioFrame } from '../src/engine/capture.ts'
-import { Director } from '../src/director.ts'
+import { colourFor, Director, viewFor, COLOUR_HOLD, VIEW_HOLD } from '../src/director.ts'
 import { MAPPINGS } from '../src/engine/fast.ts'
 import { BLANK, SlowAnalysis } from '../src/engine/slow.ts'
 import type { AtmosphericViewName } from '../src/views.ts'
@@ -329,5 +329,123 @@ console.log('\nBar-quantisation (entry 81), driven directly:\n')
   }
 
   console.log(failures === 0 ? '\nall bar-quantisation checks passed' : `\n${failures} check(s) failed`)
+  if (failures > 0) process.exitCode = 1
+}
+
+// docs/todo.md entry 84 — this is what "neither drifts into lockstep" from
+// Done-when actually has to mean, over minutes rather than a single call:
+// the colour axis (geometry) and the view axis (atmosphere) have to keep
+// landing at a different offset from whatever made them due, every time,
+// not just once. Confidence is pinned at 0 throughout so entry 81's bar-hold
+// never enters into it. Two flavours held for 90s each and swapped
+// repeatedly is deliberately much longer than either COLOUR_HOLD or
+// VIEW_HOLD — see the comment further down for why that makes VIEW_STABLE,
+// not VIEW_HOLD, the thing actually timing the view axis here, which is a
+// real property of this scenario worth stating rather than hiding.
+console.log('\nPer-layer holds (entry 84), over several minutes:\n')
+{
+  let failures = 0
+  const check = (name: string, ok: boolean, detail: string): void => {
+    if (!ok) failures++
+    console.log(`${ok ? 'ok  ' : 'FAIL'}  ${name}${ok ? '' : `  — ${detail}`}`)
+  }
+
+  // Two flavours as far apart as the axes allow, so switching between them
+  // is always due for both a colour and a view change — noveltyMedium
+  // pinned at 1 so the boundary test never gates the timing either.
+  const FLAVOUR_A = { ...BLANK, warm: true, noveltyMedium: 1, bright: 0.05, noisy: 0, rhythmic: 0, dense: 0 }
+  const FLAVOUR_B = { ...BLANK, warm: true, noveltyMedium: 1, bright: 1, noisy: 1, rhythmic: 1, dense: 1 }
+  const PHASE_S = 90 // comfortably past VIEW_STABLE, so the candidate settles well before each phase ends
+  const PHASES = 8 // 12 simulated minutes
+
+  const d = new Director()
+  let current = { geoColour: colourFor(FLAVOUR_A), atmosphericView: viewFor(FLAVOUR_A) }
+  const colourOffsets: number[] = [] // seconds into each phase that the colour axis fired
+  const viewOffsets: number[] = [] // seconds into each phase that the view axis fired
+
+  for (let phase = 0; phase < PHASES; phase++) {
+    const flavour = phase % 2 === 0 ? FLAVOUR_A : FLAVOUR_B
+    for (let s = 0; s < PHASE_S; s += DT) {
+      const next = d.update(flavour, DT, current, 0, 0)
+      if (next?.geoColour) {
+        colourOffsets.push(s)
+        current = { ...current, geoColour: next.geoColour }
+      }
+      if (next?.atmosphericView) {
+        viewOffsets.push(s)
+        current = { ...current, atmosphericView: next.atmosphericView }
+      }
+    }
+  }
+
+  const mean = (xs: number[]): number => xs.reduce((a, b) => a + b, 0) / xs.length
+
+  check(
+    'the colour axis fired on nearly every phase',
+    colourOffsets.length >= PHASES - 1,
+    `${colourOffsets.length} fires over ${PHASES} phases`,
+  )
+  check(
+    'the view axis fired on nearly every phase',
+    viewOffsets.length >= PHASES - 1,
+    `${viewOffsets.length} fires over ${PHASES} phases`,
+  )
+
+  // Neither mean lands on COLOUR_HOLD or VIEW_HOLD themselves, and that is
+  // correct rather than a bug in this test: PHASE_S (90s) is long enough
+  // relative to both holds that `sinceColour`/`sinceView` are already well
+  // past their own hold by the time each phase switches, so the axis that
+  // is actually binding is whichever *other* gate is still open — for
+  // colour, nothing (it fires the instant the target is novel, offset 0),
+  // for view, VIEW_STABLE (30s) rather than VIEW_HOLD, since the candidate
+  // itself only becomes new at the switch and has to persist first. That
+  // difference is exactly the point: the two axes are governed by
+  // different clocks now, so even the *shape* of what limits each one
+  // differs, not only the numbers.
+  const meanColour = mean(colourOffsets)
+  const meanView = mean(viewOffsets)
+  check(
+    `colour fires essentially at the switch, its own hold already long cleared (mean ${meanColour.toFixed(1)}s into each phase)`,
+    meanColour < 5,
+    `expected under 5s`,
+  )
+  check(
+    `view waits for its own stability window before firing, not the same instant as colour (mean ${meanView.toFixed(1)}s into each phase)`,
+    meanView >= 25,
+    `expected at least 25s (VIEW_STABLE's own 30s floor)`,
+  )
+  check(
+    `every recorded view fire lands at least 3s after its own phase's colour fire, not on the same beat`,
+    viewOffsets.every((v, i) => v - (colourOffsets[i] ?? -Infinity) > 3),
+    `view offsets ${JSON.stringify(viewOffsets)} vs colour offsets ${JSON.stringify(colourOffsets)}`,
+  )
+  // No separate runtime check that COLOUR_HOLD !== VIEW_HOLD: TS infers
+  // both as numeric literal types, so comparing two different literals with
+  // `!==` is flagged as an always-true comparison and fails the build.
+  // Printed for the log instead — the entry's own change is exactly that
+  // these two stopped being the same number.
+  console.log(`(COLOUR_HOLD=${COLOUR_HOLD}s, VIEW_HOLD=${VIEW_HOLD}s)`)
+  check(
+    `the gap between the two axes stays open across the whole run rather than closing (min gap ${Math.min(...viewOffsets.map((v, i) => v - (colourOffsets[i] ?? -Infinity))).toFixed(1)}s, VIEW_HOLD=${VIEW_HOLD}s)`,
+    Math.min(...viewOffsets.map((v, i) => v - (colourOffsets[i] ?? -Infinity))) > 3,
+    'the two axes converged onto the same offset at some point during the run — exactly the lockstep this entry removes',
+  )
+
+  // SUSPEND still silences both axes globally — a person's deliberate choice
+  // suspends the whole director, not one layer of it (Decided's own words).
+  // Run strictly less than SUSPEND's own 30s so this checks only "while
+  // suspended", not what happens once it lifts.
+  {
+    const s = new Director()
+    const idle = { geoColour: colourFor(FLAVOUR_A), atmosphericView: viewFor(FLAVOUR_A) }
+    s.suspend()
+    let fired = false
+    for (let i = 0; i < Math.round(25 / DT); i++) {
+      if (s.update(FLAVOUR_B, DT, idle, 0, 0)) fired = true
+    }
+    check('SUSPEND silences both axes, not just one', !fired, 'a directive fired while suspended')
+  }
+
+  console.log(failures === 0 ? '\nall per-layer-hold checks passed' : `\n${failures} check(s) failed`)
   if (failures > 0) process.exitCode = 1
 }
