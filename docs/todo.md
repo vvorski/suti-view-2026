@@ -5404,7 +5404,32 @@ keeps it out of the shuffle's and the director's way · url no · capture no ·
 dependency no.
 
 ### 59. Assert the ripple constants match, across seven files
-`status: building` · added 2026-08-30 · started 2026-08-30
+`status: done` · added 2026-08-30 · shipped at build 182
+
+**Build note** — `AUDIO_RIPPLES` exported from `ripples.ts`, and
+`scripts/probe-ripples.ts` (new, `pnpm probe:ripples`) reads the six
+geometric shaders as text, matched by regex against `const int
+MAX_RIPPLES = N;`/`const int AUDIO_RIPPLES = N;`, discovered by `readdir`
+over `src/shaders/*.frag.glsl` and filtered to files that declare either
+constant — exactly the grep-not-a-list approach Decided asks for, so a
+future seventh geometric view is covered automatically. Also asserts
+`ripples.ts`'s own pair is internally coherent (`0 < AUDIO_RIPPLES <
+MAX_RIPPLES`) and that exactly six shaders were found, so a future rename
+or a shader moved out of `src/shaders/` can't silently make the check
+vacuous by matching nothing.
+
+Did exactly what the entry's own Verify text asks rather than trusting the
+green run: edited `circles.frag.glsl`'s `MAX_RIPPLES` to 24 by hand, ran
+the probe, watched it fail naming the file and both numbers (`found 24`
+against the expected 12), then reverted and watched it pass again. `git
+diff --stat` confirms the shader file carries no diff after the revert.
+
+`pnpm build`, `pnpm lint`, and `pnpm probe:ripples` all clean on the tree
+as it stands today. Landing this before entry 57 (which is Decided's own
+stated reason to build it now) means the next entry's twelve-of-fourteen
+site migration gets checked by a probe that already existed and already
+proved it can fail, rather than one written alongside the change it is
+meant to catch.
 
 **Do** — a probe that reads the six geometric shaders as text, extracts
 `MAX_RIPPLES` and `AUDIO_RIPPLES` from each, and fails if any disagrees with

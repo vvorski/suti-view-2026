@@ -52,7 +52,7 @@ export type { Features } from './features.ts'
 export { SlowAnalysis, BLANK } from './slow.ts'
 export type { Character } from './slow.ts'
 
-export { createRippleState, updateRipples, spawnAt, MAX_RIPPLES } from './ripples.ts'
+export { createRippleState, updateRipples, spawnAt, MAX_RIPPLES, AUDIO_RIPPLES } from './ripples.ts'
 export type { RippleState } from './ripples.ts'
 
 export { createEmitterState, updateEmitter } from './emitter.ts'

@@ -22,7 +22,12 @@
 // within a second: AUDIO_RIPPLES stays exactly the buffer Circles always
 // had, and touch gets its own ring-buffer cursor over the slots above it.
 export const MAX_RIPPLES = 12
-const AUDIO_RIPPLES = 8
+// Exported so scripts/probe-ripples.ts (docs/todo.md entry 59) can check
+// every geometric shader's own copy of this number against the one place it
+// is actually meant to live — before this it was module-private, and
+// nothing outside this file could read the number the six shaders are
+// supposed to agree with.
+export const AUDIO_RIPPLES = 8
 const TOUCH_RIPPLES = MAX_RIPPLES - AUDIO_RIPPLES
 
 // [birthTime, birthLevel, x, y] per slot, widened from [birthTime,
