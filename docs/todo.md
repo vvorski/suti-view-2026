@@ -9076,3 +9076,88 @@ camera never turned on.
 fewer and more deliberate captures than what shipped — one per arming, no
 accidental frame on exit, and the camera hardware is never opened by this mode
 at all · dependency no.
+
+### 88. A quiet phone listens harder
+`status: ready` · added 2026-08-30 · build after 85 and 86
+
+**Do** — let the shake detector's thresholds follow how much the phone has been
+moving lately: a low bar after stillness, today's bar when it is already being
+carried about. Leave `disturb` itself untouched.
+
+**Why** — a shake in a quiet room and a shake at a festival are the same
+gesture asking for the same thing, and only one of them currently clears a
+fixed bar comfortably.
+
+**Decided**
+- **Adapt the thresholds, never `disturb`.** This is the constraint the whole
+  entry is built around. `rgb-slip.ts:59` takes `disturb` as its only input and
+  **entry 76 is frozen** — *"colour lags has good colour, freeze that for
+  now"* — and `motion-bias.ts` takes it too, inside the approved colour state.
+  Making `disturb` adaptive would silently retune a frozen effect and an
+  approved one from underneath, with nothing in either file mentioning shake
+  thresholds. So `FLOOR 1.2` and `FULL 14` do not move. Only `STRONG_UP`,
+  `STRONG_DOWN` and `SUSTAIN_LEVEL` do.
+- **Lowering the bar does not weaken knock rejection, and this is why it is
+  safe.** `detectStrong`'s own comment: *"Setting a bar on peak acceleration
+  alone cannot tell them apart — putting the phone down hard clears any
+  threshold a real shake clears. So this counts direction reversals instead."*
+  **Three reversals inside 1.2s is what rejects a knock, not the height of the
+  bar.** The bar can therefore move with context while the thing that keeps
+  knocks out stays fixed. Without that argument this entry would be trading
+  sensitivity for false positives; with it, it is not.
+- **`STRONG_DOWN` scales with `STRONG_UP`**, at the ratio it has today
+  (7/18 ≈ 0.39), rather than staying at 7. The pair is a hysteresis band and a
+  band that narrows as the bar falls would start counting the same swing twice.
+  **Mine**, and it is the detail that would otherwise produce phantom doubles
+  in a quiet room.
+- **The range: `STRONG_UP` 13 when calm, 20 when busy**, against today's flat
+  18; `SUSTAIN_LEVEL` 0.45 to 0.60 against today's 0.55. So stillness buys
+  about 28% less force and constant motion costs a little more than today —
+  which is the correct direction, since a phone already being jostled should
+  demand a clearer statement. **Mine** as to the four numbers; the probe below
+  is what settles them.
+- **The context signal is a slow mean of `disturb`**, τ ≈ 25s — long enough
+  that walking to the stage raises the bar and a moment's fidget does not,
+  short enough that putting the phone down for half a minute makes it eager
+  again. Reading `disturb` is fine; it is *changing* it that is forbidden.
+- **The baseline freezes during a detection and its cooldown.** Without this
+  the feature eats itself: a shake is by definition a large `disturb`, so it
+  would raise its own bar mid-gesture and the second half of the shake would
+  fail to qualify. Classic adaptive-gain trap and the one bug this design can
+  produce. Freeze on the first reversal, thaw when the cooldown ends —
+  `STRONG_COOLDOWN` and `DOUBLE_WINDOW` already bracket exactly that span.
+- **Never adapt inside the double window.** A double is two shakes 3s apart;
+  the bar the second one faces must be the bar the first one faced, or the
+  gesture becomes unreliable in a way nobody could diagnose from the outside.
+  Falls out of the freeze above, and is worth asserting separately in the
+  probe.
+- **Report the live threshold.** The readout already carries `samples` and
+  `peak` for exactly this reason — with an adaptive bar, "I shook it and
+  nothing happened" gains a third possible cause, and the numeric readout is
+  the only thing that can tell the three apart on a real handset.
+- Deliberately **not** adapted: `STRONG_REVERSALS`, `STRONG_WINDOW`,
+  `QUIET_GAP`, `PEAK_CEILING`. The first two are the knock rejection and must
+  stay constant for the argument above to hold; the last was settled by entry
+  36 against the probe.
+
+**Lands in**
+- `src/shake.ts:76-92` — the constants become a calm-derived pair; the slow
+  mean and its freeze live beside `disturb`.
+- `src/shake.ts` `detectStrong` / `detectSustained` — read the current bar
+  rather than the constant.
+- `src/hud.ts` — the threshold in the readout.
+- `scripts/probe-shake.ts` — the cases below.
+
+**Done when** — the same synthetic shake that fires after 30s of stillness also
+fires when it is ~25% gentler; that gentler shake does **not** fire after 30s of
+simulated walking; every knock case still reports `strong 0` at the *lowest*
+bar, which is the case that matters; a double 3s apart still reads as a double;
+and no `disturb` value anywhere in the probe table changes by a single digit,
+which is what proves the frozen slip and the approved colour bias are untouched.
+**Verify** — `pnpm probe:shake`, extended with a calm-then-shake case and a
+walk-then-shake case. Then the phone, in a quiet room and then walking, which
+is the difference the numbers are standing in for.
+**Hard stops** — prefs no · url no · capture no · dependency no. **Note beyond
+the four**: entry 76 is frozen and entry 70's colour is approved; both consume
+`disturb`, and this entry's central constraint is that neither changes by a
+single frame.
