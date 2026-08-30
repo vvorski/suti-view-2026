@@ -3167,7 +3167,7 @@ build`, `pnpm lint` both clean. Not verified: real music on a phone, and
 entry's own Verify line.
 
 ### 39. Three more mappings, along the axes the first three do not use
-`status: ready` · added 2026-08-30
+`status: done` · added 2026-08-30 · shipped at build 154
 
 **Do** — add `beat`, `dynamics` and `bass-led` to `MAPPINGS`.
 **Why** — asked for, and the gap is structural: **all three existing mappings
@@ -3895,3 +3895,74 @@ powder still works with no accelerometer at all, which is the iOS path.
 `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs no (nothing is stored) · url no (no parameter) · capture
 no · dependency no (2D canvas, no library).
+
+### 47. Day mode: a tone curve, so the picture survives daylight
+`status: ready` · added 2026-08-30
+
+**Do** — add a day mode that lifts the midtones and the black level of the
+finished picture, on a chip, off by default.
+**Why** — the picture is hard to read in daylight, which is where a phone
+propped up in a room actually lives.
+
+**Decided**
+- **A tone curve, not an inverted palette** → **Mine**, and it is the entry's
+  whole shape. "Day mode" could mean a light ground with dark ink, and that
+  reading is coherent — but all thirteen shaders are built to *add light onto
+  black*: `screen`, `add` and the ripple wakes all assume a dark ground, and
+  inverting it means re-authoring every one of them. The complaint is
+  legibility in sunlight, not a preference for a light theme, and a tone curve
+  answers that in one place. If a genuine light theme is wanted later it is a
+  different and much larger entry.
+- **Gamma, not gain** → a multiplier brightens the highlights it already has
+  and clips them; what makes a dark picture readable outdoors is raising the
+  *midtones*. So `pow(col, vec3(1.0 / gamma))` with a small black-level lift,
+  starting at **gamma 1.7 and a lift of 0.06**, both settled by eye in
+  daylight rather than by argument here.
+- **A new uniform, because `uExposure` is already taken** → and this was
+  checked: `scene.ts:589` writes `uExposure` every frame from the camera's
+  light envelope (`0.85 + envelope * 0.3`) and `:547` resets it to 1 when the
+  camera is down. A day mode written into that uniform would be silently
+  overwritten on every frame the room is visible. So `uDay`, applied *after*
+  the exposure line at `composite.frag.glsl:153`.
+- `uDay` is **0..1 rather than a boolean** → identity at 0, so the whole
+  feature costs nothing when off, which is the same shape `uCameraMix` and
+  `uExposure` already use in that file. It also leaves room for the toggle to
+  fade rather than snap, and for a future light sensor to drive it, without
+  the uniform changing.
+- The chip, and where it comes from → a boolean gets a chip rather than a
+  band, which is the precedent `gravity` set at entry 30 and its comment
+  states outright. **Entry 45 frees a slot by removing the autopilot chip**,
+  so the arc's count comes back to where it is today. Build 45 first and the
+  arc re-spaces once rather than twice.
+- Stored as `day: boolean`, defaulting **off** → adding a field is the safe
+  half of the stored-shape rule, so no Hard Stop. Off by default for the same
+  reason `gravity` is: it changes what an untouched picture looks like, and a
+  returning visitor should find what they left.
+- **Build entry 34 first.** → two of the six merge modes currently force the
+  frame to black at zero atmospheric opacity, and the shuffle can land on them.
+  Some of "it's all very dark" is that defect rather than the tone curve's
+  absence, and shipping this first would mean tuning a gamma to compensate for
+  a bug — then finding the picture over-bright once the bug is fixed.
+- Scope is **the picture only** → not the HUD, not the gate. Both have their
+  own contrast decisions already, and entry 28 fixed the gate's specifically
+  against a measured 2.33:1. A global brightness that also touched them would
+  reopen a settled question in a place nobody is complaining about.
+
+**Lands in**
+- `src/shaders/composite.frag.glsl:65, 153` — the uniform and the curve, after
+  the exposure clamp.
+- `src/scene.ts:339` — the uniform's declaration, beside `uExposure`.
+- `src/prefs.ts` — `day: boolean`, defaulting false.
+- `src/hud.ts` — the chip, beside `gravChip`.
+
+**Done when** — with day mode on, a picture that was previously hard to make
+out indoors is legible on the phone outdoors, with no visible clipping of the
+bright parts and no colour shift. With it off, the frame is pixel-identical to
+today. The frame-time figure is unchanged in both states.
+**Verify** — outdoors, on the phone, in actual daylight, which is the only
+place the question exists — a desktop monitor cannot answer it and neither can
+a screenshot. Check it over both a bright view and a dark one, since a curve
+that rescues the dark one may blow out the bright one. On-screen check at
+320×568 and 360×640 for the chip. `pnpm build`, `pnpm lint`.
+**Hard stops** — prefs **no**: one boolean added, which is the safe half of the
+rule · url no · capture no · dependency no.
