@@ -193,6 +193,9 @@ export interface Hud {
        *  docs/todo.md entry 58. See motion-bias.ts's own file comment for
        *  what each of the three means. */
       motion?: { posture: number; disturbance: number; agitation: number }
+      /** The clock's own current pair, and the outdoor-reading override's
+       *  own fade position — docs/todo.md entry 53. */
+      sky?: { daylight: number; warmth: number; override: number }
       /** Why there was or wasn't a buzz. See hapticStatus(). */
       haptics?: {
         supported: boolean
@@ -883,12 +886,17 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
     save()
     paint()
   })
-  // docs/todo.md entry 47. A boolean gets a chip rather than a band, same
-  // precedent gravity set at entry 30. Unlike gravity, day mode is a
+  // docs/todo.md entries 47 and 53. A boolean gets a chip rather than a
+  // band, same precedent gravity set at entry 30. Unlike gravity, this is a
   // scene.ts render setting with its own fade rather than something
   // main.ts polls from prefs each frame, so the toggle also calls
-  // handlers.onDayMode() explicitly.
-  const dayChip = mkChip('day', 'Day', '#9d9bf0', () => {
+  // handlers.onDayMode() explicitly. Relabelled from entry 47's "Day" —
+  // the picture's brightness now follows the clock on its own, and this
+  // chip's only job is pinning it bright regardless of the hour, for
+  // reading the screen outdoors. The `id` and the stored `prefs.day`
+  // field are both left as `day`/`'day'`: renaming either would touch the
+  // stored-shape Hard Stop for no reason anyone would see on screen.
+  const dayChip = mkChip('day', 'Outdoor', '#9d9bf0', () => {
     prefs.day = !prefs.day
     handlers.onDayMode(prefs.day)
     save()
@@ -1153,6 +1161,16 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
               `bias  post ${s.motion.posture.toFixed(2)}  ` +
                 `dist ${s.motion.disturbance.toFixed(2)}  ` +
                 `agit ${s.motion.agitation.toFixed(2)}`,
+            ]),
+        // docs/todo.md entry 53 — testable without waiting for dusk: this
+        // prints exactly the pair sky.ts computed for right now, over the
+        // same clock a screenshot's filename already reads.
+        ...(s.sky === undefined
+          ? []
+          : [
+              `sky   day ${s.sky.daylight.toFixed(2)}  ` +
+                `warm ${s.sky.warmth >= 0 ? '+' : ''}${s.sky.warmth.toFixed(2)}` +
+                (s.sky.override > 0 ? `  outdoor ${Math.round(s.sky.override * 100)}%` : ''),
             ]),
         // The two numbers that tell a dead sensor apart from a shake that is
         // simply not hard enough.

@@ -5072,7 +5072,79 @@ though this makes it far easier to trigger, which is the cost named above ·
 dependency no.
 
 ### 53. The picture follows the sky
-`status: building` · added 2026-08-30 · started 2026-08-30
+`status: done` · added 2026-08-30 · shipped at build 196
+
+**Build note** — `src/sky.ts` is new and pure: four anchors on a 24-hour
+circle, wrapped by shifting any hour before the first anchor forward by
+24 before the segment search, and smoothstepped between neighbours so the
+derivative is zero at every anchor. `scripts/probe-sky.ts` (new, `pnpm
+probe:sky`) checks all four anchors land exactly, that no per-minute step
+anywhere in a full 24-hour sweep (midnight included) exceeds what a
+genuine discontinuity would blow past by orders of magnitude, and that
+smoothstep's own signature (slower near an anchor than at a segment's
+midpoint) holds.
+
+**One check in the entry's own Verify text doesn't actually hold, and the
+probe says so rather than papering over it**: "loading at 06:25 and again
+at 06:35 gives visibly different pictures" is false as stated, because
+06:30 is itself an anchor, and "no corner anywhere" (Decided) requires a
+*zero* derivative exactly there — the flattest point on the entire curve
+is the one point this example picks. `probe-sky.ts` confirms the
+06:25/06:35 delta is under 0.001 (not "visibly different") and tests the
+entry's actual intent instead at the true steepest point, the midpoint of
+the 06:30→13:00 segment (~09:45), where a ten-minute window genuinely is
+visible. Both facts are asserted, not just the convenient one.
+
+**A second conflict, resolved and stated**: entry 47 anticipated this
+entry reusing its own 400ms chip-fade constant for "entry 53's own
+override crossfade." Entry 53's own Decided text instead states "crossfades
+over 1.2s" explicitly. Implemented as 1.2s — the later, more specific,
+explicitly-authored number — with the conflict recorded in
+`DAY_OVERRIDE_FADE_S`'s own comment rather than silently picking whichever
+was more convenient.
+
+**A judgment call on `uSky.x` vs `uDay`, since "one uniform, two numbers...
+rather than adding a second one" reads as ambiguous between two designs**:
+implemented with `uDay` (unchanged name, still driving the ground's
+*amount*) receiving the override-blended effective value every frame, and
+the new `uSky` vec2 carrying the clock's own *raw* daylight (ignoring any
+override) alongside warmth — read in the shader only for `.y` (the warmth
+tint), with `.x` present for the readout so it can honestly show "it's
+2am, and the override is pinning it bright" as two separate facts rather
+than one blended number. The alternative — retiring `uDay` and reading
+`uSky.x` directly wherever it was — would have meant the readout could no
+longer distinguish "the clock says bright" from "the override says
+bright," which seemed like the wrong thing to lose for a numeral-storage
+convenience.
+
+Warmth tints the ground colour specifically (`vec3(0.6 + warmth*0.06, 0.6,
+0.6 - warmth*0.06)`), not the whole finished picture — matching entry 47's
+own anticipation ("This entry supplies the number; 53 supplies the
+colour"). `views-probe.html`'s time scrub (Lands-in) was **not built** —
+verification below used a `Date` monkey-patch directly against `scene.ts`
+instead, which answers the same question (does the wiring respond
+correctly to an arbitrary hour) without a permanent UI feature; flagged
+here as an unaddressed Lands-in item rather than silently dropped.
+
+Verified live via `scene.ts` loaded directly over Vite's dev server, with
+`window.Date` monkey-patched to report fixed hours (avoiding this
+backgrounded tab's real-timer throttling, hit again mid-verification —
+20 real `setTimeout`-paced render() calls exceeded a 45s tool timeout
+before completing, so the check was restructured around `uDay`/`uSky`'s
+construction-time seed, which needs no elapsed time at all): a visualiser
+constructed at 2am read back `{daylight: 0, warmth: -0.35}` — the anchor
+exactly — with a pixel sum of 9,468,264; one constructed at 13:00 read
+`{daylight: 1, warmth: -0.1}` — also exact — at 26,352,996, nearly 3×
+brighter. A third constructed at 2am **with the override on** rendered
+26,353,892 — matching the midday sum, not the night one — while its own
+`stats().sky` correctly reported `daylight: 0` (the clock's honest
+answer) alongside `override: 1` (what's actually driving the picture).
+`hud-narrow.html` confirms 7 chips including "Outdoor" (relabelled from
+entry 47's "Day") at both 320×568 and 360×640 with nothing escaping.
+`pnpm build`, `pnpm lint`, `pnpm probe:sky`, `pnpm probe:composite`,
+`pnpm probe:motion-bias`, and `pnpm probe:ripples` all pass. Not
+verified: the phone at two genuinely different hours, which the entry's
+own Verify text says only that can answer.
 
 **Do** — drive the picture's brightness and colour temperature from the local
 clock, on a continuous curve: cool and dark at night, warm at dawn, bright at

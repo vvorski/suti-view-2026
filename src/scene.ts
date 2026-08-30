@@ -53,6 +53,7 @@ import {
   type MotionBias,
 } from './engine'
 import { MAX_OFFSET, overscanFor, type TumbleState } from './shake'
+import { skyFor } from './sky'
 import compositeFrag from './shaders/composite.frag.glsl?raw'
 import vertexShader from './shaders/fullscreen.vert.glsl?raw'
 import {
@@ -65,11 +66,22 @@ import {
 /** Texels in the instantaneous spectrum texture. 128 reads smoothly. */
 const SPECTRUM_SIZE = 128
 
-/** Seconds for day mode's toggle to fade fully on or off — docs/todo.md
- *  entry 47. Long enough to read as a transition, short enough to still
- *  feel like a button; entry 53's own override crossfade reuses this
- *  constant rather than inventing a second one. */
-const DAY_FADE_S = 0.4
+/** Seconds for the day-mode chip's override to fade fully on or off —
+ *  docs/todo.md entry 53. Entry 47 originally built this control as the
+ *  chip's own on/off fade at 400ms and suggested entry 53 reuse that
+ *  constant; entry 53's own Decided text instead states 1.2s explicitly
+ *  for this specific transition ("Toggling that override crossfades over
+ *  1.2s"), which is the later and more specific number, so it wins here —
+ *  a conflict worth naming rather than silently picking one. The clock's
+ *  own movement needs no separate fade constant at all: it changes only
+ *  once a second (below) and smoothstep already eases it, so nothing
+ *  about the clock's motion can produce a step for a rate constant to
+ *  soften. */
+const DAY_OVERRIDE_FADE_S = 1.2
+/** How often the clock is sampled — docs/todo.md entry 53. "Over a minute
+ *  the change is invisible... sampling once a second is ample; per-frame
+ *  would be waste." */
+const SKY_SAMPLE_S = 1
 
 /**
  * Rolling spectrogram uploaded to the GPU: one column per time slot, one row
@@ -130,10 +142,12 @@ export interface VisualiserOptions {
   geoAlpha: number
   /** 0-1. The atmospheric layer's opacity, applied before the merge mode. */
   atmAlpha: number
-  /** Day mode's starting state — docs/todo.md entry 47. Seeded directly
-   *  rather than always starting at 0 and fading in via `setDayMode()`, so
-   *  a session that left day mode on finds it already on, not fading in
-   *  over 400ms on every load. */
+  /** The outdoor-reading override's starting state — docs/todo.md entries
+   *  47 and 53. Seeded directly rather than always starting at 0 and
+   *  fading in via `setDayMode()`, so a session that left it on finds it
+   *  already on, not fading in on every load. The picture's actual
+   *  brightness the rest of the time comes from the local clock (see
+   *  `sky.ts`), not from this field. */
   day: boolean
 }
 
@@ -208,9 +222,12 @@ export interface Visualiser {
   /** 0-1, the atmospheric layer's opacity. */
   setAtmAlpha(a: number): void
   /**
-   * Day mode on or off — docs/todo.md entry 47. A boolean in, not 0-1: the
-   * chip is a toggle, and the fade between its two states over about 400ms
-   * is `render()`'s own job, ticked once per frame the same way every other
+   * The outdoor-reading override on or off — docs/todo.md entries 47 and
+   * 53. Originally "day mode on/off"; entry 53 repurposes the same chip
+   * into an override that pins the clock-driven daylight to 1, for reading
+   * the screen outdoors at any hour. A boolean in, not 0-1: the chip is a
+   * toggle, and the fade between its two states over about 1.2s is
+   * `render()`'s own job, ticked once per frame the same way every other
    * per-frame quantity here is, so the transition rides the render loop's
    * own clock rather than a CSS transition or a second timer.
    */
@@ -234,6 +251,11 @@ export interface Visualiser {
      *  numeric readout. Without these, "is this doing anything" is
      *  unanswerable for a feature whose whole design brief is slight. */
     motion: { posture: number; disturbance: number; agitation: number }
+    /** docs/todo.md entry 53 — the clock's own current pair, and whether
+     *  the outdoor-reading override is currently pinning it. Testable
+     *  without waiting for dusk: the readout prints what the clock says
+     *  right now, over the pair `sky.ts` is a pure function of. */
+    sky: { daylight: number; warmth: number; override: number }
   }
   /**
    * Save the next composited frame as a PNG blob, once. `onReady` runs after
@@ -367,6 +389,11 @@ export function createVisualiser(
     stencilBuffer: false,
   })
 
+  // Read once, at construction, so the first frame matches the hour it is
+  // actually loaded at rather than defaulting to night — docs/todo.md
+  // entry 53.
+  const skyForNow = skyFor(new Date())
+
   const compositeUniforms = {
     uAtmosphere: { value: atmosphereTarget.texture },
     uGeometry: { value: geometryTarget.texture },
@@ -400,11 +427,22 @@ export function createVisualiser(
     // down, so a session that never raises it pays nothing for this uniform
     // existing.
     uExposure: { value: 1 },
-    // Day mode — docs/todo.md entry 47. 0 is identity and everything this
-    // ever is off by default, same shape uCameraMix/uExposure already use.
-    // Seeded from options.day so a stale first frame (before render() has
-    // ticked dayCurrent even once) matches what was actually stored.
-    uDay: { value: options.day ? 1 : 0 },
+    // Day mode — docs/todo.md entries 47 and 53. Entry 47 built this as a
+    // chip's own on/off value; entry 53 makes it continuous, driven by the
+    // local clock (see skyFor()) every second, with the chip repurposed
+    // into an override that pins it to 1 for reading the screen outdoors
+    // at any hour — its stored `day` boolean is unchanged, only what it
+    // means. 0 is still identity and everything this ever is at 2am with
+    // the override off. Seeded from the clock's own value right now (or 1
+    // if the override was left on) rather than 0, so the first frame
+    // matches what the hour actually is rather than defaulting to night.
+    uDay: { value: options.day ? 1 : skyForNow.daylight },
+    // The clock's own two numbers, for the ground's warmth tint —
+    // docs/todo.md entry 53. One uniform rather than two: they are always
+    // computed together from one clock and always meant to be read
+    // together, and splitting them is how one gets updated without the
+    // other.
+    uSky: { value: new Vector2(skyForNow.daylight, skyForNow.warmth) },
   }
   const compositeMaterial = new ShaderMaterial({
     vertexShader,
@@ -514,14 +552,19 @@ export function createVisualiser(
   let motionDisturb = 0
   let baseGeoColour: GeoColour = options.geoColour
   let baseAtmColour: GeoColour = options.atmColour
-  // Day mode — docs/todo.md entry 47. `dayTarget` is what the chip last
-  // asked for; `dayCurrent` chases it at a fixed rate so the fade takes
-  // about DAY_FADE_S regardless of frame rate, ticked in render() the same
-  // way every other per-frame quantity here is rather than through a CSS
-  // transition or a second timer. Both seeded from options.day, not 0 — a
-  // session that left it on should find it already on, not fading in.
-  let dayTarget = options.day ? 1 : 0
-  let dayCurrent = dayTarget
+  // Day mode — docs/todo.md entries 47 and 53. `overrideTarget` is what the
+  // chip last asked for; `overrideCurrent` chases it over
+  // DAY_OVERRIDE_FADE_S, ticked in render() the same way every other
+  // per-frame quantity here is. `uDay` each frame is a mix between the
+  // clock's own `skyDaylight` (updated once a second, below) and 1 — pinned
+  // fully once the override has faded all the way in. Seeded from
+  // options.day, not 0 — a session that left the override on should find
+  // it already on, not fading in.
+  let overrideTarget = options.day ? 1 : 0
+  let overrideCurrent = overrideTarget
+  let skyDaylight = skyForNow.daylight
+  let skyWarmth = skyForNow.warmth
+  let sinceSkySample = 0
   // For stats() below, which is called independently of render() — the
   // numeric readout's own posture/disturbance/agitation line reads this.
   let lastMotion: MotionBias = { r: 0, g: 0, b: 0, posture: 0, disturbance: 0, agitation: 0 }
@@ -852,13 +895,32 @@ export function createVisualiser(
       const motion = updateMotionBias(motionBias, dt, motionTiltX, motionTiltY, motionDisturb)
       lastMotion = motion
 
-      // docs/todo.md entry 47. A fixed rate rather than an exponential
-      // envelope, so "about 400ms" is a duration the toggle actually takes
-      // rather than a time constant it asymptotically approaches.
-      const dayStep = dt / DAY_FADE_S
-      dayCurrent =
-        dayTarget > dayCurrent ? Math.min(dayTarget, dayCurrent + dayStep) : Math.max(dayTarget, dayCurrent - dayStep)
-      compositeUniforms.uDay.value = dayCurrent
+      // docs/todo.md entries 47 and 53. The clock is sampled once a second
+      // (SKY_SAMPLE_S) rather than every frame — "over a minute the change
+      // is invisible... per-frame would be waste" — while the override
+      // fade still ticks every frame, since that transition is the one
+      // place in this feature something actually needs to look smooth on
+      // a short timescale.
+      sinceSkySample += dt
+      if (sinceSkySample >= SKY_SAMPLE_S) {
+        sinceSkySample = 0
+        const sky = skyFor(new Date())
+        skyDaylight = sky.daylight
+        skyWarmth = sky.warmth
+      }
+      // A fixed rate rather than an exponential envelope, so "1.2s" is a
+      // duration the toggle actually takes rather than a time constant it
+      // asymptotically approaches.
+      const overrideStep = dt / DAY_OVERRIDE_FADE_S
+      overrideCurrent =
+        overrideTarget > overrideCurrent
+          ? Math.min(overrideTarget, overrideCurrent + overrideStep)
+          : Math.max(overrideTarget, overrideCurrent - overrideStep)
+      // The override pins daylight to 1, fading in over its own transition
+      // rather than snapping — reading outdoors at any hour, regardless of
+      // what the clock itself says right now.
+      compositeUniforms.uDay.value = skyDaylight + (1 - skyDaylight) * overrideCurrent
+      compositeUniforms.uSky.value.set(skyDaylight, skyWarmth)
       compositeUniforms.uGeoColour.value.set(
         baseGeoColour.r + motion.r,
         baseGeoColour.g + motion.g,
@@ -988,7 +1050,7 @@ export function createVisualiser(
     },
 
     setDayMode(on) {
-      dayTarget = on ? 1 : 0
+      overrideTarget = on ? 1 : 0
     },
 
     setPassthrough(source, mix) {
@@ -1028,6 +1090,7 @@ export function createVisualiser(
       frameMs,
       pixelRatio: RATIO_LADDER[rung],
       motion: { posture: lastMotion.posture, disturbance: lastMotion.disturbance, agitation: lastMotion.agitation },
+      sky: { daylight: skyDaylight, warmth: skyWarmth, override: overrideCurrent },
     }),
 
     dispose() {

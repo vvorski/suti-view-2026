@@ -64,13 +64,20 @@ uniform vec2 uCameraFit;
 // existing.
 uniform float uExposure;
 
-// Day mode — docs/todo.md entry 47. 0 is identity (and everything this ever
-// is off by default), same shape uCameraMix and uExposure already use in
-// this file, which is also what lets the chip fade this rather than snap it.
-// Not folded into uExposure: that uniform is already claimed, rewritten every
-// frame from the camera's own light envelope (scene.ts), and a day-mode write
-// into it would be silently overwritten the instant the room is visible.
+// Day mode — docs/todo.md entries 47 and 53. Driven by the local clock every
+// second now, not only by a chip: 0 is 2am, 1 is midday, and everything this
+// ever is at 2am with the outdoor-reading override off. Same 0-1 shape
+// uCameraMix and uExposure already use in this file, which is also what lets
+// the override fade rather than snap. Not folded into uExposure: that uniform
+// is already claimed, rewritten every frame from the camera's own light
+// envelope (scene.ts), and a write into it here would be silently overwritten
+// the instant the room is visible.
 uniform float uDay;
+// The clock's own two numbers — docs/todo.md entry 53. x duplicates uDay's
+// pre-override value (unused in this file; scene.ts reads it back for the
+// numeric readout), y is warmth, -1 (cool) .. 1 (warm), read below to tint
+// the ground rather than leaving it a flat, opinionless grey.
+uniform vec2 uSky;
 
 vec3 overlayBlend(vec3 base, vec3 top) {
   vec3 lo = 2.0 * base * top;
@@ -169,10 +176,14 @@ void main() {
   // cannot promise that. 0.6 at full day, scaled by (1 - uCameraMix): a light
   // ground under a real camera frame washes the room to milk, and the room
   // does not need it — uExposure two lines up already answers the actual
-  // light in it. The ground itself stays a plain neutral vec3(0.6), not
-  // tinted here — entry 53 tints this exact number from the hour of day, and
-  // a ground with its own opinion about warmth would fight it.
-  float ground = 0.6 * uDay * (1.0 - uCameraMix);
+  // light in it.
+  //
+  // Warm at dawn and dusk, coolest in the small hours — entry 53's own
+  // ±6% on red and blue, a bias rather than a filter: at filter strength the
+  // visualiser's own palette stops being the thing being looked at. Entry 47
+  // supplied the plain 0.6; this is the colour it promised to arrive with.
+  vec3 groundColour = vec3(0.6 + uSky.y * 0.06, 0.6, 0.6 - uSky.y * 0.06);
+  vec3 ground = groundColour * uDay * (1.0 - uCameraMix);
   col = 1.0 - (1.0 - col) * (1.0 - ground);
 
   gl_FragColor = vec4(col, 1.0);
