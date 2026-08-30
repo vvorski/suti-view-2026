@@ -7322,3 +7322,89 @@ eye") already concedes.
 **Hard stops** — prefs **yes — a new field only**, `skyOverride`, with
 `day: true` migrated on read and never rewritten; the existing field's type and
 meaning are untouched · url no · capture no · dependency no.
+
+### 72. Camera mode: the room becomes the picture, and a tap is the shutter
+`status: ready` · added 2026-08-30
+
+**Do** — make the camera a *mode*, not a dial. One tap of the camera chip
+enters it; after that every tap of the picture takes a photo. A translucent
+shutter glyph sits in the centre saying so, the visualiser keeps running over
+the room, and the menu cannot open until you leave.
+
+**Why** — the camera is currently a mix band buried in the panel, which is a
+setting rather than an act. Nobody holds up a phone to adjust a slider.
+
+**Decided**
+- **The shutter is instant, and that falls out of the mode rather than being
+  bolted on.** Outside camera mode a single tap must wait `TAP_RESOLVE_MS`
+  (entry 67: 400ms) to learn whether a second tap is coming, because a double
+  opens the menu. **In camera mode the menu cannot open, so there is no second
+  meaning to wait for** — the tap fires the shutter on `pointerdown`, with no
+  delay at all. This is the strongest argument for the mode existing: it makes
+  the app's one genuinely laggy interaction disappear exactly where lag is
+  least acceptable.
+- **Entering** → a camera chip on the arc. One tap enters the mode *and*
+  closes the panel, so "first click puts into camera mode" is literally one
+  click and you are already looking at the room. **Mine.**
+- **Leaving is the two-finger tap**, the same gesture entry 67 reserved as the
+  guaranteed way to the menu. **Mine**, and the symmetry is the point: two
+  fingers always means *get me out of what I am in*. In camera mode it exits to
+  the normal picture rather than opening the panel, which keeps "the menu never
+  opens in this mode" literally true while never stranding anyone. A mode with
+  no exit is how the fullscreen and menu bugs both happened; this one gets its
+  exit decided in the same entry that creates it.
+- **The mix is a render-time override, never a stored write** — the seam
+  entries 48, 58 and 60 established. Entering raises passthrough to **0.75**:
+  the room is plainly the subject, the visualiser is plainly still on top of it.
+  Leaving restores whatever the band was set to, so the mode borrows the dial
+  and gives it back. **Mine** as to 0.75.
+- **The glyph, and this is the "cool" part being spent deliberately in one
+  place** → a thin aperture ring, centred, `currentColor` in the same `ICONS`
+  vocabulary as every other glyph, resting at **0.25 opacity** so it reads as a
+  viewfinder mark rather than a button. On a shutter it **contracts to 0.85
+  scale and blooms back over 180ms** — the one mechanical gesture a camera
+  makes — and then the existing `#capture-flash` fires unchanged. No shutter
+  sound, no border flash, no vignette: the restraint is what makes the one
+  movement read.
+- **The glyph is never in the photo, and this needs no work** →
+  `requestCapture` reads the WebGL canvas, and both the glyph and
+  `#capture-flash` are DOM. Worth stating because entries 50 and 52 decided the
+  *opposite* for the touch ring ("it is picture, not UI") and a builder
+  reasoning from those would try to include this one.
+- **The animation is untouched**, as asked: no pause, no freeze-frame preview,
+  no dimming. The photo is of the live composite exactly as seen, which is what
+  every capture in this app has always been.
+- **Rate limit drops to 300ms** in the mode, from entry 52's 700. That limit
+  exists so a flurry of accidental taps does not fill the camera roll; in
+  camera mode every tap is deliberate and the constraint inverts. **Mine.**
+- **The mode does not survive a reload.** **Mine**, and it is a privacy call
+  rather than a convenience one: restoring it on load would open the camera
+  and light the OS indicator without a gesture, which is the start gate's
+  promise broken in the most visible possible way — `applyPassthrough`'s own
+  comment already says exactly this about holding a stream behind a zero.
+- **The director must not fight it** → entry 45 has it always on with a 30s
+  ceiling, and it rolls the camera mix among other things (`CAMERA_ROLL_CHANCE`).
+  While camera mode is on it may keep rolling views and colours — the picture
+  should still be alive — but it must not touch passthrough. **Mine.**
+
+**Lands in**
+- `src/main.ts:908-945` — `applyPassthrough` gains the override/restore pair.
+- `src/main.ts:990-1130` — the tap dispatch branches on the mode: shutter on
+  `down`, no pending-tap bookkeeping, two fingers exit.
+- `src/main.ts:853` — the director's camera roll skips while the mode is on.
+- `src/hud.ts` — the chip; `index.html` — the glyph and its two keyframes.
+
+**Done when** — one tap of the chip shows the room with the picture over it and
+the panel gone; every tap after that saves a frame with no perceptible delay
+and blooms the ring; a double tap saves two frames and does **not** open the
+menu; two fingers return to the normal picture with the passthrough band back
+where it was; the glyph appears in no saved PNG; and a reload comes back with
+the camera off and dark.
+**Verify** — the phone, pointed at something worth photographing. The delay
+claim is the one to feel rather than measure: tap-to-flash should be
+indistinguishable from instant, where today it is 400ms.
+**Hard stops** — prefs no (the mix override is render-time; nothing stored
+changes, and the mode itself is deliberately not stored) · url no · capture
+**yes, and answered**: the frame is the same live composite `requestCapture`
+already reads, the glyph and flash are DOM and cannot enter it, the filename
+shape is unchanged, and nothing leaves the device · dependency no.
