@@ -4199,7 +4199,7 @@ powder still works with no accelerometer at all, which is the iOS path.
 no · dependency no (2D canvas, no library).
 
 ### 47. Day mode: a light ground, so the picture survives daylight
-`status: ready` · added 2026-08-30
+`status: building` · added 2026-08-30 · started 2026-08-30
 
 **Do** — add a day mode that puts the picture on a **light ground** instead of
 a black one, on a chip, off by default.
