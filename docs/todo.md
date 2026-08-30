@@ -6447,7 +6447,7 @@ covers the state machine and the phone covers the behaviour.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 63. The app is called kiyo · plays
-`status: ready` · added 2026-08-30
+`status: building` · added 2026-08-30 · started 2026-08-30
 
 **Do** — replace the name everywhere a person sees it. Leave the repository,
 both deploy URLs and the stored prefs key exactly as they are.
