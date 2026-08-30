@@ -10614,3 +10614,120 @@ is the hour this entry claims is the most alive.
 rule, restated because this entry is the second consumer of that location) ·
 capture no · dependency no (the moon maths is entry 96's, already refused a
 library).
+
+### 101. Rose — Circles turned ninety degrees, and spinning
+`status: ready` · added 2026-08-30
+
+**Do** — a seventh geometric view: spokes instead of rings, sweeping in angle
+instead of travelling in radius, several at once and turning against each
+other. Same monochrome hard-edged stroke vocabulary as Circles, same
+event-driven births, an angular ladder in place of the concentric one.
+
+**Why** — asked for: *"geometric lines spinning inspired by the circles but
+richer"*. "Inspired by the circles" is taken literally rather than loosely, and
+that is what makes the view defensible instead of decorative: there is an exact
+sense in which a line is the dual of a ring, and building it that way gives the
+new view its own structure rather than a second helping of Circles'.
+
+**Decided**
+- **The dual, stated precisely.** A ring is the locus of constant *radius*; a
+  spoke is the locus of constant *angle*. Circles' rings are born at the centre
+  and travel outward in radius. **Rose's spokes are born at an angle and travel
+  in angle** — they sweep. That single substitution generates everything else
+  in this entry, and it is why "spinning" and "inspired by Circles" are the
+  same requirement rather than two.
+- **Therefore the ladder is angular.** Circles' distinguishing feature is its
+  wake ladder, and its own header explains why only Circles can have one: the
+  emitter never moves, so every ring crosses the same set of radii, and the
+  frame between hits becomes a record of the hits. Rose inherits that argument
+  rotated: every spoke sweeps through the same set of *bearings*, so the frame
+  carries a standing set of fine radial rules at fixed angles, lit as a spoke
+  passes and fading afterwards. Between hits the picture says **which
+  directions were struck, and how long ago**. Drift, Chorus and Tide could not
+  have Circles' ladder; none of the six can have this one.
+- **And it stays computed, not accumulated** — the property that lets Circles
+  do this in one pass with no history buffer. A spoke at constant angular
+  velocity ω born at angle θ₀ has crossed rule φ most recently at
+  `mod(θ(t) − φ, 2π) / ω` — closed form, one subtraction and a modulo, exactly
+  as Circles' `since = age − LIFESPAN * rungR / maxRadius` is. No ping-pong
+  target, no new uniform, no nested loop. If this had needed a history buffer
+  it would have been the wrong idea.
+- **"Richer" is N-fold symmetry, and it is free.** A hit does not fire one
+  spoke, it fires a **rosette** of N equally spaced ones. The cost of that is
+  zero per fragment, because N-fold symmetry is `mod(θ, 2π/N)` — a modulo, not
+  a loop. This is the whole reason the view can be visually much busier than
+  Circles while costing about the same, and it is worth writing down because it
+  is the opposite of the usual trade.
+- **N comes from `uSeed`, per section, not per hit.** Three, five, six or
+  eight-fold, re-rolled with everything else, so a section has *its own
+  symmetry* — the same thing `uSeed` already does for Drift's path and Chorus's
+  node count. Per-hit N was the other option and it is worse: the symmetry is
+  the strongest thing on screen, and changing it every transient reads as the
+  picture being rebuilt rather than played.
+- **The spin does not decay, and that is what makes it rich.** Each rosette
+  turns at a constant rate set by its hit's loudness, and simply fades out on
+  the same life as a Circles ring rather than slowing. Constant rates are the
+  point: two or three rosettes turning at *different* constant rates precess
+  through one another and produce beating and moiré that no single ring system
+  can. A decaying spin would give every rosette the same ending and the
+  interference would never form. **Odd slots turn the other way**, so
+  counter-rotation supplies the strongest beats for free.
+- **This is not Shards, and the distinction is worth stating** since the family
+  already has an angular member. Shards are fragments *thrown outward*, each
+  spinning about itself and slowing — debris. Rose's lines are **anchored at
+  the centre** and sweep about it — a radar, a lighthouse, a compass rose.
+  Nothing translates; only bearings change.
+- **The stroke vocabulary transposes directly.** Circles draws a broad band
+  with a thinner one inside it at 0.70 of the radius; Rose draws a broad spoke
+  with a thinner, shorter one alongside it. Same idiom, same two constants,
+  rotated. Monochrome, hard-edged, no gaussians — the layer's two standing
+  rules (`circles.frag.glsl` header) apply unchanged, and colour arrives
+  afterwards as the RGB filter it already is.
+- **The beat gets the standing drift.** Between hits the whole ladder creeps,
+  and when the tracker is confident that creep is quantised — the field
+  advances one rung per beat instead of sliding continuously. At
+  `uBeatConfidence == 0` the quantised term is exactly 0 and the drift is the
+  plain continuous one, so a session with no tempo lock renders identically to
+  one where the term does not exist. Same algebraic identity discipline as
+  `uDay`, `uSlip` and Circles' own beat ring.
+- **Touch spawns a rosette at the finger, and does not light the ladder** —
+  Circles' resolution, for Circles' reason: the ladder is a standing structure
+  keyed to bearing *from centre*, which an off-centre sweep does not cross in
+  any way its arithmetic understands. The touch loop needs its own `atan` per
+  live slot, which the existing `age` guard already skips for dead ones, so a
+  session that never touches the screen pays one hoisted `atan` and no more.
+- **It goes fourth in the registry**, at the end of the three originals and
+  before Drift. `views.ts`'s own comment says the first three are the three
+  answers to "what does a hit look like" and the last three are the same answer
+  from somewhere else. Rose is a **fourth answer**, not a variant, so it joins
+  the first group and leaves the variant block intact. Registry order is HUD
+  order, and this keeps the HUD's grouping honest.
+- **The name is Mine.** *Rose* as in compass rose — the standing bearings and
+  the N-fold rosette are the same figure, and the family's labels are all one
+  evocative word. *Sweep* was the other candidate and describes the motion but
+  not the structure. It is a one-word change if it is wrong.
+
+**Lands in** `src/shaders/rose.frag.glsl` (new); `src/views.ts` — a fourth
+entry in `GEOMETRIC_VIEWS`, before `drift`. Nothing else: `prefs.ts`,
+`hud.ts`, `scene.ts` and the shuffle all read the registry, so a new key is
+picked up by the HUD list, by `?geometric=`, and by the re-roll with no further
+change — which is a good check that the registry is doing its job.
+**Done when** — a hit fires a turning N-fold rosette whose spokes carry the
+double stroke; two overlapping rosettes visibly beat against each other; the
+angular ladder holds a fading record of recent bearings and is dark in the
+directions nothing has swept; `uSeed` re-rolls the symmetry order; silence
+leaves a slowly creeping field rather than a dead frame; and with
+`uBeatConfidence` pinned to 0 the frame is identical to the same trace with the
+beat term removed from the source.
+**Verify** — the same way every other view in this layer was: on the phone,
+against a real room, and specifically **during silence**, which is where a
+standing angular ladder either reads as structure or as a screen door — the
+failure `RUNG`'s comment records for the concentric one. Then frame time on the
+phone with sixteen fingers down, which is the only case that pays the `atan`s.
+**Hard stops** — prefs **yes, and answered**: `GeometricViewName` gains a
+member, which is additive — the stored field is still one string, and
+`isGeometricViewName` already rejects unknown values on load, so a phone that
+stores `rose` and then loads an older build falls back rather than breaking.
+The stored *shape* is untouched · url no, `?geometric=rose` is the existing
+parameter with an existing shape · capture no · dependency no — one more
+fragment shader, no library.
