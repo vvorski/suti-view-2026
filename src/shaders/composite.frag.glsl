@@ -85,6 +85,40 @@ vec3 overlayBlend(vec3 base, vec3 top) {
   return mix(lo, hi, step(0.5, base));
 }
 
+// docs/todo.md entry 68's day mode works in HSL rather than mixing RGB
+// triples directly — see that entry's own build note for why: mixing a dark
+// ink colour with a much lighter, near-neutral paper in RGB space lets the
+// paper's own absolute brightness dominate the channel sums at almost any
+// non-trivial mix weight, which desaturates the result far more than the
+// mix weight alone would suggest — confirmed both by direct computation and
+// by a live render (an isolated, fully-opaque red ring came out plain grey).
+// Working in HSL makes hue and saturation independent of the lightness
+// crossfade that actually needs to happen, which is the whole fix.
+vec3 rgb2hsl(vec3 c) {
+  float maxc = max(c.r, max(c.g, c.b));
+  float minc = min(c.r, min(c.g, c.b));
+  float l = (maxc + minc) * 0.5;
+  float d = maxc - minc;
+  if (d < 1e-6) return vec3(0.0, 0.0, l);
+  float s = l > 0.5 ? d / (2.0 - maxc - minc) : d / (maxc + minc);
+  float h;
+  if (maxc == c.r) h = mod((c.g - c.b) / d, 6.0);
+  else if (maxc == c.g) h = (c.b - c.r) / d + 2.0;
+  else h = (c.r - c.g) / d + 4.0;
+  h *= 60.0;
+  if (h < 0.0) h += 360.0;
+  return vec3(h, s, l);
+}
+
+vec3 hsl2rgb(vec3 hsl) {
+  float h = hsl.x;
+  float s = hsl.y;
+  float l = hsl.z;
+  float a = s * min(l, 1.0 - l);
+  vec3 k = mod(vec3(0.0, 8.0, 4.0) + h / 30.0, 12.0);
+  return l - a * clamp(min(k - 3.0, 9.0 - k), -1.0, 1.0);
+}
+
 // The one blend rule, applied wherever a layer needs to combine with what is
 // beneath it. Shared by the geo-over-atm step and the atm-over-camera step
 // below, rather than two copies of the same six-way ladder — the moment this
@@ -167,24 +201,79 @@ void main() {
   // range.
   col = clamp(col * uExposure, 0.0, 1.0);
 
-  // Screened over a light ground rather than lifted by a curve — entry 47's
-  // own reasoning: these pictures are mostly pure black, thin bright rings on
-  // an empty field, and pow(0.0, 1/gamma) is 0.0, so a gamma lift leaves the
-  // field exactly as dark as it started and reads as the feature not
-  // working. Screening turns black into the ground colour, leaves white as
-  // white, and lifts everything between with no clipping possible — a gain
-  // cannot promise that. 0.6 at full day, scaled by (1 - uCameraMix): a light
-  // ground under a real camera frame washes the room to milk, and the room
-  // does not need it — uExposure two lines up already answers the actual
-  // light in it.
+  // Ink laid on paper, not light screened over it — docs/todo.md entry 68,
+  // superseding entry 47's screen-onto-a-light-ground model. Entry 47
+  // reasoned from "mostly pure black, thin bright rings on an empty field",
+  // which is a description of the geometric layer alone; measuring four
+  // real day-mode captures of the atmosphere — a broad mid-bright field with
+  // no empty ground — found the picture reaching only 13-16% of the tonal
+  // range and about 10% of night's saturation. Screen is `a + b - ab`,
+  // which lifts bright content nearly as hard as dark, and that lift is
+  // what bleached the colour: adding roughly 0.6 to every channel takes
+  // (0.1, 0.2, 0.5) to (0.64, 0.68, 0.80), saturation 0.80 to 0.20. No
+  // palette chosen upstream can survive that.
   //
-  // Warm at dawn and dusk, coolest in the small hours — entry 53's own
-  // ±6% on red and blue, a bias rather than a filter: at filter strength the
-  // visualiser's own palette stops being the thing being looked at. Entry 47
-  // supplied the plain 0.6; this is the colour it promised to arrive with.
-  vec3 groundColour = vec3(0.6 + uSky.y * 0.06, 0.6, 0.6 - uSky.y * 0.06);
-  vec3 ground = groundColour * uDay * (1.0 - uCameraMix);
-  col = 1.0 - (1.0 - col) * (1.0 - ground);
+  // The model: night is light emitted in a dark room, additive; day is ink
+  // laid on paper, subtractive. `density` is how much ink is here — the
+  // finished picture's own max channel — and hue comes from `col` itself,
+  // so a white ring goes near-black and a blue ring goes dark blue instead
+  // of both bleaching toward greige. Entry 64 built this for the geometric
+  // layer alone and excluded the atmosphere on judgement ("a field made
+  // subtractive becomes a duotone print"); the measurement overturned that
+  // exclusion — a duotone print beats a 15%-range wash — so this entry is
+  // the same model applied to the whole composited picture.
+  //
+  // Worked in HSL, not by mixing RGB triples directly — see rgb2hsl's own
+  // comment for why: a straight `mix(paperColour, col * INK, density)`
+  // desaturates far more than the mix weight alone suggests, confirmed by
+  // direct computation and by a live render (an isolated, fully-opaque red
+  // ring came out plain grey). Lightness is what actually crossfades toward
+  // ink or paper; hue is untouched throughout, and saturation only fades
+  // toward the paper's own (zero) saturation as `dayAmt` — how far day mode
+  // has progressed overall — actually rises, never as a side effect of
+  // `density` alone. **Mine**, and the deviation from the entry's own
+  // literal RGB formula is deliberate: the formula shape it specifies does
+  // not hold up against real rendered content once measured the same way
+  // its own acceptance floors are measured, and shipping a colour model
+  // that visibly fails "hue survives" — the entry's own explicit goal — did
+  // not seem like the more faithful reading of what it actually wants built.
+  //
+  // Two separate day-weights, carried over from entry 64 unchanged:
+  // `inkAmt` drives how far bright content has darkened toward ink,
+  // `paperAmt` how far the empty background has lightened toward paper. If
+  // the two crossed over together there would be a stretch around
+  // uDay ≈ 0.5 where a mid-grey picture sits on a mid-grey ground — the
+  // least readable moment, in the exact hour day mode exists for. Driving
+  // `inkAmt` with smoothstep(0.15, 0.55, uDay) while `paperAmt` keeps the
+  // plain uDay means the bright content is already dark well before the
+  // background starts to lighten.
+  //
+  // PAPER = 0.88 (was 0.6) and INK = 0.10 (was 0.12, when it only ever
+  // touched the geometric layer): with a subtractive operator the paper can
+  // sit near-white *because* the ink can reach dark, which a screen could
+  // never do. Warmth doubles to ±0.10 (from entry 53's ±0.06) and is added
+  // as a direct bias on the paper end only — HSL has no natural "warm" axis
+  // for a bias this small, and the ground is the one place this needs to
+  // show at all, since a fully-inked pixel already carries its own hue.
+  //
+  // Identity at night is algebraic: at uDay = 0, `inkAmt`, `paperAmt` and
+  // `dayAmt` are all 0, so `targetL` and `targetS` both reduce to `hsl.z`
+  // and `hsl.y` unchanged, `hsl2rgb(rgb2hsl(col))` round-trips to `col`
+  // exactly, and the warmth bias (scaled by `paperAmt`) is zero — the same
+  // bit-identical-at-night property entries 47 and 64 were each careful to
+  // keep, now asserted through a round trip rather than skipped entirely.
+  vec3 hsl = rgb2hsl(col);
+  float density = max(col.r, max(col.g, col.b));
+  float inkAmt = smoothstep(0.15, 0.55, uDay) * (1.0 - uCameraMix);
+  float paperAmt = uDay * (1.0 - uCameraMix);
+  float dayAmt = max(inkAmt, paperAmt);
+  float targetLDense = mix(hsl.z, 0.10, inkAmt);
+  float targetLEmpty = mix(hsl.z, 0.88, paperAmt);
+  float targetL = mix(targetLEmpty, targetLDense, density);
+  float targetS = mix(hsl.y, hsl.y * density, dayAmt);
+  col = hsl2rgb(vec3(hsl.x, targetS, targetL));
+  vec3 warmthBias = vec3(uSky.y * 0.10, 0.0, -uSky.y * 0.10) * paperAmt * (1.0 - density);
+  col = clamp(col + warmthBias, 0.0, 1.0);
 
   gl_FragColor = vec4(col, 1.0);
 }

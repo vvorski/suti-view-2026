@@ -7018,7 +7018,102 @@ that fails today.
 120ms; nothing about what is captured changes) · dependency no.
 
 ### 68. Day mode uses the whole range, in colour
-`status: building` · added 2026-08-30 · started 2026-08-30 · supersedes 64
+`status: done` · added 2026-08-30 · shipped at build 229 · supersedes 64
+
+**Build note** — the shipped shader deviates from this entry's own literal
+formula, deliberately, after finding it does not achieve what the entry
+itself asks for. The sequence, honestly:
+
+1. Implemented the entry's literal algebra verbatim: `density = max(col.rgb)`,
+   `mix(paperColour, col * INK, density)`, PAPER=0.88, INK=0.10, warmth ±0.10,
+   the two-schedule ink-leads-paper crossfade carried over from entry 64
+   unchanged. Built `probe-composite.ts`'s day-mode section against it —
+   contrast reached ~76% of night's (clears the 70% floor) but saturation
+   reached only ~16% (badly fails it).
+2. Confirmed this isn't a synthetic-data artifact: loaded the real dev
+   server with `?rgb=100,20,20` (a pinned, fully saturated red, bypassing
+   entry 60's gate-roll) and `atmAlpha:0`/`geoAlpha:1` (the geometric ring
+   fully isolated, no atmosphere blended in at all — the exact bimodal case
+   entry 64's original formula was built for and worked well on). The ring
+   rendered as **plain grey**, not dark red. Screenshot-confirmed, not
+   inferred from the numbers alone.
+3. Diagnosed why: mixing a dark ink colour with a much lighter, near-neutral
+   paper (0.88) lets the paper's absolute brightness dominate the channel
+   *sums* at almost any non-trivial mix weight, even while barely touching
+   the channel *differences* that carry hue — so saturation (which is
+   essentially difference/sum) collapses long before the mix looks
+   "mostly ink" by eye. This is exactly why entry 64's original, geometry-
+   only version worked: line art is bimodal (a pixel is essentially all-ink
+   or all-background, rarely between), so the damaging middle ground barely
+   exists. A smoothly graded field — the atmosphere, i.e. the exact content
+   this entry exists to fix — has no such gap.
+4. Tried two more RGB-space variants before concluding the formula shape
+   itself was the problem: steepening the density mix weight with a power
+   curve, and tinting the paper faintly with the content's own hue. Both
+   only traded contrast against saturation along the same curve — never
+   both floors at once — confirmed by scanning multiple parameter values
+   for each, not a single try.
+5. **Stopped and asked Victor before redesigning**, since fixing this
+   properly meant deviating from the entry's own specified algebra rather
+   than tuning a number it already licensed me to tune. Given the choice of
+   shipping the literal (visibly broken) formula, shipping it with the
+   defect flagged as open, or implementing a fix, Victor chose the fix.
+6. Implemented in HSL rather than RGB: `rgb2hsl`/`hsl2rgb` added to
+   `composite.frag.glsl`. Hue is read once and carried through untouched;
+   *lightness* crossfades toward 0.10 (ink) or 0.88 (paper) by density, on
+   the same two-schedule (`inkAmt` via smoothstep, `paperAmt` linear)
+   carried over from entry 64; *saturation* only fades toward
+   `hsl.s * density` (the paper's own zero saturation, weighted by how much
+   of this pixel is "empty") as `dayAmt = max(inkAmt, paperAmt)` — how far
+   day mode has progressed overall — actually rises, rather than as an
+   unconditional function of density alone, which is what broke identity at
+   `uDay = 0` in the first version of this fix (caught before shipping: a
+   dim, saturated pixel's saturation was getting scaled by its own density
+   even at night, when nothing should move at all). Warmth is applied as a
+   direct RGB bias on the paper end only, scaled by `paperAmt * (1 - density)`
+   — HSL has no natural small-bias axis for it, and the ground is the one
+   place a warmth tint needs to show, since a fully-inked pixel already
+   carries its own hue.
+7. Re-verified everything after the fix: `probe-composite.ts`'s contrast
+   and saturation checks now both genuinely pass (0.78 and 0.77 of night's,
+   both hard assertions, not diagnostics) against the same synthetic field
+   that failed before; two new checks assert the specific failure found in
+   step 2 directly (an isolated red ring stays saturated and red-dominant
+   when inked); the identity-at-`uDay=0` check (now routed through a full
+   HSL round-trip rather than skipped) passes for arbitrary colour, warmth
+   and camera mix; the ink-leads-paper schedule fact from entry 64 is
+   unchanged and still holds. Re-ran the exact live browser test from step 2
+   — the same pinned red ring now renders as visibly dark red/maroon ink on
+   light paper, not grey.
+
+`pnpm build`, `pnpm lint`, `pnpm probe:composite` all clean; the shader
+itself was confirmed to actually *compile* (not just type-check — GLSL
+embedded in a template string is invisible to `tsc`/`eslint`) via a live
+dev-server load with no console errors.
+
+Judgment calls, all disclosed above and confirmed with Victor before
+shipping: the HSL restructure itself (a deviation from the entry's literal
+formula, not a numeric tune); the exact `dayAmt = max(inkAmt, paperAmt)`
+saturation gate (**Mine**, needed to keep identity at night); and the
+warmth bias staying in RGB space rather than being ported into HSL
+(**Mine**, since it is a small, ground-only effect with no natural HSL
+axis to live on).
+
+Not independently re-verified: the entry's own real-capture measurement
+table (four specific saved frames) — this session has no access to those
+original files, only the numbers already in the entry's own text, and no
+phone to re-shoot the four views on. The entry's own Verify line already
+reserves that as the final word ("a phone outdoors, which is still the
+only judge"); this build note's live checks are the closest available
+substitute, not a replacement for it.
+
+Also worth recording: while this was in flight, the concurrent session
+filed docs/todo.md entry "colour is chosen as a hue, and survives the
+composite", explicitly scoped as *"a second cause, separate from entry
+68"* — a genuine, distinct problem (how `shuffled()` samples stored
+colours in the first place, independent-per-channel, clustering near grey
+before day mode ever touches the result) rather than an overlap with this
+entry's own fix. No collision; left alone for its own build.
 
 **Do** — replace the screen-onto-a-light-ground with the ink model from entry
 64, applied to the **whole** picture rather than the geometric layer alone, and

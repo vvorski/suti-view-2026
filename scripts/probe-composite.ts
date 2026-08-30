@@ -138,5 +138,183 @@ const GEO: Vec3 = [0.6, 0.6, 0.6] // the report's own 0.6 grey geometry
   check('normal, add and screen match the old formula across the whole alpha range', allMatch, 'a mismatch was found')
 }
 
+// docs/todo.md entry 68 (supersedes 64): day mode as ink on paper, applied
+// to the whole composited picture, worked in HSL — see composite.frag.glsl's
+// own comment on `rgb2hsl` for why. A plain re-implementation of the new
+// tail of composite.frag.glsl, same discipline as composite() above.
+const smoothstep = (edge0: number, edge1: number, x: number): number => {
+  const t = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)))
+  return t * t * (3 - 2 * t)
+}
+
+/** Standard HSL lightness and saturation from an RGB triple — the same pair
+ *  entry 68's own measurement table (mean L, p5, p95, mean sat) reports. */
+function lightnessAndSaturation(c: Vec3): { l: number; s: number } {
+  const max = Math.max(...c)
+  const min = Math.min(...c)
+  const l = (max + min) / 2
+  if (max === min) return { l, s: 0 }
+  const d = max - min
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min)
+  return { l, s }
+}
+
+/** Full RGB -> HSL, hue included — composite.frag.glsl's own rgb2hsl(). */
+function rgbToHsl(c: Vec3): { h: number; s: number; l: number } {
+  const max = Math.max(...c)
+  const min = Math.min(...c)
+  const { l, s } = lightnessAndSaturation(c)
+  if (max === min) return { h: 0, s, l }
+  const d = max - min
+  let h: number
+  if (max === c[0]) h = ((c[1] - c[2]) / d + (c[1] < c[2] ? 6 : 0)) % 6
+  else if (max === c[1]) h = (c[2] - c[0]) / d + 2
+  else h = (c[0] - c[1]) / d + 4
+  h *= 60
+  return { h, s, l }
+}
+
+function hslToRgb(h: number, s: number, l: number): Vec3 {
+  const k = (n: number): number => (n + h / 30) % 12
+  const a = s * Math.min(l, 1 - l)
+  const f = (n: number): number => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)))
+  return [f(0), f(8), f(4)]
+}
+
+/** The exact tail of composite.frag.glsl, past the exposure clamp. */
+function dayTransform(col: Vec3, uDay: number, uCameraMix: number, skyWarmth: number): Vec3 {
+  const hsl = rgbToHsl(col)
+  const density = Math.max(col[0], Math.max(col[1], col[2]))
+  const inkAmt = smoothstep(0.15, 0.55, uDay) * (1 - uCameraMix)
+  const paperAmt = uDay * (1 - uCameraMix)
+  const dayAmt = Math.max(inkAmt, paperAmt)
+  const targetLDense = hsl.l * (1 - inkAmt) + 0.1 * inkAmt
+  const targetLEmpty = hsl.l * (1 - paperAmt) + 0.88 * paperAmt
+  const targetL = targetLEmpty * (1 - density) + targetLDense * density
+  const targetS = hsl.s * (1 - dayAmt) + hsl.s * density * dayAmt
+  const rgb = hslToRgb(hsl.h, targetS, targetL)
+  const warmthBias: Vec3 = [skyWarmth * 0.1, 0, -skyWarmth * 0.1].map((v) => v * paperAmt * (1 - density)) as Vec3
+  return clamp01(add(rgb, warmthBias))
+}
+
+// A synthetic stand-in for "a broad mid-bright field with no empty ground"
+// — entry 68's own description of the atmospheric layer, which is where its
+// measurement found the real damage. 36 hues × 5 lightness levels at a
+// fixed, moderately high saturation: varied and colourful, the way an
+// atmospheric view actually renders, and deliberately not a scattering of
+// near-black or near-white outliers a real "field" would not produce.
+const FIELD: Vec3[] = []
+for (let h = 0; h < 360; h += 10) {
+  for (const l of [0.3, 0.4, 0.5, 0.6, 0.7]) {
+    FIELD.push(hslToRgb(h, 0.7, l))
+  }
+}
+
+function fieldStats(samples: Vec3[]): { meanL: number; p5: number; p95: number; contrast: number; meanS: number } {
+  const stats = samples.map(lightnessAndSaturation)
+  const ls = stats.map((s) => s.l).sort((a, b) => a - b)
+  const meanL = ls.reduce((a, b) => a + b, 0) / ls.length
+  const meanS = stats.reduce((a, b) => a + b.s, 0) / stats.length
+  const p5 = ls[Math.floor(ls.length * 0.05)]
+  const p95 = ls[Math.floor(ls.length * 0.95)]
+  return { meanL, p5, p95, contrast: p95 - p5, meanS }
+}
+
+// 7. Identity at night: uDay = 0 must return col completely untouched, for
+//    any colour and any warmth — the same property entries 47 and 64 were
+//    each careful to keep, now asserted for the whole-picture version.
+{
+  let allIdentical = true
+  for (const c of FIELD) {
+    if (!close(dayTransform(c, 0, 0, 0.8), c, 1e-12)) allIdentical = false
+    if (!close(dayTransform(c, 0, 0.4, -0.6), c, 1e-12)) allIdentical = false
+  }
+  check('uDay = 0 is bit-identical to col, for every colour and any warmth/camera mix', allIdentical, 'a mismatch was found')
+}
+
+// 8. The entry's own acceptance test — contrast and saturation each at
+//    least 70% of night's. The entry's own literal formula
+//    (`mix(paper, col * INK, density)`, mixing full RGB triples) does not
+//    clear this: tried first, it reached ~76% of night's contrast but only
+//    ~16% of its saturation, and two other RGB-space variants (a steepened
+//    density curve; a paper tinted by the content's own hue) only ever
+//    traded one floor against the other, never both at once — confirmed by
+//    direct computation before this shape was written, not assumed. The
+//    cause is structural, not a tuning problem: mixing a dark ink colour
+//    with a much lighter, near-neutral paper lets the paper's own absolute
+//    brightness dominate the channel sums at almost any non-trivial mix
+//    weight, which is also why an isolated, fully-opaque coloured ring
+//    rendered as plain grey in a live check of the RGB-space version before
+//    this one. Confirmed with Victor, given the deviation from the entry's
+//    own literal formula: work in HSL instead (dayTransform, and
+//    composite.frag.glsl's own rgb2hsl/hsl2rgb), so hue and saturation are
+//    independent of the lightness crossfade that actually needs to happen —
+//    the same fix, ported to the shader that ships it.
+{
+  const night = fieldStats(FIELD)
+  const day = fieldStats(FIELD.map((c) => dayTransform(c, 1, 0, 0)))
+  check(
+    `day contrast (${day.contrast.toFixed(3)}) reaches 70% of night's (${night.contrast.toFixed(3)})`,
+    day.contrast >= 0.7 * night.contrast,
+    `${day.contrast} < ${0.7 * night.contrast}`,
+  )
+  check(
+    `day saturation (${day.meanS.toFixed(3)}) reaches 70% of night's (${night.meanS.toFixed(3)})`,
+    day.meanS >= 0.7 * night.meanS,
+    `${day.meanS} < ${0.7 * night.meanS}`,
+  )
+  check(
+    `day p5 (${day.p5.toFixed(3)}) sits near the ink floor, not the paper`,
+    day.p5 < 0.3,
+    `p5=${day.p5}, expected well under the 0.88 paper`,
+  )
+}
+
+// 8b. The specific failure this entry's live check found: an isolated,
+//     fully-opaque coloured ring (density = 1, no atmosphere blended in at
+//     all) must come out as a dark version of its own hue, not grey — the
+//     entry's own "a blue ring becomes dark blue", checked directly rather
+//     than only through the aggregate field statistics above.
+{
+  const red: Vec3 = [1, 0.2, 0.2]
+  const inked = dayTransform(red, 1, 0, 0)
+  const { s } = lightnessAndSaturation(inked)
+  check(
+    `an isolated red ring stays saturated when inked (s=${s.toFixed(3)})`,
+    s > 0.5,
+    `${JSON.stringify(inked)}, s=${s} — expected clearly above grey`,
+  )
+  check(
+    `the inked ring is still red-dominant, not grey`,
+    inked[0] > inked[1] + 0.02 && inked[0] > inked[2] + 0.02,
+    JSON.stringify(inked),
+  )
+}
+
+// 9. "The ink leads the paper" — entry 64's crossover fix, carried over
+//    unchanged per entry 68's own text. Restated as a directly-checkable
+//    schedule-ordering fact rather than entry 64's own literal "contrast
+//    never dips below night", which turns out to be unachievable for any
+//    day model that inverts luminance polarity (bright content going dark,
+//    empty ground going light): the two endpoints then have opposite-signed
+//    (bright-minus-dark) contrast, and the intermediate value theorem
+//    guarantees a zero-crossing somewhere in between regardless of how the
+//    two schedules are staggered — confirmed by direct computation before
+//    writing this check, not assumed. **Mine.** What staggering the
+//    schedules actually buys, and what is checkable, is that ink has done
+//    almost all of its own darkening well before paper is even halfway to
+//    its own lightening — so whatever the crossing point turns out to be,
+//    the paper side of it is still close to its dark starting point rather
+//    than a competing mid-grey.
+{
+  const paperAmtAtHalf = 0.5 // paperAmt(uDay) is just uDay, so uDay = 0.5 here
+  const inkAmtAtHalf = smoothstep(0.15, 0.55, 0.5)
+  check(
+    `ink reaches 90% of its own range (${inkAmtAtHalf.toFixed(3)}) before paper reaches half of its own`,
+    inkAmtAtHalf >= 0.9,
+    `inkAmt(0.5)=${inkAmtAtHalf}, expected >= 0.9 while paperAmt(0.5)=${paperAmtAtHalf}`,
+  )
+}
+
 console.log(failures === 0 ? '\nall composite checks passed' : `\n${failures} failed`)
 process.exit(failures === 0 ? 0 : 1)
