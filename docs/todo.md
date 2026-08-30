@@ -5516,7 +5516,58 @@ over a bright preview, which is the state entry 28's measurement came from.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 56. With the panel open, reload moves to the top right and names itself
-`status: building` · added 2026-08-30 · started 2026-08-30
+`status: done` · added 2026-08-30 · shipped at build 207
+
+**Build note** — `hud.ts`'s `setOpen()` now dispatches a `hud-panel` custom
+event on `document` (`{detail:{open}}`) right after toggling the scrim, since
+`version.ts` has no other reason to import `hud.ts` and shouldn't gain one for
+one boolean. `version.ts` listens for it and toggles `.panel-open` on
+`#version-hud` and `.gate-chip` on its button. `.panel-open` repositions the
+HUD to the top-right at the same `1.1rem` offsets `.gate-share` uses; a second
+rule, `#version-hud.running.panel-open button` (specificity 1,2,1), restates
+the chip's border/background/opacity, pre-empting the exact fight entry 44
+already found once: `#version-hud.running button` at (1,1,1) still beats a
+bare `.gate-chip` at (1,1,0) on ID-then-class-then-element tiebreak. A new
+`#version-hud-name` span, hidden by default, carries the flip text — reused
+from `.gate-name` styling per the entry's own instruction, so it reads as the
+same object returning. `flipThenReload()` mirrors entry 55's eased
+time-to-index walk through `RELEASE_NAMES` over 600ms (vs. that entry's
+1.4s — a confirmation in front of a click, not an arrival), then calls
+`location.reload()`; reduced motion reloads immediately, no flip. The `.fresh`
+case needed no extra code: the click handler doesn't branch on `.fresh`, so a
+green-pulsing chip flips to the name you're on and reloads into entry 55's own
+load animation, landing on a name never seen — exactly as the entry predicted
+("nothing extra is needed to get this; it falls out").
+
+Found and fixed one gap along the way: `hud-probe.html` was missing
+`day: false` in its `prefs` object and `onDayMode` in its `createHud()`
+handlers — a latent hole from entry 47 that nothing had exercised since no
+probe drives the Outdoor chip. Fixed as a small side-correction.
+
+Verified live against the real dev-server page (not just unit logic):
+`document.dispatchEvent(new CustomEvent('hud-panel', {detail:{open:true/false}}))`
+against the actually-mounted `#version-hud` confirmed the position/class
+toggle both ways via `getComputedStyle`. The click-triggered flip was
+verified through the real DOM path (`button.click()`) by sampling
+`#version-hud-name`'s text at two points inside the 600ms window (40ms in:
+an early name from `RELEASE_NAMES`; 140ms in: `RELEASE_NAME` itself, already
+settled) — short enough that `location.reload()` never fires, so the test
+tab never actually navigates away. `window.location.reload` cannot be stubbed
+in Chrome (`Object.defineProperty` throws `Cannot redefine property: reload`
+— it's non-configurable), which is why the test samples mid-flight rather
+than intercepting the reload call itself. Panel-open positioning and the
+absence of viewport overflow were also confirmed at true 320×568 and 360×640
+viewports — `resize_window` reports success but does not actually shrink this
+harness's window below roughly 614×425 (a `hud-narrow.html` comment already
+on file records the same finding against an earlier tool), so verification
+used the same iframe-based technique that file establishes: an iframe sized
+exactly 320×568 / 360×640 gives a true `window.innerWidth`/`innerHeight`
+inside it. Did not reproduce the numeric-readout-visible case specifically —
+`.hud-stats` only mounts after the real Start gesture, which needs motion
+permission and camera/mic grants this harness can't drive end-to-end — but
+the CSS rule that fixes the collision applies unconditionally on
+`.panel-open`, independent of whether stats are showing, and its effect
+(button background/border/opacity, HUD position) was confirmed directly.
 
 **Do** — while the HUD panel is open, the reload control becomes a full chip in
 the top-right corner. Clicking it runs the name flip quickly and then reloads.
@@ -6375,3 +6426,72 @@ are the right pair. Entry 47's own Verify said the same and that half is still
 unanswered.
 **Hard stops** — prefs no · url no · capture no (the capture shows what is on
 screen, and in daylight that is now the readable version) · dependency no.
+
+### 65. The disc still pulses when motion is reduced, and the app says when it is
+`status: ready` · added 2026-08-30
+
+**Do** — give `#start` a reduced-motion pulse instead of switching it off, and
+report `prefers-reduced-motion` in the `?debug` readout.
+
+**Why** — the pulse has shipped twice (builds 99 and 159) and has never been
+seen. The CSS is correct, so the cause is environmental and the app cannot
+currently say which environment it is in.
+
+**Decided**
+- **What was ruled out first**, so nobody re-checks it: the rule at
+  `index.html:421` is present and well-formed; `#start` is *not* `disabled` at
+  load, so `:disabled { animation: none }` at `:453` is not firing; the
+  reduced-motion override at `:514` is later in the file at equal specificity,
+  so it does win, which is the point below; and `start-breathe` correctly uses
+  the `scale` property rather than `transform`, so `#start:active` is not
+  deleting it. Nothing about the authored animation is wrong.
+- **The cause, most likely** → `@media (prefers-reduced-motion: reduce)` at
+  `:514` sets `animation: none` and kills **both** animations outright. Android
+  sets that query under Battery Saver and under Settings → Accessibility →
+  Remove animations, neither of which announces itself to a web page. A phone
+  in that state is also the leading explanation for entry 40's haptics, which
+  failed on every rung — the same restricted-power posture, on the same
+  handset, across the same weekend.
+- **The file already disagrees with itself about this, and the other half is
+  right.** Entry 41's shake pulse does not go silent under reduced motion — it
+  swaps to `shake-pulse-reduced` and `shake-pulse-double-reduced` at `:174` and
+  `:178`, keeping the signal and dropping the movement, with a comment that
+  states the principle exactly: *"it still goes green; it just stops
+  blinking."* `#start` is the inconsistency, not the precedent. The preference
+  asks for less **motion**, not less **feedback**, and a disc whose entire job
+  is to say *press me* is the last thing that should answer it by going still.
+- **So: `start-pulse-reduced`** — the same 3.4s period, animating `background`
+  between `#9d9bf0` and the `:hover` colour `#b9b7ff` rather than a travelling
+  ring. **Mine.** No box-shadow spread (that is the movement), no `scale` (that
+  is `start-breathe`, which stays off — it is literally size change and is what
+  the preference is about). The disc breathes in colour instead of in size,
+  which is legible across a room and moves nothing.
+- **The readout is the load-bearing half, not the fix.** If reduced motion is
+  *not* the cause, the change above alters nothing and we are guessing a fourth
+  time. One word in the `?debug` line turns it into a fact at a glance —
+  exactly the argument `shake.ts`'s own `diagnostics()` already makes for
+  `samples` and `peak`, and for the same reason: two very different faults with
+  one indistinguishable symptom.
+- Confirming it explains **three** symptoms at once → the same query also
+  silences the byline glow (`:329`) and both shake-flash tiers (`:112`,
+  `:209`). If the readout says motion is reduced, the byline is not glowing
+  either, and that is checkable on the same screen without changing anything.
+- Not decided here → whether to offer an in-app override. A page that ignores a
+  stated accessibility preference on the user's say-so is a real design
+  question and it is not this entry's.
+
+**Lands in**
+- `index.html:514-516` — the override becomes a swap, not an off switch.
+- `index.html` — one new `@keyframes start-pulse-reduced`, beside the shake
+  pair it is modelled on.
+- `src/hud.ts:1214` — the readout, beside the existing `full <state>` field.
+
+**Done when** — with Android's "Remove animations" on, the disc still visibly
+changes, in colour, on the same 3.4s period, and does not move or resize; with
+it off, the ring and the breathe are exactly as they are today; and the `?debug`
+readout states which of the two the phone is in.
+**Verify** — the phone, with Battery Saver toggled both ways, which is the
+whole question. A desktop can only rehearse it: DevTools can emulate
+`prefers-reduced-motion: reduce`, which proves the CSS swaps but not that the
+handset was ever in that state.
+**Hard stops** — prefs no · url no · capture no · dependency no.
