@@ -6576,3 +6576,84 @@ given a stubbed `requestFullscreen`, and the docstring already explains why a
 browser here cannot answer it. The phone confirms the behaviour once, via entry
 62's own Verify; the probe is what keeps it true afterwards.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 67. The menu opens on the second touch, and has a way in that cannot be missed
+`status: ready` · added 2026-08-30
+
+**Do** — recognise the double on the second tap's *down* rather than its up,
+widen the window to 400ms measured from the first tap's down, and add a
+two-finger tap as a second way in.
+
+**Why** — the menu is genuinely harder to reach than it was, and it is one
+gesture away from being unreachable at all.
+
+**Decided**
+- **When it was lost, and to what** → build 186, entry 52. Before it, the menu
+  opened on a single tap in the middle third: a zero-delay gesture with a
+  target a third of the screen high. After it, the menu needs a double tap
+  landing inside 30px and inside 280ms. That trade was right — entry 52's
+  reasoning about a zero-delay opener always winning the race against a second
+  tap still holds — but the replacement was tuned optimistically and nothing
+  measured whether a hand can actually land it.
+- **The window is measured from the wrong edge.** `resolveTap` is called on
+  `up`, so the 280ms runs from the first tap's *release* to the second tap's
+  *release* — which means **the second tap's own contact duration is spent out
+  of the budget**. A deliberate double with 120ms contacts and a 200ms gap is
+  320ms up-to-up and fails, saving two screenshots instead of opening
+  anything. Nobody's idea of "how fast did I tap" includes how long their
+  finger rested on the glass. Every platform measures this down-to-down for
+  exactly that reason.
+- **So recognise it on the second `down`, not its up.** **Mine**, and it is
+  strictly better on three counts: the second contact's duration leaves the
+  budget entirely, the second tap's `TAP_SLOP_PX` check stops applying to a
+  gesture that has not finished moving yet, and the menu appears the instant
+  the finger lands rather than after it lifts — which is what "responsive"
+  means here. This is also what Android's own `onDoubleTap` does.
+- **400ms, still one number.** Entry 52's "the same wait looked at from either
+  end of it" is right and survives: the single commits 400ms after the first
+  *down*, and a second down inside that same 400ms opens the panel. Android's
+  double-tap timeout is 300ms down-to-down and its slop is far wider than
+  30px; 400 buys back the frame-quantisation this design adds on both ends
+  (`dispatchTouches` drains once per rendered frame) without reaching the
+  ~500ms where two deliberate separate taps start pairing. **Mine** as to the
+  value. The save it delays is the one thing in the app that can tolerate a
+  delay, which was entry 52's own argument.
+- **`DOUBLE_TAP_RADIUS_PX` stays 30.** It is measured between two taps, not
+  within one, and it is not what is failing.
+- **A second way in, because one path is how the last three of these
+  happened.** `hud.ts:408` is `.hud-scrim:not(.open) .hud-chip { pointer-events:
+  none }` — **every chip is inert while the panel is closed**, so the double
+  tap is not the main way to the menu, it is the *only* way. That is the same
+  shape as entry 66's fullscreen: a single fragile path with no alternative and
+  nothing asserting it still works. **A two-finger tap opens the menu too.**
+  **Mine**: it cannot be confused with play (entry 50 is one contact), it
+  cannot happen by accident with a thumb, and it costs nothing to hold in
+  reserve. It is a safety net, not a taught gesture, and it does not need to be
+  discoverable to be worth having.
+- **Not a long press**, which is the obvious alternative → entry 57's emitter
+  charges over 2.5s from the moment a contact begins, so any hold-to-open
+  threshold sits inside the charge and would make the two gestures fight.
+- **Assert it at human timing.** `probe-touch-stream.ts` should drive a
+  synthetic double at figures a hand actually produces — down 0, up 90, down
+  240 — and require the panel to open; today nothing anywhere asserts the
+  menu can be opened at all. Per entry 66's rule, the paired negative gets its
+  bound stated: **"a lone tap does not open the panel *within its window*"**,
+  not "does not open the panel".
+
+**Lands in**
+- `src/main.ts:990-1030` — `resolveTap` takes the down point and time; the
+  match runs from the `down` branch of the event loop rather than `up`.
+- `src/main.ts:1041` — `dispatchTouches`, where the two-finger case is
+  recognised.
+- `scripts/probe-touch-stream.ts` — the two checks above.
+
+**Done when** — a double tap at 240ms down-to-down opens the menu every time,
+including when each contact rests 120ms on the glass; a single tap still saves,
+400ms later; two fingers open the menu regardless of timing; and ten taps in
+five seconds still save no more than seven frames, which entry 52 already
+requires and this must not break.
+**Verify** — the probe for the timing, then the phone, which is the only place
+"every time" means anything. Try it one-handed with a thumb, which is the case
+that fails today.
+**Hard stops** — prefs no · url no · capture no (when a save fires moves by
+120ms; nothing about what is captured changes) · dependency no.
