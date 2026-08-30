@@ -45,6 +45,7 @@ import {
   MAX_RIPPLES,
   updateEmitter,
   updateRipples,
+  type EmitterState,
 } from './engine'
 import { MAX_OFFSET, overscanFor, type TumbleState } from './shake'
 import compositeFrag from './shaders/composite.frag.glsl?raw'
@@ -145,16 +146,18 @@ export interface Visualiser {
    */
   setTumble(t: TumbleState, gravity?: { x: number; y: number }): void
   /**
-   * Where main.ts's pointer recogniser currently believes a hold/drag
-   * emitter should be — docs/todo.md entry 33. `x`/`y` are in the same
+   * Every touch main.ts's pointer recogniser currently believes should be
+   * emitting — docs/todo.md entries 33 and 49. `x`/`y` are in the same
    * normalised space every geometric shader's own `uv` already lives in:
    * `(gl_FragCoord.xy - 0.5 * uResolution) / min(uResolution.x,
    * uResolution.y)`, centred on the frame. Only recorded here; `render()`
-   * is what ticks it into the emitter once per frame, so `x`/`y` are
-   * ignored (and may be anything) when `active` is false — the emitter
-   * keeps its own last position for its afterlife.
+   * is what ticks each one into its own emitter slot once per frame, up to
+   * four at once, matching `engine/touches.ts`'s own cap. A touch absent
+   * from one call that was present in the last is simply not emitting any
+   * more — its slot's emitter keeps its own last position through its
+   * afterlife regardless.
    */
-  setTouch(active: boolean, x: number, y: number): void
+  setTouches(touches: ReadonlyArray<{ id: number; x: number; y: number }>): void
   /** 0-1, the geometric layer's opacity. Formerly setMix. */
   setGeoAlpha(a: number): void
   /** 0-1, the atmospheric layer's opacity. */
@@ -395,14 +398,25 @@ export function createVisualiser(
   let historyAccum = 0
   let contextLost = false
   const ripples = createRippleState()
-  // docs/todo.md entry 33. What main.ts's pointer recogniser last reported —
-  // ticked into `emitter` once per rendered frame, in render() below, rather
-  // than acted on directly in setTouch(), so spawn cadence and charge stay
-  // tied to wall-clock time rather than to how often pointer events arrive.
-  const emitter = createEmitterState()
-  let touchActive = false
-  let touchX = 0
-  let touchY = 0
+  // docs/todo.md entries 33 and 49. What main.ts's pointer recogniser last
+  // reported — ticked into each slot's emitter once per rendered frame, in
+  // render() below, rather than acted on directly in setTouches(), so spawn
+  // cadence and charge stay tied to wall-clock time rather than to how often
+  // pointer events arrive.
+  //
+  // Four fixed slots, matching ripples.ts's four reserved touch slots — a
+  // slot's `id` is `null` while free. A slot is claimed by whichever
+  // incoming touch id matches it, or the first free slot for a new id; one
+  // that drops out of the incoming set keeps ticking through its own
+  // afterlife (see emitter.ts) rather than being freed immediately, exactly
+  // as the single emitter this replaces did. A touch with no free slot is
+  // simply not emitted this frame — the same "a fifth is ignored" rule
+  // entry 49's touch field already applies one level up.
+  const emitterSlots: { id: number | null; state: EmitterState }[] = Array.from({ length: 4 }, () => ({
+    id: null,
+    state: createEmitterState(),
+  }))
+  let touches: ReadonlyArray<{ id: number; x: number; y: number }> = []
   let lastNovelty = 0
   let lastAutoReroll = -1000
   // The canvas's own client box, as of the last applySize() — see
@@ -641,11 +655,29 @@ export function createVisualiser(
       flow += churn * (1 - 0.85 * params.breakdown) * dt
 
       updateRipples(ripples, now, params.transient, params.breakdown)
-      // docs/todo.md entry 33 — ticked here, not in setTouch(), for the same
-      // reason updateRipples runs here rather than on each audio frame: one
-      // wall-clock tick per rendered frame is what makes charge and spawn
-      // cadence mean seconds rather than pointer-event rate.
-      updateEmitter(emitter, ripples, now, touchActive, touchX, touchY)
+      // docs/todo.md entries 33 and 49 — ticked here, not in setTouches(),
+      // for the same reason updateRipples runs here rather than on each
+      // audio frame: one wall-clock tick per rendered frame is what makes
+      // charge and spawn cadence mean seconds rather than pointer-event
+      // rate. Slots whose id is no longer in `touches` still get ticked,
+      // inactive, so their afterlife keeps running down; a slot only frees
+      // once its own life reaches 0.
+      for (const slot of emitterSlots) {
+        const live = slot.id === null ? undefined : touches.find((t) => t.id === slot.id)
+        if (live) {
+          updateEmitter(slot.state, ripples, now, true, live.x, live.y)
+        } else if (slot.id !== null) {
+          updateEmitter(slot.state, ripples, now, false, 0, 0)
+          if (slot.state.life <= 0) slot.id = null
+        }
+      }
+      for (const t of touches) {
+        if (emitterSlots.some((s) => s.id === t.id)) continue
+        const free = emitterSlots.find((s) => s.id === null)
+        if (!free) continue // all four slots busy with other still-decaying emitters
+        free.id = t.id
+        updateEmitter(free.state, ripples, now, true, t.x, t.y)
+      }
       for (let i = 0; i < MAX_RIPPLES; i++) {
         const o = i * 4 // stride must match ripples.ts's own STRIDE
         uniforms.uRipples.value[i].set(
@@ -757,10 +789,8 @@ export function createVisualiser(
       compositeUniforms.uTumble.value.set(t.angle, offsetX, offsetY, zoom)
     },
 
-    setTouch(active, x, y) {
-      touchActive = active
-      touchX = x
-      touchY = y
+    setTouches(next) {
+      touches = next
     },
 
     setLayerColour(layer, colour) {

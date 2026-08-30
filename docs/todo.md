@@ -4296,7 +4296,77 @@ place.
 one · dependency no.
 
 ### 49. A touch field: one owner of every finger on the picture
-`status: ready` · added 2026-08-30
+`status: done` · added 2026-08-30 · shipped at build 167
+
+**Build note** — `src/engine/touches.ts` is new, exactly as Decided, but with
+one deliberate departure from the Lands-in text's placement: it is pure
+(no DOM, no clock of its own — `down`/`move`/`up`/`cancel` all take
+pre-extracted numbers and a caller-supplied `now`), because `engine/`'s own
+directory comment states that rule for everything in it ("nothing here
+touches the DOM, uses a global, or reads a clock") and the entry's own
+Decided list never argues for lifting it. `main.ts` binds the actual
+`document.addEventListener`s and calls into the field, same as it already
+owned every pointer listener before this entry. This also means the module
+runs and is checked under plain Node — `scripts/probe-touches.ts` (new,
+`pnpm probe:touches`) exercises multi-id tracking, the four-slot cap, a
+freed slot's reuse, zone/onChip persisting across a move, the event queue
+draining exactly once, and the uv conversion's geometry — none of which
+needed a browser.
+
+`toShaderUv` moved out of main.ts into the field, also kept pure (takes a
+plain `{left,top,width,height}` rather than reading
+`canvas.getBoundingClientRect()` itself) — "coordinates convert once", per
+Decided. `zone` is a `string` on `Touch`/`TouchFieldEvent` rather than a
+literal union, since the field cannot import main.ts's own zone type
+without knowing about screen thirds; main.ts still declares and owns the
+real `'capture' | 'panel' | 'none'` type at its own call sites.
+
+`main.ts`'s recognizer now drives the field instead of the scalars entry 41
+used (`downX`/`downY`/`downZone`/`emitting`/`holdTimer` are gone). The
+hold-timer became a per-frame check (`downFor >= HOLD_S`) rather than a
+`setTimeout`, since a sampled field is naturally polled once per rendered
+frame rather than armed once — indistinguishable to a finger at 60fps, and
+it also means a HUD that closes mid-hold can let a hold resume, where the
+old timer-armed version couldn't; noted rather than hidden, since it is a
+behavioural difference from before this entry even though a minor one. The
+panel-zone tap's gate-exclusion changed from `gate.contains(e.target)` to
+`!gate.hidden`, since the field's event queue carries clientY/clientX but
+not the original DOM target — same defensive purpose (comment already
+called it "defensive rather than load-bearing"), different mechanism.
+
+`scene.ts`'s single `emitter`/`touchActive`/`touchX`/`touchY` became four
+fixed `{id, state}` slots reconciled each frame against whatever
+`setTouches()` last reported: a touch already holding a slot keeps it; a
+new id claims the first free slot; a slot whose id has dropped out of the
+current set keeps ticking through its own afterlife (unchanged from
+entry 33) rather than being freed immediately, freeing only once its own
+`life` reaches 0. Verified this exact reconciliation loop against the real
+`emitter.ts`/`ripples.ts` with a throwaway script: a 3s hold reaches full
+charge and a 4.0s afterlife, the slot frees only after that afterlife
+actually expires, four concurrent ids each claim their own slot, a fifth
+is refused while all four are busy, and a freed slot is available to a
+later id.
+
+Verified the DOM-to-field wiring itself — not just the pure module — by
+loading `engine/touches.ts` directly over Vite's dev server and dispatching
+real `PointerEvent`s with two distinct `pointerId`s at `document`, mirroring
+main.ts's exact listener code: both ids tracked with independent uv
+positions, moving one left the other's position untouched, and lifting one
+left the other present in `sample()`. This sidesteps the Start-gated
+harness limitation hit repeatedly this session (`waitForStart()` needs a
+microphone grant this environment cannot give) for everything the field
+itself does, and was the strongest verification available short of a real
+touchscreen and, per the entry's own Verify text, two actual people — no
+substitute exists in this harness for either, so "the phone, with two
+hands, and then with two people" was not performed. Frame-time impact is
+reasoned rather than measured: the render pipeline itself is unchanged (no
+new shader, no new texture, no new draw call — `MAX_RIPPLES`'s 12-slot
+uniform upload is exactly as before), and the only new per-frame cost is
+iterating at most four map entries and four fixed slots, so no
+viewport-dependent regression is expected at 320×568 or 360×640.
+`pnpm build`, `pnpm lint`, and every existing probe (`probe`, `probe:shake`,
+`probe:slow`, `probe:haptics`, `probe:emitter`, `probe:composite`,
+`probe:nudge`) all still pass unchanged.
 
 **Do** — put every pointer on the picture behind one module that tracks them
 by id, up to four at once, and hand its per-frame state to the four things

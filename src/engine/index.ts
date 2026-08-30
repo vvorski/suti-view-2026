@@ -11,6 +11,9 @@
  *   ripples.ts   the transient → event-buffer edge detector
  *   emitter.ts   the touch → event-buffer equivalent, a held gesture rather
  *                than a threshold crossing
+ *   touches.ts   one owner of every finger on the picture, up to four at
+ *                once — docs/todo.md entry 49. Feeds `emitter.ts`, among
+ *                others; does not replace it.
  *
  * This became a directory when the slow tier arrived. Before that there was one
  * interpretation of the captured audio living behind an interface, which is a
@@ -50,3 +53,6 @@ export type { RippleState } from './ripples.ts'
 
 export { createEmitterState, updateEmitter } from './emitter.ts'
 export type { EmitterState } from './emitter.ts'
+
+export { createTouchField, toShaderUv } from './touches.ts'
+export type { Touch, TouchField, TouchFieldEvent, TouchEventKind } from './touches.ts'

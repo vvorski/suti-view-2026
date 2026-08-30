@@ -11,7 +11,7 @@ import { bindKeyboard } from './keyboard'
 import { DEFAULT_GEO_COLOUR, parseGeoColour, type GeoColour } from './geo-colour'
 import { startCamera, type CameraSource } from './camera'
 import { createHud, TAP_SLOP_PX } from './hud'
-import { MAPPINGS, type Mapping, type MappingName, type VisualParams } from './engine'
+import { createTouchField, MAPPINGS, toShaderUv, type Mapping, type MappingName, type VisualParams } from './engine'
 import {
   DEFAULT_ATM_MERGE_MODE,
   DEFAULT_MERGE_MODE,
@@ -804,13 +804,19 @@ async function main(): Promise<void> {
   })
 
   // One recogniser for every gesture on the picture — docs/todo.md entries
-  // 41 and 33. Two separate listeners in two files used to agree only
+  // 41, 33 and 49. Two separate listeners in two files used to agree only
   // because the screenshot band listened in the capture phase and called
   // stopPropagation() before hud.ts's own bubble-phase tap-to-open listener
   // ran. hud.ts no longer listens for that tap at all; this decides
   // tap-versus-hold-versus-drag once and dispatches by zone, so where a
   // gesture goes is a value read in one place rather than a race reasoned
   // about after the fact — and no path needs stopPropagation() any more.
+  //
+  // Entry 49 put every pointer behind engine/touches.ts's field rather than
+  // this file's own scalars — `downX`/`downY`/`downZone`/`emitting` are gone,
+  // replaced by whatever the field reports for each id. What follows is a
+  // capacity change, not a behaviour one: a single finger reads the same
+  // per-touch facts a scalar recorded before, and gets the same answer.
   //
   // The top third does nothing on a plain tap (entry 41), which is what
   // entry 33's press-and-hold emitter fills — reconciling the two: entry
@@ -822,119 +828,94 @@ async function main(): Promise<void> {
   // own note ("entry 33 gives the top third a behaviour of its own") is
   // describing, and it is the only scoping that does not need the two
   // gestures to also agree on precedence at the same point on screen.
-  {
-    // Long enough that an ordinary tap-and-release never arms it, short
-    // enough that "holding a finger still for a moment" feels immediate.
-    // **Mine** — entry 33 names the two thresholds but not a value for
-    // either; the drag one reuses TAP_SLOP_PX rather than inventing a
-    // second distance, since that is already this file's answer to "how
-    // far is a drag" everywhere else a gesture needs to tell one from a tap.
-    const HOLD_MS = 220
+  // Long enough that an ordinary tap-and-release never arms it, short
+  // enough that "holding a finger still for a moment" feels immediate.
+  // **Mine** — entry 33 names the two thresholds but not a value for
+  // either; the drag one reuses TAP_SLOP_PX rather than inventing a second
+  // distance, since that is already this file's answer to "how far is a
+  // drag" everywhere else a gesture needs to tell one from a tap. Compared
+  // against `downFor` once per rendered frame (see dispatchTouches() below)
+  // rather than armed on a single `setTimeout` — engine/touches.ts is
+  // sampled, not callback-driven, and polling it once per frame is what
+  // "sampled" means in practice. Indistinguishable to a finger from the
+  // timer this replaces, at 60fps.
+  const HOLD_S = 0.22
 
-    let downX = 0
-    let downY = 0
-    let downZone: ReturnType<typeof zone> = 'none'
-    // Separate from downZone === 'none': that zone legitimately starts a
-    // hold-to-emit gesture (entry 33), and a chip sitting inside it — the
-    // fullscreen chip, before entry 42 centred it — must not.
-    let downOnChip = false
-    let emitting = false
-    let holdTimer: number | undefined
+  const isChip = (t: EventTarget | null): boolean => t instanceof Element && t.closest('.hud-chip') !== null
 
-    const isChip = (t: EventTarget | null): boolean => t instanceof Element && t.closest('.hud-chip') !== null
+  const touchField = createTouchField()
 
-    // The canvas's own box, not the window's: the drawing buffer can be a
-    // different aspect from the viewport under the resolution ladder, but
-    // every geometric shader's own `uv` is built from `gl_FragCoord` against
-    // `uResolution`, which tracks the canvas — so converting against the
-    // canvas's client rect is what actually lands on the same point the
-    // shader would draw at. y is flipped: gl_FragCoord's origin is the
-    // bottom of the frame, DOM client coordinates the top.
-    const toShaderUv = (clientX: number, clientY: number): [number, number] => {
-      const rect = canvas.getBoundingClientRect()
-      const minDim = Math.min(rect.width, rect.height)
-      return [
-        (clientX - rect.left - rect.width / 2) / minDim,
-        (rect.height / 2 - (clientY - rect.top)) / minDim,
-      ]
+  document.addEventListener('pointerdown', (e) => {
+    const rect = canvas.getBoundingClientRect()
+    const [x, y] = toShaderUv(e.clientX, e.clientY, rect)
+    // A chip button's own listener already stopPropagation()s its own
+    // pointerup, which is enough in the ordinary case — but a release that
+    // lands a pixel outside the button (a real touchscreen possibility) has
+    // a different target, so that stopPropagation() never fires and this
+    // recogniser would see the release regardless. Excluding by target on
+    // the way in — docs/todo.md entry 42, written for the fullscreen chip
+    // specifically once it moved into the panel-opening middle third — is
+    // what closes that gap for every chip, not only that one.
+    touchField.down(performance.now() / 1000, e.pointerId, x, y, e.clientX, e.clientY, isChip(e.target), zone(e.clientY))
+  })
+  document.addEventListener('pointermove', (e) => {
+    const rect = canvas.getBoundingClientRect()
+    const [x, y] = toShaderUv(e.clientX, e.clientY, rect)
+    touchField.move(performance.now() / 1000, e.pointerId, x, y, e.clientX, e.clientY)
+  })
+  document.addEventListener('pointerup', (e) => touchField.up(e.pointerId))
+  document.addEventListener('pointercancel', (e) => touchField.cancel(e.pointerId))
+  // A lost capture (another element or the browser chrome stealing it
+  // mid-drag) is not followed by pointerup or pointercancel on this target
+  // — the same "handed between people" scenario entry 49's field is built
+  // to survive.
+  document.addEventListener('lostpointercapture', (e) => touchField.cancel(e.pointerId))
+
+  /**
+   * The tap/hold-vs-drag decision, and the zone dispatch — docs/todo.md
+   * entries 41, 33 and 49. Called once per rendered frame from frame()
+   * below, which is what "sampled, not callback-driven" (touches.ts's own
+   * file comment) means in practice: every consumer of the field, this
+   * dispatch included, reads it on the same clock the picture itself
+   * redraws on rather than keeping its own timers.
+   */
+  const dispatchTouches = (now: number): void => {
+    const hudOpen = document.querySelector('.hud-scrim.open') !== null
+    const active: { id: number; x: number; y: number }[] = []
+    for (const t of touchField.sample(now)) {
+      if (t.onChip || t.zone !== 'none' || hudOpen) continue
+      const dragged = Math.hypot(t.clientX - t.downClientX, t.clientY - t.downClientY)
+      if (t.downFor >= HOLD_S || dragged > TAP_SLOP_PX) active.push({ id: t.id, x: t.x, y: t.y })
     }
+    visualiser.setTouches(active)
 
-    const startEmitting = (clientX: number, clientY: number): void => {
-      if (emitting || downZone !== 'none' || document.querySelector('.hud-scrim.open')) return
-      emitting = true
-      const [x, y] = toShaderUv(clientX, clientY)
-      visualiser.setTouch(true, x, y)
-    }
-
-    const stopEmitting = (): void => {
-      window.clearTimeout(holdTimer)
-      if (!emitting) return
-      emitting = false
-      // x/y are ignored while inactive — the emitter keeps its own last
-      // position through its afterlife. See Visualiser.setTouch.
-      visualiser.setTouch(false, 0, 0)
-    }
-
-    document.addEventListener('pointerdown', (e) => {
-      downX = e.clientX
-      downY = e.clientY
-      downZone = zone(e.clientY)
-      // A chip button's own listener already stopPropagation()s its own
-      // pointerup, which is enough in the ordinary case — but a release
-      // that lands a pixel outside the button (a real touchscreen
-      // possibility) has a different target, so that stopPropagation()
-      // never fires and this recogniser would see the release regardless.
-      // Excluding by target on the way in — docs/todo.md entry 42, written
-      // for the fullscreen chip specifically once it moved into the
-      // panel-opening middle third — is what closes that gap for every
-      // chip, not only that one.
-      downOnChip = isChip(e.target)
-      emitting = false
-      window.clearTimeout(holdTimer)
-      if (downZone === 'none' && !downOnChip) {
-        holdTimer = window.setTimeout(() => startEmitting(e.clientX, e.clientY), HOLD_MS)
-      }
-    })
-    document.addEventListener('pointermove', (e) => {
-      if (emitting) {
-        const [x, y] = toShaderUv(e.clientX, e.clientY)
-        visualiser.setTouch(true, x, y)
-        return
-      }
-      if (
-        downZone === 'none' &&
-        !downOnChip &&
-        Math.hypot(e.clientX - downX, e.clientY - downY) > TAP_SLOP_PX
-      ) {
-        startEmitting(e.clientX, e.clientY)
-      }
-    })
-    document.addEventListener('pointerup', (e) => {
-      // Ends an emitter before anything else: an emitting gesture's release
-      // is never also a tap, and downZone is 'none' whenever emitting is
-      // true, so the zone dispatch below already falls through for it —
-      // this just stops the emitter promptly rather than waiting for that.
-      stopEmitting()
-      if (downOnChip) return
+    for (const e of touchField.events()) {
+      // A cancelled contact (pointercancel, lostpointercapture) is never a
+      // tap — only a clean release can be, exactly as before this entry.
+      if (e.kind !== 'up') continue
+      if (e.onChip) continue
       // Inert while the HUD is open: the panel owns the screen then, and a
       // tap here is what closes it (the scrim's own listener in hud.ts).
-      if (document.querySelector('.hud-scrim.open')) return
-      if (downZone === 'none') return
-      if (zone(e.clientY) !== downZone) return
-      if (Math.hypot(e.clientX - downX, e.clientY - downY) > TAP_SLOP_PX) return
-      if (downZone === 'capture') {
+      if (hudOpen) continue
+      if (e.zone === 'none') continue
+      if (zone(e.clientY) !== e.zone) continue
+      if (Math.hypot(e.clientX - e.downClientX, e.clientY - e.downClientY) > TAP_SLOP_PX) continue
+      if (e.zone === 'capture') {
         saveCapture(visualiser)
-        return
+        continue
       }
       // 'panel'. Defensive rather than load-bearing: this listener is only
       // registered after Start, same as hud.ts's `open()`, so the gate
       // should already be gone by the time a tap can reach here — kept in
-      // case a fade is still mid-flight.
+      // case a fade is still mid-flight. Checked by visibility rather than
+      // by containment of the original event target (which the field's
+      // event queue does not carry) — the same defensive purpose, since
+      // the whole point is not double-handling a tap the fading gate is
+      // also still showing.
       const gate = document.getElementById('gate')
-      if (gate && !gate.hidden && gate.contains(e.target as Node)) return
+      if (gate && !gate.hidden) continue
       panel.open()
-    })
-    document.addEventListener('pointercancel', stopEmitting)
+    }
   }
 
   // The way back into fullscreen once it has been lost — docs/todo.md entry
@@ -998,6 +979,7 @@ async function main(): Promise<void> {
 
       const tumble = shake.frame(audio.dt)
       visualiser.setTumble(tumble, prefs.gravity ? shake.gravity() : undefined)
+      dispatchTouches(performance.now() / 1000)
       // The discrete gesture stands down while the panel is open — a
       // shuffle rewrites the values someone currently has a finger on, the
       // same fault as a control lying about its state — but the tumble

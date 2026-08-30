@@ -17,6 +17,7 @@
     "probe:emitter": "node --experimental-strip-types scripts/probe-emitter.ts",
     "probe:composite": "node --experimental-strip-types scripts/probe-composite.ts",
     "probe:nudge": "node --experimental-strip-types scripts/probe-nudge.ts",
+    "probe:touches": "node --experimental-strip-types scripts/probe-touches.ts",
     "format": "prettier --write .",
     "deploy": "./deploy/deploy.sh"
   },
