@@ -5765,3 +5765,82 @@ that it *fails* when it should, since a green check that cannot go red is
 worse than no check. Run it before and after entry 57 moves twelve of the
 fourteen sites. `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 60. The start screen rolls its own look, without keeping it
+`status: ready` · added 2026-08-30
+
+**Do** — give the idle preview behind the gate a fresh random look on every
+load — colours, views, merge modes — and throw it away the moment Start is
+pressed, restoring the stored preferences exactly.
+**Why** — the gate currently shows whatever palette you last left, on every
+load, forever. It reads as frozen because it is.
+
+**Decided**
+- **Not a regression, which is worth saying before anyone goes looking for
+  one** → `main.ts:541-542` passes `geoColour: prefs.geoColour` and
+  `atmColour: prefs.atmColour` into the visualiser built for the gate, and
+  `git log -S` puts that line back at "HUD: merge mode goes back between the
+  layers". The preview has **never** rolled. What changed is not the code but
+  the number of loads: a palette that settled once now greets you every time,
+  and the more the app is opened the more obviously stuck it looks.
+- **The preview is a poster, and it should show what the piece can do** → the
+  gate's own comment says the start screen "can simply be the piece instead,
+  running quietly behind the words", rather than "a poster for something
+  absent". A poster that shows one frozen palette forever undersells the
+  thirteen views and the six merge modes behind it. Rolling the look is the
+  same argument that comment already makes, carried one step further.
+- **It must not touch stored preferences**, and that is the whole engineering
+  content → what Start restores has to be exactly what was stored, or a
+  visitor loses their picture by opening the page. This is the third user of a
+  pattern the app has already settled twice: a transient influence applied
+  where the values reach the renderer, never written back. Entry 48 established
+  it for touch, entry 58 uses it for motion, and this uses it for the gate.
+  **Mine**, and the alternative — rolling into `prefs` and restoring on Start —
+  is one thrown exception away from overwriting somebody's saved picture.
+- What is rolled → **colours, both views, both merge modes.** Not the alphas
+  and not the mapping: `SHUFFLE_MIN_ALPHA` exists because two low alphas
+  multiply toward black (entry 21), and the gate is the one screen where a dim
+  preview also makes the type unreadable — entry 28 measured that at 2.33:1.
+  The alphas stay at their stored values, which are already floored. **Mine.**
+- **Legibility is a constraint on the roll, not a hope** → the gate's type sits
+  over this. Entry 43 added a gradient scrim and entry 28 added shadows, both
+  because a moving picture behind words is hard to read, and both were tuned
+  against the picture as it is. A roll that can land on a bright field must not
+  make the title vanish. So the roll uses the same dominant-channel floor the
+  shuffle uses and nothing brighter, and **the 320×568 check here is about the
+  words, not the picture.**
+- One roll per load, not a cycle → the preview does not keep changing while
+  someone reads the screen. It is a still life that happens to move, and a gate
+  that reshuffles under you while you are deciding to press a button is
+  restless rather than alive. **Mine.**
+- Interaction with entry 55 → that entry animates the release name on load. Two
+  things arriving at once is fine and probably good: the name flips in while
+  the picture is already whatever it is. Neither waits for the other, and
+  neither delays Start.
+- The `?rgb` URL parameter still wins → `main.ts:106` reads a colour from the
+  URL, and a shared link that names a colour must show that colour, on the gate
+  as well as after Start. The roll applies only when nothing was asked for.
+  **Mine**, and it is the one case where "the gate shows your stored picture"
+  is still correct behaviour.
+
+**Lands in**
+- `src/main.ts:530-548` — the visualiser built for the gate takes rolled values
+  rather than stored ones, with the `?rgb` case falling through.
+- `src/main.ts` — the handover at Start, which must apply the stored
+  preferences as they were.
+- `src/main.ts:327-370`, `shuffled()` — the roll should reuse its `colour()`
+  and its floors rather than growing a second palette generator.
+
+**Done when** — loading the gate twice in a row gives two visibly different
+pictures, and the title, byline and release name are readable over both at
+320×568 and 360×640; pressing Start returns exactly the picture and settings
+that were stored, with nothing altered by having looked at the gate; a link
+carrying `?rgb` shows that colour on the gate; and a reload after Start still
+restores the stored picture rather than a rolled one.
+**Verify** — the browser, reloading ten times and reading the type over every
+one of them, which is the failure mode this can actually ship with. Then check
+`localStorage` before and after visiting the gate and confirm it is byte
+identical. `pnpm build`, `pnpm lint`.
+**Hard stops** — prefs **no**, and this entry is mostly about making sure of
+that: nothing is written · url no (`?rgb` keeps its meaning) · capture no ·
+dependency no.
