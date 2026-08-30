@@ -6044,7 +6044,7 @@ fourteen sites. `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 60. The start screen rolls its own look, without keeping it
-`status: ready` · added 2026-08-30
+`status: building` · added 2026-08-30 · started 2026-08-30
 
 **Do** — give the idle preview behind the gate a fresh random look on every
 load — colours, views, merge modes — and throw it away the moment Start is
