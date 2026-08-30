@@ -4714,3 +4714,90 @@ because the harness cannot tell you whether the night end is too dark to enjoy.
 **Hard stops** — prefs no (entry 47's `day` boolean is reused, no field added)
 · url no (deliberately: no scrub parameter) · capture no · dependency no, and
 **no geolocation** — see the first decision.
+
+### 54. A shake says so, in light
+`status: ready` · added 2026-08-30
+
+**Do** — give a detected shake a visible confirmation that scales with how hard
+it was and tells a single from a double, always on, not gated behind the
+numeric readout.
+**Why** — entry 40 abandoned the buzz. The shake is now the one gesture in the
+app with no confirmation at all, which is the exact gap `haptics.ts` was
+written to close.
+
+**Decided**
+- The gap, stated precisely → `haptics.ts` opens by saying the shake "is the
+  one action with no obvious cause-and-effect on screen: the picture was
+  already moving, and it changes to a different picture that is also moving."
+  The buzz was the answer to that sentence, and the buzz is gone. `flashShake`
+  is not a replacement: it is gated on `panel.showingStats()`, which nobody has
+  on. So in ordinary use a shake is unconfirmed.
+- Entry 1 predicted this exact entry → it recorded that on iOS, where vibration
+  is unfixable, "the entry would have become *replace the haptic with something
+  visual*". That turned out to describe Android too. Nothing here is a new
+  idea; it is the branch that was already written down.
+- **Not a white full-screen flash** → `flashShake`'s own comment explains why
+  it stays behind a debug gate: "a flash on every shake once this ships
+  permanently would turn a quiet instrument into a strobe." That reasoning
+  still holds and it rules out reusing it. So: **a brief inward pulse at the
+  frame's edges** — the picture looks knocked rather than lit. **Mine.**
+- Which follows a pattern the file already set → `main.ts:429`, the camera
+  glyph from entry 41, says "Never gated behind `showStats`, unlike
+  flashShake: this is feedback." The codebase already separates *feedback*
+  from *diagnostic*, and this is feedback. `flashShake` stays exactly as it is,
+  for the diagnostic job it does well.
+- **Port the buzz's shape, not its numbers** → `CONFIRM_PATTERN` is
+  `[26, 34, 62]` and `DOUBLE_PATTERN` separates two of those by 130ms, and
+  those numbers are hard-won. They are also useless here: **26ms is a frame and
+  a half at 60fps**, invisible. What transfers is the *shape* — one event for a
+  single, two clearly-separated events for a double — at durations an eye can
+  resolve: about **220ms** for a pulse and about **190ms** between the two of a
+  double. **Mine**, and it is the trap worth naming, because copying the
+  haptic constants across would produce a confirmation nobody can see and it
+  would look like the feature failing rather than the timing being wrong.
+- **Scale with depth, using `intensity()`** → the same 0–1 normaliser the
+  shuffle's ladder already uses. A light shake gets a faint edge, a shake that
+  reaches the top rung gets an unmistakable one. That is what the buzz did
+  (entry 8's intensity scaling) and it is the more useful half of the
+  confirmation: it says *how much changed*, not merely *something happened*.
+  One normaliser, still one, now with a different second consumer.
+- **Reduced motion softens it rather than removing it** → `prefers-reduced-
+  motion` should not delete the only confirmation the gesture has; that
+  reinstates the bug for the people who asked for less movement. Reduce the
+  amplitude and lengthen the fade so it reads as a settle rather than a pulse.
+  **Mine**, and it is the same call `version.ts` already made for the fresh-
+  build dot: "It still goes green; it just stops blinking."
+- **UI, so it stays out of the saved frame** → a DOM overlay beside
+  `#shake-flash` and the camera glyph, not a shader term. Entry 48 fixed the
+  rule and entry 50 confirmed it: the flash is UI and must never be in the
+  picture, the emitter is picture and should be. A shake confirmation is UI.
+  It also means it is visible even if the render path is the broken thing,
+  which is the reason `flashShake` was a DOM overlay in the first place.
+- What it must not become → a second thing that fires on every disturbance. It
+  fires on `takeStrong()`/`takeDouble()` only, the same two calls the buzz
+  used, so it says "a shake was accepted and the picture was re-rolled" and
+  never "the phone moved". The tumble already answers the second question,
+  continuously.
+
+**Lands in**
+- `index.html:58-90` — the overlay and its keyframes, beside `#shake-flash`.
+- `src/main.ts:1021, 1037` — the call sites, ungated, taking the peak so the
+  amplitude can scale.
+- `src/main.ts:405` — `flashShake` unchanged; a comment saying which of the two
+  is feedback and which is diagnostic, since they will now sit next to each
+  other and the difference is not obvious from the names.
+
+**Done when** — with the numeric readout off, a deliberate shake produces a
+visible edge pulse and a double shake produces two that read as two; a light
+shake's pulse is visibly weaker than a hard one's; nothing pulses when the
+phone is merely moved or knocked; and a screenshot taken during one contains
+no pulse. With reduced motion requested, the confirmation is still there and
+is gentler.
+**Verify** — the phone, in the hand, which is the only way to judge whether a
+confirmation confirms; specifically shake once and twice in a row and check
+you can tell which happened without looking for it. `pnpm probe:shake` must
+still pass unchanged — this reads the detector and must not alter it. Also on
+screen at 320×568 and 360×640, since an edge effect is the one kind that
+behaves differently at different aspect ratios. `pnpm build`, `pnpm lint`.
+**Hard stops** — prefs no · url no · capture no (UI, deliberately outside the
+frame) · dependency no.
