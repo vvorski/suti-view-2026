@@ -10731,3 +10731,175 @@ stores `rose` and then loads an older build falls back rather than breaking.
 The stored *shape* is untouched · url no, `?geometric=rose` is the existing
 parameter with an existing shape · capture no · dependency no — one more
 fragment shader, no library.
+
+### 102. Down is real: emitters fall, and pool where the phone says down is
+`status: ready` · added 2026-08-30
+
+**Do** — a released emitter accelerates along the in-plane component of
+gravity, bounces off the edge it lands on, and settles there. Held upright it
+slides to the bottom; laid flat it stays exactly where it was put. Additive:
+charge, drag, fling, afterlife and spawn-on-distance all keep working as they
+do today.
+
+**Why** — asked for. And the framework question came with it — *"need to
+intelligently layer these in code, do we have a good framework?"* — which is
+answered first, because the answer determined the design.
+
+**Decided**
+- **Yes, and this is the test case that shows it.** The project has two
+  patterns and this uses one of them cleanly. The first is **pure-state
+  modules**: `shake.ts`, `ripples.ts`, `emitter.ts`, `touches.ts`,
+  `motion-bias.ts`, `rgb-slip.ts` — state plus a pure update function, no DOM
+  and no clock of their own, everything arriving as `now`/`dt`, each probeable
+  headless. The second is **render-time influence**: a value modulated where it
+  reaches the renderer and never written back to stored prefs (entries 48, 58,
+  60, 72, 87). Gravity is squarely the first: the emitter already *has* a
+  position, that position is already advanced every frame by a pure function,
+  and gravity is one more term in that integration. **No new module, no new
+  uniform, no shader change, no new dependency.** That an addition needs none
+  of those is exactly how you can tell it fits the framework rather than
+  fighting it — and it is worth saying that the honest answer would have been
+  different if this had needed rings already drawn to move, which is the next
+  bullet.
+- **Emitters fall; rings do not.** The request says *emitters*, and taking it
+  literally is also what keeps the cost at zero. A ring is drawn in closed form
+  from its birth time and a fixed origin — that is the property that lets this
+  layer run in one pass with no history buffer, and moving a ring after birth
+  would break it for every view at once. A falling *emitter* spawns each new
+  ring from wherever it has fallen to, so the rings stay closed-form and the
+  motion is visible anyway, as a stream of rings descending. Nothing about
+  Circles' concentric audio rings or its centre-keyed wake ladder is touched;
+  gravity reaches only the touch-placed emitter, which is the thing that has a
+  position to lose.
+- **The fall draws itself, free.** `SPAWN_DIST` already fires a ring for every
+  0.05 uv of *movement*, which is how a drag draws a continuous line rather
+  than a dotted one. A falling emitter is moving, so it spawns on the way down
+  with no new rule at all — the trail is a consequence of a constant that is
+  already there, not a feature added beside it. This is the single strongest
+  argument that the fall belongs in `emitter.ts` and nowhere else.
+- **Horizontal and vertical need no mode and no branch.** The velocity gains
+  `g` = the **in-plane projection** of the device's gravity vector, which
+  `shake.ts` already computes and already exposes. Phone upright: that
+  projection is the full vector and things fall. Phone flat on a table: the
+  vector points into the screen, its in-plane length is zero, and the emitter
+  stays exactly where it was put — not by a rule saying so, but because there
+  is nothing pulling it. Every angle between behaves correctly for free, and a
+  phone tilted in the hand slides *diagonally*, which no two-mode design would
+  have produced. **A mode flag here would be strictly worse than the physics.**
+- **It bounces off whichever edge is down, not off the bottom of the frame.**
+  Same reasoning: reflect the velocity component normal to the edge the
+  emitter reaches. Hold the phone in landscape and things pool along the true
+  bottom, which is what "gravity" has to mean or it is only a downward
+  animation. Restitution **0.45** and a small per-bounce loss, so it lands,
+  hops once or twice visibly, and settles rather than jittering forever.
+  **Mine**, as are all three numbers below.
+- **The numbers, chosen against the afterlife that already exists** rather than
+  by changing it: acceleration such that a drop from mid-frame reaches the
+  edge in about **0.9 s**, so a released emitter falls, bounces and settles
+  well inside `LIFE_MIN`'s 2 s — nobody has to hold anything for the behaviour
+  to be seen, and "eventually ending up at bottom" happens within one gesture.
+  A terminal-velocity clamp so a long fall does not outrun `SPAWN_DIST` and
+  leave gaps in its own trail.
+- **It rides the existing `grav` chip**, not a new one. There is already a
+  `prefs.gravity` boolean and an outer-ring chip for it, currently meaning "the
+  picture hangs toward down". That is the *same idea* — the app knowing which
+  way down is — and two separate gravity switches on one menu is precisely how
+  a control surface becomes unlearnable. One chip, one concept. **Mine.**
+- **And the trap, stated because this project has been bitten by exactly this
+  five times running: `prefs.gravity` defaults to `false`, and a phone that has
+  already stored `false` will keep it.** Flipping the default therefore does
+  *not* reach an existing install, so this entry does not flip it — it requires
+  instead that the `grav` chip's own state be legible at a glance and that the
+  Verify step below be done with it **on**. A feature that lands behind an
+  off-by-default switch, unverified, is a feature that has not landed.
+- **Reads, never writes.** `shake.ts`'s gravity vector is consumed here and
+  nothing is fed back — the frozen RGB slip (entry 76) and the approved colour
+  bias (entry 70) both ride `disturb` from the same sensor and are untouched.
+  Same constraint as entries 88 and 90, same reason.
+
+**Lands in** `src/engine/emitter.ts` — velocity, the gravity term, the bounce;
+`src/main.ts` — passes `shake.gravity()` into the emitter update, gated on
+`prefs.gravity` exactly as `setTumble` already is at `:831` and `:1537`;
+`scripts/probe-emitter.ts` (new, or the existing probe extended).
+**Done when** — with `grav` on and the phone upright, a released emitter
+visibly slides down, bounces once or twice and settles at the low edge, leaving
+a trail of rings as it goes; with the phone flat it does not move at all; held
+in landscape it pools along the true bottom rather than the frame's; a tilted
+phone slides diagonally; and with `grav` **off** every gesture behaves exactly
+as it does today, byte-identical on a recorded trace.
+**Verify** — the probe for the fall, the bounce and the settle, which are all
+synthesisable from a gravity vector and a `dt`. Then the phone, held upright,
+**with the chip on** — and specifically the flat-on-a-table case, which is the
+one that must do nothing and is the one a probe alone would let you believe.
+**Hard stops** — prefs no (the existing `gravity` boolean gains a second
+consumer; its type, meaning and default are unchanged) · url no · capture no ·
+dependency no.
+
+### 103. A tap plays. Only the camera takes photos.
+`status: ready` · added 2026-08-30 · fixes what makes 87 invisible
+
+**Do** — stop the single tap from saving a screenshot. Camera mode becomes the
+only path to a photo, which is what makes the mode entry 87 already built
+observable for the first time.
+
+**Why** — two reports in one message, and they turn out to be one fault:
+*"when a touch becomes an emitter it shouldn't take a photo"*, and *"where is
+the two shot camera, it hasn't landed as far as I can see"*.
+
+**Decided**
+- **Entry 87 did land, at build 273. It is invisible because entry 52 makes it
+  a no-op.** `resolveTapDown` (`main.ts:1248-1271`) starts a 400 ms timer on
+  every tap on the picture, and if no second tap arrives that timer calls
+  `saveCapture`. So an ordinary tap already writes a PNG. Arming camera mode
+  changes that tap from *saves in 400 ms* to *saves immediately* — and adds a
+  glyph. **There is no observable difference to find, because the thing the
+  mode enables was never disabled.** This is why looking for the two-shot
+  camera and concluding it was not built is the correct inference from what the
+  app actually does.
+- **So the fix for the second complaint is the first complaint.** A tap should
+  play and only play — that is entry 50's whole finding, and entry 52's
+  tap-to-save predates it. Remove the save from the single tap and both
+  reports close at once: touching the picture stops producing photographs, and
+  camera mode becomes the only shutter, which is exactly the mode that was
+  asked for and built.
+- **What this deletes, and it is a lot.** With no pending single to commit,
+  `pendingTaps` has no reason to exist: the list, the per-contact timers,
+  `cancelPendingTap`, the drag-cancels-the-save rule and `SAVE_RATE_LIMIT_MS`
+  all existed solely to serve tap-to-save. The double tap keeps its 400 ms
+  window and 30 px radius but needs only **one remembered tap** — position and
+  time — instead of a list. `CAMERA_SAVE_RATE_LIMIT_MS` stays: two deliberate
+  shutter presses in 300 ms should still not write the same frame twice.
+- **The emitter is untouched and must stay untouched.** It fires on the raw
+  `down`, immediately, never waiting on or cancelled by tap resolution —
+  `main.ts:1190-1192` says so explicitly and it is still right. Nothing in this
+  entry is allowed to put anything back in front of it.
+- **The cost, stated honestly.** A photo goes from one tap to two (arm the
+  chip, then tap). That is the trade the request names, and it is the right one
+  in both directions: photographs stop being an accident of playing, and the
+  deliberate path is the one that got designed. The `shutter` chip stays where
+  entry 77 put it, on the outer ring — Victor's own rule is that the inner ring
+  is layer controls only, and this entry does not get to relitigate it.
+- **The glyph has to actually be visible**, since it is now the *only* signal
+  that the next tap does something irreversible. That was true before and did
+  not matter; it matters now. Verified on the phone, in daylight, not in a
+  desktop browser.
+- **Not decided here** → whether a photo should be reachable in one gesture by
+  some other route (a long press, a two-finger tap). Entry 87 settled the
+  camera's shape and this entry only removes its competitor; a new gesture is a
+  new entry and would have to argue against entry 50's "a tap plays".
+
+**Lands in** `src/main.ts:1215-1290` — the pending-tap machinery collapses to a
+single remembered tap; `:1245-1283` deleted; `SAVE_RATE_LIMIT_MS` removed.
+Nothing in `hud.ts`, `emitter.ts` or any shader.
+**Done when** — tapping the picture spawns rings and writes nothing to the
+camera roll, however many times it is tapped; a double tap still opens the
+panel with the same feel; the `shutter` chip arms, the glyph appears, the next
+tap on the picture writes exactly one PNG and disarms; the 10 s quiet timeout
+still disarms; and ten rapid taps outside camera mode produce zero files.
+**Verify** — on the phone, by tapping the picture a dozen times and then
+opening the camera roll, which is the only place the old behaviour was ever
+visible. Then the armed path, twice in a row, to confirm arming is not sticky.
+**Hard stops** — prefs no · url no · capture **yes, and this is the entry that
+narrows it**: strictly fewer images are written and never without an explicit
+arming gesture, so the change moves capture in the conservative direction only ·
+dependency no.
