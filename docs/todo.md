@@ -10327,7 +10327,7 @@ one that could silently regress the approved colour.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 93. The gate shows the queue it came from
-`status: ready` · added 2026-08-30
+`status: building` · added 2026-08-30
 
 **Do** — bake the queue's state into the bundle at build time and show it on
 the start screen: the last two entries shipped, then the next few waiting, then
