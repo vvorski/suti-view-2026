@@ -4883,3 +4883,91 @@ screen at 320×568 and 360×640, since an edge effect is the one kind that
 behaves differently at different aspect ratios. `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs no · url no · capture no (UI, deliberately outside the
 frame) · dependency no.
+
+### 55. The name arrives through its own history, and the byline glows
+`status: ready` · added 2026-08-30
+
+**Do** — on load, run the release-name chip through every name this app has
+ever had, first to last, character by character, settling on the real one. And
+give the byline a slow glow.
+**Why** — asked for. The gate is two lines of type and a disc, and one of those
+lines can carry the whole history of the thing you are about to open.
+
+**Decided**
+- **The names exist and can be recovered**, which is what makes this buildable
+  → `git log --follow -- src/release-name.ts` yields **63 distinct names**,
+  from **"false calm"** to **"four fingers"**, longest "already playing" at 15
+  characters. The seed data is not invented and not lost; it is sitting in the
+  history and needs extracting once.
+- `RELEASE_NAMES`, an array, with **`RELEASE_NAME` kept as a derived export of
+  its last element** → so `version.ts` and every other reader is untouched.
+  **Mine**, and it is what turns this from an API change into an addition.
+- Which changes the release convention, for the better → the file's docstring
+  says the name is "changed in the same commit as the work it names". It
+  becomes **appended** in that commit instead. One line either way, and an
+  append cannot silently lose the previous name the way an edit does — the
+  drift already visible in the history, where some pushes moved the build
+  number without renaming, becomes visible rather than invisible.
+- **Monospace is what makes a character flip possible**, and it is already
+  there → `.gate-name` is set in `ui-monospace`. A per-character flip in a
+  proportional face jitters every glyph sideways on every frame and reads as a
+  fault. Worth writing down, because someone changing that font later would
+  break this without any obvious connection.
+- Width is reserved, not animated → the chip holds the width of the longest
+  name in the list, so the line never reflows mid-flip. The head is
+  right-aligned, so an unreserved width would make the whole line walk
+  leftward and back. **Mine.**
+- **Not all 63 legibly** → at a readable pace that is half a minute, and this
+  is a load animation on a screen with a button people want to press. About
+  **1.4 seconds**: fast through the early history, decelerating into the last
+  few names so the final ones are readable and the real one lands as an
+  arrival rather than a stop. **Mine** — the effect should feel like riding the
+  history, not like reading a list.
+- **It never delays Start** → the disc is live and pressable from the first
+  frame, and pressing it during the flip is not a special case, it just leaves.
+  A load animation that gates the one action on the screen is a splash screen,
+  which this app does not have and should not acquire.
+- Screen readers get the name, not the flipping → the animating characters are
+  `aria-hidden`, with the real name on an `aria-label`. Otherwise this
+  announces sixty-three names to someone who asked for one.
+- **Reduced motion shows the final name immediately** → and here, unlike entry
+  54's shake confirmation, removing the animation costs nothing at all: the
+  end state *is* the content. Given that `prefers-reduced-motion` may well be
+  reported on the phone this is being built for, that path is not hypothetical
+  and should be the one tested first.
+- The byline's glow → **added alongside entry 28's dark shadow, never
+  replacing it.** That entry put `text-shadow: 0 1px 12px rgba(5,6,10,0.95)`
+  on `.gate-byline` because at `#454b5c` over the moving idle preview it
+  measured **2.33:1**, under the 4.5:1 small text needs. A light glow helps
+  over a dark preview and does nothing over a bright one, which is exactly the
+  case entry 28 fixed. Two shadows, comma-separated, dark one first. **Mine**,
+  and the entry says so explicitly because a glow makes the dark shadow look
+  redundant and it is not.
+- The glow's period → **4.7s**, chosen against the disc's existing 3.4s and
+  5.9s so the three do not fall into step. Entry 16 established that reasoning
+  for the disc's own pair; a third animation on the same small screen makes it
+  matter more, not less. **Mine.**
+- Reduced motion holds the glow **static at mid-strength** rather than removing
+  it → the request was for the name to look alive, and a still glow is still a
+  glow. Same call as entry 54 and as `version.ts`'s fresh-build dot.
+
+**Lands in**
+- `src/release-name.ts` — `RELEASE_NAMES` seeded with the 63, `RELEASE_NAME`
+  derived, and the docstring's "changed" becoming "appended".
+- `src/version.ts:171-183` — `writeReleaseName()`, which currently sets
+  `textContent` once, becomes the animation's entry point.
+- `index.html` — `.gate-name`'s reserved width; `.gate-byline`'s second shadow
+  and its keyframes; both reduced-motion branches.
+
+**Done when** — loading the gate runs the chip through the history in about a
+second and a half and stops on the current name, with no reflow of the line
+above or below it and no delay to the disc; the byline breathes a glow on a
+cycle that never syncs with the disc; with reduced motion requested the name
+is simply correct from the first frame and the glow is present but still. A
+screen reader announces one name.
+**Verify** — the browser for the flip and the reflow, then the phone, and
+**specifically with reduced motion turned on**, since that is a live
+possibility on the target handset rather than an edge case. Check the byline
+over a bright preview, which is the state entry 28's measurement came from.
+`pnpm build`, `pnpm lint`.
+**Hard stops** — prefs no · url no · capture no · dependency no.
