@@ -6100,7 +6100,7 @@ chip. The recovery already exists; it is switched off after the first success.
 - `probe-fullscreen.ts` is the guard on all of this → it covers the state
   machine and its docstring already records that a browser cannot prove
   fullscreen without real activation. The states change here; the probe's
-  thirteen checks must be updated with them rather than around them.
+  fourteen checks must be updated with them rather than around them.
 
 **Lands in**
 - `src/permission-gate.ts:143-153` — the guard, and the listener's target.
