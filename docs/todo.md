@@ -8922,7 +8922,7 @@ probe can answer, the same limit every beat-adjacent entry since 75 has
 disclosed.
 
 ### 82. The layers move apart
-`status: done` · added 2026-08-30 · build 283
+`status: done` · added 2026-08-30 · build 284
 
 **Build note (Mine)** — `uAtmTumbleScale` (0.55) scales both the rotation and
 the drift of `uTumble` for a second, atmosphere-only `uv` in
