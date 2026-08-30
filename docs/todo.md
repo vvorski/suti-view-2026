@@ -8334,7 +8334,7 @@ a real phone — the entry's own Verify text names this as the phone's
 question, not the probe's.
 
 ### 77. Two rings: what the wedge edits, and everything else
-`status: building` · added 2026-08-30 · started 2026-08-30
+`status: done` · added 2026-08-30 · started 2026-08-30 · build 253
 
 **Do** — split the icon arc in two. The four layer selectors stay on the
 current arc beside the control; the four global toggles move to a second,
@@ -8405,3 +8405,65 @@ a thumb, which is the only test of whether the outer ring is still comfortably
 reachable at the top of the sweep — the corner the two dead-seeming chips
 already occupy.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+**Build note** — implemented as decided. `chipPosition` takes a fourth
+`ring: 'inner' | 'outer'` argument, chooses `R_CHIPS_INNER` (1.08, unchanged)
+or the new `R_CHIPS_OUTER` (1.22) accordingly, and is no longer exported —
+`placeChips` has been its only caller since entry 42 moved the fullscreen
+chip off this arc, exactly as Decided says. `hud-probe.html`'s own dangling
+`window.chipPosition = chipPosition` (unused even there — nothing in that
+file ever read it back) is deleted along with it, rather than left importing
+a name that no longer exists.
+
+**How "smaller drawn, not smaller to hit" is actually achieved**, since the
+entry names the two numbers (R 1.22, 0.8×) but not the mechanism: `mkChip`
+now wraps its icon in a nested `<span class="hud-chip-face">`, and every
+style that used to live on `.hud-chip` itself — the background, border,
+border-radius, colour — moved onto that nested face. `.hud-chip` (the
+actual `<button>`, and therefore the actual pointer-event target) is now an
+invisible, always-3rem positioning box; `.hud-chip--outer .hud-chip-face`
+alone gets `transform: scale(0.8)`. A CSS transform repaints an element
+smaller without shrinking the box a pointer event hit-tests against — the
+parent `<button>` — so the outer ring draws at 80% while its own tap target
+stays the full 3rem, verified directly (see below) rather than assumed from
+how transforms are generally supposed to work. **Mine**, since the entry
+states the constraint ("touch target left at full size") but not how.
+
+Ring membership is tracked via `chip.dataset.ring`, set once in `mkChip` and
+read by `placeChips` to split the map into two lists before calling
+`chipPosition` once per list — rather than inferring the split from
+insertion order (which would have worked today, since the four inner chips
+happen to be constructed first, but ties correctness to a call order nobody
+would think to preserve on a later edit).
+
+`R_CHIPS_OUTER_SCALE` (0.8) is a single named constant referenced both from
+the CSS template literal (`transform: scale(${R_CHIPS_OUTER_SCALE})`) and
+this build note, rather than a bare `0.8` typed once into the stylesheet
+string — so the one number the entry actually specifies exists in the file
+exactly once.
+
+Verified: `pnpm build`/`pnpm lint` clean; `pnpm probe` unaffected (0
+failures — this entry touches only layout). Live via `hud-narrow.html`'s
+own `window.run()` at both 320×568 and 360×640: `escaped: []` at both — no
+chip crosses its frame's edge. Confirmed the split and the size split
+directly (not just visually): `.hud-chip`'s own `getBoundingClientRect()`
+reads exactly 48×48 for all eight chips regardless of ring — the touch
+target claim, checked, not assumed — while `.hud-chip-face`'s own rect
+reads ~48-50px for the inner four and ~38-40px for the outer four (a
+~0.79-0.8 ratio, matching `R_CHIPS_OUTER_SCALE` within a border pixel).
+`describe().chips` confirms the inner four are exactly `Geometric layer,
+Atmospheric layer, Camera layer, Listening` and the outer four exactly
+`Numeric readout, Gravity, Sky: auto, Camera mode`, per Decided's own
+division. A real tap on an outer-ring chip (`Gravity`, via `w.tap()` at its
+real screen coordinates) correctly toggled `prefs.gravity` — the new nested
+face element does not interfere with the existing `pointerup` listener,
+which stayed on the button as before. `CHIP_ARC_MIN_START` (209°) is not
+reached by either ring at either width — checked by hand against the same
+formula `chipPosition` itself uses: at 320×568 the inner ring's leading chip
+computes to 218.8° and the outer ring's to 220.3°, both comfortably above
+the clamp; both rings have *more* margin at 360×640, since a larger `base`
+only increases `r`, which only shrinks `step`. No console errors.
+
+Not independently verified: the phone-with-a-thumb reachability question the
+entry's own Verify text names as its half of this — outside what a
+browser-only harness can answer.

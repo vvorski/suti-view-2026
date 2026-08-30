@@ -93,46 +93,58 @@ const CUTOFF = 40 * DEG
  */
 const BAND_R = [0.88, 0.75, 0.63, 0.53, 0.43, 0.33]
 
-/** The icon arc, outside every band and the tick rim. */
-const R_CHIPS = 1.08
-/** Where the icon arc is centred — not the notch. A symmetric arc at this
+/** The inner icon arc, outside every band and the tick rim — what the wedge
+ *  edits: `geo`, `atm`, `cam`, `ear`. */
+const R_CHIPS_INNER = 1.08
+/** docs/todo.md entry 77. The outer icon arc, outside the inner one — the
+ *  four global toggles that never change what the bands mean: `num`,
+ *  `grav`, `day`, `shutter`. Wider so the two rings read as concentric
+ *  rather than overlapping. **Mine**, per that entry's own "Mine" on the
+ *  exact radius and size factor. */
+const R_CHIPS_OUTER = 1.22
+/** docs/todo.md entry 77. The outer ring is drawn smaller, not harder to
+ *  hit — see `mkChip`'s own comment on how that split is achieved. **Mine**. */
+const R_CHIPS_OUTER_SCALE = 0.8
+/** Where each icon arc is centred — not the notch. A symmetric arc at this
  *  radius puts the first icon's left edge at roughly x=0 on a 320px screen;
  *  the wedge's corner hinge means the arc leaves the screen sooner at the
- *  top-left than at the bottom-right, so rotating it buys margin at both ends. */
+ *  top-left than at the bottom-right, so rotating it buys margin at both ends.
+ *  Shared by both rings — docs/todo.md entry 77 split eight chips into two
+ *  rows of four specifically so both could centre honestly here again. */
 const CHIP_ARC_MID = 232 * DEG
 /** Gap between neighbouring icons along their arc, in px. */
 const CHIP_GAP = 5
 /**
- * The smallest start angle the leading (leftmost) chip may sit at.
+ * The smallest start angle the leading (leftmost) chip on a ring may sit at.
  *
  * Centring blindly on CHIP_ARC_MID works for up to six chips — at 320×568 the
  * centred start is 210°, already clear of this. A seventh does not append a
  * slot, it re-centres all seven and pushes the leading one off the left edge
- * (205.6° there, putting its left edge at roughly -5.7px). This is the clamp
- * that keeps the row sliding toward the reachable end instead of centring
- * blind once it runs out of room — about 209° leaves a 4px margin. See
- * docs/todo.md entry 19.
+ * (205.6° there, putting its left edge at roughly -5.7px). Docs/todo.md entry
+ * 77 split what had grown to eight chips into two rings of four specifically
+ * to retire this clamp — four is under the six it was invented for, so
+ * neither ring should ever reach it again; it stays only as the same safety
+ * floor it always was. See docs/todo.md entry 19.
  */
 const CHIP_ARC_MIN_START = 209 * DEG
 
 /**
- * Where chip `index` of `n` total sits on the icon arc, in viewport pixels.
+ * Where chip `index` of `n` total on a given ring sits, in viewport pixels.
  *
- * Pure and exported rather than folded only into `placeChips` below: a
- * non-HUD element (the fullscreen chip, entry 19) has to sit on the exact
- * same arc without a floating button bolted on beside it, and it lives
- * outside the HUD's own container on purpose — see that entry's own
- * reasoning for why. `n` must count every chip that will actually be shown,
- * including the caller's own, since the clamp above depends on the true row
- * length before anything is laid out.
+ * No longer exported — docs/todo.md entry 77. The fullscreen chip (entry 19)
+ * once needed this arc too and lived outside the HUD's own container to get
+ * it, but entry 42 moved that chip to the centre of the screen; this file's
+ * own `placeChips` has been the only caller since. `n` must count every chip
+ * that will actually be shown on `ring`, including the caller's own, since
+ * the clamp above depends on the true row length before anything is laid out.
  */
-export function chipPosition(index: number, n: number, chipSize: number): [number, number] {
+function chipPosition(index: number, n: number, chipSize: number, ring: 'inner' | 'outer'): [number, number] {
   const w = window.innerWidth
   const h = window.innerHeight
   const base = Math.min(w, h)
   const cx = w + 10
   const cy = h + 10
-  const r = base * R_CHIPS
+  const r = base * (ring === 'outer' ? R_CHIPS_OUTER : R_CHIPS_INNER)
   const step = (chipSize + CHIP_GAP) / r
   const start = Math.max(CHIP_ARC_MID - ((n - 1) / 2) * step, CHIP_ARC_MIN_START)
   const a = start + index * step
@@ -434,17 +446,30 @@ const CSS = `
    meant to open the thing. Nothing visible happened, which is the worst
    version of that bug. */
 .hud-scrim:not(.open) .hud-chip { pointer-events: none; }
+/* docs/todo.md entry 77: the button itself is the touch target and stays a
+   fixed 3rem always — a hand doesn't get less thumb-safe for being on the
+   outer ring. Everything drawn (the circle, the border, the icon) lives on
+   the nested .hud-chip-face instead, which the outer ring alone scales down
+   with a transform — a transform changes what is painted, not the box a
+   pointer event hit-tests against, which is exactly the "smaller drawn, not
+   smaller to hit" split this entry asks for. */
 .hud-chip {
   appearance: none; cursor: pointer; position: absolute; pointer-events: auto;
   width: 3rem; height: 3rem; padding: 0;
-  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: none; border: none; color: #8a86a4;
+}
+.hud-chip-face {
+  width: 100%; height: 100%; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
   background: rgba(12,12,26,0.85);
   border: 1px solid rgba(44,41,71,0.9);
-  color: #8a86a4;
-  transition: border-color 160ms ease, background 160ms ease, color 160ms ease;
+  transition: border-color 160ms ease, background 160ms ease, color 160ms ease, transform 160ms ease;
 }
-.hud-chip[aria-pressed='true'] {
+.hud-chip--outer .hud-chip-face {
+  transform: scale(${R_CHIPS_OUTER_SCALE});
+}
+.hud-chip[aria-pressed='true'] .hud-chip-face {
   background: rgba(26,24,48,0.9); border-color: var(--tint, #9d9bf0); color: #f0eeff;
 }
 /* (0,2,0) specificity — one class plus one attribute — beats .hud-chip's own
@@ -872,13 +897,29 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
 
   const chips = new Map<string, HTMLButtonElement>()
 
-  function mkChip(id: string, name: string, tint: string, onTap: () => void): HTMLButtonElement {
+  /** docs/todo.md entry 77. `ring` selects which arc `placeChips` puts this
+   *  chip on and whether it is drawn at `R_CHIPS_OUTER_SCALE` — see
+   *  `.hud-chip-face`'s own comment for how "smaller drawn, not smaller to
+   *  hit" is achieved: the icon and its circle live on a nested element that
+   *  the outer ring alone scales down, while `.hud-chip` itself, the actual
+   *  touch target, is always the same 3rem box regardless of ring. */
+  function mkChip(
+    id: string,
+    name: string,
+    tint: string,
+    onTap: () => void,
+    ring: 'inner' | 'outer' = 'inner',
+  ): HTMLButtonElement {
     const b = document.createElement('button')
     b.type = 'button'
-    b.className = 'hud-chip'
+    b.className = ring === 'outer' ? 'hud-chip hud-chip--outer' : 'hud-chip'
+    b.dataset.ring = ring
     b.style.setProperty('--tint', tint)
     b.setAttribute('aria-label', name)
-    b.innerHTML = `<svg class="hud-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">${ICONS[id]}</svg>`
+    b.innerHTML =
+      `<span class="hud-chip-face">` +
+      `<svg class="hud-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">${ICONS[id]}</svg>` +
+      `</span>`
     b.addEventListener('pointerup', (e) => {
       e.stopPropagation()
       onTap()
@@ -894,26 +935,43 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
       build()
     })
   }
-  const statsChip = mkChip('num', 'Numeric readout', '#9d9bf0', () => {
-    // A tap is an explicit choice, so it is the one thing that writes back
-    // to prefs — arriving via ?debug and never touching this chip writes
-    // nothing about stats at all. See docs/todo.md entry 31.
-    showStats = !showStats
-    prefs.showStats = showStats
-    stats.hidden = !showStats
-    if (!showStats) stats.textContent = ''
-    save()
-    paint()
-  })
+  // docs/todo.md entry 77. Everything from here down toggles something
+  // about the whole app and never changes what the bands mean — the outer
+  // ring, by that same test the file's own GROUPS/loose-mkChip split
+  // already drew, now made visible as a second arc rather than only as
+  // which function these four calls happen to sit in.
+  const statsChip = mkChip(
+    'num',
+    'Numeric readout',
+    '#9d9bf0',
+    () => {
+      // A tap is an explicit choice, so it is the one thing that writes back
+      // to prefs — arriving via ?debug and never touching this chip writes
+      // nothing about stats at all. See docs/todo.md entry 31.
+      showStats = !showStats
+      prefs.showStats = showStats
+      stats.hidden = !showStats
+      if (!showStats) stats.textContent = ''
+      save()
+      paint()
+    },
+    'outer',
+  )
   // docs/todo.md entry 30. A boolean needs a chip rather than a band, same
   // as the readout above — no visualiser call here, either: main.ts reads
   // prefs.gravity itself, once per frame, the same way it already reads
   // prefs.showStats.
-  const gravChip = mkChip('grav', 'Gravity', '#9d9bf0', () => {
-    prefs.gravity = !prefs.gravity
-    save()
-    paint()
-  })
+  const gravChip = mkChip(
+    'grav',
+    'Gravity',
+    '#9d9bf0',
+    () => {
+      prefs.gravity = !prefs.gravity
+      save()
+      paint()
+    },
+    'outer',
+  )
   // docs/todo.md entries 47, 53 and 71. A three-way cycle on one chip
   // rather than a band or a second chip, same precedent gravity set at
   // entry 30 for a single boolean — the circular surface is the
@@ -926,38 +984,64 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
   // longer written here at all — entry 71 supersedes it with
   // prefs.skyOverride, and leaves the old field exactly where it was found
   // (see prefs.ts's own comment on why).
-  const dayChip = mkChip('day', 'Sky: auto', '#9d9bf0', () => {
-    prefs.skyOverride = prefs.skyOverride === 'auto' ? 'day' : prefs.skyOverride === 'day' ? 'night' : 'auto'
-    handlers.onSkyOverride(prefs.skyOverride)
-    save()
-    paint()
-  })
+  const dayChip = mkChip(
+    'day',
+    'Sky: auto',
+    '#9d9bf0',
+    () => {
+      prefs.skyOverride = prefs.skyOverride === 'auto' ? 'day' : prefs.skyOverride === 'day' ? 'night' : 'auto'
+      handlers.onSkyOverride(prefs.skyOverride)
+      save()
+      paint()
+    },
+    'outer',
+  )
   // docs/todo.md entry 72. A momentary action, not a toggle — camera mode
   // is not stored and this chip does not track being "in" it, the way
   // gravity or the sky override do. Closes the panel itself, directly,
   // rather than asking main.ts to call back into it: "one tap enters the
   // mode and closes the panel" is one gesture, and this module already
   // owns setOpen().
-  const shutterChip = mkChip('shutter', 'Camera mode', '#9d9bf0', () => {
-    setOpen(false)
-    handlers.onCameraMode()
-  })
+  const shutterChip = mkChip(
+    'shutter',
+    'Camera mode',
+    '#9d9bf0',
+    () => {
+      setOpen(false)
+      handlers.onCameraMode()
+    },
+    'outer',
+  )
 
-  /** Lay the icons along their own arc. Spacing comes from the measured chip
-   *  size, so a larger root font spreads them rather than overlapping them.
-   *  Seven now that entry 47 has added the day chip, having come down to
-   *  six once entry 45 removed the autopilot chip — the fullscreen chip
-   *  moved off this arc entirely in entry 25, which is what left the slot
-   *  autopilot then took; see CHIP_ARC_MIN_START's own comment, written for
-   *  exactly this. */
+  /**
+   * Lay the icons along their own arc — now two, docs/todo.md entry 77:
+   * `geo`/`atm`/`cam`/`ear` on the inner ring against the wedge, since
+   * those choose what it edits; `num`/`grav`/`day`/`shutter` on the wider,
+   * smaller ring outside, since those toggle something about the whole app
+   * and never change what the bands mean. Split by `dataset.ring` — set
+   * once in `mkChip` — rather than by array position, so the grouping
+   * survives whatever order the calls above happen to run in.
+   *
+   * Spacing comes from the measured chip size, which is always the same
+   * 3rem *touch target* for both rings even though the outer one is drawn
+   * smaller — `offsetWidth` reads `.hud-chip` itself, not the scaled-down
+   * `.hud-chip-face` nested inside it, so the outer ring's spacing is exactly
+   * as thumb-safe as the inner one's rather than visually cramped to match
+   * its smaller drawn size.
+   */
   function placeChips(): void {
-    const all = [...chips.values()]
-    const size = all[0]?.offsetWidth || 48
-    all.forEach((chip, i) => {
-      const [x, y] = chipPosition(i, all.length, size)
-      chip.style.left = `${x - size / 2}px`
-      chip.style.top = `${y - size / 2}px`
-    })
+    const inner = [...chips.values()].filter((c) => c.dataset.ring !== 'outer')
+    const outer = [...chips.values()].filter((c) => c.dataset.ring === 'outer')
+    const place = (list: HTMLButtonElement[], ring: 'inner' | 'outer'): void => {
+      const size = list[0]?.offsetWidth || 48
+      list.forEach((chip, i) => {
+        const [x, y] = chipPosition(i, list.length, size, ring)
+        chip.style.left = `${x - size / 2}px`
+        chip.style.top = `${y - size / 2}px`
+      })
+    }
+    place(inner, 'inner')
+    place(outer, 'outer')
   }
 
   function build(): void {
