@@ -7718,7 +7718,67 @@ already reads, the glyph and flash are DOM and cannot enter it, the filename
 shape is unchanged, and nothing leaves the device · dependency no.
 
 ### 73. A frozen camera is reported, and the director never opens one
-`status: building` · added 2026-08-30 · started 2026-08-30
+`status: done` · added 2026-08-30 · shipped at build 245
+
+**Build note** — `camera.ts`'s `CameraSource` gained `isLive(): boolean`,
+tracked continuously rather than checked once: `requestVideoFrameCallback`
+re-registers itself on every real decoded frame (its own cadence is the
+proof) where the browser has it; a `setInterval` comparing `currentTime`
+every 500ms stands in where it does not. `isLive()` is
+`performance.now() - lastFrameAt < 2000`. A `visibilitychange` listener
+calls `video.play()` again whenever the page returns to visible and the
+video is paused — nothing anywhere else in this app knew this camera
+existed (`permission-gate.ts`'s and `version.ts`'s own listeners are about
+fullscreen and a fresh-build dot), so without this a backgrounded tab's
+own browser-level pause was never undone.
+
+`main.ts`: `maybeRollCamera()`'s gate changed from `hasCameraPermission()`
+(granted) to `cameraSource?.isLive()` (already open, already proven live)
+— the actual fix, since a `devicemotion` event never carries the
+activation `getUserMedia`/`play()` need, and every prior report of a
+frozen camera traced to exactly this path reaching `startCamera()` two
+awaits deep with no gesture behind it. `hasCameraPermission()` and
+`cameraEverGranted` are deleted outright rather than kept: once raising
+requires an *already-live* stream, "permission was granted" is strictly
+weaker than what the check now needs, and nothing else in the codebase
+read either. `applyPassthrough()` now closes and forgets a frozen
+`cameraSource` before ever reusing or reporting a mix against it, so a
+stream that stalled between visits does not go on masquerading as showing
+something. The readout gained a `camera` field (`open`/`live`), read fresh
+from `cameraSource?.isLive()` on every tick — `closed`/`frozen`/`live`,
+matching entry 66's `want`/`armed` and `shake.ts`'s own `diagnostics()` in
+spirit: a frozen camera and a working one are identical whenever the room
+itself is still, and now the readout is what tells them apart rather than
+a guess.
+
+**Verified live, genuinely, not just algebraically** — a limitation this
+session hit repeatedly with camera/microphone features (no real device
+access here) was worked around by monkey-patching
+`navigator.mediaDevices.getUserMedia` to hand the real, unmodified
+`startCamera()` a `canvas.captureStream()` feed instead of a real camera —
+matching `camera-probe.html`'s own established technique for exactly this
+reason. Against the real exported function, not a stub: (1) a genuinely
+redrawing canvas opened live, `isLive()` true within 300ms; (2) freezing
+the canvas (stopping its own redraw loop, so `captureStream()` stops
+emitting new frames — the same "advancing player, no new pixels" shape a
+backgrounded real camera produces) correctly flipped `isLive()` to `false`
+after the 2s timeout, while `video.paused` stayed `false` throughout — the
+exact "not erroring, just not moving" case the whole entry is about; (3)
+force-pausing the video element (what a real browser does on
+backgrounding) and dispatching a synthetic `visibilitychange` with
+`visibilityState: 'visible'` correctly resumed it (`paused` true → false).
+`close()` was confirmed not to throw and to actually stop the interval/
+listener it owns. `pnpm build`/`pnpm lint` both clean, and
+`requestVideoFrameCallback` needed no type workaround — already in this
+project's configured DOM lib.
+
+Not verified: the actual `maybeRollCamera()`/`applyPassthrough()`
+integration end-to-end (both live inside `main()`'s closure, reachable only
+after `waitForStart()` resolves — the same Start-gated limit disclosed in
+every entry since 60 that touched post-Start code) and the true behaviour
+on a real phone camera specifically, which the entry's own Verify line
+already reserves as the only real judge ("Neither is reproducible on a
+desktop").
 
 **Confirmed 2026-08-30**, reported as "coming back to browser camera is
 frozen". That is the resume half below, and it is now the *primary* fault

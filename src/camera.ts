@@ -15,10 +15,37 @@
  * degrading to nothing when refused.
  */
 
+/** How long without a new frame before `isLive()` gives up on it —
+ *  docs/todo.md entry 73. Long enough that a slow phone's own decode
+ *  jitter, or the gap between `requestVideoFrameCallback` firings under
+ *  load, never reads as frozen; short enough that a genuine freeze — a
+ *  refused `play()`, a background tab's video paused outright — is caught
+ *  well before anyone would call the passthrough itself frozen. **Mine**. */
+const LIVE_TIMEOUT_MS = 2000
+
+/** How often the fallback checks `currentTime` where
+ *  `requestVideoFrameCallback` does not exist — docs/todo.md entry 73.
+ *  **Mine**, well under `LIVE_TIMEOUT_MS` so a stall is caught with room to
+ *  spare rather than right at the edge of it. */
+const LIVE_POLL_MS = 500
+
 /** A live camera feed, or nothing. */
 export interface CameraSource {
   /** Playing, muted, inline. Ready to hand to a VideoTexture. */
   readonly video: HTMLVideoElement
+  /**
+   * Whether frames are actually still arriving, right now — docs/todo.md
+   * entry 73. A resolved `play()` is not proof of this, exactly as entry
+   * 62 found a resolved `requestFullscreen` is not proof of fullscreen:
+   * some engines resolve the stream and refuse the play() without their
+   * own gesture, and the browser itself pauses the element whenever the
+   * page is hidden, with no error either way — the texture just holds
+   * whatever the last frame was. Backed by `requestVideoFrameCallback`
+   * where it exists (its own cadence *is* the proof, one call per actually
+   * decoded frame) and a periodic `currentTime` comparison where it does
+   * not.
+   */
+  isLive(): boolean
   close(): void
 }
 
@@ -75,16 +102,68 @@ export async function startCamera(): Promise<CameraSource> {
 
   await video.play().catch(() => {
     // Some browsers resolve the stream but refuse the play() without their own
-    // gesture. The texture will simply hold the first frame; that is a poor
-    // passthrough rather than a failed one, and not worth refusing over.
+    // gesture. The texture will simply hold the first frame — a poor
+    // passthrough rather than a failed one, and still not worth refusing
+    // this call over — but it is no longer a *silent* poor passthrough:
+    // isLive() below reports the truth regardless of which of the two ways
+    // there are to end up frozen actually happened.
   })
+
+  // docs/todo.md entry 73: liveness, tracked continuously rather than
+  // checked once. `requestVideoFrameCallback` fires once per frame this
+  // element has actually decoded and painted, so its own cadence is
+  // already the proof; where it does not exist, a periodic `currentTime`
+  // comparison stands in. Either way, `lastFrameAt` only moves forward
+  // while frames genuinely keep arriving.
+  let lastFrameAt = performance.now()
+  let closed = false
+  const hasRVFC = typeof video.requestVideoFrameCallback === 'function'
+  let pollHandle: ReturnType<typeof setInterval> | undefined
+  let lastCurrentTime = video.currentTime
+
+  if (hasRVFC) {
+    const onFrame = (): void => {
+      lastFrameAt = performance.now()
+      if (!closed) video.requestVideoFrameCallback(onFrame)
+    }
+    video.requestVideoFrameCallback(onFrame)
+  } else {
+    pollHandle = setInterval(() => {
+      if (video.currentTime !== lastCurrentTime) {
+        lastCurrentTime = video.currentTime
+        lastFrameAt = performance.now()
+      }
+    }, LIVE_POLL_MS)
+  }
+
+  function isLive(): boolean {
+    return !closed && performance.now() - lastFrameAt < LIVE_TIMEOUT_MS
+  }
+
+  // The browser pauses the element outright whenever the page is hidden —
+  // the phone locks, the tab is backgrounded, another app takes over — and
+  // resumes nothing on its own. Nothing anywhere else in this app knows
+  // this camera exists (permission-gate.ts's and version.ts's own
+  // `visibilitychange` listeners are about fullscreen and a fresh-build
+  // dot), so without this the texture holds its last frame forever after
+  // the first time anyone leaves and comes back.
+  const onVisible = (): void => {
+    if (document.visibilityState === 'visible' && video.paused) {
+      void video.play().catch(() => {})
+    }
+  }
+  document.addEventListener('visibilitychange', onVisible)
 
   return {
     video,
+    isLive,
     close() {
       // Stop the tracks, or the camera indicator stays lit and the sensor
       // stays powered after passthrough is turned off — the most visible
       // possible way to break the promise the start gate makes.
+      closed = true
+      if (pollHandle !== undefined) clearInterval(pollHandle)
+      document.removeEventListener('visibilitychange', onVisible)
       for (const track of stream.getTracks()) track.stop()
       video.srcObject = null
     },

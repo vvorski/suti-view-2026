@@ -216,6 +216,10 @@ export interface Hud {
        *  symptoms at once: a silent start-disc pulse, a silent byline glow,
        *  and silent shake-flash tiers. */
       reducedMotion?: boolean
+      /** docs/todo.md entry 73 — a frozen camera and a working one are
+       *  identical when the room itself is still. `open` without `live` is
+       *  exactly the failure this entry exists to name. */
+      camera?: { open: boolean; live: boolean }
     },
   ): void
   /** Adopt a change decided elsewhere — the autopilot (director.ts) or a
@@ -1282,6 +1286,12 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
         // "os motion" rather than "motion" — that word is already the
         // sensor diagnostic line above, and this is an unrelated OS setting.
         ...(s.reducedMotion === undefined ? [] : [`os motion ${s.reducedMotion ? 'reduced' : 'full'}`]),
+        // docs/todo.md entry 73 — a frozen camera and a working one look
+        // identical whenever the room itself is still, which is exactly
+        // the report this line exists to stop being ambiguous.
+        ...(s.camera === undefined
+          ? []
+          : [`cam   ${!s.camera.open ? 'closed' : s.camera.live ? 'live' : 'frozen'}`]),
       ].join('\n')
     },
 

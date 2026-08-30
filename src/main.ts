@@ -887,19 +887,19 @@ async function main(): Promise<void> {
   /**
    * At the top shuffle rung only, sometimes rolls the passthrough level,
    * including up from zero — docs/todo.md entry 22, licensed by Victor
-   * 2026-08-29. This overturns what entries 6, 15 and 20 all said and
-   * `shuffled()`'s own file comment used to say: the camera is *not*
-   * unconditionally excluded from every rung any more, only from every
-   * rung below the top one, and from ever being raised without permission
-   * already granted.
+   * 2026-08-29, narrowed by entry 73. This overturns what entries 6, 15
+   * and 20 all said and `shuffled()`'s own file comment used to say: the
+   * camera is *not* unconditionally excluded from every rung any more,
+   * only from every rung below the top one, and only ever raised on top of
+   * a stream that is already open and demonstrably live — never opened
+   * fresh by this path, and never raised over one that has frozen.
    *
    * Deliberately not part of `shuffled()`, which is synchronous and pure:
-   * raising the camera needs `hasCameraPermission()`'s async check first, a
-   * kind of gate no other field in the shuffle has, since a `devicemotion`
-   * event carries no user activation for `getUserMedia` to spend. Runs after
-   * `shuffle()` rather than inside it, and updates the panel itself once
-   * resolved rather than folding into the same `adopt()` call — the level
-   * is not known yet when `shuffle()` returns.
+   * raising the camera needs `applyPassthrough()`'s async work, a kind of
+   * gate no other field in the shuffle has. Runs after `shuffle()` rather
+   * than inside it, and updates the panel itself once resolved rather than
+   * folding into the same `adopt()` call — the level is not known yet when
+   * `shuffle()` returns.
    */
   function maybeRollCamera(depth: number): void {
     if (depth < SHUFFLE_EVERYTHING) return
@@ -913,8 +913,16 @@ async function main(): Promise<void> {
     if (Math.random() >= CAMERA_ROLL_CHANCE) return
     void (async () => {
       const level = Math.random() * CAMERA_ROLL_MAX
-      // Turning it off never needs permission — only raising it does.
-      if (level > 0 && !(await hasCameraPermission())) return
+      // docs/todo.md entry 73: turning it off never needs a live stream —
+      // only raising it does, and raising it needs one *already open and
+      // playing*, not merely permitted. A `devicemotion` event carries no
+      // user activation, so this path can never be the one that calls
+      // `startCamera()` for the first time — the confirmed cause of the
+      // frozen-camera report, since `play()` was refused essentially every
+      // time it was reached this way. `cameraSource` is declared further
+      // down this same closure but, as with `cameraMode` above, this
+      // function only ever runs later, after that declaration.
+      if (level > 0 && !(cameraSource?.isLive() ?? false)) return
       const actual = await applyPassthrough(level)
       panel.adopt({ passthrough: actual })
     })()
@@ -933,39 +941,6 @@ async function main(): Promise<void> {
   let cameraSource: CameraSource | null = null
 
   /**
-   * Set once a camera stream has actually opened. The shake path (entry 22)
-   * reads it rather than `cameraSource` itself, because the check has to
-   * survive turning the camera back off — `cameraSource` goes null the
-   * moment `applyPassthrough(0)` closes the stream, but the *permission* an
-   * OS prompt already granted does not, and that permission is what the
-   * shake path is licensed to use.
-   */
-  let cameraEverGranted = false
-
-  /**
-   * Whether the camera may be raised without a live user gesture behind it —
-   * only where permission already exists. `navigator.permissions.query` is
-   * the real answer where supported; `cameraEverGranted` is the fallback
-   * everywhere it is not (older Safari has no 'camera' permission descriptor
-   * at all) and the only answer within a single session before the first
-   * grant. See docs/todo.md entry 22 for why this gate exists at all: a
-   * `devicemotion` event carries no user activation, so `getUserMedia`
-   * called from the shake path has none either, however hard the shake was.
-   */
-  async function hasCameraPermission(): Promise<boolean> {
-    if (cameraEverGranted) return true
-    if (!('permissions' in navigator)) return false
-    try {
-      const status = await navigator.permissions.query({ name: 'camera' as PermissionName })
-      return status.state === 'granted'
-    } catch {
-      // Some engines throw for a descriptor they don't recognise rather than
-      // resolving 'prompt' — 'camera' is not universally implemented.
-      return false
-    }
-  }
-
-  /**
    * Turning it down to nothing releases the camera outright rather than
    * leaving it running behind a zero. Holding an open stream that nothing
    * draws keeps the sensor powered and the OS camera indicator lit, which is
@@ -974,8 +949,16 @@ async function main(): Promise<void> {
    * Factored out of the HUD's own `onPassthrough` handler so the shake path
    * (entry 22) can call the exact same logic rather than a second copy of
    * it — the two differ only in what is allowed to call this with a
-   * non-zero `mix` in the first place, which is `hasCameraPermission()`'s
-   * job, not this function's.
+   * non-zero `mix` in the first place, which is `maybeRollCamera()`'s job
+   * (`cameraSource?.isLive()`, docs/todo.md entry 73), not this function's.
+   *
+   * Removed by entry 73: `hasCameraPermission()`/`cameraEverGranted`, the
+   * gate this function's own first non-zero call used to rely on the shake
+   * path having already checked. A granted permission was never actually
+   * the thing that mattered — a *live* stream is, since permission without
+   * a working `play()` is exactly the frozen-camera report's own cause,
+   * and "permission granted" and "frames arriving" turned out not to be
+   * the same fact.
    */
   async function applyPassthrough(mix: number): Promise<number> {
     if (mix <= 0) {
@@ -985,15 +968,26 @@ async function main(): Promise<void> {
       return 0
     }
 
-    // First non-zero value is what asks, when called from the control's own
-    // pointer handler — the gesture getUserMedia requires is still live
-    // there. The shake path never reaches this branch without
-    // hasCameraPermission() already true, so it never spends a gesture it
-    // does not have.
+    // A frozen stream is closed, not kept — docs/todo.md entry 73. Reusing
+    // one here (the HUD band touched again, camera mode re-entered, a
+    // shake raising a level that is already live) would otherwise hold a
+    // powered sensor and a lit OS indicator open behind a still photograph
+    // indefinitely, exactly what closing on mix <= 0 above already exists
+    // to prevent for the ordinary case.
+    if (cameraSource && !cameraSource.isLive()) {
+      cameraSource.close()
+      cameraSource = null
+    }
+
+    // First non-zero value with no live stream already open is what asks,
+    // when called from the control's own pointer handler — the gesture
+    // getUserMedia requires is still live there. maybeRollCamera() never
+    // reaches this branch, by construction: it refuses to raise anything
+    // that is not already live, so it never spends a gesture it does not
+    // have.
     if (!cameraSource) {
       try {
         cameraSource = await startCamera()
-        cameraEverGranted = true
       } catch {
         // Declined, or no camera. Report the truth — 0 — and let the HUD put
         // its control back rather than leaving it somewhere it is not.
@@ -1525,6 +1519,13 @@ async function main(): Promise<void> {
         // not the CSS swap — this is the one word that turns "did the pulse
         // just not show up" from a guess into a fact.
         reducedMotion: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+        // docs/todo.md entry 73 — same argument as fullscreen's want/armed
+        // and shake.ts's own diagnostics(): a frozen camera and a working
+        // one are identical when the room itself is still, so this has to
+        // be told apart on purpose rather than left for a screenshot to
+        // explain. Read fresh from cameraSource every tick, not cached,
+        // since isLive() is itself continuously updated.
+        camera: cameraSource ? { open: true, live: cameraSource.isLive() } : { open: false, live: false },
       })
     }
     requestAnimationFrame(frame)

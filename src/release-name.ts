@@ -115,6 +115,7 @@ export const RELEASE_NAMES: readonly string[] = [
   'rolls colour',
   'both ways',
   'tap shutter',
+  'proven live',
 ]
 
 /** The current release's name — derived as the list's last element, so
