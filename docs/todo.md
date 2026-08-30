@@ -7739,7 +7739,25 @@ strictly *reduces* when the camera opens — the director loses the ability
 entirely — and adds no new path to a stream · dependency no.
 
 ### 74. Paper: true white, true black, and ink that takes or doesn't
-`status: ready` · added 2026-08-30 · build after 68
+`status: blocked` · added 2026-08-30 · build after 68
+
+**Blocked 2026-08-30 — needs Victor's decision, and must not be built
+meanwhile.** Entries 68 and 70 shipped (builds 229 and 234) and the result was
+approved: *"both ways has good colours, finally, don't break it."* This entry
+is the **only** pending work that touches the constants that approval is about
+— it would move `PAPER` 0.88 → 0.97, `INK` 0.10 → 0.03 and add a
+`pow(density, 0.7)` curve, in a composite that now lays ink in HSL with warmth
+at ±0.10.
+
+The decision needed is not "is paper a good idea" — it was asked for
+explicitly, and the body below still holds. It is **whether whiter paper and
+blacker ink are wanted now that the shipped middle looks right**, since those
+are the same numbers being praised and the entry was written before anyone had
+seen them working.
+
+Do not build this on inference from the original request. It needs one look at
+the two side by side, and the honest possibility is that the answer is no and
+this entry is closed unbuilt.
 
 **Do** — take entry 68's ink model and push it to actual paper: a white ground,
 near-black marks, and a density curve so thin marks read as ink rather than as
