@@ -5367,7 +5367,7 @@ behaves differently at different aspect ratios. `pnpm build`, `pnpm lint`.
 frame) · dependency no.
 
 ### 55. The name arrives through its own history, and the byline glows
-`status: ready` · added 2026-08-30
+`status: building` · added 2026-08-30 · started 2026-08-30
 
 **Do** — on load, run the release-name chip through every name this app has
 ever had, first to last, character by character, settling on the real one. And
