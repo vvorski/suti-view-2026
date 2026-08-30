@@ -588,14 +588,36 @@ async function main(): Promise<void> {
   // nothing about the renderer needs the microphone: it needs numbers, and
   // idleParams() below makes plausible ones. The gate becomes an overlay on
   // something real rather than a poster for something absent.
+  //
+  // docs/todo.md entry 60: the poster it stands in front of is rolled fresh
+  // on every load — colours, both views, both merge modes, via the same
+  // shuffled() a shake already uses — rather than showing whatever was last
+  // stored, forever. This is `shuffled()` called directly, never through
+  // `panel.adopt()`: adopt() writes to `prefs` and calls `save()`, and the
+  // whole point here is a look nobody's picture actually has. `current` is
+  // passed only to satisfy the signature — at SHUFFLE_VIEWS every field it
+  // reads is above SHUFFLE_RESEED, so `shuffled()` takes the full-reroll
+  // branch and never looks at it. A `?rgb` link keeps the colour it names —
+  // the roll is skipped outright rather than carved around just that one
+  // field, since "the gate shows your stored picture" is exactly correct
+  // for a link that asked for a specific one. **Mine.**
+  const rgbRequested = parseGeoColour(new URLSearchParams(window.location.search).get('rgb')) !== null
+  const gateLook = rgbRequested
+    ? null
+    : shuffled(SHUFFLE_VIEWS, {
+        geoColour: prefs.geoColour,
+        atmColour: prefs.atmColour,
+        geoAlpha: prefs.geoAlpha,
+        atmAlpha: prefs.atmAlpha,
+      })
   const visualiser = createVisualiser(canvas, {
-    geometricView: prefs.geometricView,
-    geoColour: prefs.geoColour,
-    atmColour: prefs.atmColour,
+    geometricView: gateLook?.geometricView ?? prefs.geometricView,
+    geoColour: gateLook?.geoColour ?? prefs.geoColour,
+    atmColour: gateLook?.atmColour ?? prefs.atmColour,
     camColour: prefs.camColour,
-    atmosphericView: prefs.atmosphericView,
-    mergeMode: prefs.mergeMode,
-    atmMergeMode: prefs.atmMergeMode,
+    atmosphericView: gateLook?.atmosphericView ?? prefs.atmosphericView,
+    mergeMode: gateLook?.mergeMode ?? prefs.mergeMode,
+    atmMergeMode: gateLook?.atmMergeMode ?? prefs.atmMergeMode,
     geoAlpha: prefs.geoAlpha,
     atmAlpha: prefs.atmAlpha,
     day: prefs.day,
@@ -724,6 +746,19 @@ async function main(): Promise<void> {
 
   const { source, motion } = await waitForStart({ gate, button, error })
   live = true
+  // docs/todo.md entry 60: undo whatever the gate rolled. `visualiser` is the
+  // same instance the gate was just showing, and if it rolled a look, this is
+  // the one place that look is thrown away — restoring exactly what `prefs`
+  // (the stored values, `?rgb` included) says, before anything else can read
+  // the visualiser's current state. Unconditional rather than gated on
+  // `gateLook`, so this stays correct even if a future change adds another
+  // path that mutates the gate's visualiser before Start.
+  visualiser.setGeometricView(prefs.geometricView)
+  visualiser.setAtmosphericView(prefs.atmosphericView)
+  visualiser.setLayerColour('geo', prefs.geoColour)
+  visualiser.setLayerColour('atm', prefs.atmColour)
+  visualiser.setMergeMode('geo', prefs.mergeMode)
+  visualiser.setMergeMode('atm', prefs.atmMergeMode)
   // The idle loop is done for the session; its own listeners are now dead
   // weight on every pointer event for as long as the tab stays open.
   document.removeEventListener('pointerdown', resumeIdle)

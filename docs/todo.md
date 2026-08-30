@@ -6044,7 +6044,63 @@ fourteen sites. `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 60. The start screen rolls its own look, without keeping it
-`status: building` · added 2026-08-30 · started 2026-08-30
+`status: done` · added 2026-08-30 · shipped at build 213
+
+**Build note** — the gate's visualiser is now constructed from
+`shuffled(SHUFFLE_VIEWS, ...)` rather than straight from `prefs`, called
+directly rather than through `panel.adopt()` — `adopt()` writes to `prefs`
+and calls `save()`, which is exactly what must not happen here. At
+`SHUFFLE_VIEWS` (0.7) every field `shuffled()` can produce is at or above
+`SHUFFLE_RESEED` (0.3) and `SHUFFLE_MERGE` (0.45), so colours get a full
+re-roll (not the below-`SHUFFLE_RESEED` nudge) and both merge modes roll too;
+it's below `SHUFFLE_EVERYTHING` (0.9), so alphas, camColour and mapping are
+left alone, matching the entry's "not the alphas and not the mapping". The
+legibility floor (`SHUFFLE_MIN_DOMINANT_CHANNEL`, entry 21) comes along for
+free since it's the same `colour()` helper every other shuffle rung already
+uses — nothing new needed there. The `current` argument passed in is never
+actually read at this depth (the reseed branch ignores it); it's there only
+to satisfy `shuffled()`'s signature.
+
+`?rgb=` skips the roll entirely rather than being carved around as one
+field — **Mine**, per the entry's own framing that "the gate shows your
+stored picture" is the *correct* behaviour for a link naming a specific
+colour, not just a fallback for the one field that would otherwise conflict.
+
+The real bug this entry's Done-when actually catches: the gate and the
+running session share one `visualiser` instance. Nothing before this entry
+ever needed to distinguish "what the gate is showing" from "what Start
+should restore", because they were always the same prefs. Once the gate can
+show something else, an explicit restore is required or Start would hand
+you whatever the gate happened to roll, not your stored picture — so
+`main()` now calls `setGeometricView`/`setAtmosphericView`/`setLayerColour`
+(geo and atm)/`setMergeMode` (geo and atm) against `prefs` right after
+`live = true`, before anything else can read the visualiser's state.
+Unconditional, not gated on whether a roll actually happened, so it stays
+correct if a later change adds another path that could leave the gate's
+visualiser out of sync.
+
+Verified live against the real dev server, with a fixed stored palette
+(`geoColour` pinned to pure red) set directly in `localStorage` so a rolled
+look would be unmistakable against it. Reloading repeatedly produced
+visibly different pictures each time — different view geometry, different
+colour cast — confirmed by screenshot comparison across reloads. `?rgb=`
+held the same requested colour and the same picture shape across two
+consecutive reloads, unlike the unqualified reloads. `localStorage` was read
+back byte-identical to what was written, both after a plain reload and after
+loading the gate inside a 320×568 iframe — the gate never writes to storage.
+Layout at 320×568 and 360×640 (via the same iframe technique `hud-narrow.html`
+already established, since `resize_window` cannot actually shrink this
+harness's window — see entry 56's build note) showed no overflow on the
+title, byline or Start disc, over several different rolled looks.
+
+Not verified: an actual Start click through to a running session. Chrome in
+this harness never resolves (or visibly denies) the live microphone-permission
+prompt `waitForStart()` needs, a limitation already hit and disclosed in
+several earlier entries this session. The restore-on-Start code path itself
+is exercised only by code reading, not a live click; it is a direct,
+unconditional set of calls against `prefs` (the stored values), not
+conditional logic, which is the case most amenable to reasoning about
+correctness from the code alone.
 
 **Do** — give the idle preview behind the gate a fresh random look on every
 load — colours, views, merge modes — and throw it away the moment Start is
