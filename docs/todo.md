@@ -5844,3 +5844,79 @@ identical. `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs **no**, and this entry is mostly about making sure of
 that: nothing is written · url no (`?rgb` keeps its meaning) · capture no ·
 dependency no.
+
+### 61. The powder becomes a material: hold piles, drag pushes, motion moves it
+`status: ready` · added 2026-08-30
+
+**Do** — the easter egg enters fullscreen; a hold builds a pile; a drag pushes
+the grains that are there instead of laying new ones; and shaking or moving the
+phone moves the powder.
+**Why** — entry 46 shipped at build 180 as a drawing toy. This makes it a
+substance, which is what "powder" was always promising.
+
+**Decided**
+- **A drag stops depositing, and that is a reversal of shipped behaviour** →
+  `powder.ts:62` is `DRAG_GRAINS_PER_PX = 0.5`, so dragging currently *creates*
+  grains along the path. It should **push the grains already there**: an
+  impulse to every grain within about **40px** of the finger, scaled by the
+  finger's own velocity. `DRAG_GRAINS_PER_PX` goes to zero. Victor's call,
+  and it is what makes the difference between drawing and handling.
+- Three verbs, cleanly separated → **a tap bursts** (the existing
+  `BURST_COUNT = 16`, unchanged, so there is still a fast way to put powder on
+  screen), **a hold piles**, **a drag pushes**. **Mine** on keeping the tap:
+  without it the only way to get any powder is to wait, and the first thing
+  anyone does to a black screen is tap it.
+- The pile → a stationary finger deposits continuously at about **60 grains a
+  second**, with the existing `BURST_SPREAD_PX` of 6, so it grows where the
+  finger is rather than appearing all at once. It is a pile by accumulation,
+  not by stacking: grains do not rest on each other, and simulating that is a
+  cellular-automaton sand model this entry is deliberately not.
+- **Fullscreen on entry** → the third tap is a real user gesture, so
+  `requestFullscreen()` is allowed there, and it puts no dialog on screen so it
+  does not spend the gesture the way the microphone prompt does — the
+  order-of-operations comment in `permission-gate.ts` is about calls that open
+  dialogs, and this is not one.
+- **Leaving the egg does not leave fullscreen** → **Mine.** Dropping out would
+  be a second unrequested change of state, and the gate is better in fullscreen
+  anyway; Start would only have to ask for it again a moment later. It also
+  means `fullscreenStatus()` and the chip see one transition rather than two.
+- Motion, in two kinds because the app already measures two → **`disturb`
+  jitters, a shake scatters.** A continuous small jitter proportional to
+  `disturb` so carrying the phone unsettles the powder, and on `takeStrong()`
+  an outward impulse on every grain scaled by `intensity(peak)` so a shake
+  throws it. Both numbers already exist and are already probe-covered; nothing
+  new is measured.
+- **The shake must not do both things at once** → `takeStrong()` is consumed by
+  `main.ts`'s loop to re-roll the picture. While the powder is showing, the
+  visualiser is not on screen, so the shake belongs to the powder and the
+  shuffle must not also fire — otherwise a shake scatters the grains *and*
+  silently re-rolls a picture nobody can see, and the picture a person comes
+  back to is not the one they left. **Mine**, and it is the one coordination
+  bug this entry can ship with.
+- Tilt stays as built → `TILT_ACCEL = 900` via the `getTilt()` the module
+  already takes. The getter widens to carry `disturb` and the shake events
+  rather than three separate arguments, which keeps `powder.ts` a pure module
+  taking one motion source.
+- `CAP = 3000` is unchanged → a pile is dense rather than large, and the cap is
+  a frame-time number that entry 46 already settled. If piling makes it feel
+  short, that is a measurement to take on the phone, not a number to raise here.
+
+**Lands in**
+- `src/powder.ts:62, 133-141` — the drag becomes a push; the deposit goes.
+- `src/powder.ts:55-58` — the hold's continuous deposit, beside the burst.
+- `src/powder.ts:83` — the motion source widens from tilt to tilt plus
+  `disturb` plus shake impulses.
+- `src/main.ts:575-621` — `requestFullscreen()` on the third tap, and the
+  shake's routing while the powder is up.
+
+**Done when** — three taps open the egg fullscreen; holding a finger still
+grows a visible pile under it; dragging through an existing pile moves it
+rather than adding to it, and a fast drag throws it further than a slow one;
+tilting slides it; carrying the phone unsettles it; a hard shake scatters it
+across the screen and **does not** change the picture waiting behind the egg.
+Leaving the egg leaves you in fullscreen on the gate.
+**Verify** — the phone, for all of it, since every one of these is a hand or a
+motion question. Check the picture behind the egg specifically: enter, shake
+hard several times, leave, and confirm the visualiser is exactly as it was.
+`pnpm probe:shake` unchanged. `pnpm build`, `pnpm lint`.
+**Hard stops** — prefs no · url no · capture no · dependency no.
