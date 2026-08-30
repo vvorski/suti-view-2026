@@ -9004,7 +9004,7 @@ unchanged.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 87. Camera mode is one shot: arm, shoot, done
-`status: ready` · added 2026-08-30 · supersedes the mode built by 72 and 78
+`status: building` · added 2026-08-30 · started 2026-08-30 · supersedes the mode built by 72 and 78
 
 **Do** — camera mode arms a single photo. Tap the chip: the menu closes and the
 camera glyph appears. The next tap takes **one** picture and leaves the mode.
