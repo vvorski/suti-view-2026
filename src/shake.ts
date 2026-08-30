@@ -670,6 +670,20 @@ export const STILL: TumbleState = {
   zoom: 0,
 }
 
+/** docs/todo.md entry 86 — the refused/unavailable `ShakeSensor`'s own
+ *  `frame()` reading: no tilt, no disturb, `STILL`'s own tumble, no events,
+ *  ever. One frozen instance shared by every call — nothing in it ever
+ *  changes, so there is nothing a fresh object would buy per frame.
+ *  Exported so a caller that needs a placeholder before its first real
+ *  `frame()` call (main.ts, for the snapshot the powder reads pre-Start)
+ *  can reuse this rather than hand-rolling an equivalent empty frame. */
+export const STILL_FRAME: ShakeFrame = Object.freeze({
+  tilt: Object.freeze({ x: 0, y: 0 }),
+  disturb: 0,
+  tumble: STILL,
+  events: Object.freeze([]),
+})
+
 /**
  * Whether this platform gates the accelerometer behind a permission call at
  * all — true only on iOS/iPadOS 13+. Exported so main.ts can start listening
@@ -710,15 +724,43 @@ export async function requestMotionAccess(): Promise<boolean> {
   }
 }
 
+/**
+ * docs/todo.md entry 86. A shake just detected (at most one per `frame()`
+ * call) or a second one inside the first's cooldown — see `Tumble.takeStrong`
+ * / `Tumble.takeDouble`, which this replaces for every consumer outside this
+ * file. `kind` is `'strong'` xor `'double'` for the same call, never both:
+ * `frame()` resolves the precedence internally (a double is also a strong,
+ * and the escalation wins) exactly as main.ts's own call site used to.
+ */
+export interface ShakeEvent {
+  kind: 'strong' | 'double'
+  /** The shake's peak (m/s²). See Tumble.takeStrong/takeDouble. */
+  peak: number
+}
+
+/**
+ * docs/todo.md entry 86 — the snapshot. One of these is produced per
+ * `frame()` call, frozen, and handed to every consumer alike: reading it is
+ * not consuming it, so two watchers of the same frame see the same shake,
+ * and a watcher that never reads at all cannot make another one starve.
+ * `events` is empty on almost every frame — a shake is a rare occurrence,
+ * not a per-frame fact the way `tilt`/`disturb`/`tumble` are.
+ */
+export interface ShakeFrame {
+  tilt: { x: number; y: number }
+  disturb: number
+  tumble: TumbleState
+  events: readonly ShakeEvent[]
+}
+
 export interface ShakeSensor {
-  /** Advance and read. Call once per frame. */
-  frame(dt: number): TumbleState
-  /** The shake's peak (m/s²) once per detected hard shake, 0 otherwise. See
-   *  Tumble.takeStrong. */
-  takeStrong(): number
-  /** The peak (m/s²) once per *second* hard shake inside the cooldown of the
-   *  first, 0 otherwise. See Tumble.takeDouble. */
-  takeDouble(): number
+  /**
+   * Advance and read. Call once per frame — this is the only place `Tumble`'s
+   * own clearing accessors (`takeStrong`/`takeDouble`) are ever called now;
+   * every consumer reads the `ShakeFrame` this returns instead of calling a
+   * clearing method of its own. See `ShakeFrame`'s own comment.
+   */
+  frame(dt: number): ShakeFrame
   /** The steady, motion-independent tilt offset. See Tumble.gravity. */
   gravity(): { x: number; y: number }
   /** The same tilt, uncapped — docs/todo.md entry 46. See Tumble.tilt. */
@@ -740,9 +782,7 @@ export function startShake(granted: boolean): ShakeSensor {
     // Reports zero samples forever, which is exactly the reading that says
     // "refused or unavailable" rather than "not shaken hard enough".
     return {
-      frame: () => STILL,
-      takeStrong: () => 0,
-      takeDouble: () => 0,
+      frame: () => STILL_FRAME,
       gravity: () => ({ x: 0, y: 0 }),
       tilt: () => ({ x: 0, y: 0 }),
       diagnostics: () => ({ samples: 0, peak: 0, rejected: 0 }),
@@ -794,9 +834,30 @@ export function startShake(granted: boolean): ShakeSensor {
   window.addEventListener('devicemotion', onMotion)
 
   return {
-    frame: (dt) => tumble.advance(dt),
-    takeStrong: () => tumble.takeStrong(),
-    takeDouble: () => tumble.takeDouble(),
+    frame: (dt) => {
+      const state = tumble.advance(dt)
+      // Order matters, and matches what every call site used to do by hand:
+      // a double is also a strong (the same reversal run sets both pending
+      // flags), so reading the double first means the escalation wins and
+      // this frame never reports both — docs/todo.md entry 86 moves this
+      // precedence into the one place `Tumble`'s clearing accessors are
+      // still called, rather than trusting every consumer to get the order
+      // right on its own.
+      const events: ShakeEvent[] = []
+      const doublePeak = tumble.takeDouble()
+      if (doublePeak) {
+        events.push({ kind: 'double', peak: doublePeak })
+      } else {
+        const strongPeak = tumble.takeStrong()
+        if (strongPeak) events.push({ kind: 'strong', peak: strongPeak })
+      }
+      return Object.freeze({
+        tilt: tumble.tilt(),
+        disturb: state.disturb,
+        tumble: state,
+        events: Object.freeze(events),
+      })
+    },
     gravity: () => tumble.gravity(),
     tilt: () => tumble.tilt(),
     diagnostics: () => ({ ...tumble.diagnostics(), rejected }),

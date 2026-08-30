@@ -89,8 +89,8 @@ const PILE_RATE_PER_S = 60
  *  merely being carried reads as a tremor, not a slide. */
 const DISTURB_JITTER_ACCEL = 220
 
-/** Pixels/second of outward speed a `takeStrong()` peak of 1.0 (intensity's
- *  own ceiling) gives every grain — docs/todo.md entry 61's "a hard shake
+/** Pixels/second of outward speed a `strongPeak` of `intensity()`'s own
+ *  ceiling (1.0) gives every grain — docs/todo.md entry 61's "a hard shake
  *  scatters it across the screen". **Mine**, tuned to clear a phone-sized
  *  screen from roughly its centre well within `DRAG_PER_S`'s settling time. */
 const SCATTER_SPEED_PX_S = 900
@@ -107,8 +107,11 @@ export interface Powder {
 /** What one frame of motion looks like to the powder — docs/todo.md entry
  *  61 widens this from tilt alone to the three sources a phone's own sensor
  *  already produces. `strongPeak` is 0 most frames and the raw peak (m/s²)
- *  the one frame a shake was just taken, read-and-cleared by the caller —
- *  the same one-shot shape `Tumble.takeStrong()` itself already has. */
+ *  on the one frame a shake was just taken — docs/todo.md entry 86: this is
+ *  read straight from `main.ts`'s own published `ShakeFrame`, which is
+ *  replaced wholesale next frame rather than cleared by this read, so
+ *  calling `getMotion()` more than once before that happens sees the same
+ *  shake both times rather than the second call seeing nothing. */
 interface Motion {
   tilt: { x: number; y: number }
   disturb: number
@@ -257,7 +260,7 @@ export function mountPowder(getMotion: () => Motion): Powder {
 
     // "A hard shake scatters it" — an outward impulse from the field's own
     // centre, scaled by how hard the shake was. Zero every frame but the one
-    // takeStrong() actually returned something, since getMotion() clears it.
+    // whose ShakeFrame actually carried an event — see Motion's own comment.
     const scatterSpeed = intensity(motion.strongPeak) * SCATTER_SPEED_PX_S
     const cx = w / 2
     const cy = h / 2

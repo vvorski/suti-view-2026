@@ -36,7 +36,7 @@ import { Director } from './director'
 import { createVisualiser, type Visualiser } from './scene'
 import { RELEASE_NAME } from './release-name'
 import { SlowAnalysis } from './engine'
-import { hasMotionPermissionGate, intensity, startShake } from './shake'
+import { hasMotionPermissionGate, intensity, startShake, STILL_FRAME, type ShakeFrame } from './shake'
 import { confirmBuzz, doubleBuzz, hapticStatus } from './haptics'
 import { IdlePreview } from './idle-preview'
 import { mountReleaseName, mountVersionHud, versionHudRunning } from './version'
@@ -445,10 +445,11 @@ function shuffled(
  *
  * Built for one report: "the shake isn't working, no double detection" — with
  * nothing to check it against but the eye. `probe:shake` passes every
- * synthetic case for both single and double, and `main.ts` calls `takeDouble`
- * correctly, so nothing in the code points at a bug. What is missing is the
- * one thing a probe cannot supply: whether *anything* is firing on this
- * particular phone at all, and if so, which kind.
+ * synthetic case for both single and double, and `main.ts` reads the
+ * frame's own event correctly (docs/todo.md entry 86), so nothing in the
+ * code points at a bug. What is missing is the one thing a probe cannot
+ * supply: whether *anything* is firing on this particular phone at all,
+ * and if so, which kind.
  *
  * Gated on `panel.showingStats()` rather than a second `?debug` flag — that
  * already means "diagnostics are visible" and a flash on every shake once
@@ -487,9 +488,10 @@ const PULSE_MAX = 0.9
 /**
  * The always-on confirmation that a shake was accepted — docs/todo.md
  * entry 54. `#shake-flash` above is the diagnostic (gated behind the
- * numeric readout); this is the feedback, ungated, for the same two calls
- * (`takeStrong()`/`takeDouble()`) — never for mere disturbance, which the
- * tumble already answers continuously. `peak` sets `--pulse-amt` via
+ * numeric readout); this is the feedback, ungated, for the same two event
+ * kinds a frame's own `events[0]` ever carries (`'strong'`/`'double'`,
+ * docs/todo.md entry 86) — never for mere disturbance, which the tumble
+ * already answers continuously. `peak` sets `--pulse-amt` via
  * `intensity()`, the same normaliser the buzz and the shuffle's depth
  * already share, so a light shake gets a faint edge and a hard one an
  * unmistakable one.
@@ -706,29 +708,27 @@ async function main(): Promise<void> {
   // The powder easter egg — docs/todo.md entry 46. Wired here, before Start,
   // since the entry's whole point is a secret found on the screen everyone
   // sees first, not a mode reachable only after the app has already started.
-  // `() => shake.tilt()` closes over the `let` above rather than its value at
-  // this point, so it keeps reading whichever sensor `shake` is reassigned to
-  // once the gate's own motion permission resolves.
   //
   // docs/todo.md entry 61 widens this from tilt alone to tilt plus disturb
   // plus a shake's scatter impulse — one motion source, still, per the
   // module's own comment on why it takes a getter rather than a sensor
-  // reference. `disturb` and `strongPeak` are read from the two variables
-  // below rather than calling into `shake` directly: `shake.frame()` and
-  // `shake.takeStrong()` both consume state (a decaying peak, a one-shot
-  // pending flag) and idleFrame below is already their one and only caller,
-  // every tick, whether or not the powder is up. A second caller reading
-  // `shake` here — on the powder's own, separate animation loop — would race
-  // idleFrame's for whichever fires first in a tick, and the loser would see
-  // nothing. `pendingScatterPeak` is cleared on read, right here, so a shake
-  // taken while the powder is idle-ticking but its own rAF hasn't yet run
-  // cannot be applied twice.
-  let currentDisturb = 0
-  let pendingScatterPeak = 0
+  // reference.
+  //
+  // docs/todo.md entry 86 — `latestShake` is the one place either loop below
+  // (idle, then real) publishes the snapshot its own once-per-frame
+  // `shake.frame()` call produced; the powder reads it here rather than
+  // calling into `shake` a second time, but reading it is no longer
+  // consuming, unlike the pending-flag variables this replaces. Two watchers
+  // of the same frame — this closure and whichever loop just produced it —
+  // now see the same shake rather than racing over which one drains it
+  // first.
+  let latestShake: ShakeFrame = STILL_FRAME
   const powder = mountPowder(() => {
-    const strongPeak = pendingScatterPeak
-    pendingScatterPeak = 0
-    return { tilt: shake.tilt(), disturb: currentDisturb, strongPeak }
+    // A double is also a strong for the powder's purposes — it does not
+    // distinguish kinds, only "was there an impulse this frame" — so either
+    // event in the frame counts.
+    const strongPeak = latestShake.events[0]?.peak ?? 0
+    return { tilt: latestShake.tilt, disturb: latestShake.disturb, strongPeak }
   })
   let stopGateTaps: () => void = () => {}
   {
@@ -816,20 +816,16 @@ async function main(): Promise<void> {
       // The tumble, and nothing else: no re-seed, no shuffle, at any
       // intensity. There is no audio yet and the idle programme is fixed, so
       // rerolling anything here would change what the person is about to
-      // walk into for reasons they cannot connect to anything they did.
-      // `takeDouble()` is still consumed and discarded — not left to fire the
-      // instant the real loop starts reading it after Start. `takeStrong()`
-      // is docs/todo.md entry 61: routed into `pendingScatterPeak` rather
-      // than discarded, so the powder (the only thing on screen that can act
-      // on a shake before Start) gets it instead of it vanishing into a
-      // picture nobody watching the powder can see change.
+      // walk into for reasons they cannot connect to anything they did. A
+      // double firing here used to need an explicit discard so it would not
+      // also fire the instant the real loop started reading afterwards —
+      // docs/todo.md entry 86 removes the need outright: `latestShake` is
+      // just replaced wholesale next frame, by whichever loop calls
+      // `shake.frame()` next, so there is nothing left over to discard.
       const dt = (now - lastGateShakeAt) / 1000
       lastGateShakeAt = now
-      const tumble = shake.frame(dt)
-      currentDisturb = tumble.disturb
-      visualiser.setTumble(tumble, prefs.gravity ? shake.gravity() : undefined)
-      pendingScatterPeak = shake.takeStrong()
-      shake.takeDouble()
+      latestShake = shake.frame(dt)
+      visualiser.setTumble(latestShake.tumble, prefs.gravity ? shake.gravity() : undefined)
       visualiser.render(idleParams(t, idleSpectrum), idleSpectrum)
     }
     // isStopped is read after tick(), which is what may have just set it —
@@ -1534,36 +1530,32 @@ async function main(): Promise<void> {
         if (next) panel.adopt(next)
       }
 
-      const tumble = shake.frame(audio.dt)
-      visualiser.setTumble(tumble, prefs.gravity ? shake.gravity() : undefined)
+      latestShake = shake.frame(audio.dt)
+      visualiser.setTumble(latestShake.tumble, prefs.gravity ? shake.gravity() : undefined)
       // docs/todo.md entry 58 — posture and disturbance reaching the
       // picture's colour. Only the running loop, not the idle preview
       // above: that draws synthetic params and a preview colour rather
       // than anything the shuffle/director/HUD have actually stored, and
       // every Done-when here describes the running app.
-      const tilt = shake.tilt()
-      visualiser.setMotion(tilt.x, tilt.y, tumble.disturb)
+      visualiser.setMotion(latestShake.tilt.x, latestShake.tilt.y, latestShake.disturb)
       dispatchTouches(performance.now() / 1000)
       // The discrete gesture stands down while the panel is open — a
       // shuffle rewrites the values someone currently has a finger on, the
       // same fault as a control lying about its state — but the tumble
-      // above keeps running regardless, and both pending flags are still
-      // consumed below whether or not they end up acting on anything.
-      // Leaving a flag set instead would mean a shake made while editing
-      // fires the instant the panel closes, with no gesture anywhere near
-      // that moment. See docs/todo.md entry 20; reuses the same `.hud-scrim`
-      // check the capture band above uses, rather than adding a second
-      // notion of "the panel is up".
+      // above keeps running regardless, and the frame's own event is still
+      // read below whether or not it ends up acting on anything: reading it
+      // is not consuming it (docs/todo.md entry 86), but it is still only
+      // ever this one frame's event, so there is nothing to leave set for
+      // later either way. See docs/todo.md entry 20; reuses the same
+      // `.hud-scrim` check the capture band above uses, rather than adding a
+      // second notion of "the panel is up".
       const panelOpen = document.querySelector('.hud-scrim.open') !== null
-      // Order matters: a double is also a strong, and the second shake set both
-      // flags. Reading the double first means the escalation wins and the
-      // re-seed does not also fire — a shuffle that re-seeded on top of itself
-      // would be the same picture change twice.
-      const doublePeak = shake.takeDouble()
-      if (doublePeak) {
-        if (panelOpen) {
-          // Consumed, not acted on.
-        } else {
+      // `frame()` has already resolved double-vs-strong precedence — see its
+      // own comment in shake.ts — so at most one of these ever applies.
+      const event = latestShake.events[0]
+      if (event?.kind === 'double') {
+        const doublePeak = event.peak
+        if (!panelOpen) {
           if (panel.showingStats()) flashShake(true)
           shakePulse(true, doublePeak)
           // A double is always a full scramble, regardless of peak — see
@@ -1578,9 +1570,9 @@ async function main(): Promise<void> {
           director.suspend()
           doubleBuzz(doublePeak)
         }
-      } else {
-        const strongPeak = shake.takeStrong()
-        if (strongPeak && !panelOpen) {
+      } else if (event?.kind === 'strong') {
+        const strongPeak = event.peak
+        if (!panelOpen) {
           if (panel.showingStats()) flashShake(false)
           shakePulse(false, strongPeak)
           // Graded: a colour shift at the gentlest qualifying shake, up to
@@ -1599,7 +1591,7 @@ async function main(): Promise<void> {
       visualiser.render(params, audio.freq)
       panel.update(params, {
         ...visualiser.stats(),
-        disturb: tumble.disturb,
+        disturb: latestShake.disturb,
         ...shake.diagnostics(),
         // Reported whether or not autopilot is on, so the readout answers
         // "why has nothing changed" in both cases: off, or on and waiting.

@@ -9232,7 +9232,62 @@ prints every number this entry is about.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 86. One owner for the sensor, and watchers that cannot starve each other
-`status: building` · added 2026-08-30
+`status: done` · added 2026-08-30 · build 298
+
+**Build note (Mine)** — `ShakeSensor.frame(dt)` now returns a `ShakeFrame`
+(`{ tilt, disturb, tumble, events }`, `Object.freeze`d) instead of a bare
+`TumbleState`, and `takeStrong`/`takeDouble` are gone from `ShakeSensor`'s
+own interface entirely — removed, not just discouraged, so nothing outside
+`shake.ts` can call a clearing method even by accident. `Tumble` itself is
+untouched: its own `takeStrong`/`takeDouble` are still called, but now only
+from inside `frame()`, exactly once, with the double-wins-over-strong
+precedence that used to live at main.ts's own call site moved in alongside
+them (same comment, same logic, new home). `events` is `readonly
+ShakeEvent[]`, at most one entry (`{kind:'strong'|'double', peak}`) per
+frame.
+
+`main.ts` gained one `let latestShake: ShakeFrame` replacing the old
+`currentDisturb`/`pendingScatterPeak` pair; both the idle-preview loop and
+the real loop now do `latestShake = shake.frame(dt)` and everything else
+(`visualiser.setTumble`, `setMotion`, the double/strong branch, the powder's
+`getMotion` closure, the numeric readout's `disturb`) reads from it. The
+idle loop's old defensive `shake.takeDouble()` — called and discarded so a
+double did not fire again once the real loop started reading — is gone
+outright: since a `ShakeFrame` is replaced wholesale rather than
+accumulated, the real loop's own first `frame()` call already only ever
+reports what happened since the *last* `frame()` call (idle or real), so
+there was nothing left to leak once destructive reads were confined to one
+call site.
+
+Powder's `getMotion()` now reads `latestShake` (tilt/disturb/the one event's
+peak) without clearing anything, matching Decided's "reading is not
+consuming" directly — if the powder's own rAF happens to run more than once
+before main.ts's next tick, it now sees the same shake both times rather
+than the second read getting 0. That's a real, if narrow, behaviour change
+from before (the old closure cleared `pendingScatterPeak` on its own first
+read), and it's the correct one per this entry's own stated goal, so I did
+not try to preserve the old one-shot-per-read semantics on top of a
+snapshot that is explicitly supposed to not do that.
+
+Verify's own grep (`takeStrong`/`takeDouble` outside `shake.ts`) still
+matches `probe-shake.ts`, which calls `tumble.takeStrong()`/`takeDouble()`
+directly on a raw `Tumble` — exactly what Decided asks for ("probe-shake.ts
+keeps driving Tumble directly, so its table stays comparable"), so I'm
+reading the grep as scoped to `ShakeSensor`'s own consumers (main.ts,
+powder.ts), not literally every file in the repo; a few stale comments in
+both files that described the old clear-on-read mechanism were also
+updated so they don't describe a mechanism that no longer exists.
+
+`pnpm build` and `pnpm lint` are clean. `pnpm probe:shake` (34 checks) and
+`pnpm probe:haptics` (10 checks) both pass unchanged — neither drives
+`ShakeSensor` at all (the former drives `Tumble` directly, the latter drives
+`intensity()` with synthetic peaks), which is exactly what "the physics
+being untouched" as Verify's first half should mean. `pnpm probe:rgb-slip`
+and `pnpm probe:motion-bias` (both touch `shake.ts`'s constants/Tumble
+indirectly) also pass. Not separately verified on a real phone — this is a
+plumbing change with no user-visible behaviour difference apart from the
+powder narrowing noted above, and the entry's own Verify names the probe
+and the grep, not the phone.
 
 **Do** — make the shake sensor publish an immutable per-frame snapshot plus a
 list of events, so any number of consumers can read it without consuming it.
