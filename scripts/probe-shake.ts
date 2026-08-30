@@ -289,6 +289,36 @@ for (const [name, r] of cases) {
   if (r.peakDisturb < 0.5) failures.push(`${name} reads as still (disturb ${r.peakDisturb.toFixed(2)})`)
 }
 
+// docs/todo.md entry 85, defect 1: the sustained path used to report depth
+// 0.00 for exactly the gentle shakes it exists for — a shuffle that never
+// happens is indistinguishable from a dead detector to whoever is shaking
+// the phone. Both gentle-sustained rows, at 60Hz and at 12Hz, must clear
+// SHUFFLE_RESEED's own 0.30 in main.ts by a real margin.
+for (const name of ['gentle sustained shake (12 m/s², 3 Hz)', 'gentle sustained shake @ 12 Hz']) {
+  const r = byName(name)
+  if (r.depth <= 0.3) failures.push(`${name} reports depth ${r.depth.toFixed(2)}, expected above 0.30`)
+}
+
+// docs/todo.md entry 85, defect 2: the same deliberate shake used to report
+// a depth that fell by more than half between 60Hz and 12Hz sampling,
+// purely because a lower rate misses more of the sine wave's own true peak
+// — the same gesture has to mean the same thing regardless of whose phone
+// it is.
+{
+  const deliberateDepths = [
+    'deliberate shake (28 m/s², 4 Hz)',
+    'deliberate shake @ 30 Hz',
+    'deliberate shake @ 20 Hz',
+    'deliberate shake @ 12 Hz',
+  ].map((name) => byName(name).depth)
+  const spread = Math.max(...deliberateDepths) - Math.min(...deliberateDepths)
+  if (spread > 0.1) {
+    failures.push(
+      `deliberate-shake depth varies by ${spread.toFixed(2)} across sample rates (${deliberateDepths.map((d) => d.toFixed(2)).join(', ')}), expected ~0.1`,
+    )
+  }
+}
+
 console.log(
   failures.length === 0
     ? 'PASS: a shake re-rolls, a knock and its rebound do not, and no hard shake reads as still.'

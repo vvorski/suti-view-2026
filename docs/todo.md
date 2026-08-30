@@ -9131,7 +9131,57 @@ silences both.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 85. A gentle shake asks for a shuffle and gets nothing
-`status: building` · added 2026-08-30
+`status: done` · added 2026-08-30 · build 294
+
+**Build note (Mine)** — a new `envelopePeak(envelope)` in `src/shake.ts`,
+next to `intensity()`, maps the `disturb` envelope onto `intensity()`'s own
+peak scale (`STRONG_UP`..`PEAK_CEILING`), calibrated so `SUSTAIN_LEVEL`
+(0.55, the least envelope that can ever reach it) lands just past
+`SHUFFLE_RESEED` and full saturation lands near what a hard reversal-path
+shake already reports natively. `detectSustained`'s peak snapshot changes
+from `this.strongPeak = this.peak` to
+`Math.max(this.peak, envelopePeak(this.envelope))` — fixing defect 1 outright,
+since a gentle sustained shake's `this.peak` alone was always going to be
+0-ish there.
+
+Beyond Lands-in's literal text (`intensity`, `detectSustained`'s snapshot,
+and `probe-shake.ts`'s expectations): I also applied the same
+`Math.max(this.peak, envelopePeak(this.envelope))` blend to `detectStrong`'s
+own `strongPeak`/`doublePeak` snapshots, not just `detectSustained`'s.
+Defect 2 (the deliberate shake's depth swinging from 0.54 to 0.21 across
+sample rates) fires through the *reversal* path, not the sustained one, and
+"stop deriving depth from instantaneous peak" only actually fixes it if the
+reversal path gets the same treatment — leaving `detectStrong` untouched
+would have fixed the entry's own headline defect while leaving its second,
+equally-documented one exactly as broken as it started. The `Math.max`
+means a hard shake's own genuinely-caught peak still wins outright (nothing
+here can ever pull a strong reading down), so "the reversal path genuinely
+measures a peak and should keep reporting one" still holds whenever the
+sensor actually caught one.
+
+Measured, not asserted: `pnpm probe:shake` now shows the gentle-sustained
+rows at depth 0.42 (native) and 0.36 (@12Hz) — both past 0.30, both inside
+the entry's own named 0.35-0.5 target — and the four deliberate-shake rows
+(native/30/20/12Hz) all read depth 0.55, spread 0 rather than the ~0.1 Done-when
+allows. That flat spread is not a tuning coincidence: 28 m/s² is double
+`FULL` (14), so `disturb` saturates to 1 on the very first sample near any
+peak regardless of how few samples a slow sensor delivers, and the reversal
+counter only needs to see `STRONG_UP` (18, itself under `FULL`) crossed three
+times to fire — so by the time it does, `envelope` has already locked at its
+own ceiling at every rate tested. Two new checks added to `probe-shake.ts`
+pin both numbers down (depth > 0.30 for both gentle rows; spread ≤ 0.1
+across the four deliberate rows) so this doesn't silently regress.
+
+Knock rejection and the double-shake counting logic are both completely
+untouched — the fix only ever changes what value gets *reported* once
+`strongPending`/`doublePending` are already true, never whether they become
+true, so every existing count-based check (knock strong 0, double counts)
+passed unmodified. `pnpm build`, `pnpm lint`, `pnpm probe:shake` (now 34
+checks, up from 32) and `pnpm probe:haptics` (unaffected — it drives
+`intensity()` directly with synthetic peaks, never through shake detection)
+all pass. Not verified on a real phone this session; Verify names
+`pnpm probe:shake` specifically, and its own header explains why synthetic
+motion is what's tunable here at all.
 
 **Do** — derive shuffle depth from evidence the detector actually has, so the
 sustained path stops reporting zero and the same gesture means the same thing

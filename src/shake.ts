@@ -107,6 +107,35 @@ export function intensity(peak: number): number {
   return Math.min(1, Math.max(0, (peak - STRONG_UP) / (PEAK_CEILING - STRONG_UP)))
 }
 
+/**
+ * docs/todo.md entry 85. A stand-in "peak" for `intensity()` above, derived
+ * from the `disturb` envelope rather than an instantaneous sample maximum —
+ * see `SUSTAIN_LEVEL`'s own comment for why the envelope, and only the
+ * envelope, does not care what rate the sensor reports at.
+ *
+ * Called at both `detectSustained`'s and `detectStrong`'s own peak snapshots
+ * (`Math.max(this.peak, envelopePeak(this.envelope))`), never in place of
+ * `this.peak` outright: a hard shake's own instantaneous peak is already
+ * correct and already above what this ever produces, so the max leaves it
+ * exactly as it read before this entry, and only a shake whose true peak
+ * the sensor never actually caught — because it was gentle (defect 1) or
+ * because the sample rate missed it (defect 2) — is lifted by this at all.
+ *
+ * Calibrated, not derived: `SUSTAIN_LEVEL` (0.55, the least envelope that
+ * can ever reach here) maps to 0.30 on `intensity()`'s own 0-1 scale — just
+ * past `SHUFFLE_RESEED` in main.ts, never below it — and full saturation
+ * (envelope 1) maps to 0.55, close to what a genuinely hard shake's own raw
+ * peak already reports natively. **Mine** — the entry names the target
+ * range (0.35-0.5 for a gentle sustained shake) but not these two numbers;
+ * probe-shake.ts's own new checks are what actually pins them down.
+ */
+function envelopePeak(envelope: number): number {
+  const ENVELOPE_DEPTH_FLOOR = 0.3
+  const ENVELOPE_DEPTH_SPAN = 0.25
+  const depth = clamp01(ENVELOPE_DEPTH_FLOOR + (ENVELOPE_DEPTH_SPAN * (envelope - SUSTAIN_LEVEL)) / (1 - SUSTAIN_LEVEL))
+  return STRONG_UP + depth * (PEAK_CEILING - STRONG_UP)
+}
+
 const STRONG_DOWN = 7
 const STRONG_REVERSALS = 3
 const STRONG_WINDOW = 1.2
@@ -452,7 +481,10 @@ export class Tumble {
     if (this.sustained < SUSTAIN_TIME || this.cooldown > 0) return
 
     this.strongPending = true
-    this.strongPeak = this.peak
+    // docs/todo.md entry 85 — this path exists precisely for shakes whose
+    // instantaneous peak never reached STRONG_UP, so `this.peak` alone was
+    // always going to report 0 here. See envelopePeak's own comment.
+    this.strongPeak = Math.max(this.peak, envelopePeak(this.envelope))
     this.sustained = 0
     this.cooldown = STRONG_COOLDOWN
     this.doubleWindow = DOUBLE_WINDOW
@@ -513,12 +545,18 @@ export class Tumble {
         // shake of a double; otherwise it is a fresh single. Shaking straight
         // through the cooldown without stopping is one long shake and fires
         // nothing further, which is what it always did.
+        // docs/todo.md entry 85 — the same blend as the sustained path's own
+        // snapshot, for the same reason defect 2 named: `this.peak` alone is
+        // an instantaneous sample maximum, and undersamples a real shake at
+        // a low sensor rate even when the reversal counter itself still
+        // fires correctly. `envelopePeak` never wins over a peak the sensor
+        // genuinely caught — only over one it missed.
         if (escalating && this.armedForDouble) {
           this.doublePending = true
-          this.doublePeak = this.peak
+          this.doublePeak = Math.max(this.peak, envelopePeak(this.envelope))
         } else if (!escalating) {
           this.strongPending = true
-          this.strongPeak = this.peak
+          this.strongPeak = Math.max(this.peak, envelopePeak(this.envelope))
         }
         this.reversals = 0
         this.windowLeft = 0
