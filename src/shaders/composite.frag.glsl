@@ -95,14 +95,28 @@ void main() {
   p = vec2(c * p.x - s * p.y, s * p.x + c * p.y) / (1.0 + uTumble.w);
   vec2 uv = clamp(p + uTumble.yz + 0.5, 0.0, 1.0);
 
-  // The atmosphere is dimmed before anything else sees it, so the merge mode
-  // and the geometric alpha below both operate on the layer as it will
-  // actually appear. Dimming afterwards would make a faint atmosphere still
-  // blend as though it were solid.
-  vec3 base = texture2D(uAtmosphere, uv).rgb * uAtmAlpha * uAtmColour;
-  vec3 top = texture2D(uGeometry, uv).rgb * uGeoColour;
+  // docs/todo.md entry 34. The atmosphere used to be dimmed before anything
+  // else saw it — texture2D(uAtmosphere, uv).rgb * uAtmAlpha — so the merge
+  // mode operated on a colour already darkened toward black. That is wrong
+  // under any mode where black is not neutral (Multiply, Overlay): at
+  // uAtmAlpha == 0 the atmosphere did not disappear, it turned the whole
+  // frame black, because the blend still fully governed a black input.
+  //
+  // The fix keeps the atmosphere undimmed going into the blend, and instead
+  // mixes uAtmAlpha across the blend's *result* — between the geometry alone
+  // (what the picture looks like with no atmosphere at all) and the full
+  // blend. That is the same shape uGeoAlpha already uses one line down, and
+  // it is why zero opacity now means "this layer is absent", the way it
+  // already did for the geometric layer.
+  vec3 atm = texture2D(uAtmosphere, uv).rgb * uAtmColour;
+  vec3 geo = texture2D(uGeometry, uv).rgb * uGeoColour;
+  vec3 both = blendWith(atm, geo, uMode);
 
-  vec3 col = clamp(mix(base, blendWith(base, top, uMode), uGeoAlpha), 0.0, 1.0);
+  vec3 col = clamp(
+    mix(atm * uAtmAlpha, mix(geo, both, uAtmAlpha), uGeoAlpha),
+    0.0,
+    1.0
+  );
 
   // The room goes underneath, and the picture becomes light falling on it.
   //

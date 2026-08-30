@@ -2641,7 +2641,7 @@ entry's own Verify line already says a mouse cannot answer. `pnpm build`,
 `pnpm lint` both clean.
 
 ### 34. A layer at zero opacity still imposes its blend mode
-`status: ready` · added 2026-08-29
+`status: done` · added 2026-08-29 · shipped at build 146
 
 **Do** — apply the atmosphere's alpha as a mix of the blend's *result*, the way
 the geometric layer's alpha already works, instead of pre-multiplying the
@@ -2740,6 +2740,26 @@ Then on screen at 320×568 and 360×640, because the merge arcs are a shared
 surface. `pnpm build`, `pnpm lint`, and `pnpm probe` unchanged.
 **Hard stops** — prefs no (no field added, changed or reinterpreted) · url no ·
 capture no · dependency no.
+
+**Build note.** Landed exactly as specified — the four-line replacement in
+`composite.frag.glsl` is close to verbatim, with `base`/`top` renamed to
+`atm`/`geo` for readability now that `base` no longer means "already
+dimmed." Verified with a new `pnpm probe:composite`, a plain JS
+re-implementation of `blendWith()` and the composite line (this is
+arithmetic, not geometry — the entry's own Verify line says a browser
+can't tell 0.51 from 0.46) rather than a WebGL harness: reproduces the
+entry's own measured regression (Multiply/Overlay at `atmAlpha` 0 used to
+return black), confirms the fix (every one of the six modes now lands
+exactly on the geometry alone at `atmAlpha` 0), confirms a Multiply sweep
+ends on the geometry rather than black, confirms both alphas at 1 is
+pixel-identical to the old formula for all six modes, confirms
+`uGeoAlpha`'s own behaviour at `geoAlpha` 0 is untouched, and confirms
+Normal/Add/Screen match the old formula across the whole alpha range, not
+only at the endpoints. A `views-probe.html`-based spot check rendered
+Circles-over-Field with `atmAlpha` 0 under Multiply and read back a mean
+frame brightness of 0.28 — not the 0.0 the old formula produced under the
+same setup. `pnpm probe` is unchanged, confirming the mapping itself was
+never touched. `pnpm build`, `pnpm lint` both clean.
 
 ### 35. A light shake nudges the picture instead of repainting it
 `status: ready` · added 2026-08-30
