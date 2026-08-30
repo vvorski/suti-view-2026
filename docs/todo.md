@@ -8811,7 +8811,7 @@ code review and by the diff's own shape, not by watching a real tap
 consumed.
 
 ### 81. The director waits for the bar
-`status: building` · added 2026-08-30 · started 2026-08-30
+`status: done` · added 2026-08-30 · started 2026-08-30 · build 279
 
 **Do** — when the tempo is confident, hold the director's decision until the
 next bar and fire it there. When it is not, fire immediately, exactly as now.
@@ -8851,6 +8851,75 @@ today; and no decision is ever delayed more than one bar.
 **Verify** — the phone against a track with an obvious beat. `probe-slow.ts`
 can assert the bounded wait, which is the part that can strand something.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+**Build note** — implemented as decided. `Director` gains a bar clock
+(`lastBeatPhase`/`beatsIntoBar`, incrementing on each beat-phase wrap —
+phase decreasing rather than advancing — and marking a bar boundary on
+every fourth one) and a single pending-decision slot (`pending`/
+`pendingWaited`). The three hold/dead-band timers (`COLOUR_HOLD`,
+`VIEW_HOLD`, `VIEW_STABLE`, `BOUNDARY`/`BOUNDARY_RAMP`) are untouched, per
+Decided — they still decide *whether* something is due; what changed is
+only what happens once it is.
+
+Once due, a decision fires immediately in two cases — `beatConfidence`
+low enough that `MAX_BAR_WAIT_S * beatConfidence` (the wait cap) collapses
+to ~0, or a bar boundary already landed on the exact frame it became due,
+where holding would only cost a full extra bar for nothing — and is
+otherwise stashed as `pending` and re-checked every subsequent frame: it
+fires the instant a bar boundary arrives, or once `pendingWaited` reaches
+the cap, whichever comes first. The cap is recomputed fresh from the
+*current* `beatConfidence` every single check, not fixed when the wait
+began — Decided's own explicit worry ("a tempo that drifts or drops
+mid-wait must never strand a decision") is what this buys: a lock lost
+partway through a wait collapses the cap toward 0 and releases the
+decision within a frame rather than leaving it stranded until some bar
+that may never arrive.
+
+`MAX_BAR_WAIT_S = 2.4` (**Mine**) is a fixed duration rather than a true
+bar length at whatever tempo is actually playing, since only
+`beatPhase`/`beatConfidence` reach this file — not `bpm` — per Lands-in's
+own scope. Chosen against a nominal ~100bpm four-beat bar; "at most one
+bar" is the ceiling this never crosses, not a promise to hit every
+possible tempo's own bar length exactly, and is disclosed as an
+approximation rather than presented as exact. `suspend()` now also clears
+any pending decision — a decision the autopilot was holding for the next
+bar is exactly as unwelcome mid-manual-edit as one that would have fired
+on the spot, and "never fight the user" reads as covering both.
+
+One small addition beyond Lands-in's literal text: `status()` gained a
+`waitingForBar: boolean` field, in keeping with this file's own stated
+philosophy for that method ("reporting the timers... stops 'restrained'
+being indistinguishable from 'not running'"). **Not** wired into the HUD's
+own printed readout — Lands-in scopes this entry to `director.ts` and
+`main.ts` only, and extending `hud.ts`'s formatting was not asked for. **Mine**.
+
+`scripts/probe-slow.ts` needed the two new arguments threaded through its
+own existing `director.update()` call (using `params.beatPhase`/
+`params.beatConfidence`, already present on every mapping since entry 75)
+to keep building at all, and gained a new, fully isolated section driving
+a fresh `Director` directly rather than through the full slow-analysis
+pipeline: confidence 0 fires on the spot; confidence 1 with a bar already
+arriving on the due frame also fires on the spot; confidence 1 with no bar
+yet holds (`status().waitingForBar` confirmed true) and releases exactly
+when the bar arrives; a confidence collapse mid-wait releases the held
+decision within a frame rather than stranding it; and `suspend()` discards
+a held decision outright, confirmed not to reappear afterward. All ten
+pass. The existing five-section arrangement test (unmodified) still passes
+its own two checks — the "drop"/"build" sections are genuinely rhythmic
+(bpm 125) and may exercise real bar-quantisation incidentally, but only
+the new isolated section proves each specific claim in Decided directly
+rather than by coincidence of what a synthetic track happens to do.
+
+Verified: `pnpm build`/`pnpm lint` clean; `pnpm probe`, `pnpm probe:tap`
+and `pnpm probe:fullscreen` all unaffected (0 failures / all pass) — this
+entry touches neither file. `pnpm probe:slow` is the entry's own named
+Verify method for this file (no browser check listed), and all of its
+checks pass, old and new.
+
+Not independently verified: the entry's own phone-and-obvious-beat Verify
+line — "does it visibly land on the beat" is not something an offline
+probe can answer, the same limit every beat-adjacent entry since 75 has
+disclosed.
 
 ### 82. The layers move apart
 `status: ready` · added 2026-08-30

@@ -19,7 +19,7 @@
 import type { AudioFrame } from '../src/engine/capture.ts'
 import { Director } from '../src/director.ts'
 import { MAPPINGS } from '../src/engine/fast.ts'
-import { SlowAnalysis } from '../src/engine/slow.ts'
+import { BLANK, SlowAnalysis } from '../src/engine/slow.ts'
 import type { AtmosphericViewName } from '../src/views.ts'
 import type { GeoColour } from '../src/geo-colour.ts'
 
@@ -163,7 +163,7 @@ for (const sec of ARRANGEMENT) {
     const params = mapping.update(makeFrame(sec, hit))
     const c = slow.update({ freq, time, binCount: BINS, sampleRate: SR, dt: DT }, params)
 
-    const next = director.update(c, DT, current)
+    const next = director.update(c, DT, current, params.beatPhase, params.beatConfidence)
     if (next) {
       const bits: string[] = []
       if (next.geoColour) {
@@ -214,3 +214,120 @@ if (decisions.length === 0) problems.push('director never acted across a whole a
 if (decisions.length > 6) problems.push(`director acted ${decisions.length} times — too busy`)
 console.log()
 console.log(problems.length ? 'CHECK: ' + problems.join('; ') : 'PASS: director acted, and sparingly.')
+
+// docs/todo.md entry 81 — the bar-quantisation logic in isolation. The
+// arrangement above exercises it incidentally (the "drop"/"build" sections
+// are genuinely rhythmic and can lock a real tempo), but only this direct
+// drive proves the specific claims Decided makes: immediate at zero
+// confidence, held for a bar at high confidence, released quickly rather
+// than stranded if confidence drops mid-wait, and discarded outright by a
+// manual suspend.
+console.log('\nBar-quantisation (entry 81), driven directly:\n')
+{
+  let failures = 0
+  const check = (name: string, ok: boolean, detail: string): void => {
+    if (!ok) failures++
+    console.log(`${ok ? 'ok  ' : 'FAIL'}  ${name}${ok ? '' : `  — ${detail}`}`)
+  }
+
+  // A Character that is due a colour change on the very first call: `warm`,
+  // maximum novelty (so requiredNovelty's own floor is trivially cleared —
+  // sinceColour has barely moved past COLOUR_HOLD, where the floor is
+  // still its full, un-decayed BOUNDARY), and a `bright` far enough from
+  // white to clear COLOUR_MIN_STEP. No warm-up needed: `sinceColour` starts
+  // at exactly COLOUR_HOLD (director.ts's own field default), already
+  // satisfying that half of the due-check on a fresh Director.
+  const dueCharacter = { ...BLANK, warm: true, bright: 1, noveltyMedium: 1 }
+  const idleCurrent = { geoColour: { r: 1, g: 1, b: 1 }, atmosphericView: 'field' as AtmosphericViewName }
+
+  // 1. Zero confidence: fires the instant it becomes due, unchanged from
+  //    before this entry.
+  {
+    const d = new Director()
+    const next = d.update(dueCharacter, DT, idleCurrent, 0, 0)
+    check('confidence 0 fires immediately', next?.geoColour !== undefined, `next=${JSON.stringify(next)}`)
+  }
+
+  // 2. Full confidence, a bar boundary already on the due frame: also fires
+  //    immediately — holding would only cost a full extra bar for nothing.
+  //    Three zero-dt calls walk beatsIntoBar from 0 to 3 without touching
+  //    sinceColour/sinceView at all, so the due-check itself is reached in
+  //    exactly the same state as case 1 — only the bar clock differs.
+  {
+    const d = new Director()
+    let phase = 0
+    for (let i = 0; i < 3; i++) {
+      phase = 0.9
+      d.update({ ...BLANK, warm: true }, 0, idleCurrent, phase, 1)
+      phase = 0.1
+      d.update({ ...BLANK, warm: true }, 0, idleCurrent, phase, 1)
+    }
+    // The fourth wrap lands on the actual due-check call itself.
+    const next = d.update(dueCharacter, DT, idleCurrent, 0.9, 1)
+    const arrived = d.update(dueCharacter, DT, idleCurrent, 0.1, 1)
+    check(
+      'confidence 1, bar arriving on the due frame, fires immediately',
+      next === null && arrived?.geoColour !== undefined,
+      `next=${JSON.stringify(next)} arrived=${JSON.stringify(arrived)}`,
+    )
+  }
+
+  // 3. Full confidence, no bar yet: held rather than fired, and released
+  //    exactly when the bar arrives.
+  {
+    const d = new Director()
+    const first = d.update(dueCharacter, DT, idleCurrent, 0, 1)
+    check('confidence 1, no bar yet, holds rather than firing', first === null, `next=${JSON.stringify(first)}`)
+    check('holding is visible on status()', d.status().waitingForBar, 'waitingForBar was false')
+
+    // Advance the bar clock four beats without ever reaching a fresh due
+    // condition (idleCurrent never changes, and nothing here raises
+    // noveltyMedium again).
+    let phase = 0
+    let released: ReturnType<Director['update']> = null
+    for (let i = 0; i < 4 && !released; i++) {
+      phase = 0.9
+      d.update({ ...BLANK, warm: true }, DT, idleCurrent, phase, 1)
+      phase = 0.1
+      const r = d.update({ ...BLANK, warm: true }, DT, idleCurrent, phase, 1)
+      if (r) released = r
+    }
+    check('released once the bar line arrives', released?.geoColour !== undefined, `released=${JSON.stringify(released)}`)
+  }
+
+  // 4. Decided's own explicit worry: a tempo that drops mid-wait must not
+  //    strand the decision. Confidence falling to 0 while still waiting
+  //    releases it within a frame rather than never.
+  {
+    const d = new Director()
+    const first = d.update(dueCharacter, DT, idleCurrent, 0, 1)
+    check('holds at full confidence', first === null, `next=${JSON.stringify(first)}`)
+    // Confidence collapses (tempo lost) without a bar ever arriving.
+    const second = d.update({ ...BLANK, warm: true }, DT, idleCurrent, 0, 0)
+    check('a dropped lock releases the held decision rather than stranding it', second?.geoColour !== undefined, `second=${JSON.stringify(second)}`)
+  }
+
+  // 5. A manual change discards a held decision outright — "never fight
+  //    the user" applies to a decision not yet landed too.
+  {
+    const d = new Director()
+    const first = d.update(dueCharacter, DT, idleCurrent, 0, 1)
+    check('holds before the manual change', first === null, `next=${JSON.stringify(first)}`)
+    d.suspend()
+    check('suspend clears the pending decision', d.status().waitingForBar === false, 'still waiting after suspend')
+    // Even once suspend clears and a bar arrives, the discarded decision
+    // does not reappear on its own — a fresh due-check would be needed,
+    // and idleCurrent/BLANK together are not due for anything.
+    let phase = 0
+    let reappeared = false
+    for (let i = 0; i < 400; i++) {
+      phase = (phase + 0.05) % 1
+      const r = d.update({ ...BLANK, warm: true }, DT, idleCurrent, phase, 1)
+      if (r) reappeared = true
+    }
+    check('the discarded decision never reappears on its own', !reappeared, 'a stale decision fired after suspend')
+  }
+
+  console.log(failures === 0 ? '\nall bar-quantisation checks passed' : `\n${failures} check(s) failed`)
+  if (failures > 0) process.exitCode = 1
+}

@@ -1488,10 +1488,19 @@ async function main(): Promise<void> {
       // keep in step.
       const character = slow.update(audio, params)
       if (!autoOverrideOff) {
-        const next = director.update(character, audio.dt, {
-          geoColour: prefs.geoColour,
-          atmosphericView: prefs.atmosphericView,
-        })
+        // docs/todo.md entry 81 — beatPhase/beatConfidence, both already on
+        // params (entry 75), are what let the director hold a decision for
+        // the next bar rather than firing the instant it becomes due.
+        const next = director.update(
+          character,
+          audio.dt,
+          {
+            geoColour: prefs.geoColour,
+            atmosphericView: prefs.atmosphericView,
+          },
+          params.beatPhase,
+          params.beatConfidence,
+        )
         if (next) panel.adopt(next)
       }
 

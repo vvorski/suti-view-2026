@@ -68,6 +68,17 @@ const VIEW_HOLD = 30
  *  Already at entry 45's cap; unchanged by it. */
 const VIEW_STABLE = 30
 
+/**
+ * docs/todo.md entry 81 — how long a decision that is otherwise due may
+ * wait for a bar line before firing anyway, at full `beatConfidence`. Only
+ * `beatPhase`/`beatConfidence` reach this file, not a tempo in bpm, so this
+ * is a fixed duration rather than a true bar length at whatever tempo is
+ * actually playing — chosen against a nominal ~100bpm four-beat bar (2.4s).
+ * "At most one bar" is the ceiling a decision never crosses, not a promise
+ * to hit every possible tempo's own bar length exactly. **Mine**.
+ */
+const MAX_BAR_WAIT_S = 2.4
+
 /** Colour only moves if it would move far enough to notice. Below this the
  *  change is invisible and only costs a boundary that could have carried
  *  something worth seeing. */
@@ -174,10 +185,25 @@ export class Director {
   private sinceView = 0
   private candidate: AtmosphericViewName | null = null
   private candidateHeld = 0
+  // docs/todo.md entry 81 — the bar clock, and the one decision currently
+  // waiting on it. `lastBeatPhase` detects a beat wrap (phase decreasing
+  // rather than advancing); every fourth wrap is a bar line. Only ever
+  // advances while `beatPhase` is actually moving, so an unlocked tracker
+  // (pinned at 0, see fast.ts's own VisualParams doc) correctly never
+  // claims a bar happened.
+  private lastBeatPhase = 0
+  private beatsIntoBar = 0
+  private pending: Directives | null = null
+  private pendingWaited = 0
 
   /** Call whenever the user changes anything by hand. */
   suspend(): void {
     this.suspended = SUSPEND
+    // docs/todo.md entry 81 — a decision the autopilot was holding for the
+    // next bar is exactly as unwelcome as one it would fire this instant;
+    // "never fight the user" does not have an exception for "but I already
+    // decided this before you touched anything".
+    this.pending = null
   }
 
   /** Seconds until the autopilot resumes, 0 when it is live. */
@@ -208,6 +234,14 @@ export class Director {
     tillView: number
     candidate: AtmosphericViewName | null
     candidateHeld: number
+    /** docs/todo.md entry 81 — a decision is currently held for the next
+     *  bar line rather than having fired the instant it became due. Not
+     *  wired into the HUD's own printed readout — Lands-in scopes this
+     *  entry to director.ts and main.ts only — but reported here for the
+     *  same reason every other timer in this method is: so "restrained"
+     *  stays distinguishable from "not running" for whoever looks next.
+     *  **Mine**. */
+    waitingForBar: boolean
   } {
     return {
       suspended: Math.max(0, this.suspended),
@@ -215,6 +249,7 @@ export class Director {
       tillView: Math.max(0, VIEW_HOLD - this.sinceView),
       candidate: this.candidate,
       candidateHeld: this.candidateHeld,
+      waitingForBar: this.pending !== null,
     }
   }
 
@@ -226,14 +261,32 @@ export class Director {
    *
    * `current` is what is on screen now, so a decision that agrees with reality
    * is not reported as a change.
+   *
+   * `beatPhase`/`beatConfidence` are docs/todo.md entry 81: once a decision
+   * is otherwise due, it is held until the next bar line rather than fired
+   * on the spot — quantised to the beat when the tracker is confident,
+   * blending continuously to immediate as confidence falls, per that
+   * entry's own "no threshold to tune".
    */
   update(
     c: Character,
     dt: number,
     current: { geoColour: GeoColour; atmosphericView: AtmosphericViewName },
+    beatPhase: number,
+    beatConfidence: number,
   ): Directives | null {
     this.sinceColour += dt
     this.sinceView += dt
+
+    // docs/todo.md entry 81 — the bar clock. Runs regardless of suspend, so
+    // resuming does not inherit a stale count from before the pause any
+    // more than `candidateHeld`'s own hysteresis does below.
+    let barBoundary = false
+    if (beatPhase < this.lastBeatPhase - 0.5) {
+      this.beatsIntoBar = (this.beatsIntoBar + 1) % 4
+      if (this.beatsIntoBar === 0) barBoundary = true
+    }
+    this.lastBeatPhase = beatPhase
 
     if (this.suspended > 0) {
       this.suspended -= dt
@@ -244,6 +297,24 @@ export class Director {
     }
 
     this.track(c, dt)
+
+    // docs/todo.md entry 81 — a decision already waiting for a bar line:
+    // fire it the instant the bar arrives, or once it has waited as long as
+    // the current confidence allows, whichever comes first. Recomputing the
+    // cap fresh every call (rather than fixing it when the wait began) is
+    // what lets a tempo that drifts or drops mid-wait release the decision
+    // quickly instead of stranding it — Decided's own explicit worry.
+    if (this.pending) {
+      this.pendingWaited += dt
+      const cap = MAX_BAR_WAIT_S * beatConfidence
+      if (barBoundary || this.pendingWaited >= cap) {
+        const fired = this.pending
+        this.pending = null
+        this.pendingWaited = 0
+        return fired
+      }
+      return null
+    }
 
     // Long-scale history has to exist before any of this means anything. Before
     // the buffer is warm the flavour axes are still converging from their
@@ -273,7 +344,20 @@ export class Director {
       this.sinceView = 0
     }
 
-    return out.geoColour || out.atmosphericView ? out : null
+    if (!out.geoColour && !out.atmosphericView) return null
+
+    // docs/todo.md entry 81 — fire on the spot rather than holding when
+    // either the tracker is not confident enough to bother waiting on
+    // (cap collapses to 0 as beatConfidence falls, "blend to immediate as
+    // it falls" needing no threshold of its own) or a bar line has already
+    // arrived on this exact frame, in which case holding would only cost a
+    // full extra bar for nothing.
+    const cap = MAX_BAR_WAIT_S * beatConfidence
+    if (cap <= 0 || barBoundary) return out
+
+    this.pending = out
+    this.pendingWaited = 0
+    return null
   }
 
   /** Hysteresis on the programme suggestion: a new answer has to persist. */
