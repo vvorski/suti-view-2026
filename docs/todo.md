@@ -6382,7 +6382,7 @@ powder already made.
   `.gate-name`. This entry touches only the `<h1>`. They can land in either
   order.
 - Not decided here → whether **kiyo** appears anywhere else, in a dedication or
-  a byline. That is the open question from the Keo conversation and it belongs
+  a byline. That is the open question from the Kiyo conversation and it belongs
   in its own entry, not smuggled into a rename.
 
 **Lands in**
