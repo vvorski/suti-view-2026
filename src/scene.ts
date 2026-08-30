@@ -41,12 +41,14 @@ import type { VisualParams } from './engine'
 import {
   createEmitterState,
   createMotionBiasState,
+  createRgbSlipState,
   createRippleState,
   createTouchStreamState,
   Envelope,
   MAX_RIPPLES,
   updateEmitter,
   updateMotionBias,
+  updateRgbSlip,
   updateRipples,
   updateTouchStream,
   type EmitterState,
@@ -434,6 +436,12 @@ export function createVisualiser(
     // (angle, offsetX, offsetY, overscan) — at rest this is the identity, so
     // a device with no accelerometer costs one unused uniform and nothing else.
     uTumble: { value: new Vector4(0, 0, 0, 0) },
+    // docs/todo.md entry 76 — the RGB channels' own uv-space separation,
+    // already scaled to its cap. Direction comes from uTumble.yz above, not
+    // from a second uniform of its own; see composite.frag.glsl. 0 at rest,
+    // and read as a plain uniform branch there, so a still phone pays for
+    // nothing beyond this one float.
+    uSlip: { value: 0 },
     // Passthrough AR. Null until a camera is actually attached: Three binds a
     // default 1x1 white texture for a null sampler, which is never sampled
     // because the shader guards on uCameraMix > 0.
@@ -572,6 +580,10 @@ export function createVisualiser(
   let motionTiltX = 0
   let motionTiltY = 0
   let motionDisturb = 0
+  // docs/todo.md entry 76 — ticked from the same `motionDisturb` above,
+  // already recorded here every frame by `setMotion` for the colour bias.
+  // No new setter: this is the "no new plumbing at all" the entry asks for.
+  const rgbSlip = createRgbSlipState()
   let baseGeoColour: GeoColour = options.geoColour
   let baseAtmColour: GeoColour = options.atmColour
   // Day mode — docs/todo.md entries 47, 53 and 71. `overrideTarget` is what
@@ -933,6 +945,12 @@ export function createVisualiser(
       // that darkens the picture the way entry 21's floors once did.
       const motion = updateMotionBias(motionBias, dt, motionTiltX, motionTiltY, motionDisturb)
       lastMotion = motion
+
+      // docs/todo.md entry 76. Direction is read from uTumble's own offset
+      // (already uploaded by setTumble, whichever frame called it last),
+      // not stored or recomputed here — this module contributes only the
+      // magnitude, springing toward motionDisturb as a moving target.
+      compositeUniforms.uSlip.value = updateRgbSlip(rgbSlip, dt, motionDisturb)
 
       // docs/todo.md entries 47, 53 and 71. The clock is sampled once a
       // second (SKY_SAMPLE_S) rather than every frame — "over a minute the

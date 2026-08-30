@@ -20,6 +20,8 @@
  *                views it feeds have no notion of one.
  *   motion-bias.ts  the phone's own posture and handling reaching the
  *                picture's colour, continuously — docs/todo.md entry 58.
+ *   rgb-slip.ts  the phone's own disturbance pulling the colour channels
+ *                apart and springing them back — docs/todo.md entry 76.
  *
  * This became a directory when the slow tier arrived. Before that there was one
  * interpretation of the captured audio living behind an interface, which is a
@@ -68,3 +70,6 @@ export type { TouchStreamState, TouchStream } from './touch.ts'
 
 export { createMotionBiasState, updateMotionBias } from './motion-bias.ts'
 export type { MotionBiasState, MotionBias } from './motion-bias.ts'
+
+export { createRgbSlipState, updateRgbSlip, MAX_SLIP } from './rgb-slip.ts'
+export type { RgbSlipState } from './rgb-slip.ts'

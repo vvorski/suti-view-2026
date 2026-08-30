@@ -8151,7 +8151,7 @@ signal, which correctly reports no tempo, but a real recording's spectral
 texture is not that.
 
 ### 76. The channels lag behind the phone, and snap back
-`status: building` · added 2026-08-30 · started 2026-08-30
+`status: done` · added 2026-08-30 · started 2026-08-30 · build 248
 
 **Do** — move the picture apart into its red, green and blue when the phone
 moves, and let them spring back together when it stops. Its own module, its own
@@ -8235,6 +8235,89 @@ driven by a noisy signal would have.
 **Hard stops** — prefs no (always on, no chip; the arc is scarce and this is
 not a setting) · url no · capture no (it is picture, and lands in a saved frame
 exactly as the tumble does) · dependency no.
+
+**Build note** — implemented as decided. `src/engine/rgb-slip.ts` is a pure
+module in the same shape as `motion-bias.ts`: `createRgbSlipState()` /
+`updateRgbSlip(state, dt, disturb)`, a single 1D underdamped spring
+(`STIFF=400` → ω=20, `DAMP=14` → ζ=0.35, exactly as specified) chasing
+`disturb` as a moving target, clamped to `[0, 1]` and scaled by `MAX_SLIP`
+(0.006) before it is returned — the caller applies no scaling of its own.
+Exported through `engine/index.ts` alongside `motion-bias.ts`, per that
+barrel's own existing precedent.
+
+**One deviation from the literal Lands-in, disclosed rather than silent**:
+the entry names one new uniform, "`uSlip` beside `uTumble`", and a literal
+`if (uSlip > 0.0)` branch — both of which only make sense for a scalar. The
+direction half of "direction comes from the tumble's offset" is therefore
+read directly from `uTumble.yz` inside `composite.frag.glsl` itself
+(`normalize(uTumble.yz)`), rather than a second `uSlipDir` uniform or any
+JS-side vector combination — `uTumble` already carries that offset into the
+shader every frame regardless of this entry, so this is genuinely "no new
+plumbing", not merely close to it. `rgb-slip.ts` itself therefore knows
+nothing about direction at all, which is a stricter reading of "the only
+thing it reads is a number they also read" than a version that also fed it
+`offsetX`/`offsetY` would have been. **Mine**.
+
+Also **Mine**, and disclosed for the same reason: `amount` is floored at 0
+as well as capped at 1, rather than left to swing negative the way an
+unclamped spring naturally would on the way back through its target. An
+unclamped version would let the R/B lead briefly and slightly reverse during
+the ring, which is physically what "overshoots on the way back" describes
+most literally — but the entry's own `if (uSlip > 0.0)` guard only re-enables
+the 6-sample branch for a *positive* value, so a negative excursion would
+silently render as "no slip" at exactly the moments it should be doing the
+most, the opposite of the intended effect. Flooring at 0 is what keeps the
+guard meaningful. Overshoot is still real and still verified (see below) —
+just never as a sign reversal.
+
+Wiring reuses the entry's own named seam exactly: `setMotion`'s existing
+`motionDisturb` closure variable (already recorded every frame for
+`updateMotionBias`, entry 58) is read again for `updateRgbSlip` inside
+`render()`, and the result is written straight to `compositeUniforms.uSlip`.
+No new setter method, no new closure variable for direction. In
+`composite.frag.glsl`, the two original `texture2D(uAtmosphere/uGeometry,
+uv)` lines are now the `else` branch of `if (uSlip > 0.0)`, unchanged
+character-for-character; the `if` branch samples each three times (R at
+`uv+off`, G at `uv`, B at `uv-off`) — 6 samples where there were 2, exactly
+as Decided states, and paid only when `uSlip` is actually nonzero since it
+is a uniform branch (identical for every fragment in the draw).
+
+Verified: `pnpm build`/`pnpm lint` clean. New `scripts/probe-rgb-slip.ts`
+(`pnpm probe:rgb-slip`), modelled on `probe-motion-bias.ts`: a still phone
+never produces any slip; a spring chasing a realistically-decaying disturb
+signal (the same 0.7s time constant `shake.ts`'s own `Tumble.disturb` decays
+at) measurably *overtakes* the target it is chasing before both settle to
+zero — the genuine-overshoot signature available to a floor-clamped
+magnitude, see the deviation note above for why a sign-change count was the
+wrong test for this design; a sustained hard disturbance reaches the cap and
+the returned uv offset never exceeds `MAX_SLIP` under any input tried. The
+handling table reuses `probe-shake.ts`'s own `still()`/`shaking()` driving
+functions (kept in lockstep by eye, `probe-nudge.ts`/`probe-tap.ts`'s
+established precedent) through a real `Tumble` for every *distinct physical
+scenario* in that file's table (still, tremor, walking, nudge, jolt,
+deliberate shake, violent shake, single knock, knock+rebound, sustained low
+agitation) — narrower than the full table on purpose: the omitted rows
+there only vary sensor sample rate against a physical scenario already
+covered, which `updateRgbSlip` cannot see the difference of since it only
+ever reads `disturb`, a number already computed by the time it arrives.
+Every case: never exceeds `MAX_SLIP`, settles back to (near) zero after its
+own settle period. All thirteen checks pass.
+
+Live in a real WebGL context (`createVisualiser` via dynamic import, same
+technique entries 71/73/75 used), with `performance.now()` monkey-patched to
+a fixed instant so the comparison isolates `uSlip`'s own effect from the
+picture's ordinary time-driven motion: two renders of a genuinely still
+phone (`disturb=0`, no tumble offset) at the same frozen instant are
+pixel-identical; the same scene with a real tumble offset and `disturb=1`
+driven for twenty frames (long enough for the spring to actually rise, since
+it is a spring and not an instant assignment) renders visibly differently.
+No console errors. No 320×568/360×640 check — this entry adds no chip, no
+pref, no layout surface; the picture itself is the only thing that changes,
+and that is exactly what the live pixel comparison above already checked.
+
+Not independently verified: whether 0.006 and ζ=0.35 are the right *feel* on
+a real phone — the entry's own Verify text names this as the phone's
+question, not the probe's.
 
 ### 77. Two rings: what the wedge edits, and everything else
 `status: ready` · added 2026-08-30

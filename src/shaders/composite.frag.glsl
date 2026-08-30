@@ -46,6 +46,15 @@ uniform vec3 uCamColour;
 // shake.ts.
 uniform vec4 uTumble;
 
+// docs/todo.md entry 76 — the RGB channels' own uv-space separation, along
+// the same direction uTumble.yz already points (no second uniform for
+// direction; it is already here). Already scaled to its cap in rgb-slip.ts,
+// so this is a distance in the same uv units as uTumble.yz, ready to add or
+// subtract directly. 0 at rest — see the uniform branch below, the same
+// bit-identical-when-off property entries 47 and 75 gave uDay and
+// uBeatConfidence.
+uniform float uSlip;
+
 // Passthrough AR: the room, under everything. See camera.ts.
 //
 // A third layer rather than a third *view*, so that every existing programme
@@ -144,6 +153,26 @@ void main() {
   p = vec2(c * p.x - s * p.y, s * p.x + c * p.y) / (1.0 + uTumble.w);
   vec2 uv = clamp(p + uTumble.yz + 0.5, 0.0, 1.0);
 
+  // docs/todo.md entry 76 — red leads, blue trails, green holds still, along
+  // the same direction the tumble's own offset already points. A uniform
+  // branch, identical for every fragment in this draw, so a still phone
+  // (uSlip == 0) samples each texture once, exactly as before this entry —
+  // not merely close to it, since the `else` here is those original two
+  // lines unchanged.
+  vec3 atm;
+  vec3 geo;
+  if (uSlip > 0.0) {
+    vec2 slipDir = length(uTumble.yz) > 1e-5 ? normalize(uTumble.yz) : vec2(0.0);
+    vec2 off = slipDir * uSlip;
+    vec2 uvR = clamp(uv + off, 0.0, 1.0);
+    vec2 uvB = clamp(uv - off, 0.0, 1.0);
+    atm = vec3(texture2D(uAtmosphere, uvR).r, texture2D(uAtmosphere, uv).g, texture2D(uAtmosphere, uvB).b) * uAtmColour;
+    geo = vec3(texture2D(uGeometry, uvR).r, texture2D(uGeometry, uv).g, texture2D(uGeometry, uvB).b) * uGeoColour;
+  } else {
+    atm = texture2D(uAtmosphere, uv).rgb * uAtmColour;
+    geo = texture2D(uGeometry, uv).rgb * uGeoColour;
+  }
+
   // docs/todo.md entry 34. The atmosphere used to be dimmed before anything
   // else saw it — texture2D(uAtmosphere, uv).rgb * uAtmAlpha — so the merge
   // mode operated on a colour already darkened toward black. That is wrong
@@ -157,8 +186,6 @@ void main() {
   // blend. That is the same shape uGeoAlpha already uses one line down, and
   // it is why zero opacity now means "this layer is absent", the way it
   // already did for the geometric layer.
-  vec3 atm = texture2D(uAtmosphere, uv).rgb * uAtmColour;
-  vec3 geo = texture2D(uGeometry, uv).rgb * uGeoColour;
   vec3 both = blendWith(atm, geo, uMode);
 
   vec3 col = clamp(
