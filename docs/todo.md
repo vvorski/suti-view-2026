@@ -8469,7 +8469,7 @@ entry's own Verify text names as its half of this — outside what a
 browser-only harness can answer.
 
 ### 78. Camera mode is a door back to the menu, not a one-way trip
-`status: ready` · added 2026-08-30
+`status: building` · added 2026-08-30 · started 2026-08-30
 
 **Do** — make the shutter chip stay live in camera mode and return to the open
 menu when tapped, retire the two-finger exit, and show the chip as active while
