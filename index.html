@@ -209,6 +209,38 @@
       @media (prefers-reduced-motion: reduce) {
         #capture-flash { transition: none; }
       }
+      /* docs/todo.md entry 72: a viewfinder mark, not a button — resting at
+         low opacity so it reads as "you are in camera mode" rather than
+         inviting a press of its own (the shutter is any tap of the picture,
+         everywhere, not this glyph specifically). DOM, like #capture-flash
+         above it, so it can never enter the photo it is announcing. */
+      #shutter-glyph {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        translate: -50% -50%;
+        width: 20vmin;
+        height: 20vmin;
+        color: #fff;
+        opacity: 0.25;
+        pointer-events: none;
+        z-index: 6;
+      }
+      #shutter-glyph[hidden] { display: none; }
+      /* The one mechanical gesture a camera makes: a contraction and a
+         bloom back, restrained rather than decorated — no shutter sound, no
+         border flash, no vignette, so this single movement is what reads.
+         `scale`, not `transform: scale()`, so it composes with the fixed
+         `translate` above instead of needing to repeat it in every frame. */
+      #shutter-glyph.pulse { animation: shutter-pulse 180ms ease-out; }
+      @keyframes shutter-pulse {
+        0% { scale: 1; }
+        40% { scale: 0.85; }
+        100% { scale: 1; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #shutter-glyph.pulse { animation: none; }
+      }
       /* The gate is an overlay on the running piece, not a page in front of it.
          The canvas behind is already drawing (see idleParams in main.ts), so
          this screen's job is to stay out of its way and still be readable —
@@ -574,6 +606,15 @@
         <path d="M1.4 2.6h6v3.4H4.8v12H7.4v3.4h-6z" />
         <path d="M22.6 2.6h-6V6h2.6v12h-2.6v3.4h6z" />
         <circle cx="12" cy="12" r="5.6" />
+      </svg>
+    </div>
+
+    <!-- docs/todo.md entry 72. Hidden until main.ts enters camera mode;
+         see #shutter-glyph's own CSS comment for why it is a viewfinder
+         mark, not a button. -->
+    <div id="shutter-glyph" aria-hidden="true" hidden>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+        <circle cx="12" cy="12" r="7" />
       </svg>
     </div>
 

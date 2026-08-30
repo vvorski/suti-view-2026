@@ -259,6 +259,11 @@ export interface Hud {
    * `stopPropagation()` is exactly what entry 41 replaced with one.
    */
   open(): void
+  /** Close the panel without the scrim's own tap-to-close gesture —
+   *  docs/todo.md entry 72: entering camera mode closes the panel as part
+   *  of the same tap that enters it, which is not a tap on the scrim at
+   *  all. */
+  close(): void
   /**
    * Whether the numeric readout is showing this session — docs/todo.md
    * entry 31. Not the same as `prefs.showStats`: a `?debug` load shows the
@@ -293,6 +298,11 @@ interface Handlers {
    *  scene.ts render setting with its own fade, so it needs an explicit
    *  call rather than a value polled every frame. */
   onSkyOverride(state: SkyOverride): void
+  /** Enter camera mode — docs/todo.md entry 72. The panel is already closed
+   *  by the time this fires (the chip's own onTap calls `setOpen(false)`
+   *  directly); this is only main.ts's half — raising the passthrough
+   *  override and taking over the tap dispatch. */
+  onCameraMode(): void
   /** Fired on every change the user makes by hand, so the autopilot can get
    *  out of the way. Not fired for `adopt`. */
   onManualChange(): void
@@ -312,6 +322,13 @@ const ICONS: Record<string, string> = {
     '<path d="M1.4 2.6h6v3.4H4.8v12H7.4v3.4h-6z"/>' +
     '<path d="M22.6 2.6h-6V6h2.6v12h-2.6v3.4h6z"/>' +
     '<circle cx="12" cy="12" r="5.6"/>',
+  // A shutter button, not a camera body — deliberately distinct from `cam`
+  // above (the passthrough band's own group, opened to adjust a mix) since
+  // this chip does something different: it enters a mode rather than
+  // opening a control. docs/todo.md entry 72.
+  shutter:
+    '<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/>' +
+    '<circle cx="12" cy="12" r="4.6"/>',
   // Three concentric arcs, like sound arriving — chosen over the old
   // diagonal-and-blocks glyph (which read as "settings", the mistake this
   // group's rename fixes) and over a level meter (already the numeric
@@ -911,6 +928,16 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
     save()
     paint()
   })
+  // docs/todo.md entry 72. A momentary action, not a toggle — camera mode
+  // is not stored and this chip does not track being "in" it, the way
+  // gravity or the sky override do. Closes the panel itself, directly,
+  // rather than asking main.ts to call back into it: "one tap enters the
+  // mode and closes the panel" is one gesture, and this module already
+  // owns setOpen().
+  const shutterChip = mkChip('shutter', 'Camera mode', '#9d9bf0', () => {
+    setOpen(false)
+    handlers.onCameraMode()
+  })
 
   /** Lay the icons along their own arc. Spacing comes from the measured chip
    *  size, so a larger root font spreads them rather than overlapping them.
@@ -1109,6 +1136,7 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
     )
     void statsChip
     void gravChip
+    void shutterChip
   }
 
   build()
@@ -1265,6 +1293,7 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
     }),
     showingStats: () => showStats,
     open: () => setOpen(true),
+    close: () => setOpen(false),
 
     adopt(next) {
       if (next.geometricView) {

@@ -530,6 +530,21 @@ function flashCapture(): void {
   requestAnimationFrame(() => el.classList.remove('on'))
 }
 
+/**
+ * The one mechanical gesture a camera makes — docs/todo.md entry 72. A
+ * keyframe animation, unlike flashCapture's transition-based flash above,
+ * so it needs the reflow-restart trick flashShake's own double-tap path
+ * already established: removing and re-adding the same class in one tick
+ * would be coalesced into no change at all.
+ */
+function flashShutter(): void {
+  const el = document.getElementById('shutter-glyph')
+  if (!el) return
+  el.classList.remove('pulse')
+  void el.offsetWidth
+  el.classList.add('pulse')
+}
+
 // The three zones this used to carve the screen into — CAPTURE_BAND_FRACTION,
 // safeBottomInset() and zone() — are retired by docs/todo.md entry 52: a
 // single tap now saves and a double opens, anywhere on the screen, with no
@@ -888,6 +903,13 @@ async function main(): Promise<void> {
    */
   function maybeRollCamera(depth: number): void {
     if (depth < SHUFFLE_EVERYTHING) return
+    // docs/todo.md entry 72: the director must not fight camera mode — it
+    // may keep rolling views and colours while the mode is on, but the
+    // passthrough level is borrowed for the duration and is not its own to
+    // touch. `cameraMode` is declared further down this same closure, but
+    // this function is only ever called later (from shuffle(), on a real
+    // shake), well after that declaration has already run.
+    if (cameraMode) return
     if (Math.random() >= CAMERA_ROLL_CHANCE) return
     void (async () => {
       const level = Math.random() * CAMERA_ROLL_MAX
@@ -982,6 +1004,44 @@ async function main(): Promise<void> {
     return mix
   }
 
+  // docs/todo.md entry 72. A render-time override, never a stored write —
+  // the same seam entries 48, 58 and 60 use: applyPassthrough() here never
+  // touches prefs.passthrough or calls panel.adopt(), unlike the HUD band's
+  // own commit path, so entering and leaving this mode cannot appear in
+  // localStorage regardless of how it ends.
+  let cameraMode = false
+  // What the band was showing before the mode borrowed it — captured once,
+  // at entry, so leaving gives it back exactly rather than to whatever it
+  // has drifted to since (the director may still be rolling other things
+  // while the mode is on; see maybeRollCamera's own guard below).
+  let preCameraMix = 0
+
+  function enterCameraMode(): void {
+    if (cameraMode) return
+    cameraMode = true
+    preCameraMix = prefs.passthrough
+    const glyph = document.getElementById('shutter-glyph')
+    if (glyph) glyph.hidden = false
+    void applyPassthrough(0.75).then((actual) => {
+      // Refused, or no camera at all — nothing to show, so there is nothing
+      // to be "in camera mode" about. Falls back to the ordinary picture
+      // rather than leaving the glyph up over a passthrough that never
+      // opened.
+      if (actual <= 0) {
+        cameraMode = false
+        if (glyph) glyph.hidden = true
+      }
+    })
+  }
+
+  function exitCameraMode(): void {
+    if (!cameraMode) return
+    cameraMode = false
+    const glyph = document.getElementById('shutter-glyph')
+    if (glyph) glyph.hidden = true
+    void applyPassthrough(preCameraMix)
+  }
+
   const panel = createHud(prefs, {
     onGeometricView: (name: GeometricViewName) => visualiser.setGeometricView(name),
     onColour: (layer, colour) => visualiser.setLayerColour(layer, colour),
@@ -999,6 +1059,7 @@ async function main(): Promise<void> {
       mapping = MAPPINGS[name]()
     },
     onPassthrough: applyPassthrough,
+    onCameraMode: enterCameraMode,
     onManualChange: () => director.suspend(),
   }, new URLSearchParams(window.location.search).has('debug'))
 
@@ -1112,6 +1173,11 @@ async function main(): Promise<void> {
   // "One save per 700ms, silently dropping the rest" (Decided) — a run of
   // taps should not write a run of near-identical PNGs to the camera roll.
   const SAVE_RATE_LIMIT_MS = 700
+  // docs/todo.md entry 72: the same constraint inverted. Entry 52's 700ms
+  // exists to catch accidental taps; in camera mode every tap is a
+  // deliberate shutter press, and the constraint is only there to stop a
+  // genuinely double-tapped shutter from writing the same frame twice.
+  const CAMERA_SAVE_RATE_LIMIT_MS = 300
 
   // A list, not a single slot: "ten taps in five seconds save no more than
   // seven frames" (Done-when) only holds if each tap not close enough to
@@ -1260,6 +1326,28 @@ async function main(): Promise<void> {
       if (e.kind === 'down') {
         if (!e.onChip && !hudOpen) streamBegan = true
         if (e.onChip || hudOpen || gateShowing) continue
+        // docs/todo.md entry 72: in camera mode, two fingers exit rather
+        // than opening the menu — "the menu cannot open until you leave"
+        // is what makes the mode's own bookkeeping this simple, since
+        // there is no pending-tap state below to ever interact with.
+        if (cameraMode) {
+          if (nonChipDown === 2) {
+            exitCameraMode()
+            continue
+          }
+          // The shutter is instant — no TAP_RESOLVE_MS wait, no drag
+          // check, no pending-tap bookkeeping — because outside this mode
+          // that wait exists solely to learn whether a second tap is
+          // coming to open the menu, and in here the menu cannot open at
+          // all. Fires on this tap's own down, the same event a two-finger
+          // exit is recognised on above.
+          if (performance.now() - lastSaveAt >= CAMERA_SAVE_RATE_LIMIT_MS) {
+            lastSaveAt = performance.now()
+            saveCapture(visualiser)
+            flashShutter()
+          }
+          continue
+        }
         // docs/todo.md entry 67: a second way in, since the double tap was
         // the *only* one — every `.hud-chip` is inert while the panel is
         // closed. Fires the instant the second finger lands, which is also

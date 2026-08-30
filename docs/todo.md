@@ -7568,7 +7568,71 @@ eye") already concedes.
 meaning are untouched · url no · capture no · dependency no.
 
 ### 72. Camera mode: the room becomes the picture, and a tap is the shutter
-`status: building` · added 2026-08-30 · started 2026-08-30
+`status: done` · added 2026-08-30 · shipped at build 241
+
+**Build note** — `main.ts` gained `cameraMode`/`preCameraMix` state and
+`enterCameraMode()`/`exitCameraMode()`. Entering captures `prefs.passthrough`
+(what the band was showing) before calling `applyPassthrough(0.75)` directly
+— never through the HUD band's own commit path, so `prefs.passthrough`/
+`panel.adopt()` are never touched, the same render-time-only seam entries
+48/58/60 established. If the camera is refused (`applyPassthrough` resolves
+to 0), `cameraMode` reverts to false and the glyph hides — there is nothing
+to be "in camera mode" about without a camera actually showing. Exiting
+restores `preCameraMix` the same direct way and hides the glyph.
+`maybeRollCamera()` gained one guard line (`if (cameraMode) return`) so the
+director can keep rolling views and colours while the mode is on without
+ever touching the borrowed passthrough level.
+
+`dispatchTouches`'s down-branch gained a `cameraMode` fork ahead of the
+existing double-tap/two-finger dispatch: a qualifying second finger calls
+`exitCameraMode()` instead of `panel.open()`; every other qualifying tap
+fires `saveCapture()` + `flashShutter()` immediately, on `down`, gated only
+by a 300ms rate limit (`CAMERA_SAVE_RATE_LIMIT_MS`, inverted from entry
+52's 700ms per the entry's own reasoning: outside the mode that limit
+guards against accidental taps, inside it every tap is deliberate) — no
+`TAP_RESOLVE_MS` wait, no pending-tap bookkeeping, no drag check, because
+entry 67's whole reason for that wait (learning whether a second tap is
+coming to open the menu) does not exist here.
+
+`hud.ts` gained a `shutter` chip (a shutter-button glyph, deliberately
+distinct from the existing `cam` bracket-and-circle icon, which is a
+different chip for a different thing — the passthrough band's own group)
+and a new `close()` method on the `Hud` interface (`setOpen(false)`
+exposed, alongside the existing `open()`) so the chip's own `onTap` can
+close the panel directly rather than asking main.ts to call back into it —
+"one tap enters the mode and closes the panel" is one gesture. The chip is
+a momentary action, not a toggle: camera mode is not stored and nothing
+tracks being "in" it for a pressed state to paint.
+
+`index.html` gained `#shutter-glyph` (a thin stroked ring, 0.25 resting
+opacity, DOM rather than canvas so `requestCapture`'s canvas read can never
+include it — the same reasoning `#capture-flash` already established) and
+its `shutter-pulse` keyframe (scale 1 → 0.85 at 40% → 1, 180ms, matching
+the entry's own numbers exactly), triggered via the same reflow-restart
+trick `flashShake`'s double-tap path uses, since a keyframe animation
+(unlike `flashCapture`'s transition-based flash) does not restart merely
+from re-adding an already-present class.
+
+Verified live against the real dev server: the shutter chip, tapped
+through the real, mounted `createHud()` (via `hud-probe.html`), correctly
+closed the open panel and called `onCameraMode()` exactly once. The glyph
+exists, hidden by default, at 0.25 opacity; its animation's actual
+keyframes and timing were read via `getAnimations()` and confirmed
+bit-for-bit against the entry's own numbers (180ms, scale 1/0.85/1 at
+0/40%/100%) — not merely assumed from the source. No console errors on
+load, confirming the new markup and CSS parse cleanly.
+
+Not verified live: `enterCameraMode()`/`exitCameraMode()`/the
+`dispatchTouches` camera-mode branch themselves, all of which are closures
+inside `main()` reachable only through the real chip *after* `waitForStart()`
+resolves — gated behind the live microphone permission prompt this harness
+cannot complete, the same limit disclosed in entries 60-71's build notes
+wherever they touched post-Start code. What was verified instead: every
+piece reachable without Start (the HUD wiring, the CSS/animation, the
+constants and guard logic by direct code review), and no probe script,
+since the entry's own Lands-in names only `main.ts`/`hud.ts`/`index.html`
+and the new logic is inline dispatch branching rather than an extractable
+pure function the way entry 67's tap resolver was.
 
 **Do** — make the camera a *mode*, not a dial. One tap of the camera chip
 enters it; after that every tap of the picture takes a photo. A translucent
