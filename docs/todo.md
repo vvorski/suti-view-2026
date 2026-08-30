@@ -7231,3 +7231,94 @@ table above is the before. The camera claim is the one to check by hand, since
 "the room is untouched" is the thing a vibrance stage most easily breaks.
 **Hard stops** — prefs no (the shape *and* the meaning are unchanged; only the
 sampler and a render-time stage move) · url no · capture no · dependency no.
+
+### 71. The sky gets a noon and a night, and the override swings both ways
+`status: ready` · added 2026-08-30 · build with or after 68
+
+**Do** — reshape the sky's anchors so the day has a plateau and the night has a
+floor, make the chip cycle auto → day → night instead of only pinning day, and
+smooth the clock's own jumps.
+
+**Why** — reviewed as asked. The mechanism is sound and well-made: a pure
+function of the clock, four anchors smoothstepped on a wrapped circle, sampled
+once a second, one 1.2s override fade, probe-covered, and the geolocation
+refusal in `sky.ts`'s header is the right call made for the right reason. The
+findings are about the *shape* of the curve and one missing direction, not the
+machinery.
+
+**Decided**
+- **Scrubbed the actual curve** (`skyFor` over 24 hours — reproducible with
+  one node line). Daylight touches 1.0 at 13:00 *exactly* and 0.0 at 02:00
+  *exactly*; it sits in the 0.3-0.8 mid-band from about 06:00 to 22:00 —
+  **sixteen hours of neither-day-nor-night**. Four anchors smoothstepped
+  pairwise cannot produce a plateau: every anchor is a peak or a valley, so
+  "day" is an instant, not a state.
+- **Why that matters doubles once entry 68 lands.** 68's own dawn analysis
+  identifies mid-`uDay` as the least readable zone — ink and paper converging —
+  and mandates the ink leading the paper through dawn so the *crossover* is
+  brief. But with these anchors the crossover is not dawn: it is **the entire
+  morning, evening, and most of the afternoon**. A curve tuned when day mode
+  was a chip nobody left on becomes the resident state of the picture the
+  moment the clock drives it.
+- **So: six anchors, holding the ends** → night 0.0 from 23:00 to 04:00, day
+  1.0 from 10:30 to 15:30, with the existing warm dawn/dusk anchors carrying
+  the transitions between them. The mid-band becomes ~2.5 hours at each end
+  of the day instead of sixteen. Warmth keeps its four-point shape — warm at
+  both ends, coolest in the small hours — since that part is right and was the
+  original entry's whole point. **Mine** as to the hours; the principle (day
+  and night are *states*, transitions are *events*) is the review's finding.
+- **The override only goes one way, and the missing direction is the common
+  case.** `uDay = skyDaylight + (1 − skyDaylight) × override` can force day at
+  night — but nothing can force night at noon. A phone in a dark bedroom, a
+  cinema, a bar at 2pm: the clock says full day, the picture is a lit sheet of
+  paper, and there is no way back. The asymmetry is an accident of entry 47's
+  chip ("Outdoor") predating the clock, not a decision anyone made.
+- **So the chip cycles: auto → day → night → auto.** Same chip, same place,
+  labelled by what it is currently doing. Night is a second override mixing
+  toward 0 exactly as day mixes toward 1, through the same
+  `DAY_OVERRIDE_FADE_S`. **Mine** as to the shape — a cycle on one chip over
+  two chips, because the circular surface is the non-negotiable and a second
+  chip spends scarce arc on the same concept.
+- **Hard Stop, answered:** `prefs.day` is a stored boolean and its meaning must
+  not change. **A new field** `skyOverride: 'auto' | 'day' | 'night'` is added
+  (the safe half of the rule); `day: true` is read once as `'day'` for
+  migration and the old field is left in place, exactly the shape `gravity`'s
+  own addition followed. A stored `day: true` therefore behaves identically
+  before and after.
+- **The clock can snap; the override fade never covers it.** `skyDaylight` is
+  assigned directly from `skyFor(new Date())` once a second — a DST jump, a
+  timezone change in flight, or a tab resumed hours later lands as a one-frame
+  step in `uDay`, and the 1.2s fade smooths only the *chip's* transitions.
+  Chase the sampled value at a bounded rate (full-scale over ~3s) instead of
+  assigning it. Three lines, and the once-a-second cadence stops being visible
+  at the boundary between samples on a long dawn as well.
+- **Warmth at night is dead weight, and stays dead** → the ground is scaled by
+  `uDay`, so the "coolest in the small hours" anchor value is multiplied by
+  zero all night. Reviewed and left alone deliberately: tinting the night
+  picture from the clock would repaint the palette entries 58 and 70 own, and
+  the anchor is still worth keeping correct for the hours where it shows.
+- Not touched → the geolocation refusal, the 1-second sample, the pure-function
+  boundary, and `probe-sky.ts`'s role as the scrubber. All right as they are.
+
+**Lands in**
+- `src/sky.ts` — the `ANCHORS` table grows to six for daylight; warmth keeps
+  its four.
+- `src/scene.ts:555-570, 904-925` — the night override joins the day one; the
+  chased `skyDaylight`.
+- `src/hud.ts:906` — the chip cycles and says which state it is in.
+- `src/prefs.ts` — `skyOverride` added beside `day`, with the migration read.
+- `scripts/probe-sky.ts` — the plateau (10:30-15:30 ≥ 0.999, 23:00-04:00
+  ≤ 0.001) and the mid-band's total width.
+
+**Done when** — a full-day scrub shows real night until 04:00, real day from
+10:30, and no more than ~5 of 24 hours between 0.1 and 0.9; the chip reaches
+night-at-noon in two taps and back to auto in one more; a DST-sized clock jump
+takes ~3s on screen rather than one frame; and a stored `day: true` from before
+the change still lands in forced day.
+**Verify** — `probe-sky.ts` for the curve and the migration; the phone across
+an actual evening for whether 10:30/15:30/23:00/04:00 are the right hours,
+which a probe cannot answer and the original anchors' own comment ("settled by
+eye") already concedes.
+**Hard stops** — prefs **yes — a new field only**, `skyOverride`, with
+`day: true` migrated on read and never rewritten; the existing field's type and
+meaning are untouched · url no · capture no · dependency no.
