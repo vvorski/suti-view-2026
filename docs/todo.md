@@ -7191,7 +7191,7 @@ and 0.10 are the right pair.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 69. The name is the dedication, and nothing is added to it
-`status: ready` · added 2026-08-30
+`status: building` · added 2026-08-30 · started 2026-08-30
 
 **Do** — put the reason for the name beside the name, in `index.html`, and
 close the question entry 63 left open.
