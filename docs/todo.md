@@ -3447,3 +3447,80 @@ preview specifically, which is when the band and the shadows both matter and
 the only state in which entry 28's bug was visible. `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs no · url no · capture no · dependency no (Chakra Petch
 is already loaded for the title).
+
+### 44. The reload glyph gets the share button's chip
+`status: ready` · added 2026-08-30
+
+**Do** — give the gate's reload control the same circular chip as the share
+button: one shared class, not a second copy of the same nine declarations.
+**Why** — asked for. On the start screen they are the two corner controls and
+only one of them looks like a control.
+
+**Decided**
+- Extract, do not copy → `.gate-share` at `index.html:268-285` is nine
+  declarations describing "a circular chip on the gate", and its own comment
+  says it is "the same size as a HUD chip, because it is the same kind of
+  object". A second element of that kind means the description belongs in a
+  `.gate-chip` class both carry, with `.gate-share` keeping only its corner
+  position and `.done` state. **Mine**, and it is the repo's own rule: export
+  rather than duplicate, and refactor as part of the feature.
+- **Gate only.** → the same button survives into the running state at
+  `opacity: 0.18`, and `version.ts:55-62` explains why: the piece is meant to
+  be left running on a propped phone and "a permanent label in the corner of
+  it is litter". A chip at 0.18 is not a faint glyph, it is a dark disc — the
+  litter that comment is avoiding, made larger. So the chip applies while the
+  gate is up and `#version-hud.running` keeps exactly today's appearance.
+  Victor's words scope this already: *on the start page*.
+- The opacity has to move off the element → the button sits at `opacity: 0.75`
+  today, which would make the chip's background and border 75% transparent too
+  and it would not match share, which is fully opaque at
+  `rgba(12,12,26,0.7)` — a translucent *fill*, not a faded element. So on the
+  gate the button goes to `opacity: 1` and its quietness comes from the glyph
+  colour instead. **Mine**, and there is a second reason beyond appearance:
+  opacity is the channel `.running`, `.fresh` and `version-pulse` all use, and
+  leaving it occupied by a resting state is how those three end up fighting.
+- **The sizing objection is already gone**, which the recon found and is worth
+  recording → `version.ts:38-41` sets the glyph at 1.5rem because it "has to
+  grow with the name beside it… at a fixed rem it read as a stray speck next
+  to 22px text". Nothing is beside it any more: `version.ts:20-21` says the
+  name "used to live here as a large pill and is now part of the gate's own
+  layout". So the comment justifies the size by a layout that no longer
+  exists. Fix the glyph at share's 19px inside the chip and rewrite that
+  comment rather than leaving it to mislead the next reader.
+- Green keeps winning, and gets bigger → `.fresh` turns the glyph `#5fe3a1`
+  and pulses it, and `version.ts:76-79` calls that "the whole point of the
+  thing". Under the chip it should **also tint the border**, exactly as
+  `.gate-share.done` already does with the same colour. **Mine**: it is what
+  "the same treatment as share" means when the state arrives, and a ring of
+  green is more visible from across a room than a glyph of it — which is the
+  situation the feature exists for.
+- The reduced-motion guard already there stays → `version.ts:88-94` disables
+  the pulse and keeps the green. Nothing here touches it.
+- **Check the corner clearance** → `#fullscreen-chip` sits at
+  `top: 3.5rem`, and its comment says it is "stacked below `#version-hud`
+  rather than sharing its exact top, since that corner already holds the
+  reload glyph". A 2.9rem chip is a bigger footprint than a 1.5rem glyph, so
+  that offset needs re-measuring. **Entry 42 removes the problem entirely** by
+  moving the fullscreen chip to the centre — so if 42 lands first this is a
+  non-issue and the stale comment goes with it; if not, the offset moves.
+
+**Lands in**
+- `index.html:264-290` — `.gate-chip` extracted, `.gate-share` reduced to
+  position and `.done`.
+- `src/version.ts:33-50` — the button adopts the class, loses its resting
+  opacity, gains a fixed glyph size, and the stale sizing comment is rewritten.
+- `src/version.ts:80-84` — `.fresh` tints the border.
+- `index.html:305-316` — the fullscreen chip's offset and its comment, if
+  entry 42 has not already landed.
+
+**Done when** — on the start screen the two corner controls are visibly the
+same object at 320×568 and 360×640: same diameter, same fill, same border, one
+mirrored in each corner. After Start the reload is exactly as faint as it is
+today, with no disc behind it. With a new build available it goes green,
+border included, and still pulses — and still does not pulse when reduced
+motion is requested.
+**Verify** — the browser at both widths for the pairing, and the running state
+specifically, since that is the one this entry must leave alone and the one a
+gate-only screenshot cannot show. Force `.fresh` by hand to check the green
+against the chip. `pnpm build`, `pnpm lint`.
+**Hard stops** — prefs no · url no · capture no · dependency no.
