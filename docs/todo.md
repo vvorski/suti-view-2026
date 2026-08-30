@@ -6298,3 +6298,80 @@ confirm it survived. That is the only part of this that can break anything.
 untouched, so the shape and its meaning are unchanged and nothing migrates ·
 url no · capture no (the filename changes, the capture path does not) ·
 dependency no.
+
+### 64. In daylight the picture is ink, not light
+`status: ready` · added 2026-08-30
+
+**Do** — in day mode the geometric layer becomes dark ink on the light ground
+instead of bright light on it. At night it stays exactly as it is.
+
+**Why** — entry 47 lifted the ground to 0.6 and left the ink white, so a white
+ring on a light ground has 0.4 of contrast where it used to have 1.0, and it is
+*lighter* than the paper it sits on. Daylight legibility is the whole point of
+day mode and this is the half that was missed: nothing readable in sunlight is
+drawn in white light. It is drawn in ink.
+
+**Decided**
+- **The model, stated once so the algebra follows from it** → night is *light
+  emitted in a dark room*, and it is additive. Day is *ink laid on paper*, and
+  it is subtractive. Entry 47 supplied the paper and kept drawing with light.
+  This supplies the ink.
+- **The geometric layer only. The atmosphere keeps screening onto the paper.**
+  **Mine**, and it is the fork this entry turns on. The geometric views are
+  line art — thin bright figures on an empty field — and line art wants ink.
+  The atmospheric views are fields of colour with no empty ground to speak of;
+  making a field subtractive turns it into a dark wash over the whole frame,
+  which is a duotone print rather than a lighter picture. It also matches what
+  was asked for: *circles*.
+- **Hue survives.** The naive version — inverting the finished picture — makes
+  a blue ring yellow, and a person who chose blue would rightly call that
+  broken. So split the geometry into a **density** (`max` channel, how much ink
+  is here) and a **colour** (the geometry's own rgb), and lay the ink as
+  `mix(paper, geoColour * INK, density)`. A white ring becomes near-black; a
+  blue ring becomes dark blue. **Mine**, and it is why this is four lines
+  rather than one.
+- `INK = 0.12` — dark enough to read as black against a 0.6 ground, not so
+  dark that a coloured ink loses its hue entirely. **Mine** as to the value.
+- **The ink leads the paper.** This is the failure this design has to dodge and
+  it is not obvious: entry 53 made `uDay` continuous and clock-driven, so dawn
+  walks it from 0 to 1 — and if ink and ground cross over together, there is a
+  stretch around `uDay ≈ 0.5` where a mid-grey ring sits on a mid-grey ground
+  and the picture is at its *least* readable, in the exact hour day mode exists
+  for. So drive the ink with `smoothstep(0.15, 0.55, uDay)` while the ground
+  keeps its plain `uDay`: the ink goes dark before the paper comes up, and
+  contrast never dips below what night already had. **Mine**.
+- **Applied after exposure and scaled by `(1 - uCameraMix)`**, in the same
+  place and on the same terms as the ground it belongs to. Carry `geo`'s
+  density and colour down as two locals computed where `geo` is already
+  sampled — the layer is gone by then, and re-sampling the texture a second
+  time to recover it would be the expensive way to save two variables.
+- **Identity at night is algebraic, not tuned** — the final `mix(col, inked,
+  uDay * (1 - uCameraMix))` is exactly `col` at `uDay = 0`, the same property
+  entry 47 was careful to give the ground. Nothing about the night picture can
+  drift as a side effect of this.
+- Deliberately **not** touching `uGeoColour` or anything stored → the ink is a
+  render-time transform of what the layer already drew, at the same seam
+  entries 48, 58 and 60 use. A person's chosen colour is unchanged, still what
+  the HUD shows, still what a shared URL carries.
+- Reversible if the field views turn out to want it too → the density/colour
+  split works identically on the atmosphere. Excluded here on judgement, not
+  on cost.
+
+**Lands in**
+- `src/shaders/composite.frag.glsl:126` — two locals where `geo` is sampled.
+- `src/shaders/composite.frag.glsl:185-187` — the ground line, which gains the
+  ink step after it.
+- `scripts/probe-composite.ts` — it has no day-mode coverage at all today.
+
+**Done when** — with day mode on, Circles reads as dark rings on a light
+ground; a non-white `geoColour` reads as a dark version of itself rather than
+its complement; at `uDay = 0` the frame is bit-identical to before the change;
+and sweeping `uDay` from 0 to 1 never produces a frame with less ring-to-ground
+contrast than at `uDay = 0`. That last one is the entry's real assertion and
+belongs in `probe-composite.ts` as a sweep, not as a spot check.
+**Verify** — the probe for the arithmetic, including the crossover sweep, then
+a phone outdoors, which is the only thing that can answer whether 0.12 and 0.6
+are the right pair. Entry 47's own Verify said the same and that half is still
+unanswered.
+**Hard stops** — prefs no · url no · capture no (the capture shows what is on
+screen, and in daylight that is now the readable version) · dependency no.
