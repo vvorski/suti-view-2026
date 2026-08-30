@@ -2400,9 +2400,9 @@ shader changed. Also `pnpm build`, `pnpm lint`.
 ### 33. Touch drops a fading emitter into any geometric view
 `status: ready` · added 2026-08-29
 
-**Do** — while Circles is the geometric programme, a press-and-hold or a drag
-places an emitter at the finger that spawns rings from that point and dies
-away over a few seconds.
+**Do** — in any geometric view, a press-and-hold or a drag places an emitter at
+the finger that spawns rings from that point and dies away over a few seconds.
+The longer the finger stays down, the stronger that emitter is.
 **Why** — the view already draws event-born rings that age and fade; it just
 has no way for a person to be the event.
 
@@ -2418,6 +2418,33 @@ has no way for a person to be the event.
   spawning a ring at intervals with the ring's loudness scaled by the
   emitter's remaining life, so it thins out rather than stopping dead. On a
   drag the emitter follows the finger, which is what makes a drag draw.
+- **Hold length charges one quantity, and that quantity does all three
+  things** → Victor asked for a longer press to make the emitter "stronger or
+  brighter or longer lasting". **Mine**, that it is not a choice between them:
+  contact time raises a single `charge`, and `charge` multiplies the ring
+  level (brighter), which the shader's own wake already turns into a wider,
+  further-travelling ring (stronger), and scales the emitter's life (longer
+  lasting). Three separate knobs would be three things to tune against each
+  other and three ways for the gesture to feel inconsistent; one charge with
+  three consequences is the same feel with a third of the surface.
+- The numbers → **charge runs 0.4 → 1.0 over the first 2.5 seconds of contact,
+  then saturates**, and life runs from about two seconds to the full four
+  across that same range. **Mine.** It starts at 0.4 rather than 0 so the
+  briefest qualifying hold still visibly does something — an emitter that
+  begins at nothing would make the gesture read as unresponsive at exactly the
+  moment a person is learning it — and it saturates so that leaning on the
+  screen cannot produce an emitter that outlives interest in it.
+- Charging is visible while it happens → because the emitter is already
+  spawning rings during the hold, a rising `charge` means those rings brighten
+  under the finger as you hold. **Mine**, and it is the reason to charge
+  continuously rather than to read the duration once on lift: the gesture
+  teaches itself, with no hint, no label and nothing added to the control
+  surface.
+- A drag charges too → contact time accumulates whether or not the finger
+  moves, so a long drag lays down a trail that strengthens along its length.
+  **Mine**, over resetting charge on movement: "pressing longer" is about how
+  long you are touching, and a rule that punishes movement would make drawing
+  feel worse the more of it you do.
 - How it coexists with the panel → **hold or drag emits; a plain tap still
   opens the HUD.** Asked and answered, and it is the same reasoning
   `gestures.ts` recorded when it abandoned double-tap: a hold clears a time
@@ -2491,7 +2518,8 @@ has no way for a person to be the event.
   reserved band for touch, and a `spawnAt(state, now, level, x, y)` beside
   `updateRipples`. The constant's comment already warns it must match the
   shader; both move together.
-- `src/engine/` — emitter state: position, birth, life, last spawn.
+- `src/engine/` — emitter state: position, birth, life, last spawn, and the
+  charge that contact time accumulates.
 - `src/scene.ts:264`, `:613-616` — `Vector2` becomes `Vector4`, and the
   emitter is ticked where `updateRipples` is called.
 - `src/shaders/circles.frag.glsl:74`, `:81`, `:215-232` — the constant, the
@@ -2507,6 +2535,9 @@ has no way for a person to be the event.
 starts rings expanding from that point and they keep coming, weaker, until
 about four seconds after the finger lifts; dragging draws a trail of them; a
 plain tap still opens the panel and never emits; a hold never opens the panel.
+A half-second hold and a three-second hold are told apart without being timed:
+the long one's rings are visibly brighter while the finger is still down, and
+they outlast the short one's by roughly two seconds after it lifts.
 Rings born from the music keep arriving throughout, at the same density as
 before. Switching to each of the other five geometric views and holding
 produces that view's own response from the table above, not a ring bolted onto
