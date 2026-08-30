@@ -11049,3 +11049,94 @@ in the diff.
 both are the things the eye has already failed at twice. Then the phone, moved
 briskly once, which is the gesture the report was made about.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 105. XOR, which is not Difference
+`status: ready` · added 2026-08-30
+
+**Do** — add a seventh merge mode, `XOR`, at index 6: `a + b - 2ab`. One line
+in `blendWith`, one row in `MERGE_MODES`, available to both layers for free.
+
+**Why** — asked: *"is there a difference between difference blend mode and xor?
+if so add it"*. There is, they are genuinely different operators, and the
+difference is exactly the kind this project cares about — it is about where an
+edge appears that is in neither input.
+
+**Decided**
+- **There is exactly one XOR, and it is reached from two directions that
+  agree.** That is the part worth writing down:
+  - As **fuzzy logic** — the continuous form of exclusive-or on values in
+    [0,1] — XOR is `a + b - 2ab`.
+  - As **Porter-Duff compositing**, where XOR means "each source shows where
+    the other is absent", the operator is `a(1-b) + b(1-a)`.
+  - Expand the second: `a - ab + b - ab = a + b - 2ab`. **Identical.** The
+    logical reading and the coverage reading are the same function, which is
+    why it is a real operator and not an analogy. Photoshop ships it under the
+    name *Exclusion*; it is the same thing.
+- **And it is not `abs(a - b)`.** Difference and XOR agree on every corner of
+  the unit square and disagree everywhere else. The gap has a closed form:
+  `XOR - Difference = 2·min(a,b)·(1 - max(a,b))` — zero when either input is 0,
+  or either is 1, and largest in the middle, reaching **0.5 at a = b = 0.5**.
+
+  | base | top | Difference | XOR |
+  |---|---|---|---|
+  | 1.0 | 1.0 | 0.00 | 0.00 |
+  | 1.0 | 0.0 | 1.00 | 1.00 |
+  | 0.5 | 0.5 | **0.00** | **0.50** |
+  | 0.8 | 0.6 | 0.20 | 0.44 |
+  | 0.3 | 0.2 | 0.10 | 0.38 |
+
+- **The useful characterisation, and the reason to want it here.** Hold the
+  base fixed and XOR is linear in the top: `f(b) = a + b(1 - 2a)`. At `a = 0`
+  the slope is +1 — pass-through. At `a = 1` the slope is −1 — pure invert. At
+  `a = 0.5` the slope is **zero**, and the output is 0.5 whatever the top does.
+  So **XOR is a smooth crossfade from pass-through to invert, driven by what is
+  underneath**, and its null surface is *base = 0.5*: it goes blind where the
+  ground is undecided.
+
+  Difference's null surface is *base = top*: it cancels where the two layers
+  **agree**. And because it is `|·|`, it has a **crease** there — a hard black
+  line drawn wherever the geometry happens to match the field's value, an edge
+  that exists in neither layer. XOR has no crease anywhere; it can never
+  produce an edge that is not in an input.
+- **That is the whole argument for adding it to *this* app.** The geometric
+  layer is hard-edged strokes and its own header says so twice — drawn, not
+  glowing, and an earlier soft version "turned to mush the moment it was
+  composited over a busy field". Difference over a moving atmosphere adds a
+  travelling contour that belongs to neither layer. XOR gives the same
+  inverting character with the layer's own edges intact. They are two tools,
+  not a better and a worse, and the app should have both.
+- **It needs no clamp.** `a(1-b) + b(1-a)` with both in [0,1] is a sum of two
+  non-negative terms bounded by 1, unlike `add` (index 1) which relies on the
+  final clamp. Worth a word in the shader, since every other line in that
+  ladder either obviously stays in range or obviously does not.
+- **Labelled `XOR`, not `Exclusion`.** **Mine.** The registry's other five
+  labels are Photoshop's vocabulary and Photoshop calls this Exclusion — but
+  `MERGE_MODES` has no description field, so the label is the entire
+  explanation the control offers, and "XOR" is the word that was asked for,
+  is shorter on a wedge, and is exactly what Porter-Duff calls it. The
+  Exclusion synonym goes in the code comment, where a reader coming from a
+  design tool will find it.
+- **Both layers get it, at no cost.** `blendWith` is one shared ladder for
+  geo-over-atm and atm-over-camera — the file comment says keeping it singular
+  is deliberate — so one `else if` reaches both selectors and the camera path
+  too. No other change anywhere.
+
+**Lands in** `src/merge-modes.ts` — a seventh row at `index: 6`;
+`src/shaders/composite.frag.glsl:147-154` — one `else if` in `blendWith`, and
+`:26`'s mode list updated to match.
+**Done when** — XOR appears in both layers' merge selectors and in the
+`?merge=` / atmospheric equivalents; a mid-grey field under a white stroke
+shows nothing at all (the null surface, and the fastest way to confirm the
+formula is right rather than approximately right); the same stroke over black
+passes through and over white inverts; and every existing mode renders exactly
+as before, since nothing in the ladder above index 6 is touched.
+**Verify** — the mid-grey null case on screen, which distinguishes XOR from
+Difference in one glance and cannot be faked by a nearly-right formula. Then
+the pair side by side over a live atmosphere, looking specifically for
+Difference's travelling crease and its absence in XOR — that is the thing this
+entry claims and the only observation that confirms it.
+**Hard stops** — prefs no (`MergeModeName` gains a member; the stored fields
+are still strings and `isMergeModeName` already rejects unknown values, so an
+older build loading `xor` falls back rather than breaking — same shape as entry
+101's) · url no, the existing parameters gain a valid value · capture no ·
+dependency no.
