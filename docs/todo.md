@@ -9601,7 +9601,7 @@ phone left playing to room noise for five minutes.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 90. Still, carried, driving, dancing — the phone knows which
-`status: ready` · added 2026-08-30 · build after 88
+`status: ready` · added 2026-08-30 · build after 88 · still-is-loudest confirmed 2026-08-30
 
 **Do** — classify how the phone is being held into a handful of named postures,
 and let the director's cadence follow.
@@ -9635,9 +9635,27 @@ opposite things from the picture.
   sideways; longer holds, gentler steps, and no expectation of interaction.
   **carried** → the picture is in a pocket or a swinging hand and largely
   unwatched; slowest of all, and the cheapest thing the app can do here is
-  little. **dancing** → the best case: shortest holds, and every change lands
-  on the bar via entry 81. **handled** → a person is playing; the director
+  little. **dancing** → changes land on the bar via entry 81, and the room is
+  already supplying novelty. **handled** → a person is playing; the director
   should mostly get out of the way, which `SUSPEND` already does.
+- **Still is the loudest posture, and that is Victor's call, not an
+  inference.** As written above this entry claimed the top slot twice — "still
+  → the *most* willing" and "dancing → shortest holds" — which is not a
+  decision, it is two adjectives. Asked directly, the answer was *more active
+  when the phone is left alone*, with the surprise marked: it is the opposite
+  of every restraint this project chose while the picture was something left
+  running. It is nonetheless right, and the reason is already written down in
+  `docs/the-toy-wants-to-be-played-with.md`: **restraint belongs in what
+  persists, generosity in what responds** — and when a phone is alone on a
+  table the director *is* the responding thing. There is nothing else. A
+  dancefloor already has a person and a track supplying change; a table has
+  only this.
+- **So the ladder, in full, as multipliers on `COLOUR_HOLD` and `VIEW_HOLD`:**
+  **still ×0.55** (14s / 25s), **dancing ×0.7** (17s / 31s), **driving ×1.3**
+  (32s / 58s), **carried ×1.8** (45s / 81s), **handled** — governed by
+  `SUSPEND`, unchanged. Multipliers rather than five pairs of constants, so
+  the base numbers stay the one place either hold is tuned. The exact figures
+  are **Mine**; the ordering is not.
 - **A posture is a slow thing.** Minimum dwell of ~10s before a change is
   reported, and hysteresis on the way out, or the picture's cadence would
   jitter between two rulesets at a traffic light. **Mine.**
@@ -10437,3 +10455,112 @@ actual phone, in sun, without touching any OS setting — which is the whole
 point: it must work as the phone is.
 **Hard stops** — prefs no · url no · capture no · dependency no — CSS and a
 function that already exists, no animation library (entry 94 settled that).
+
+### 100. The sun says how often, the moon says how far
+`status: ready` · added 2026-08-30 · build after 89, 90 and 96
+
+**Do** — put the director's own energy on the two natural clocks. The solar
+cycle sets how *often* it moves; the lunar cycle sets how *far* a move goes and
+which way it leans. Both bounded, both smooth, both silent when the sky is not
+known.
+
+**Why** — asked for: *"director energy sun and moon linked"*. Entry 96 put the
+moon into the shapes and entries 47/53/71 put the sun into the colour, so both
+clocks are already felt in *what the picture looks like*. Neither is felt in
+*when it changes*, which is the one axis the director actually owns. Linking it
+is what makes the toy's pacing — not just its palette — part of the day it is
+being played in.
+
+**Decided**
+- **The split, and it is the whole entry.** **Sun → rate. Moon → step.** One
+  sentence, and it keeps entry 96's perpendicularity intact rather than
+  quietly muddying it. That entry's constraint was *sun owns colour, moon owns
+  shape, neither touches the other's axis*; cadence is a third axis neither had
+  claimed, and both are allowed to touch it **because they touch different
+  properties of it**. The sun never changes how big a step is; the moon never
+  changes how often one happens. Stated this plainly so the next reader does
+  not have to work out whether the rule was broken. **Mine.**
+- **The sun's contribution is the sky's *rate of change*, not its height.** The
+  obvious version — brightest at noon, quietest at midnight — is wrong for this
+  app twice over: it is used at night, and it would make the two flattest hours
+  of the day (3pm and 3am) behave identically to the two most interesting. What
+  actually distinguishes an hour is whether *the world itself* is changing
+  colour, and that is a two-peaked curve: dawn and dusk. So the director's rate
+  rides `|d(daylight)/dt|`, normalised over the day. **Twilight is when the
+  picture is most restless, and the small hours and the flat afternoon are both
+  calm.** A festival's sunset and a commuter's dawn get the same answer for the
+  same reason, and it needs no new input — `sky.ts` already produces the curve
+  whose slope this is.
+- **Scale, not replace.** The rate multiplier is bounded to **×0.75 at the
+  flattest hour, ×1.25 at peak twilight**, applied on top of entry 90's
+  posture multiplier, which stays the dominant term. A quarter either way is
+  felt across an evening and is invisible in any single change — which is the
+  correct size for something nobody asked to be able to see. Posture is *why*
+  the director is fast or slow; the sun is a colour on top of that, never an
+  override. **Mine** as to the numbers.
+- **The moon's three facts map onto step, exactly parallel to entry 96's three
+  onto shape:**
+  - **Illuminated fraction → how far a step goes.** Full moon: the director is
+    willing to make a large move — a whole view change, a colour jump across
+    the ramp. New moon: it moves in small steps, to a neighbouring colour, and
+    prefers the runner-up view entry 89 introduces over a distant one. The
+    moon lends the toy its reach, as in 96 it lends it its light.
+  - **Waxing vs waning → which way it leans through the ramp.** Waxing nights
+    the director breaks ties *up* the `RAMP` (toward jade and cold); waning,
+    *down* (toward ember). A tie-break only — it never overrides what the music
+    asked for, it decides between two answers the character calls equal. That
+    is what makes a first-quarter night feel different from a last-quarter one
+    over hours, without either being wrong about the sound in any given minute.
+  - **Presence (rough altitude) → strength.** Below the horizon the moon's
+    whole contribution is zero and the step sizes are the plain ones. Same rule
+    as entry 96, same reason, and it means most nights carry the moon for only
+    part of their length.
+- **This is the mechanism entry 89 is already building, given a dial.** 89 makes
+  `COLOUR_MIN_STEP` decay and makes `viewFor` return a ranking so a runner-up
+  exists. The moon does not add machinery — it *sets where on that ranking the
+  director is willing to reach today*. Which is why this builds after 89 and
+  not beside it: without the ranking there is no "how far" to modulate.
+- **Bounded, smooth, and an identity when unknown.** Every one of these is a
+  multiplier on a value the director already computes, clamped to its stated
+  band. All of them move through entry 92's ramps, so nothing steps at a
+  minute boundary. And with no location (entry 97 makes that a real and
+  supported state, not a failure) the sun term falls back to `sky.ts`'s clock
+  curve — whose *slope* is still meaningful even when its absolute hours are
+  wrong for the latitude — and **the moon term is exactly zero**, because a
+  moon's phase is knowable from the clock alone but its altitude is not, and
+  entry 96 already ruled that presence gates the whole influence. Prove it:
+  with the sun term pinned at its midpoint and the moon at zero, the director
+  must produce byte-identical decisions to today's, on the same trace. Same
+  discipline as `uDay`, `uBeatConfidence` and `uSlip`.
+- **Report it.** One line in the readout — the two multipliers as numbers,
+  beside entry 90's posture and entry 89's blocked-gate line. Two invisible
+  natural cycles silently changing the app's pacing, with no way to see them,
+  is precisely the diagnosis hole entry 89 was just re-read to find.
+- **Not decided here** → whether the sun and moon should touch anything else
+  that has a rate — the ripples' decay, the powder, the emitter's spawn
+  interval. Entry 96 owns the emitter's *shape* parameters and this one owns
+  the director's *timing*; anything else is a third entry and should say why.
+
+**Lands in** `src/engine/celestial.ts` (new — the two multipliers as a pure
+function of a `Date`, an optional location and the moon maths entries 96/97
+introduce, so it is scrubbable headless like `sky.ts` is); `src/sky.ts` — a
+`slope` alongside `daylight`, since it is that curve's own derivative and
+belongs with it; `src/director.ts` — holds scaled by the sun term,
+`COLOUR_MIN_STEP` and the view ranking's reach scaled by the moon term, the
+ramp tie-break; `src/hud.ts` — the readout line; `scripts/probe-celestial.ts`
+(new).
+**Done when** — scrubbing a whole year headless shows the rate term peaking
+twice a day at the twilights and never leaving [0.75, 1.25]; a full-moon night
+and a new-moon night produce visibly different step sizes on the same audio
+trace; a waxing and a waning half-moon night differ in which way ties break and
+in nothing else; the moon below the horizon is byte-identical to the moon term
+switched off; and with the sun pinned mid and the moon at zero the director's
+decisions on a recorded trace match today's exactly.
+**Verify** — `probe-celestial.ts` over a year, which is the only way to see a
+two-peak curve and a 29.5-day cycle at once. Then the thing that actually
+matters and cannot be probed: a phone left out across an actual sunset, which
+is the hour this entry claims is the most alive.
+**Hard stops** — prefs no · url no (no coordinate ever reaches one — entry 97's
+rule, restated because this entry is the second consumer of that location) ·
+capture no · dependency no (the moon maths is entry 96's, already refused a
+library).
