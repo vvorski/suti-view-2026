@@ -8541,3 +8541,72 @@ is the one nobody ran.
 **Hard stops** — prefs no · url no · capture **yes, and answered**: this
 strictly *reduces* what is written — the accidental frame on exit stops
 happening, and no new path to a capture is added · dependency no.
+
+### 79. Rings stop adding up, and a pull reads as a sequence
+`status: ready` · added 2026-08-30
+
+**Do** — combine overlapping rings instead of summing them, and vary each ring
+enough that a dragged trail reads as a run of rings rather than one thick one.
+
+**Why** — pulling a touch across Circles turns it into a solid mass. Two
+separate causes, and the file already contains the argument against one of
+them.
+
+**Decided**
+- **The cause is `+=`, and this exact mistake is documented twenty lines
+  above.** `circles.frag.glsl:329` is `ink += (outer + inner) * opacity`, and
+  the audio *wake* in the same file uses `max()` with the comment: *"max(), not
+  +=. Eight overlapping traces summed pins the ladder solid white — Grid's
+  fronts did exactly this — and a wake that saturates has stopped being a
+  record of anything."* The wake learned it; the rings never did. There are
+  **sixteen** touch slots and entry 57 lays a trail of them along a drag, so a
+  pull puts many near-identical rings on the same pixels and they sum straight
+  past 1.
+- **Screen, not `max()`.** `ink = 1 − (1 − ink)(1 − c)`. `max()` is what the
+  wake needed — a record where the strongest event wins — but for rings the
+  overlap genuinely means *more ink here*, and screen keeps that legible while
+  being arithmetically incapable of clipping. It is also already the file
+  vocabulary: `blendWith`'s mode 2, and the operator entry 47 chose for the
+  same "must not clip" reason. **Mine.**
+- **The same fault, three more places.** `circles.frag.glsl:292` (the *audio*
+  ring loop, not the wake), `drift.frag.glsl:144` and `tide.frag.glsl:130` all
+  sum the same way. Fix all four; they are one line each. `field`, `lattice`
+  and `cells` do not use this pattern and are not touched.
+- **"One colour" invites the wrong fix, so: the rings stay white.** The
+  geometric layer draws in white only and all its colour comes from
+  `uGeoColour` in the composite — `geo-colour.ts` defends that deliberately, so
+  that "the geometry can be kept deliberately out of the atmospheric layer's
+  hue range, so the two layers never fight for the same colour". Giving touch
+  rings their own hues would undo that for a symptom whose actual cause is
+  saturation. **The mass is fixed by structure and density, not by colouring
+  the rings differently.**
+- **A trail should read as a sequence.** Rings laid a fraction of a second
+  apart have nearly the same radius and sit almost exactly on top of each
+  other, so even without clipping they read as one thick stroke. Vary stroke
+  width and ring phase deterministically by **slot index** — free, stable
+  frame to frame, and it makes the count of touches visible in the picture.
+  **Mine.**
+- **The smarter version is interference, and it is deliberately not this
+  entry.** Two real ripples crossing produce nodes and antinodes, not a
+  brighter blob: accumulate a *signed* wave per ring and take the magnitude at
+  the end, and overlaps gain structure as you touch more rather than losing it.
+  That is the genuinely interesting answer to "do it smarter" — and it changes
+  how every ring looks, audio ones included, so it belongs in its own entry
+  proven on Circles alone once this has landed. Recorded here so it is not
+  lost, and so nobody smuggles it in as part of a saturation fix.
+
+**Lands in**
+- `src/shaders/circles.frag.glsl:292, 329` — both loops.
+- `src/shaders/drift.frag.glsl:144`, `src/shaders/tide.frag.glsl:130`.
+- Ring stroke/phase variation by slot index, in the touch loops only.
+
+**Done when** — dragging a finger across Circles leaves a legible run of
+expanding rings rather than a filled shape; sixteen simultaneous touch ripples
+cannot drive `ink` above 1 anywhere on screen; a single ring looks exactly as it
+does today; and the audio rings stop clipping in loud passages, which is the
+same fix arriving somewhere nobody reported it.
+**Verify** — the phone, with a slow drag and then with four fingers scribbling,
+which is the case that produces the mass. `probe-ripples.ts` can assert the
+combine never exceeds 1 for any number of overlapping contributions, which is
+arithmetic and needs no GPU.
+**Hard stops** — prefs no · url no · capture no · dependency no.
