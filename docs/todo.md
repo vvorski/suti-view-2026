@@ -6495,3 +6495,84 @@ whole question. A desktop can only rehearse it: DevTools can emulate
 `prefers-reduced-motion: reduce`, which proves the CSS swaps but not that the
 handset was ever in that state.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 66. Fullscreen is a desire, not a history — and the probe asserts the invariant
+`status: ready` · added 2026-08-30 · build with entry 62
+
+**Do** — replace the fullscreen flags with a single "do we want fullscreen"
+plus state derived from the document, and change `probe-fullscreen.ts` to
+assert the invariant rather than the current behaviour.
+
+**Why** — asked how to stop this happening again. The honest answer is not a
+bisect: it never worked, and the guard that was supposed to catch it asserts
+the fault as correct.
+
+**Decided**
+- **It is not a regression, and that matters for the fix.** `git log -S` puts
+  `if (fsArmed || fsEverEntered) return` in `7e24054`, the same commit that
+  first introduced `fsEverEntered` — and `99b6315`, *"A way back into
+  fullscreen once it has been lost"*, comes after it and shipped the chip
+  precisely because the automatic path was first-entry-only. **Automatic
+  re-entry has never worked twice in any build.** So there is no bad commit to
+  find and no bisect to run, and "how do we make sure it doesn't happen again"
+  cannot be answered by watching for a change — the thing was wrong when it was
+  written.
+- **The probe asserts the bug.** `probe-fullscreen.ts:113` is
+  `'granted → a later tap does not re-request'`, checking `stub.calls === 1`,
+  and `:143` is `'recovered → stops asking'`. Both are green today. Both are
+  the defect, written down as a requirement. The probe's own docstring opens
+  with *"fullscreen went missing for several builds and nothing noticed"* —
+  it was written to stop exactly this, and it froze the fault instead.
+- **Why they were written that way, because it was not carelessness** → they
+  are anti-nag checks, and nagging is a real failure: a page that re-requests
+  fullscreen on every tap is unusable. The mistake is that they condition on
+  **history** ("has it ever succeeded") when the thing they mean conditions on
+  **state** ("is it fullscreen right now"). Those two agree exactly until
+  fullscreen is lost, which is the case nobody wrote a check for.
+- **The rule worth keeping past this entry**: *a check whose name is a negative
+  must say under what condition the behaviour resumes.* "Does not re-request"
+  and "stops asking" are unbounded, and an unbounded negative is how a probe
+  turns a decision into a permanent one. Restated: **"while active, a tap does
+  not re-request"** — same protection, and it is now false in exactly the
+  situation it should be.
+- **The structural fix: remove the concept that made it expressible.** Five
+  module-level flags currently model this (`fsState`, `fsError`, `fsAttempts`,
+  `fsArmed`, `fsEverEntered`). Replace the history ones with **one desire**:
+  `wantFullscreen`, true from the Start gesture, false only when the person
+  leaves deliberately. Everything else is derived from
+  `document.fullscreenElement` on each `fullscreenchange`, and the whole rule
+  becomes one line — **if we want it and we are not in it, arm the retry** —
+  re-evaluated every time, with no memory of how many times it has happened.
+  **Mine**, and the point is not tidiness: with no "ever entered" concept there
+  is nothing for a future guard clause to be written against, so the bug cannot
+  be reintroduced in the same shape.
+- **"Deliberately" is defined by entry 62, not re-decided here** → the retry
+  listens on the picture rather than on `window`, so a person who left to use
+  the address bar is not dragged back. That is what lets `wantFullscreen` stay
+  true without becoming a nag, and it is why these two entries are one change.
+- **The invariant the probe must assert instead** → a cycle: enter, lose, tap,
+  re-enter — three times, with the stub's call count reaching 4. It is one
+  loop, it fails today at the second iteration, and it is the check that would
+  have caught this on the day it was written.
+- **And say it on the phone** → the readout's `full <state>` field gains the
+  desire and whether the retry is armed. State alone cannot distinguish "not
+  fullscreen and trying" from "not fullscreen and given up", which is the
+  distinction this whole entry is about.
+
+**Lands in**
+- `src/permission-gate.ts:85-92` — the flags collapse to `wantFullscreen` plus
+  derived state.
+- `src/permission-gate.ts:120-153` — `watchFullscreen` and
+  `armFullscreenRetry` become the one rule.
+- `scripts/probe-fullscreen.ts:113,143` — restate both negatives; add the
+  cycle.
+- `src/hud.ts:1214` — two more fields on the existing line.
+
+**Done when** — the cycle check passes at three iterations and fails if
+anything conditions arming on history again; both anti-nag checks still pass in
+their restated form; and `grep -c fsEverEntered src/` is 0.
+**Verify** — the probe carries this one, deliberately: it is deterministic
+given a stubbed `requestFullscreen`, and the docstring already explains why a
+browser here cannot answer it. The phone confirms the behaviour once, via entry
+62's own Verify; the probe is what keeps it true afterwards.
+**Hard stops** — prefs no · url no · capture no · dependency no.
