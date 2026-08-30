@@ -1,4 +1,4 @@
-# suti-view-2026
+# kiyo · plays
 
 A microphone-driven WebGL field, built for a phone held in the hand rather than
 a browser window on a desk.

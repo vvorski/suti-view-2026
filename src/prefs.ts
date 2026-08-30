@@ -18,6 +18,11 @@ import {
   type GeometricViewName,
 } from './views'
 
+// docs/todo.md entry 63: the app is called kiyo · plays now, and this string
+// deliberately still says otherwise. Renaming it does not migrate anything —
+// it silently hands every existing visitor the defaults and loses whatever
+// view, colours and mapping they had chosen, to fix a key nobody ever sees.
+// Leave it.
 const STORE_KEY = 'suti-view:prefs'
 
 export interface Prefs {

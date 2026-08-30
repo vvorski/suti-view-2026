@@ -107,6 +107,7 @@ export const RELEASE_NAMES: readonly string[] = [
   'rolled poster',
   'powder piles',
   'keeps recovering',
+  'new name',
 ]
 
 /** The current release's name — derived as the list's last element, so

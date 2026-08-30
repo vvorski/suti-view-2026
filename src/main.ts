@@ -528,7 +528,7 @@ function saveCapture(visualiser: Visualiser): void {
     const time = `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
     captureCount++
     const stamp = `${date}-${time}-${pad(captureCount)}`
-    const name = `suti-${__BUILD_NUMBER__}-${RELEASE_NAME.replace(/\s+/g, '-')}-${stamp}.png`
+    const name = `kiyo-${__BUILD_NUMBER__}-${RELEASE_NAME.replace(/\s+/g, '-')}-${stamp}.png`
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url

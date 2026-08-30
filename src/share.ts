@@ -94,7 +94,7 @@ export function mountShare(): void {
       // say-so. Desktop mostly lacks it, hence the clipboard fallback.
       if (navigator.share) {
         try {
-          await navigator.share({ title: 'suti·view', url })
+          await navigator.share({ title: 'kiyo · plays', url })
           return
         } catch {
           // Dismissing the sheet rejects. That is a choice, not a failure, and

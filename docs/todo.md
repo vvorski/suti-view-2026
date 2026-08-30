@@ -6447,7 +6447,38 @@ covers the state machine and the phone covers the behaviour.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 63. The app is called kiyo · plays
-`status: building` · added 2026-08-30 · started 2026-08-30
+`status: done` · added 2026-08-30 · shipped at build 219
+
+**Build note** — every listed site changed exactly as specified: `index.html`
+(`<title>`, the `<h1>` wordmark with its hairspace-flanked middot),
+`public/manifest.webmanifest` (`name`/`short_name`), `src/share.ts`'s share
+sheet title (plain spaces, no hairspaces — matching the entry's own "an OS
+share sheet is not the place for typography"), `src/main.ts`'s screenshot
+filename prefix (`suti-` → `kiyo-`), `README.md`'s heading, and
+`package.json`'s `name` (→ `kiyo-plays`, kebab-case, not published anywhere).
+`src/prefs.ts`'s `STORE_KEY` is untouched in value, with a new comment
+explaining why, so the next person to notice the mismatch does not "tidy" it
+into a settings-losing migration. `src/shaders/circles.frag.glsl`'s history
+sentence is untouched, as decided. `grep -ril suti src/ index.html public/`
+returns exactly `prefs.ts` and `circles.frag.glsl`, matching the entry's own
+Done-when literally.
+
+Verified live against the real dev server, not just by reading the diff: set
+a fixed `localStorage` value under the old `suti-view:prefs` key, reloaded,
+and confirmed both the tab title and the `#gate` wordmark read `kiyo · plays`
+while the stored `geometricView`/`geoColour`/every other field came back
+byte-identical — the actual claim behind "prefs yes, and answered by not
+moving". Checked the wordmark for overflow at true 320×568 and 360×640
+viewports (via the iframe technique — `resize_window` cannot shrink this
+harness's own window, see entry 56/60's build notes): `kiyo · plays` is one
+character longer than `suti · view` and entry 43's own CSS comment flags
+this exact line as "the one place this change can overflow or wrap" at
+320px — it does not, at either width.
+
+Not verified live: `navigator.share`'s actual OS sheet title (this harness
+has no OS share surface to open) and the installed-PWA `name`/`short_name`
+display (would need an actual install). Both are single-line, low-risk
+string changes read directly from the diff rather than exercised.
 
 **Do** — replace the name everywhere a person sees it. Leave the repository,
 both deploy URLs and the stored prefs key exactly as they are.

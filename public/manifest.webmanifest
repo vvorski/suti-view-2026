@@ -1,6 +1,6 @@
 {
-  "name": "suti-view",
-  "short_name": "suti-view",
+  "name": "kiyo · plays",
+  "short_name": "kiyo",
   "description": "A microphone-driven WebGL field, for phones.",
   "start_url": "./",
   "display": "fullscreen",
