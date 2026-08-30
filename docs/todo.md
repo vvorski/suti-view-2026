@@ -4840,7 +4840,7 @@ the label. `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 52. Single tap saves a frame, double tap opens the menu
-`status: ready` · added 2026-08-30
+`status: building` · added 2026-08-30 · started 2026-08-30
 
 **Do** — retire entry 41's three zones. A single tap anywhere saves a frame; a
 double tap anywhere opens the panel.
