@@ -26,6 +26,7 @@ import {
   goFullscreen,
   keepAwake,
   onFullscreenChange,
+  setFullscreenRetryTarget,
   waitForStart,
 } from './permission-gate'
 import { loadPrefs, type Prefs } from './prefs'
@@ -563,6 +564,10 @@ async function main(): Promise<void> {
   applyReleaseTone(__BUILD_NUMBER__)
   mountReleaseName()
   mountShare()
+  // docs/todo.md entry 62: the fullscreen retry re-requests on the next tap
+  // of the picture itself, never `window` — set once, here, well before the
+  // first tap that could ever need it.
+  setFullscreenRetryTarget(canvas)
 
   if (!checkWebGL()) {
     fail('This browser does not support WebGL2, which this page needs to draw.')

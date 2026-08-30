@@ -208,6 +208,8 @@ export interface Hud {
         state: string
         attempts: number
         error: string
+        want: boolean
+        armed: boolean
       }
     },
   ): void
@@ -1211,10 +1213,16 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
                   : `buzz ${s.haptics.accepted}/${s.haptics.attempts}`,
             ]),
         // "We lost full screen" is three different bugs wearing one sentence.
+        // docs/todo.md entry 66: `want`/`armed` beside state, since state
+        // alone cannot tell "not fullscreen and about to retry on the next
+        // tap" apart from "not fullscreen and nothing is even trying" — the
+        // distinction the whole entry exists to make visible.
         ...(s.fullscreen === undefined
           ? []
           : [
               `full ${s.fullscreen.state}` +
+                (s.fullscreen.want ? ' want' : '') +
+                (s.fullscreen.armed ? ' armed' : '') +
                 (s.fullscreen.attempts > 1 ? ` ×${s.fullscreen.attempts}` : '') +
                 (s.fullscreen.error ? ` (${s.fullscreen.error})` : ''),
             ]),

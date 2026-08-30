@@ -63,32 +63,50 @@ export function checkWebGL(): boolean {
  * device this rejects, and a rejection here means the visualiser simply runs
  * with the browser's chrome — not that it refuses to run.
  *
- * Retried on the next gesture if the gate's attempt does not land, but only
- * until it lands once. That is a correction to what this comment used to say
- * — that there was "no further gesture to hang it on". That was true when the
- * app was a gate and a bare canvas; it stopped being true the moment the HUD
- * existed, and the cost of the stale assumption was a fullscreen that could be
- * lost at the gate and never come back, with nothing anywhere saying why.
- *
- * The one-shot rule is what keeps the retry from becoming a nuisance: once we
- * have been fullscreen even once, leaving it is the user's own swipe or back
- * gesture and re-grabbing it on their next tap would be fighting them. So the
- * retry arms only while we have never got in.
+ * Retried on every loss, not just the first — docs/todo.md entry 66. The
+ * five module flags this used to track (state, error, attempts, whether a
+ * retry was armed, whether we had ever entered) collapse to one desire,
+ * `wantFullscreen`, plus state derived fresh from `document.fullscreenElement`
+ * on every `fullscreenchange`. Automatic re-entry never actually worked more
+ * than once in any build this app shipped — the old guard (an "ever entered"
+ * flag, ORed with an "armed" flag, both since deleted so the fault cannot be
+ * reintroduced in the same shape) refused to re-arm the retry once fullscreen
+ * had succeeded a single time — because that guard conditioned on *history*
+ * ("has it ever succeeded") when what it meant was *state* ("is it
+ * fullscreen right now"). Those agree exactly until fullscreen is lost once,
+ * which is the case nobody wrote a check for. There is no bad commit to
+ * bisect to and no history left for a future guard clause to be written
+ * against.
  */
 
 /** Where the fullscreen request got to. Diagnostics only — see the readout.
  *  `'unasked'` is distinct from `'refused'` — see docs/todo.md entry 24: the
  *  fullscreen chip shows on `'refused'`, and starting there before any
  *  request had been made showed the chip at Start, before anything could
- *  have gone wrong yet. */
-type FullscreenState = 'unsupported' | 'active' | 'refused' | 'armed' | 'exited' | 'unasked'
+ *  have gone wrong yet. `'armed'` is no longer a value here (docs/todo.md
+ *  entry 66) — whether a retry is armed is now its own field, since state and
+ *  armed-ness are independent: 'exited' can be true at the same time armed is
+ *  either true (waiting for the next tap) or, for an instant between that tap
+ *  and the retry's own outcome, false. */
+type FullscreenState = 'unsupported' | 'active' | 'refused' | 'exited' | 'unasked'
 
+/** The one desire docs/todo.md entry 66 replaces five history flags with —
+ *  true from the moment anything first asks for fullscreen (the Start
+ *  gesture, or the powder's third tap), false only if that never happened.
+ *  Nothing here ever sets it back to false: "leaving the egg does not leave
+ *  fullscreen" (entry 61) and there is no other deliberate-exit gesture in
+ *  this app that should stop the retry from trying again. */
+let wantFullscreen = false
 let fsState: FullscreenState = 'unasked'
 let fsError = ''
 let fsAttempts = 0
-let fsArmed = false
-let fsEverEntered = false
 let fsWatching = false
+/** Whether a retry listener is currently attached, waiting for the next tap
+ *  on the picture. Tracked directly rather than inferred, since "not
+ *  fullscreen and armed" and "not fullscreen and mid-retry" are both real,
+ *  distinct instants the readout should be able to show. */
+let fsArmed = false
+let retryFn: (() => void) | null = null
 
 /** Fires whenever `fsState` changes, so the fullscreen chip (docs/todo.md
  *  entry 19) can appear and vanish without polling `fullscreenStatus()`
@@ -111,48 +129,89 @@ function setFsState(next: FullscreenState): void {
  * report available was "we lost full screen" — which cannot distinguish a
  * platform with no element fullscreen (iPhone Safari) from a request the
  * browser refused for want of a live gesture, and those want opposite fixes.
+ *
+ * `want`/`armed` added by docs/todo.md entry 66: `state` alone cannot tell
+ * "not fullscreen and about to retry on the next tap" apart from "not
+ * fullscreen and nothing is even trying", which is the distinction this
+ * whole entry is about.
  */
-export function fullscreenStatus(): { state: string; attempts: number; error: string } {
-  return { state: fsState, attempts: fsAttempts, error: fsError }
+export function fullscreenStatus(): {
+  state: string
+  attempts: number
+  error: string
+  want: boolean
+  armed: boolean
+} {
+  return { state: fsState, attempts: fsAttempts, error: fsError, want: wantFullscreen, armed: fsArmed }
 }
 
-/** Watch for arriving in — or being thrown out of — fullscreen by any route. */
+/** The element whose tap re-requests fullscreen once it has been lost —
+ *  docs/todo.md entry 62. `#canvas` rather than `window`: someone who left
+ *  fullscreen to read a notification or use the address bar is not dragged
+ *  straight back by their next tap anywhere, only by a tap on the picture
+ *  itself, which is also the one gesture the powder's own `#powder-canvas`
+ *  sits above and intercepts — so the retry needs no explicit awareness of
+ *  the powder being up; it simply never receives a tap while that is true. */
+let retryTarget: HTMLElement | null = null
+
+/** Set once, from `main()`, before the retry can ever need a target. */
+export function setFullscreenRetryTarget(el: HTMLElement): void {
+  retryTarget = el
+}
+
+/** Watch for arriving in — or being thrown out of — fullscreen by any route,
+ *  and re-arm on every loss (docs/todo.md entry 66) rather than only the
+ *  first — "if we want it and we are not in it, arm the retry", evaluated
+ *  fresh on every change, with no memory of how many times this has already
+ *  happened. */
 function watchFullscreen(): void {
   if (fsWatching) return
   fsWatching = true
   document.addEventListener('fullscreenchange', () => {
+    document.documentElement.dataset.fullscreen = document.fullscreenElement ? 'true' : 'false'
     if (document.fullscreenElement) {
-      fsEverEntered = true
       setFsState('active')
-    } else if (fsEverEntered) {
-      // A deliberate exit. Recorded, deliberately not acted on.
+      // A stray armed listener can only mean fullscreen arrived by some
+      // route other than that listener's own tap (a stray already fired and
+      // its retry() self-removed; this guards the case where it did not).
+      if (retryFn && retryTarget) {
+        retryTarget.removeEventListener('pointerup', retryFn, true)
+        retryFn = null
+        fsArmed = false
+      }
+    } else {
       setFsState('exited')
+      armFullscreenRetry()
     }
   })
 }
 
 /**
- * Ask again on the next tap.
+ * Ask again on the next tap of the picture.
  *
  * pointerup rather than pointerdown: both are activation-triggering in Chrome,
  * but pointerup is the one every engine agrees on, and a tap that ends is
- * unambiguously a tap. Capture phase on window so it sees the gesture whatever
- * the HUD does with it — several HUD controls call preventDefault, which would
- * lose a listener waiting for `click`.
+ * unambiguously a tap. Capture phase so it sees the gesture whatever the HUD
+ * does with it — several HUD controls call preventDefault, which would lose
+ * a listener waiting for `click`. Does not stop propagation or call
+ * preventDefault itself, so the same tap still does whatever it normally
+ * does — with entries 50 and 52 landed, that same tap is also an emitter and
+ * a screenshot.
  */
 function armFullscreenRetry(): void {
-  if (fsArmed || fsEverEntered) return
+  if (!wantFullscreen || fsArmed || !retryTarget) return
   fsArmed = true
-  setFsState('armed')
-  const retry = (): void => {
-    window.removeEventListener('pointerup', retry, true)
+  retryFn = (): void => {
+    retryTarget!.removeEventListener('pointerup', retryFn!, true)
     fsArmed = false
+    retryFn = null
     goFullscreen()
   }
-  window.addEventListener('pointerup', retry, true)
+  retryTarget.addEventListener('pointerup', retryFn, true)
 }
 
 export function goFullscreen(): void {
+  wantFullscreen = true
   const target = document.documentElement
   if (!target.requestFullscreen) {
     setFsState('unsupported')
@@ -176,7 +235,6 @@ export function goFullscreen(): void {
       // A resolve is not proof of arrival: some engines resolve and leave
       // fullscreenElement null. Trust the document, not the promise.
       if (document.fullscreenElement) {
-        fsEverEntered = true
         setFsState('active')
       } else {
         fsError = 'resolved-but-not-fullscreen'

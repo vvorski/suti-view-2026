@@ -6337,7 +6337,39 @@ hard several times, leave, and confirm the visualiser is exactly as it was.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 62. Fullscreen comes back by itself, and windowed is a state the app knows it is in
-`status: ready` · added 2026-08-30
+`status: done` · added 2026-08-30 · shipped at build 217 (built together with entry 66)
+
+**Build note** — built together with entry 66 as one change to
+`permission-gate.ts`, per both entries' own text: 66 is the structural
+version of the same fix 62 asks for from the UX side, and 66's own "Mine"
+says as much ("with no 'ever entered' concept there is nothing for a future
+guard clause to be written against"). See entry 66's build note for the
+implementation; this entry's own specific pieces:
+
+- The retry now listens on `#canvas` (`setFullscreenRetryTarget(canvas)`,
+  called once from `main()` right after `canvas` is resolved), not `window`.
+  This is also what satisfies "should not also arm a retry while the powder
+  is showing" (entry 61's own coordination worry) for free: `#powder-canvas`
+  sits above `#canvas` in z-index while the powder is up, so a tap there
+  never reaches `#canvas`'s listener. No powder-awareness needed in
+  `permission-gate.ts` at all — verified by reasoning about the DOM stacking
+  established by entries 46/61, not by a live powder+fullscreen-loss test
+  (compounding two things this harness already can't drive for real: a
+  trusted fullscreen gesture and the powder's own render loop).
+- `document.documentElement.dataset.fullscreen` is set to `'true'`/`'false'`
+  from the same `fullscreenchange` handler that already tracks entry/exit —
+  confirmed live (see entry 66's build note) via a direct import of
+  `permission-gate.ts` in a real browser tab, not just the probe's own DOM
+  stub.
+- The fullscreen chip's own hidden-state logic (`main.ts`'s
+  `updateFullscreenChip`) is unchanged — `'exited'`/`'refused'` are still the
+  two states it shows on, and both still exist under the new model.
+
+Not verified live: the actual chip click and `waitForStart` wiring, since
+both sit behind the real Start gesture this harness cannot complete (the
+microphone permission prompt never resolves). What was verified live instead
+is `permission-gate.ts` itself, directly, which is where all of this
+entry's and entry 66's logic actually lives.
 
 **Do** — re-arm the fullscreen retry every time fullscreen is lost, not only
 before the first entry, and mark the windowed state so the app can look and
@@ -6641,7 +6673,68 @@ handset was ever in that state.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 66. Fullscreen is a desire, not a history — and the probe asserts the invariant
-`status: ready` · added 2026-08-30 · build with entry 62
+`status: done` · added 2026-08-30 · shipped at build 217 (built together with entry 62)
+
+**Build note** — `permission-gate.ts`'s five flags (`fsState`, `fsError`,
+`fsAttempts`, `fsArmed`, `fsEverEntered`) collapse to `wantFullscreen` (the
+one desire, set true the first time anything calls `goFullscreen()`, never
+set back to false) plus `fsState`/`fsError`/`fsAttempts` kept as plain
+diagnostics, plus a re-added `fsArmed` — not eliminated, since the entry
+itself asks the readout to show "whether the retry is armed" as
+independent of `state`. What's actually gone is `fsEverEntered` and the
+`||`-guard that conditioned re-arming on it; `grep -c fsEverEntered src/` is
+0 (checked, including in a doc comment that named the flag historically —
+the mechanical Done-when check doesn't distinguish code from prose, so that
+comment was reworded rather than left as a false negative).
+
+`watchFullscreen()`'s `fullscreenchange` handler now calls
+`armFullscreenRetry()` unconditionally on every exit, not only from a
+rejected `goFullscreen()` promise — "if we want it and we are not in it, arm
+the retry", re-evaluated fresh every time, exactly as the entry states it.
+`armFullscreenRetry()`'s own guard is `if (!wantFullscreen || fsArmed ||
+!retryTarget) return` — no history term at all, so it cannot refuse a second
+time for the same reason it refused every time after the first before this
+entry.
+
+**Deliberately verified the check can fail, not just that it passes** —
+before running the final probe, temporarily reintroduced an `everEntered`
+flag ORed into the same guard (the old bug's exact shape) and confirmed
+`pnpm probe:fullscreen` failed 7 of its checks, specifically the new cycle's
+second and third iterations (`armed was false`, state stuck on `exited`
+instead of recovering) — exactly where the original bug would have shown up
+had this check existed when it was introduced. Reverted immediately after
+confirming the failure, then reran clean.
+
+`probe-fullscreen.ts` rewritten: the DOM stub's `document.addEventListener`
+was a bare no-op before this entry (the old cases never needed a real
+`fullscreenchange` event, since every failure path they tested went through
+`goFullscreen()`'s own promise rejection, not a genuine loss-while-active).
+Entry 66's own invariant — recovery after any number of *real* losses, not
+rejections — can't be exercised without one, so the stub now captures
+`fullscreenchange` listeners for real and exposes `stub.exit()` to fire one
+with `fullscreenElement` already null, simulating a system back-swipe. A
+second stub target (a fake canvas-like object with its own listener map)
+replaces the old `window`-based tap simulation, matching entry 62's retry
+now living on `#canvas` rather than `window`. The two "unbounded negative"
+checks (`granted → a later tap does not re-request`, `recovered → stops
+asking`) are restated as `while active, a tap does not re-request` — bounded
+by the entry's own naming convention ("a check whose name is a negative must
+say under what condition the behaviour resumes"). The new case 6 runs the
+entry's own example — enter, lose, tap, re-enter, three times — asserting
+`state`/`armed` at every step, not just the final call count, so a
+regression that only breaks the *second* cycle (exactly what the original
+bug did) cannot hide behind a passing aggregate.
+
+`hud.ts`'s readout line gains ` want`/` armed` beside `full <state>` — only
+appended when true, so the common steady-state case (`full active`) reads
+exactly as it always did and the two new words appear only when there is
+something to say. Not verified via the real numeric readout on a phone
+(requires a completed Start), but `fullscreenStatus()`'s new `want`/`armed`
+fields were confirmed live against the real module: `active(want=true,
+armed=false) → exited(want=true, armed=true) → active(want=true,
+armed=false)` across two full loss/recovery cycles, and a tap on an element
+other than the registered retry target was confirmed to leave `attempts`,
+`state`, and `armed` all unchanged.
 
 **Do** — replace the fullscreen flags with a single "do we want fullscreen"
 plus state derived from the document, and change `probe-fullscreen.ts` to
