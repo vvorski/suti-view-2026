@@ -304,18 +304,19 @@
         #start { animation: none; }
       }
 
-      /* Fixed in the top-left utility corner rather than placed by script on
-         the HUD's own icon arc (docs/todo.md entry 25) — an arc of one chip,
-         which is what the closed panel's arc always was while this was on
-         it, reads as a button dropped on the picture rather than as one of a
-         row. Same left inset as .hud-stats (hud.ts); stacked below
-         #version-hud rather than sharing its exact top, since that corner
-         already holds the reload glyph and the two would otherwise overlap.
-         Still a circular chip — the control-surface rule governs controls
-         being arcs, not where a round chip may sit. */
+      /* Dead centre of the viewport (docs/todo.md entry 42), reversing entry
+         25's top-left placement — Victor's call, made against the built
+         result on a phone rather than against a description of it, which is
+         the evidence entry 25 did not have. The safe-area insets went with
+         the old position: they existed to hold the chip clear of a notch and
+         a rounded corner, and a centred element is clear of both by
+         construction, so keeping them would leave two terms that no longer
+         mean anything. Still a circular chip — the control-surface rule
+         governs controls being arcs, not where a round chip may sit. */
       #fullscreen-chip {
-        left: calc(0.75rem + env(safe-area-inset-left, 0px));
-        top: calc(3.5rem + env(safe-area-inset-top, 0px));
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
       }
     </style>
   </head>
@@ -346,11 +347,16 @@
          chips go inert while its panel is closed
          (`.hud-scrim:not(.open) .hud-chip`), and this one has to work at the
          moment fullscreen is lost, not only once the panel is opened.
-         Fixed in the top-left utility corner (see the style rule above),
-         not placed on the HUD's own icon arc — entry 25 moved it there
-         after entry 19's own arc placement read as a button dropped on the
-         picture whenever the panel was closed, which is the only state
-         this chip is ever shown in. -->
+         Fixed dead centre of the viewport (see the style rule above, and
+         entry 42) rather than placed on the HUD's own icon arc — entry 25
+         moved it off the arc after entry 19's own arc placement read as a
+         button dropped on the picture whenever the panel was closed, which
+         is the only state this chip is ever shown in; entry 42 then moved
+         it from the top-left corner entry 25 chose to dead centre, on the
+         same "reads as off" evidence, now against the built top-left result
+         rather than against a description of it. Entry 41's single tap
+         recogniser excludes this chip by target — see main.ts — since
+         centring it moved it into the panel-opening middle third. -->
     <button id="fullscreen-chip" class="hud-chip" type="button" hidden
       style="--tint: #9d9bf0" aria-label="Return to fullscreen">
       <svg class="hud-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">

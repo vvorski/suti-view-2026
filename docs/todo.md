@@ -3527,7 +3527,7 @@ same reason. `pnpm probe:fullscreen` passes unchanged. `pnpm build`, `pnpm
 lint` both clean.
 
 ### 42. The fullscreen chip moves to the centre of the screen
-`status: ready` · added 2026-08-30
+`status: done` · added 2026-08-30 · shipped at build 157
 
 **Do** — position `#fullscreen-chip` in the middle of the viewport. Location
 only: nothing about when it appears, what it does, or how it is hidden.
@@ -3596,6 +3596,41 @@ must be unchanged by a move; then the phone at both widths, since "looks off"
 is the report being answered and only a phone can confirm it. `pnpm build`,
 `pnpm lint`.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+**Build note.** The CSS and comment landed as specified. The recogniser
+fix landed too, but not for the exact hazard this entry describes: entry
+41's own recogniser was already built on the bubble phase rather than the
+capture phase this entry assumed carried forward from the old screenshot
+band, so the literal "capture-phase recogniser fires before the target"
+race does not exist here — a chip's own `stopPropagation()` on its
+`pointerup`, at the target, already runs before a bubble-phase document
+listener ever sees the event. What the exclusion actually closes is a
+narrower, still-real gap this entry's own reasoning implies but does not
+spell out: a release that lands a pixel outside the button (an ordinary
+touchscreen possibility, not an edge case invented for this) has a
+different target, so the chip's own `stopPropagation()` never fires for
+that specific event, and it would reach the recogniser regardless of
+phase. Fixed with a `downOnChip` flag set from the `pointerdown` target
+and checked through `pointerdown`/`pointermove`/`pointerup`, separate from
+`downZone === 'none'` since that zone legitimately starts entry 33's own
+hold-to-emit gesture, which a chip must not.
+
+Verified with a byte-for-byte copy of the updated recogniser, run against
+synthetic pointer events at a real centred `.hud-chip` element: a plain
+tap on the chip, a down-on-chip-up-just-outside-it release, and a hold
+started on the chip all produce no calls at all, while a plain tap
+elsewhere in the same panel-zone third still opens the panel — confirming
+the exclusion is scoped to chips, not the whole zone. The visual centring
+itself was verified by computed geometry rather than a screenshot: with
+`hud.ts`'s own `.hud-chip` base rule (`position: absolute`, which only
+loads after Start, unreachable in this harness) reproduced manually, the
+chip's bounding-box centre lands exactly on the window's centre, 0px off
+in both axes — confirming the CSS math is correct independent of the
+Start-gated harness limitation that made the live page read as
+uncentred (no base rule loaded at all). `pnpm probe:fullscreen` passes
+unchanged, `pnpm build` and `pnpm lint` both clean. Not verified: how it
+actually looks on a phone, which this entry's own Verify line already
+says only a phone can answer.
 
 ### 43. The gate's type grows a fifth, on a band, and Start invites harder
 `status: ready` · added 2026-08-30

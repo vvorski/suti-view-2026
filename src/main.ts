@@ -820,8 +820,14 @@ async function main(): Promise<void> {
     let downX = 0
     let downY = 0
     let downZone: ReturnType<typeof zone> = 'none'
+    // Separate from downZone === 'none': that zone legitimately starts a
+    // hold-to-emit gesture (entry 33), and a chip sitting inside it — the
+    // fullscreen chip, before entry 42 centred it — must not.
+    let downOnChip = false
     let emitting = false
     let holdTimer: number | undefined
+
+    const isChip = (t: EventTarget | null): boolean => t instanceof Element && t.closest('.hud-chip') !== null
 
     // The canvas's own box, not the window's: the drawing buffer can be a
     // different aspect from the viewport under the resolution ladder, but
@@ -859,9 +865,19 @@ async function main(): Promise<void> {
       downX = e.clientX
       downY = e.clientY
       downZone = zone(e.clientY)
+      // A chip button's own listener already stopPropagation()s its own
+      // pointerup, which is enough in the ordinary case — but a release
+      // that lands a pixel outside the button (a real touchscreen
+      // possibility) has a different target, so that stopPropagation()
+      // never fires and this recogniser would see the release regardless.
+      // Excluding by target on the way in — docs/todo.md entry 42, written
+      // for the fullscreen chip specifically once it moved into the
+      // panel-opening middle third — is what closes that gap for every
+      // chip, not only that one.
+      downOnChip = isChip(e.target)
       emitting = false
       window.clearTimeout(holdTimer)
-      if (downZone === 'none') {
+      if (downZone === 'none' && !downOnChip) {
         holdTimer = window.setTimeout(() => startEmitting(e.clientX, e.clientY), HOLD_MS)
       }
     })
@@ -871,7 +887,11 @@ async function main(): Promise<void> {
         visualiser.setTouch(true, x, y)
         return
       }
-      if (downZone === 'none' && Math.hypot(e.clientX - downX, e.clientY - downY) > TAP_SLOP_PX) {
+      if (
+        downZone === 'none' &&
+        !downOnChip &&
+        Math.hypot(e.clientX - downX, e.clientY - downY) > TAP_SLOP_PX
+      ) {
         startEmitting(e.clientX, e.clientY)
       }
     })
@@ -881,6 +901,7 @@ async function main(): Promise<void> {
       // true, so the zone dispatch below already falls through for it —
       // this just stops the emitter promptly rather than waiting for that.
       stopEmitting()
+      if (downOnChip) return
       // Inert while the HUD is open: the panel owns the screen then, and a
       // tap here is what closes it (the scrim's own listener in hud.ts).
       if (document.querySelector('.hud-scrim.open')) return
