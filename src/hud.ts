@@ -336,6 +336,17 @@ interface Handlers {
   /** Fired on every change the user makes by hand, so the autopilot can get
    *  out of the way. Not fired for `adopt`. */
   onManualChange(): void
+  /**
+   * Momentary solo — docs/todo.md entry 83. Forces every layer but `layer`
+   * to render at 0 opacity for as long as the chip is held; `onUnsolo`
+   * lifts the force. Neither writes to prefs — this is the same
+   * render-time-override seam entries 48, 58 and 60 already use, so there
+   * is nothing to restore on release beyond removing the override, and
+   * nothing an interrupted gesture (a pointer that never delivers `up`)
+   * can leave behind.
+   */
+  onSolo(layer: 'geo' | 'atm' | 'cam'): void
+  onUnsolo(): void
 }
 
 /** Bold geometric masses, because a 20px drawing over a moving visualiser
@@ -927,18 +938,32 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
 
   const chips = new Map<string, HTMLButtonElement>()
 
+  // docs/todo.md entry 83 — not derived from anything, just how long a
+  // press has to hold before it means "solo" rather than "tap". Mine.
+  const SOLO_PRESS_MS = 350
+
   /** docs/todo.md entry 77. `ring` selects which arc `placeChips` puts this
    *  chip on and whether it is drawn at `R_CHIPS_OUTER_SCALE` — see
    *  `.hud-chip-face`'s own comment for how "smaller drawn, not smaller to
    *  hit" is achieved: the icon and its circle live on a nested element that
    *  the outer ring alone scales down, while `.hud-chip` itself, the actual
-   *  touch target, is always the same 3rem box regardless of ring. */
+   *  touch target, is always the same 3rem box regardless of ring.
+   *
+   *  `solo`, docs/todo.md entry 83: present only for the three layer chips.
+   *  A press held past `SOLO_PRESS_MS` calls `solo.onStart` instead of
+   *  `onTap`; releasing, cancelling or the pointer leaving the chip while
+   *  that hold is live calls `solo.onEnd`. A press released before the
+   *  threshold is an ordinary tap, exactly as before this entry — `fired`
+   *  is what the release/cancel/leave handlers all check to tell the two
+   *  apart, since it is the timer callback, not whichever event happens to
+   *  arrive first, that decides which one this press turned out to be. */
   function mkChip(
     id: string,
     name: string,
     tint: string,
     onTap: () => void,
     ring: 'inner' | 'outer' = 'inner',
+    solo?: { onStart: () => void; onEnd: () => void },
   ): HTMLButtonElement {
     const b = document.createElement('button')
     b.type = 'button'
@@ -950,20 +975,55 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
       `<span class="hud-chip-face">` +
       `<svg class="hud-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">${ICONS[id]}</svg>` +
       `</span>`
-    b.addEventListener('pointerup', (e) => {
-      e.stopPropagation()
-      onTap()
-    })
+    if (solo) {
+      let timer = 0
+      let fired = false
+      const release = (): boolean => {
+        window.clearTimeout(timer)
+        const wasFired = fired
+        if (wasFired) solo.onEnd()
+        fired = false
+        return wasFired
+      }
+      b.addEventListener('pointerdown', (e) => {
+        e.stopPropagation()
+        fired = false
+        timer = window.setTimeout(() => {
+          fired = true
+          solo.onStart()
+        }, SOLO_PRESS_MS)
+      })
+      b.addEventListener('pointerup', (e) => {
+        e.stopPropagation()
+        if (!release()) onTap()
+      })
+      b.addEventListener('pointercancel', release)
+      b.addEventListener('pointerleave', release)
+    } else {
+      b.addEventListener('pointerup', (e) => {
+        e.stopPropagation()
+        onTap()
+      })
+    }
     btnBar.appendChild(b)
     chips.set(id, b)
     return b
   }
 
   for (const id of ['geo', 'atm', 'cam', 'ear'] as const) {
-    mkChip(id, GROUPS[id].name, GROUPS[id].tint, () => {
-      group = id
-      build()
-    })
+    mkChip(
+      id,
+      GROUPS[id].name,
+      GROUPS[id].tint,
+      () => {
+        group = id
+        build()
+      },
+      'inner',
+      id === 'geo' || id === 'atm' || id === 'cam'
+        ? { onStart: () => handlers.onSolo(id), onEnd: () => handlers.onUnsolo() }
+        : undefined,
+    )
   }
   // docs/todo.md entry 77. Everything from here down toggles something
   // about the whole app and never changes what the bands mean — the outer

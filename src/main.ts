@@ -1054,6 +1054,34 @@ async function main(): Promise<void> {
     panel.open()
   }
 
+  // docs/todo.md entry 83. The render-time-override seam entries 48, 58 and
+  // 60 already use, applied to a layer's alpha: forcing the other two
+  // layers to 0 never touches prefs, so there is nothing to restore and
+  // nothing an interrupted gesture can leave behind — `unsoloLayer` just
+  // re-reads whatever the true current values are at the moment it is
+  // called, which is correct even if something else (a shuffle, the
+  // director) moved them while the chip was held.
+  //
+  // The camera layer's own opacity, `prefs.passthrough`, is forced through
+  // `visualiser.setPassthrough` directly rather than through
+  // `applyPassthrough` — that function closes the live stream outright on
+  // any mix <= 0 (see its own comment: holding a powered, undrawn camera
+  // open is exactly the OS-indicator problem it exists to prevent), which
+  // would turn a momentary solo into tearing down and re-acquiring the
+  // actual camera on every press and release. Forcing the render value
+  // alone leaves `cameraSource` untouched throughout.
+  function soloLayer(layer: 'geo' | 'atm' | 'cam'): void {
+    if (layer !== 'geo') visualiser.setGeoAlpha(0)
+    if (layer !== 'atm') visualiser.setAtmAlpha(0)
+    if (layer !== 'cam') visualiser.setPassthrough(cameraSource, 0)
+  }
+
+  function unsoloLayer(): void {
+    visualiser.setGeoAlpha(prefs.geoAlpha)
+    visualiser.setAtmAlpha(prefs.atmAlpha)
+    visualiser.setPassthrough(cameraSource, cameraSource ? prefs.passthrough : 0)
+  }
+
   const panel = createHud(prefs, {
     onGeometricView: (name: GeometricViewName) => visualiser.setGeometricView(name),
     onColour: (layer, colour) => visualiser.setLayerColour(layer, colour),
@@ -1071,6 +1099,8 @@ async function main(): Promise<void> {
       mapping = MAPPINGS[name]()
     },
     onPassthrough: applyPassthrough,
+    onSolo: soloLayer,
+    onUnsolo: unsoloLayer,
     // docs/todo.md entry 87 drops entry 78's toggle: the chip only arms.
     // `enterCameraMode`'s own `if (cameraMode) return` already makes a tap
     // on an already-armed chip a harmless no-op rather than an exit — the

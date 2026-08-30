@@ -8984,7 +8984,50 @@ is bit-identical to today.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 83. Solo a layer without losing your settings
-`status: ready` · added 2026-08-30
+`status: done` · added 2026-08-30 · build 286
+
+**Build note (Mine)** — `mkChip` in `src/hud.ts` gained an optional fifth
+`solo` argument, wired only for the `geo`/`atm`/`cam` chips: a `pointerdown`
+starts a 350ms timer (`SOLO_PRESS_MS`, not derived, my own figure), and if it
+fires before `pointerup`/`pointercancel`/`pointerleave` arrives, the press
+becomes a solo instead of the ordinary tap that switches the edited group.
+`fired` is the flag that decides which behaviour a given press turned out to
+be, checked by whichever release-shaped event happens to arrive — this is
+what makes a genuinely-lost pointer (`pointercancel`, or `pointerleave` if a
+finger slides off the small chip mid-hold) restore correctly rather than only
+a clean `pointerup`, matching Done-when's "a release that never arrives
+still restores."
+
+`main.ts` forces the two un-soloed layers to alpha 0 directly through
+`visualiser.setGeoAlpha`/`setAtmAlpha`/`setPassthrough` and restores by
+re-reading `prefs.geoAlpha`/`prefs.atmAlpha`/`prefs.passthrough` fresh at
+release rather than a value captured at press time — nothing is stored at
+any point, so there is nothing that can go stale, and if a shuffle happened
+to land mid-hold the release correctly shows whatever is actually current
+rather than what was true when the press started.
+
+One thing not in Lands-in, disclosed here: soloing forces the camera layer's
+opacity through `visualiser.setPassthrough` directly rather than through
+`applyPassthrough`, which I read closely before writing this. That function
+closes the live camera stream outright on any mix ≤ 0 — its own comment says
+this is deliberate, to avoid holding a powered, undrawn sensor open with the
+OS indicator lit. Routing solo through it would have torn down and
+re-acquired the real camera on every press and release, which is neither
+momentary nor safe to assume always succeeds (a second `getUserMedia` call
+per release). Setting the render value alone leaves `cameraSource` untouched
+for the whole gesture, which is what "change nothing stored" should mean for
+a live stream too, not just for prefs.
+
+`pnpm build` and `pnpm lint` are clean. No probe touches chip pointer
+wiring, so none was added or run for this one. Verify is explicitly phone-only
+("holding a layer chip shows that layer alone... **Verify** — the phone"),
+and this session's live-browser check hit the same microphone-permission wall
+documented in earlier entries this window (the Start gate refuses to clear
+without a granted mic, and this Chrome profile has no fake-device flag or way
+to grant it that these tools reach) — so the actual on-screen solo/restore
+was verified by close reading of the render seam and the event wiring, not
+by touching a running instance. Disclosing rather than claiming a live check
+I didn't get.
 
 **Do** — a momentary solo on each layer: see that layer alone, change nothing
 stored, release and everything is where it was.
