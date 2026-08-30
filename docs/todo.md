@@ -7575,6 +7575,14 @@ shape is unchanged, and nothing leaves the device · dependency no.
 ### 73. A frozen camera is reported, and the director never opens one
 `status: ready` · added 2026-08-30
 
+**Confirmed 2026-08-30**, reported as "coming back to browser camera is
+frozen". That is the resume half below, and it is now the *primary* fault
+rather than the second one — it is reproducible on demand (leave the tab or
+lock the phone, come back), it needs no director and no shuffle, and it will
+still be there after the auto-open half is fixed. **Build the
+`visibilitychange` resume first**; the rest of this entry can follow in the
+same change or a later one.
+
 **Do** — stop swallowing the `play()` refusal, verify the video is actually
 advancing, resume it when the page comes back, and forbid the auto-roll from
 opening a camera it has no gesture for.
