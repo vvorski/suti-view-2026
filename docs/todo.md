@@ -5516,7 +5516,7 @@ over a bright preview, which is the state entry 28's measurement came from.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 56. With the panel open, reload moves to the top right and names itself
-`status: ready` · added 2026-08-30
+`status: building` · added 2026-08-30 · started 2026-08-30
 
 **Do** — while the HUD panel is open, the reload control becomes a full chip in
 the top-right corner. Clicking it runs the name flip quickly and then reloads.
