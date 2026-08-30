@@ -3544,3 +3544,94 @@ specifically, since that is the one this entry must leave alone and the one a
 gate-only screenshot cannot show. Force `.fresh` by hand to check the green
 against the chip. `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 45. The director is always on, and never waits more than 30s
+`status: ready` · added 2026-08-30
+
+**Do** — drop the autopilot chip, run `director.ts` unconditionally, and cap
+every one of its timers at 30 seconds.
+**Why** — asked for, after the chip was found to toggle a mode whose entire
+effect is invisible for at least three minutes.
+
+**Decided**
+- The four numbers → `SUSPEND` **180 → 30**, `COLOUR_HOLD` **45 → 30**,
+  `VIEW_HOLD` **120 → 30**, `VIEW_STABLE` **30, unchanged** — it is already at
+  the cap. Those are `director.ts:34`, `:42`, `:43` and `:47`.
+- `BOUNDARY` is not a timer and capping the timers does not reach it → a
+  change only rides in on a section boundary over 0.45 novelty, so on material
+  with no distinct sections the director stays silent however low the holds
+  go. Left alone, "no wait longer than 30s" would still be false, and the
+  complaint that prompted this would survive the fix.
+- So the boundary requirement **decays instead of being deleted** → once a
+  change is otherwise permitted, the novelty required ramps from 0.45 down to
+  0 across the following 30 seconds. **Mine.** It keeps the rule that matters —
+  the change still lands on the most novel moment available rather than at an
+  arbitrary instant — while guaranteeing a bound. `director.ts:16-20` calls
+  the boundary rule "the single thing that makes the difference between
+  reading as 'it is listening' and reading as 'it is drifting'", and a hard
+  fallback that fires mid-phrase would spend exactly that. A ramp spends it
+  only when the music offers nothing better.
+- **`prefs.autopilot` stays in stored preferences**, written and read, and is
+  simply no longer consulted → **Mine**, and the repo has already decided this
+  once: `prefs.ts:38-44` keeps the superseded `mix` field on the grounds that
+  it "is a contract with every visitor's localStorage, and quietly changing
+  what a stored number means would reset or corrupt the picture of everyone
+  who has ever loaded the page, with no way for them to tell". Removing the
+  field would be the stored-shape Hard Stop; retaining it means this entry
+  trips nothing.
+- **`?auto=0` keeps working**, as a session-only override → **Mine.** It
+  preserves the URL parameter shape exactly, so that Hard Stop is untripped
+  too, and it leaves a way to run with the director off — which is worth more
+  now than it was, because the director is about to be unconditional and
+  therefore implicated in any "why did the picture change" report. Nobody
+  types it by accident, so it does not contradict "always on". Overturnable in
+  one line if you would rather it went.
+- **The real cost, and it is not the chip** → `SUSPEND` at 180 is the
+  file's first rule: "NEVER FIGHT THE USER… someone who has just picked a
+  colour is not asking for a second opinion, and an autopilot that overrides a
+  deliberate choice thirty seconds later is worse than no autopilot." At 30
+  that sentence describes exactly what will now happen. Victor's call, made
+  knowing the picture had been changing too little rather than too much — but
+  the comment must be rewritten to state the new balance rather than left
+  standing as an argument against the code beneath it.
+- Removing the chip moves the others → the arc is laid out by
+  `chipPosition(index, n, chipSize)`, so dropping one chip re-spaces every
+  remaining chip rather than leaving a gap. Everyone who has learned where the
+  numeric readout sits will find it somewhere else. Unavoidable and worth
+  saying out loud rather than discovering.
+- What goes with the chip → `hud.ts:834-841` (the chip and its handler, whose
+  comment explains why turning it *on* deliberately does not suspend — a
+  concern that stops existing), `:1040-1041` and `:1049` (paint and the void),
+  `:228-229` and `:1151` (`Hud.autopilot()`), and `main.ts:129`'s read of the
+  stored value. The `Director` itself is untouched apart from its constants.
+- The status readout stays → `director.ts:151-164` reports what the autopilot
+  is waiting for, and `hud.ts:1116` explains that without it "the restraint
+  rules in director.ts are indistinguishable from a broken feature". Shorter
+  waits make it less necessary and not unnecessary; it is also now the only
+  way to see the director at all, since the chip that hinted at its existence
+  is going.
+
+**Lands in**
+- `src/director.ts:34,42,43` — the three constants.
+- `src/director.ts:16-20, 31-33` — the boundary and suspend comments, both of
+  which currently argue for the old numbers.
+- `src/director.ts` — the decaying boundary requirement, at the boundary test.
+- `src/hud.ts:834-841, 1040-1041, 1049, 228-229, 1151` — the chip and its
+  interface.
+- `src/main.ts:85, 129` — the default and the URL read, which becomes a
+  session-only override.
+
+**Done when** — the autopilot chip is gone from the arc and the remaining
+chips are evenly spaced with no gap; with music playing and hands off, a
+colour change lands within 30 seconds of the previous one at the latest; a
+manual change holds for 30 seconds and not three minutes; and `?auto=0` still
+produces a session where nothing changes on its own. The numeric readout's
+`auto held Ns` line still counts down, now from 30.
+**Verify** — real music for at least three minutes, hands off, which is the
+only way to see three consecutive changes and therefore the only way to
+confirm the bound. Then the same with a manual change in the middle, to see
+the 30-second suspend expire. On-screen check at 320×568 and 360×640 for the
+re-spaced arc. `pnpm build`, `pnpm lint`.
+**Hard stops** — prefs **no**, and deliberately so: the field is retained
+rather than removed, per the `mix` precedent · url **no**: `?auto=0` keeps its
+meaning · capture no · dependency no.
