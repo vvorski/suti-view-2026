@@ -511,8 +511,21 @@
       }
       #error:empty { display: none; }
 
+      /* docs/todo.md entry 65: a swap, not an off switch — matching the
+         principle the shake pulse above already states, "it still goes
+         green; it just stops blinking." A disc whose entire job is to say
+         press me is the last thing that should answer less motion by going
+         still, so it breathes in colour instead: the same 3.4s period as
+         start-pulse, animating background between its resting and :hover
+         colours. No box-shadow spread (that is the travelling ring, which
+         is the movement) and no scale (that is start-breathe, which stays
+         off — it is literally a size change). */
       @media (prefers-reduced-motion: reduce) {
-        #start { animation: none; }
+        #start { animation: start-pulse-reduced 3.4s ease-out infinite; }
+      }
+      @keyframes start-pulse-reduced {
+        0%, 100% { background: #9d9bf0; }
+        50% { background: #b9b7ff; }
       }
 
       /* Dead centre of the viewport (docs/todo.md entry 42), reversing entry

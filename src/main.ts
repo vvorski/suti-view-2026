@@ -1333,6 +1333,10 @@ async function main(): Promise<void> {
         warm: character.warm,
         haptics: hapticStatus(),
         fullscreen: fullscreenStatus(),
+        // docs/todo.md entry 65: the readout is the load-bearing half here,
+        // not the CSS swap — this is the one word that turns "did the pulse
+        // just not show up" from a guess into a fact.
+        reducedMotion: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
       })
     }
     requestAnimationFrame(frame)

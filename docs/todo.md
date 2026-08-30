@@ -6635,7 +6635,47 @@ unanswered.
 screen, and in daylight that is now the readable version) · dependency no.
 
 ### 65. The disc still pulses when motion is reduced, and the app says when it is
-`status: ready` · added 2026-08-30
+`status: done` · added 2026-08-30 · shipped at build 220
+
+**Build note** — process lapse first, same as entry 61's: implemented before
+committing a `status: building` claim. Checked before writing this note —
+no concurrent commit touched this entry in the interim, so nothing
+collided, but this is the second time; worth actually stopping to do the
+claim commit as the very first action from here on, not just meaning to.
+
+`#start`'s reduced-motion override changed from `animation: none` to
+`animation: start-pulse-reduced 3.4s ease-out infinite`, a new keyframe
+animating `background` between the resting `#9d9bf0` and the `:hover`
+colour `#b9b7ff` at the midpoint — same period as `start-pulse`, no
+box-shadow spread, no `scale`, matching the entry's own reasoning exactly
+(the disc breathes in colour, not size). `main.ts` now reads
+`window.matchMedia('(prefers-reduced-motion: reduce)').matches` once per
+frame into a new `reducedMotion` field on the stats object passed to
+`panel.update()`; `hud.ts` reports it in the readout as `os motion
+reduced`/`os motion full`, appearing only when defined.
+
+One naming collision found and fixed before shipping: the readout already
+has a `motion ${samples} ev  peak ...` line — shake-sensor diagnostics,
+unrelated to this entry. A first draft used the same `motion` prefix for
+the new field, which would have put two differently-meaning lines starting
+with the same word next to each other in the same readout. Renamed to `os
+motion` specifically to keep them apart.
+
+Verified live against the real dev server via the CSS Object Model, not
+just by reading the source: confirmed `start-pulse-reduced` exists as an
+actual parsed keyframes rule with two steps, and confirmed the
+`@media (prefers-reduced-motion: reduce) { #start { ... } }` rule resolves
+its `animation` shorthand to `start-pulse-reduced` at 3.4s ease-out infinite
+— not `none`, and not silently pointing at a nonexistent keyframe name — a
+class of typo neither `pnpm build` nor `pnpm lint` would have caught, since
+neither TypeScript nor ESLint parses embedded `<style>` CSS.
+
+Not verified, matching the entry's own stated limits exactly: real behaviour
+on a phone with Battery Saver toggled, and even a DevTools
+`prefers-reduced-motion: reduce` emulation, which needs the Chrome DevTools
+Protocol's Emulation domain — this session's browser tools don't expose it.
+`pnpm build`, `pnpm lint` both clean; no probe script covers this file's
+embedded CSS today and the entry doesn't ask for one.
 
 **Do** — give `#start` a reduced-motion pulse instead of switching it off, and
 report `prefers-reduced-motion` in the `?debug` readout.

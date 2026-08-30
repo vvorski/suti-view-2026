@@ -211,6 +211,11 @@ export interface Hud {
         want: boolean
         armed: boolean
       }
+      /** docs/todo.md entry 65 — whether the OS itself is asking for less
+       *  motion, since that single fact explains three otherwise-unrelated
+       *  symptoms at once: a silent start-disc pulse, a silent byline glow,
+       *  and silent shake-flash tiers. */
+      reducedMotion?: boolean
     },
   ): void
   /** Adopt a change decided elsewhere — the autopilot (director.ts) or a
@@ -1226,6 +1231,12 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
                 (s.fullscreen.attempts > 1 ? ` ×${s.fullscreen.attempts}` : '') +
                 (s.fullscreen.error ? ` (${s.fullscreen.error})` : ''),
             ]),
+        // docs/todo.md entry 65 — one word turning "did the pulse not show
+        // up" from a guess into a fact, since a phone in this state also
+        // silently drops the byline glow and both shake-flash tiers. Named
+        // "os motion" rather than "motion" — that word is already the
+        // sensor diagnostic line above, and this is an unrelated OS setting.
+        ...(s.reducedMotion === undefined ? [] : [`os motion ${s.reducedMotion ? 'reduced' : 'full'}`]),
       ].join('\n')
     },
 
