@@ -5516,7 +5516,7 @@ over a bright preview, which is the state entry 28's measurement came from.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 56. With the panel open, reload moves to the top right and names itself
-`status: done` · added 2026-08-30 · shipped at build 207
+`status: done` · added 2026-08-30 · shipped at build 208
 
 **Build note** — `hud.ts`'s `setOpen()` now dispatches a `hud-panel` custom
 event on `document` (`{detail:{open}}`) right after toggling the scrim, since
