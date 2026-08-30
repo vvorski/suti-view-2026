@@ -7718,7 +7718,7 @@ already reads, the glyph and flash are DOM and cannot enter it, the filename
 shape is unchanged, and nothing leaves the device · dependency no.
 
 ### 73. A frozen camera is reported, and the director never opens one
-`status: ready` · added 2026-08-30
+`status: building` · added 2026-08-30 · started 2026-08-30
 
 **Confirmed 2026-08-30**, reported as "coming back to browser camera is
 frozen". That is the resume half below, and it is now the *primary* fault
