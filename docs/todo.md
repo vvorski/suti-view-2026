@@ -4149,3 +4149,91 @@ untouched by design, so if its numbers move, the injection is in the wrong
 place.
 **Hard stops** — prefs no · url no · capture no, and it protects the existing
 one · dependency no.
+
+### 49. A touch field: one owner of every finger on the picture
+`status: ready` · added 2026-08-30
+
+**Do** — put every pointer on the picture behind one module that tracks them
+by id, up to four at once, and hand its per-frame state to the four things
+that want it. Nothing else reads a `PointerEvent`.
+**Why** — people reach for this thing. Four separate features now want to know
+where the fingers are, and the app can currently see one finger.
+
+**Decided**
+- The gap is exact and already measurable → `ripples.ts` **reserves four slots
+  for touch** (entry 33), and `emitter.ts` models **one** emitter, and
+  `main.ts` tracks **one** contact — `downX`, `downY`, `downZone`, `emitting`,
+  `holdTimer` are all scalars. **The buffer downstream is built for four
+  fingers and the input layer upstream can only produce one.** A second finger
+  today either does nothing or takes the first one's state. That mismatch is
+  the entry; everything else follows from closing it.
+- Four, and it is not an arbitrary number → it is the reserved band in
+  `ripples.ts`. Matching it means the framework can never overflow the buffer
+  and the buffer is never starved by an input layer that cannot fill it.
+- **The same argument entry 41 already won, one level up** → that entry deletes
+  two independent tap recognisers coordinated by event phase. Entries 33, 46
+  and 48 each need pointer facts, and each would grow its own listeners: three
+  recognisers again, in three files, six months after the last three were
+  merged. Doing this before they land is the difference between a framework and
+  a second cleanup. **Mine**, and it is the whole reason to build it now rather
+  than when it hurts.
+- The shape → **a field that is sampled, not a stream of callbacks.** Per
+  frame it answers: which pointers are down, where each is in shader uv, how
+  long it has been down, its charge, its velocity, and a small queue of
+  discrete things that happened since the last frame. **Mine**: shaders need a
+  value per frame, the render loop is the only clock that matters here, and a
+  callback-driven design would have four consumers each keeping their own copy
+  of state that the frame then has to reconcile.
+- Who consumes it, and none of them keeps its own copy →
+  - **entry 41**'s dispatch reads the event queue and the zone each contact
+    started in.
+  - **entry 33**'s emitter becomes one per pointer. `emitter.ts` already says
+    it is "pure state and a pure update function… no DOM, no clock of its
+    own", so this is instantiation rather than a rewrite — the module was
+    written for this without knowing it.
+  - **entry 48**'s injection reads aggregates: contact and drag speed as the
+    **max** across pointers, never the sum. Two fingers should not double the
+    response into saturation; they should each be felt.
+  - **entry 46**'s powder reads positions and velocities directly.
+- Coordinates convert once → `main.ts` already carries `toShaderUv`, with a
+  comment explaining that it converts against the canvas's client rect rather
+  than the window because the drawing buffer can be a different aspect under
+  the resolution ladder, and that y is flipped. That function moves into the
+  field and no consumer does the conversion again.
+- `pointercancel` is not an edge case here → a phone being handed between
+  people generates cancels and lost captures constantly, and that is the
+  literal scenario this entry exists for. Every pointer is removed on
+  `pointercancel` and on `lostpointercapture` as well as on `pointerup`, and a
+  pointer that has not been seen for a while is dropped, so a lost finger can
+  never hold a ripple slot open forever.
+- **Do not stall the build agent for this** → entry 33 is mid-build as a
+  single emitter. Let it land as it is. `emitter.ts`'s purity means
+  generalising it to four is a change to who calls it, not to what it does, and
+  a half-finished entry rewritten mid-flight is how both end up wrong. Order:
+  **41, then 33 as built, then this, then 48 and 46 as consumers.**
+- What this is *not* → no new gesture, no new control, nothing on screen that
+  was not there before. It is capacity. The visible change is that a second
+  finger works, and that two people can touch the picture at once, which is the
+  thing actually being asked for.
+
+**Lands in**
+- `src/engine/touches.ts` — new. The field, the per-id tracking, the uv
+  conversion, the event queue.
+- `src/main.ts` — the listeners become four lines that feed the field; every
+  scalar named above goes.
+- `src/engine/emitter.ts` — instantiated per pointer; the module itself is
+  unchanged.
+- `src/scene.ts` — the per-frame sample is passed in alongside the params.
+
+**Done when** — two fingers on the picture produce two emitters at two places
+at once, and lifting one leaves the other running. Four work; a fifth is
+ignored rather than displacing one. Handing the phone to someone mid-drag
+leaves nothing stuck on screen. A single finger behaves exactly as it does
+after entry 33, with no visible difference. No file outside `touches.ts`
+listens for a pointer event on the picture.
+**Verify** — the phone, with two hands, and then with two people, because the
+second is the case the entry is named for and it is not the same test. Check
+the frame time with four emitters live at 320×568 and 360×640. Then hand the
+phone over mid-drag and watch for an emitter that never dies — the failure
+this can actually ship with. `pnpm build`, `pnpm lint`.
+**Hard stops** — prefs no · url no · capture no · dependency no.
