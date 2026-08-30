@@ -7939,7 +7939,7 @@ plus a phone in real daylight. The number to watch is `p5`: it should sit near
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 75. A tempo every mapping can see, and geometry that lands on the beat
-`status: ready` · added 2026-08-30
+`status: building` · added 2026-08-30 · started 2026-08-30
 
 **Do** — promote the beat tracker out of one mapping into `CommonAnalysis`,
 replace its two-gap tempo test with autocorrelation over onset strength, report
