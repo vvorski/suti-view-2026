@@ -4513,3 +4513,95 @@ ship with and no probe will find it. `pnpm probe:fullscreen` must still pass.
 **Hard stops** — prefs no · url no · capture **already licensed** (entry 25),
 though this makes it far easier to trigger, which is the cost named above ·
 dependency no.
+
+### 53. The picture follows the sky
+`status: ready` · added 2026-08-30
+
+**Do** — drive the picture's brightness and colour temperature from the local
+clock, on a continuous curve: cool and dark at night, warm at dawn, bright at
+midday, warmest at dusk, with no step anywhere including across midnight.
+**Why** — asked for. A thing left running in a room should belong to the hour
+it is in.
+
+**Decided**
+- **The local clock only. No geolocation, and this is not a small point** →
+  "day night cycle" invites a sunrise/sunset lookup, which means a location
+  permission on a page whose one promise is that nothing leaves the device.
+  A permission prompt for a lighting effect is disproportionate on its own; on
+  this page it is also the wrong kind of ask. `new Date()` needs nothing and is
+  already used once, at `main.ts:492`, for the screenshot's filename.
+- The honest cost of that → **the cycle is stylised, not astronomical.** In
+  Reykjavík in June the app will call 2am night while it is broad daylight
+  outside. That is the correct trade for a toy, and it should be written at the
+  anchor table so nobody later "fixes" it with a geolocation call.
+- **One uniform, two numbers** → `uSky = vec2(daylight, warmth)`, daylight 0..1
+  and warmth −1..1, both at their neutral values costing nothing. **Mine**, over
+  two separate uniforms: they are always computed together from one clock and
+  always applied together in one place, and splitting them is how one gets
+  updated without the other.
+- The anchors, on a 24-hour circle → **02:00 daylight 0.0 warmth −0.35;
+  06:30 daylight 0.35 warmth +0.50; 13:00 daylight 1.0 warmth −0.10;
+  19:30 daylight 0.40 warmth +0.60.** Warm at both ends and coolest in the
+  small hours, which is what a sky actually does. Numbers to start from and
+  settle by eye.
+- **Smoothstep between adjacent anchors, not linear** → the derivative is zero
+  at each anchor, so the change eases in and out instead of turning a corner.
+  Linear interpolation between four points is a triangle wave, and a triangle
+  wave is exactly the "sharp jumps" this entry exists to avoid — they would be
+  at the anchors rather than between them, but they would be there.
+- Wrapping is the part that breaks if it is not thought about → the last anchor
+  interpolates *forward into* the first across midnight, on a circle. A table
+  indexed 0..23 with no wrap gives a discontinuity at exactly the hour nobody
+  is testing at.
+- **It rides entry 47's tone curve rather than adding a second one** → that
+  entry establishes `uDay` and the gamma-plus-black-lift applied after
+  `uExposure`. `daylight` *is* that control, now driven by a clock instead of
+  only by a chip. Warmth is a small tint at the same site, **±6% on red and
+  blue** — a bias, not a filter, because at filter strength the visualiser's
+  own palette stops being the thing you are looking at.
+- Which changes what entry 47's chip means → it stops being "day mode on/off"
+  and becomes **an override that pins daylight to 1**, for reading the screen
+  outdoors at any hour. Its stored `day` boolean is unchanged, so no Prefs
+  work; only the label and the wiring. **Build 47 first**, or the two will each
+  write `uDay` and the last one to run will win.
+- Toggling that override **crossfades over 1.2s** → the clock's own movement is
+  imperceptible by construction, so the only way to produce a jump is a chip,
+  and the chip is the one place easing is needed. **Mine.**
+- **It is deliberately unnoticeable in the moment** → over a minute the change
+  is invisible; over an evening it is obvious. That is what "like the sky"
+  means and it should be stated plainly, because the natural bug report is
+  "nothing is happening" and the natural wrong fix is to speed it up. Sampling
+  once a second is ample; per-frame would be waste.
+- **Testable without waiting for dusk** → the clock is a pure function, so the
+  harness from entry 37 gets a time scrub and the numeric readout prints the
+  current pair. **No new URL parameter**, deliberately: the URL shape is a Hard
+  Stop and a debugging convenience is not worth spending it, when a dev page
+  and a readout answer the same question.
+- Interaction with the camera's own light response → `uExposure` is already
+  driven from the room's brightness when passthrough is up (`scene.ts:589`).
+  The two are complementary and must not be merged: one is what the room is
+  doing now, the other is what the hour is. They multiply, and both are gentle
+  enough that they can.
+
+**Lands in**
+- `src/sky.ts` — new. The anchor table, the wrapped smoothstep, one exported
+  pure function of a `Date`.
+- `src/scene.ts:339` — `uSky` beside `uExposure`, sampled once a second.
+- `src/shaders/composite.frag.glsl:153` — the tint, at the tone curve entry 47
+  puts there.
+- `src/hud.ts` — entry 47's chip becomes the override.
+- `views-probe.html` — the time scrub.
+
+**Done when** — the picture at 3am is visibly darker and cooler than at 1pm on
+the same phone with the same settings; loading at 06:25 and again at 06:35
+gives visibly different pictures with nothing in between that could be called a
+step; scrubbing the harness through 24 hours shows no corner anywhere,
+midnight included; and the override chip pins it bright at any hour, fading
+rather than snapping.
+**Verify** — the harness for the whole 24 hours, because that is the only way
+to see the curve at once, and then the phone at two genuinely different hours,
+because the harness cannot tell you whether the night end is too dark to enjoy.
+`pnpm build`, `pnpm lint`.
+**Hard stops** — prefs no (entry 47's `day` boolean is reused, no field added)
+· url no (deliberately: no scrub parameter) · capture no · dependency no, and
+**no geolocation** — see the first decision.
