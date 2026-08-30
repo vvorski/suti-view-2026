@@ -3090,3 +3090,100 @@ available.
 `pnpm probe:haptics` must still pass, since exporting the patterns must not
 alter them. Also `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 41. One recogniser owns the picture's taps, split into thirds
+`status: ready` · added 2026-08-30
+
+**Do** — replace the two independent tap paths with a single pointer
+recogniser on the picture that dispatches by where the tap landed: the bottom
+third saves a frame and flashes a camera glyph, everything above it opens the
+panel.
+**Why** — asked for, and the current arrangement is two listeners in two files
+that have to agree with each other through a `stopPropagation()` in the
+capture phase.
+
+**Decided**
+- What is there now → **two separate recognisers coordinated by event phase.**
+  `main.ts:731-748` watches `pointerdown`/`pointerup` for the capture band and
+  `hud.ts:1069-1077` watches the same two events on `document` to open the
+  panel. They do not know about each other; the band wins only because it
+  listens in the **capture** phase and calls `stopPropagation()` before the
+  HUD's bubble-phase listener runs. Both re-implement the same tap test
+  against the same `TAP_SLOP_PX` of 12.
+- The refactor → **one recogniser, one tap test, an explicit zone.** It owns
+  `pointerdown`/`pointerup` on the picture, decides tap-versus-not once, and
+  dispatches `capture` or `panel`. The phase trick and the duplicated slop
+  check both go away, and *where a tap goes* becomes a value that can be read
+  in one place instead of a race that has to be reasoned about. **Mine**, and
+  it is the part of this entry that has to be done first: the zones are three
+  lines of arithmetic, and the coordination is the actual work.
+- Bottom third takes the picture → Victor. **This supersedes entry 18's
+  `CAPTURE_BAND_FRACTION` of 0.15**, which more than doubles. Say so at the
+  constant rather than silently editing the number, because that entry chose
+  0.15 deliberately and the next person will want to know it was overturned
+  rather than lost.
+- The honest cost of that → **more accidental captures.** A third of the
+  screen is a lot of screen, and a picture taken by accident is silent today.
+  The camera flash below is what turns that from a mystery into a thing you
+  saw happen, which is a second reason it is in the same entry rather than a
+  later one.
+- The safe-area inset stays → `inCaptureBand()` already holds the band clear
+  of the home indicator via `--safe-bottom`. That logic is unchanged; only the
+  fraction moves. Removing it would put the capture zone under the gesture bar,
+  where the tap never arrives.
+- Everything above the band opens the panel, **top third included** → **Mine.**
+  Victor named a behaviour for the bottom and middle thirds and none for the
+  top, and of the two ways to read that, a redundant third is a better outcome
+  than a dead one: a tap that does nothing, in a corner of an app with no
+  labels, is indistinguishable from the app having crashed. This is the
+  decision in the entry most worth overturning, and overturning it is a
+  one-line change to the zone function.
+- The flash is **a DOM overlay, and it is a camera glyph rather than a white
+  screen** → **Mine**, on both counts. `flashShake()` already establishes the
+  overlay precedent and states its reasoning — it must be visible even if the
+  render path is the broken thing, and cost nothing when off — so this follows
+  it rather than inventing a second mechanism. It is a glyph and not a white
+  flash because the white flash is already taken: it means "a shake was
+  detected" whenever the numeric readout is on, and two events that both flash
+  the whole screen white would be indistinguishable at exactly the moment
+  someone is trying to work out which one fired.
+- **The overlay cannot end up in the saved PNG**, and that is not luck → the
+  capture reads the canvas, and the glyph is a DOM element outside it. Worth
+  writing down at the call site, because the obvious alternative — drawing the
+  glyph into the frame — would put a camera icon in every screenshot, and it
+  would be discovered by someone looking at their photos rather than by a test.
+- Order the flash after the grab anyway → even though the DOM route makes it
+  safe, firing the feedback before the pixels are read is how the two become
+  order-dependent later, when someone moves the capture to an offscreen canvas.
+- **Build this before entry 33.** That entry adds a press-and-hold and a drag
+  to the same surface, and it currently describes reusing the capture band's
+  own capture-phase `stopPropagation()` — which is the mechanism this entry
+  deletes. Landing 33 first means writing the coordination twice and removing
+  it twice. Landing this first means 33 adds two cases to a recogniser that
+  already exists.
+- Not a new capture licence → entry 25 already settled that the app may save
+  the frame, camera passthrough included. Nothing new is stored, sent, or
+  photographed; the region that triggers it moves.
+
+**Lands in**
+- `src/main.ts:377` — `CAPTURE_BAND_FRACTION` 0.15 → 1/3, and the comment
+  recording that it supersedes entry 18.
+- `src/main.ts:386-393` — `inCaptureBand()` becomes a zone function returning
+  `capture` or `panel`.
+- `src/main.ts:717-748` — the band's listeners become the single recogniser.
+- `src/hud.ts:1069-1077` — the document-level open listener is removed; the
+  panel opens because the recogniser tells it to.
+- `index.html`, and the `flashShake` neighbourhood in `main.ts` — the glyph
+  overlay and its animation, beside `#shake-flash`.
+
+**Done when** — a tap anywhere in the bottom third saves a frame and shows a
+camera glyph that fades within about half a second; a tap anywhere above it
+opens the panel; no tap does both; the saved PNG contains no glyph; and
+`stopPropagation()` no longer appears in either tap path. At 320×568 the band
+is 189px tall and still clear of the home indicator.
+**Verify** — the phone, because the whole entry is about where a thumb lands,
+and the on-screen check at 320×568 and 360×640 that the band and the glyph
+both need. `pnpm build`, `pnpm lint`. `pnpm probe:fullscreen` must still pass:
+it exercises the gate's gesture path, which shares this surface.
+**Hard stops** — prefs no · url no · capture **already licensed** (entry 25;
+this moves the trigger region, not what is captured) · dependency no.
