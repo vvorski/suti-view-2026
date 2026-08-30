@@ -6224,3 +6224,77 @@ system back-swipe, and pulling down a notification. A desktop browser cannot
 answer this — `probe-fullscreen.ts`'s own docstring says so — so the probe
 covers the state machine and the phone covers the behaviour.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 63. The app is called kiyo · plays
+`status: ready` · added 2026-08-30
+
+**Do** — replace the name everywhere a person sees it. Leave the repository,
+both deploy URLs and the stored prefs key exactly as they are.
+
+**Why** — the piece has a name now. `suti · view` described a viewer; this one
+describes what it does with you, which is the same turn "play with me" and the
+powder already made.
+
+**Decided**
+- **The wordmark keeps its treatment** → `kiyo&#8202;&middot;&#8202;plays`,
+  lowercase, the same hairspace-flanked middot as `suti&#8202;&middot;&#8202;view`
+  at `index.html:563`. Victor's call, over title case and caps. The
+  construction is the identity, not the word inside it.
+- **The repository and both URLs do not move.** Victor's call. `share.ts`
+  exists so people send this to each other, and a Pages URL is not reliably
+  redirected after a repo rename — so renaming the repo would quietly break
+  links already in other people's messages. `vvorski/suti-view-2026`,
+  `vvorski.github.io/suti-view-2026` and `suti-view-2026.pages.dev` stay, and
+  so does `PROJECT_NAME` in `deploy/deploy.sh:13` and every reference under
+  `.claude/` and in `CLAUDE.md:243`. Nothing about the deploy changes.
+- **`STORE_KEY` stays `'suti-view:prefs'`** — `prefs.ts:21`. **Mine**, and it
+  is the one place where doing the obvious thing is destructive: changing the
+  key does not migrate anything, it silently hands every existing user the
+  defaults and loses the view, the colours and the mapping they had chosen.
+  A rename that costs people their settings to fix a string nobody sees is a
+  bad trade. Leave it and put the reason in a comment, so the next person to
+  notice it does not "tidy" it.
+- Screenshot filenames **do** change: `suti-` → `kiyo-` at `main.ts:530`.
+  **Mine** — this one is genuinely seen, in a camera roll, next to photos.
+  Files already saved keep their names, which is correct: they were made by
+  `suti · view`. The worked examples in entries 26, 39 and 44 are records of
+  what shipped and are not to be rewritten.
+- **`short_name` is `kiyo`, not the full wordmark.** `public/manifest.web
+  manifest`. **Mine**: `short_name` is what sits under the home-screen icon
+  with about twelve characters of room, and a middot rendered at that size in
+  a launcher is a smudge. `name` takes `kiyo · plays` in full.
+- The share sheet gets plain spaces → `'kiyo · plays'` at `share.ts:97`,
+  matching how `'suti·view'` was already plain text there rather than carrying
+  the hairspaces. An OS share sheet is not the place for typography.
+- **History stays true.** `README.md:93` and `circles.frag.glsl:3` both say
+  "suti-view-2026 grew out of `~/dev/circles`", and that sentence is about a
+  repository and remains accurate. Rename the README's heading; do not rewrite
+  its history, and do not touch shipped entries in this file.
+- No collision with the name animation → entry 62's neighbour at
+  `docs/todo.md:5433` animates `#release-name` and `.gate-byline` inside
+  `.gate-name`. This entry touches only the `<h1>`. They can land in either
+  order.
+- Not decided here → whether **kiyo** appears anywhere else, in a dedication or
+  a byline. That is the open question from the Keo conversation and it belongs
+  in its own entry, not smuggled into a rename.
+
+**Lands in**
+- `index.html:16` (`<title>`), `:563` (the `<h1>`).
+- `public/manifest.webmanifest` — `name`, `short_name`.
+- `src/share.ts:97` — the share sheet title.
+- `src/main.ts:530` — the screenshot filename prefix.
+- `src/prefs.ts:21` — a comment only; the value must not change.
+- `package.json:2` and `README.md:1` — cosmetic; `package.json`'s `name` is not
+  published anywhere and is safe to change.
+
+**Done when** — the gate reads `kiyo · plays`, the tab and the installed app
+say so, a shared link opens a sheet titled `kiyo · plays`, and a screenshot
+saves as `kiyo-<build>-<release>-…png`. A browser that had prefs stored before
+the change still has them after it. `grep -ril suti src/ index.html public/`
+returns only `prefs.ts` and `circles.frag.glsl`.
+**Verify** — the phone, with settings already stored: change a view, reload,
+confirm it survived. That is the only part of this that can break anything.
+**Hard stops** — prefs **yes, and answered by not moving**: the stored key is
+untouched, so the shape and its meaning are unchanged and nothing migrates ·
+url no · capture no (the filename changes, the capture path does not) ·
+dependency no.
