@@ -8003,3 +8003,76 @@ driven by a noisy signal would have.
 **Hard stops** — prefs no (always on, no chip; the arc is scarce and this is
 not a setting) · url no · capture no (it is picture, and lands in a saved frame
 exactly as the tumble does) · dependency no.
+
+### 77. Two rings: what the wedge edits, and everything else
+`status: ready` · added 2026-08-30
+
+**Do** — split the icon arc in two. The four layer selectors stay on the
+current arc beside the control; the four global toggles move to a second,
+wider, smaller ring outside it.
+
+**Why** — there are eight chips on an arc whose own code says it works for six,
+and the two at the far end read as decoration.
+
+**Decided**
+- **Which two are "the top two", computed rather than guessed.** The arc is
+  centred off-screen at the bottom-right corner and sweeps from lower-left to
+  upper-right, so chip order *is* height order. At 412×915 the row lands at
+  y = 673, 642, 613, 587, 563, 541, **523, 508** — the two highest are the last
+  two constructed: **`day` ("Sky: auto") and `shutter` ("Camera mode")**.
+- **Why they read as dead**, and it is not one reason: `day` cycles auto → day
+  → night (entry 71), and one tap from auto at a mid-sky hour lands on a state
+  that looks almost identical to where it started — the control works and its
+  first press is invisible. `shutter` (entry 72) does nothing visible at all if
+  the camera is refused or absent. Both are real behaviours with no feedback,
+  and both sit at the crowded end of the row where they are least likely to be
+  tried twice.
+- **The arc is genuinely over capacity, and the file says so.**
+  `CHIP_ARC_MIN_START`'s comment: *"Centring blindly on `CHIP_ARC_MID` works for
+  up to six chips… A seventh does not append a slot, it re-centres all seven and
+  pushes the leading one off the left edge."* There are now eight. The row has
+  been jammed against that clamp since the seventh, so every chip added since
+  has been stealing margin from the first one.
+- **So the split is not only tidier, it retires the clamp.** Four chips per
+  ring is under the six the clamp was invented for, so both rings centre
+  honestly on `CHIP_ARC_MID` again and `CHIP_ARC_MIN_START` stops being
+  load-bearing. **That is the strongest argument for this change** — it fixes
+  the layout problem rather than redistributing it.
+- **The division is by what a chip *does*, not by importance.** Inner ring:
+  `geo`, `atm`, `cam`, `ear` — these choose what the wedge edits, so they
+  belong against the wedge. Outer ring: `num`, `grav`, `day`, `shutter` — these
+  toggle something about the whole app and never change what the bands mean.
+  That is the same line the file already draws in `GROUPS` versus the loose
+  `mkChip` calls after it; this makes it visible.
+- **Smaller drawn, not smaller to hit.** Outer ring at **R 1.22** and **0.8×**
+  the drawn size, with the **touch target left at full size**. **Mine**, and it
+  follows the idiom already in this file — `GRAB_PX`'s own comment, *"the
+  thumb-safe minimum this file is built around; the drawn tracks are far
+  thinner"*. A 27px tap target on a phone is the kind of thing that makes a
+  control feel broken, and "a little smaller" is about visual weight.
+- **One stale thing to fix while here.** `chipPosition` is exported with a
+  comment explaining that the fullscreen chip needs the same arc — and entry 42
+  moved that chip to the centre of the screen. It now has exactly one caller,
+  in this file. Make it local and delete the justification, rather than leaving
+  a comment that documents a caller that no longer exists.
+- Not decided here → whether `day` and `shutter` should announce what they did.
+  Both would benefit and it is a different question (feedback, not layout); the
+  numeric readout already reports the sky state for anyone with it on.
+
+**Lands in**
+- `src/hud.ts:96-140` — a second radius and size factor; `chipPosition` takes a
+  ring, stops being exported, and loses the stale comment.
+- `src/hud.ts:887-940` — the two groups laid out separately, each with its own
+  `n`.
+- `src/hud.ts:953` — the placement loop.
+
+**Done when** — the four layer icons sit on the current arc against the wedge
+and the four toggles on a visibly wider, smaller arc outside them; every chip
+is still tappable at its old size; nothing is clipped at 320×568 or 360×640,
+which is the pair `hud-narrow.html` already checks; and `CHIP_ARC_MIN_START` is
+no longer reached by either ring.
+**Verify** — `hud-narrow.html` at both widths for clipping, then the phone with
+a thumb, which is the only test of whether the outer ring is still comfortably
+reachable at the top of the sweep — the corner the two dead-seeming chips
+already occupy.
+**Hard stops** — prefs no · url no · capture no · dependency no.
