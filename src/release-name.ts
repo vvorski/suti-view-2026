@@ -131,6 +131,7 @@ export const RELEASE_NAMES: readonly string[] = [
   'raised bar',
   'eventual move',
   'known gait',
+  'second engine',
 ]
 
 /** The current release's name — derived as the list's last element, so

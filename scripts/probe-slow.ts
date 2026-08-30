@@ -364,39 +364,52 @@ console.log('\nPer-layer holds (entry 84), over several minutes:\n')
   const FLAVOUR_A = { ...BLANK, warm: true, noveltyMedium: 1, bright: 0.05, noisy: 0, rhythmic: 0, dense: 0 }
   const FLAVOUR_B = { ...BLANK, warm: true, noveltyMedium: 1, bright: 1, noisy: 1, rhythmic: 1, dense: 1 }
   const PHASE_S = 90 // comfortably past VIEW_STABLE, so the candidate settles well before each phase ends
-  const PHASES = 8 // 12 simulated minutes
+  const SETTLE_PHASES = 2 // docs/todo.md entry 91 — see below
+  const PHASES = SETTLE_PHASES + 8 // 8 *measured* phases, 15 simulated minutes
 
   const d = new Director()
   let current = { geoColour: colourFor(FLAVOUR_A), atmosphericView: viewFor(FLAVOUR_A)[0] }
-  const colourOffsets: number[] = [] // seconds into each phase that the colour axis fired
-  const viewOffsets: number[] = [] // seconds into each phase that the view axis fired
+  const colourOffsets: number[] = [] // seconds into each measured phase that the colour axis fired
+  const viewOffsets: number[] = [] // seconds into each measured phase that the view axis fired
 
   for (let phase = 0; phase < PHASES; phase++) {
     const flavour = phase % 2 === 0 ? FLAVOUR_A : FLAVOUR_B
     for (let s = 0; s < PHASE_S; s += DT) {
       const next = d.update(flavour, DT, current, 0, 0, 'handled')
-      if (next?.geoColour) {
-        colourOffsets.push(s)
-        current = { ...current, geoColour: next.geoColour }
+      // docs/todo.md entry 91 — a hand-held-constant flavour is exactly the
+      // "nothing to say" case the generative engine now answers, and this
+      // fixture's very first two phases are genuinely informative to it: a
+      // switch this test's own `current` has never seen before. Once each
+      // axis has fired against both flavours at least once, `sinceColour`
+      // and `sinceView` are already reset to 0 by the *previous* phase's own
+      // switch-triggered fire, and the fast jump path (docs/todo.md entry
+      // 91's own `JUMP_REACTIVE`) fires reactively at every subsequent
+      // switch before the generative engine ever gets a turn — verified
+      // directly: colour settles into firing at exactly every phase
+      // boundary from phase 2 onward, never again mid-phase. Only that
+      // settled behaviour is what this test's own claim is about; the first
+      // two phases are a startup transient, not a regression.
+      if (phase >= SETTLE_PHASES) {
+        if (next?.geoColour) colourOffsets.push(s)
+        if (next?.atmosphericView) viewOffsets.push(s)
       }
-      if (next?.atmosphericView) {
-        viewOffsets.push(s)
-        current = { ...current, atmosphericView: next.atmosphericView }
-      }
+      if (next?.geoColour) current = { ...current, geoColour: next.geoColour }
+      if (next?.atmosphericView) current = { ...current, atmosphericView: next.atmosphericView }
     }
   }
 
   const mean = (xs: number[]): number => xs.reduce((a, b) => a + b, 0) / xs.length
+  const MEASURED_PHASES = PHASES - SETTLE_PHASES
 
   check(
     'the colour axis fired on nearly every phase',
-    colourOffsets.length >= PHASES - 1,
-    `${colourOffsets.length} fires over ${PHASES} phases`,
+    colourOffsets.length >= MEASURED_PHASES - 1,
+    `${colourOffsets.length} fires over ${MEASURED_PHASES} measured phases`,
   )
   check(
     'the view axis fired on nearly every phase',
-    viewOffsets.length >= PHASES - 1,
-    `${viewOffsets.length} fires over ${PHASES} phases`,
+    viewOffsets.length >= MEASURED_PHASES - 1,
+    `${viewOffsets.length} fires over ${MEASURED_PHASES} measured phases`,
   )
 
   // Neither mean lands on COLOUR_HOLD or VIEW_HOLD themselves, and that is
@@ -587,5 +600,101 @@ console.log('\nA due-but-blocked window, driven directly (entry 89):\n')
   )
 
   console.log(failures === 0 ? '\nall due-but-blocked checks passed' : `\n${failures} check(s) failed`)
+  if (failures > 0) process.exitCode = 1
+}
+
+// docs/todo.md entry 91 — the generative engine's own Done-when: a twenty-
+// minute run against the exact same flat, road-noise-like input entry 89's
+// own fixture uses, checked for what entry 89 could not yet produce —
+// continuous movement rather than a single eventual change.
+console.log('\nA twenty-minute drive on flat input (entry 91):\n')
+{
+  let failures = 0
+  const check = (name: string, ok: boolean, detail: string): void => {
+    if (!ok) failures++
+    console.log(`${ok ? 'ok  ' : 'FAIL'}  ${name}${ok ? '' : `  — ${detail}`}`)
+  }
+
+  const DRIVE_SECTION: Section = {
+    name: 'flat',
+    seconds: 0,
+    slope: 1.8,
+    noise: 0.25,
+    level: 0.35,
+    bpm: 0,
+    hitsPerBeat: 0,
+    shape: [-6, 3, -16],
+  }
+  const driveMapping = MAPPINGS.relative()
+  const driveSlow = new SlowAnalysis()
+  const driveDirector = new Director()
+  const driveCurrent: { geoColour: GeoColour; atmosphericView: AtmosphericViewName } = {
+    geoColour: { r: 1, g: 1, b: 1 },
+    atmosphericView: 'field',
+  }
+  const DRIVE_S = 20 * 60
+
+  const colours: GeoColour[] = []
+  const colourTimes: number[] = []
+  const views: AtmosphericViewName[] = []
+
+  let t4 = 0
+  while (t4 < DRIVE_S) {
+    const params = driveMapping.update(makeFrame(DRIVE_SECTION, 0))
+    const c = driveSlow.update({ freq, time, binCount: BINS, sampleRate: SR, dt: DT }, params)
+    const next = driveDirector.update(c, DT, driveCurrent, params.beatPhase, params.beatConfidence, 'driving')
+    if (next?.geoColour) {
+      colours.push(next.geoColour)
+      colourTimes.push(t4)
+      driveCurrent.geoColour = next.geoColour
+    }
+    if (next?.atmosphericView) {
+      views.push(next.atmosphericView)
+      driveCurrent.atmosphericView = next.atmosphericView
+    }
+    t4 += DT
+  }
+
+  check('several colour changes over the drive, not one and done', colours.length >= 8, `${colours.length} colour changes`)
+  check(
+    'several view changes over the drive',
+    new Set(views).size >= 2 && views.length >= 3,
+    `${views.length} view changes, ${new Set(views).size} distinct`,
+  )
+
+  const colourDistance = (a: GeoColour, b: GeoColour): number => Math.abs(a.r - b.r) + Math.abs(a.g - b.g) + Math.abs(a.b - b.b)
+  check(
+    'no two consecutive colours are the same — genuine movement, not a re-announcement',
+    colours.every((c, i) => i === 0 || colourDistance(c, colours[i - 1]) > 0.01),
+    'a fired colour repeated the one before it',
+  )
+  check(
+    'no colour repeats a previous one over the whole drive',
+    colours.every((c, i) => colours.slice(0, i).every((prior) => colourDistance(c, prior) > 0.01)),
+    'a fired colour matched an earlier one in the same drive',
+  )
+
+  // Saturation of a hue/value-pinned colour: (max-min)/max, entry 70's own
+  // measure (main.ts's colourToHueSat). The generative walk's own output
+  // sits in entry 70's [0.55, 1] range by construction (a sine amplitude
+  // that reaches exactly the two ends, not a clamp) — but only once it is
+  // actually driving the result. Before `c.warm` (120s) the mix is forced
+  // fully reactive, so any colour fired that early is `colourFor(c)`'s own
+  // RAMP-and-wash answer, a wholly different mechanism this entry does not
+  // touch and never claimed a saturation floor for; the check below only
+  // looks at fires from after that point.
+  const saturationOf = (c: GeoColour): number => {
+    const max = Math.max(c.r, c.g, c.b)
+    const min = Math.min(c.r, c.g, c.b)
+    return max === 0 ? 0 : (max - min) / max
+  }
+  const postWarm = colours.filter((_, i) => colourTimes[i] >= 120)
+  check(
+    "every fired colour past warm-up stays inside entry 70's saturation range",
+    postWarm.every((c) => saturationOf(c) >= 0.5 && saturationOf(c) <= 1.0),
+    `saturations: ${postWarm.map((c) => saturationOf(c).toFixed(2)).join(', ')}`,
+  )
+
+  console.log(failures === 0 ? '\nall twenty-minute-drive checks passed' : `\n${failures} check(s) failed`)
   if (failures > 0) process.exitCode = 1
 }

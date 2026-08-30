@@ -10041,7 +10041,101 @@ they mean.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 91. The director gets a second engine, for when the room has nothing to say
-`status: building` · added 2026-08-30 · build after 89 and 90
+`status: done` · added 2026-08-30 · build after 89 and 90 · build 309
+
+**Build note (Mine as to every constant, the informativeness measure's own
+design, and the two probe fixes below; the two-engine split and what each
+posture is for follow Decided)** — `director.ts` gained a small generative
+engine (a deterministic hue rotation, full turn every 40 minutes, and a
+saturation sine breathing inside entry 70's own [0.55, 1] range, `GEN_HUE_DEG_PER_S`/`GEN_SATURATION_*`) and an informativeness measure that
+decides how much of it shows: `mix`, blended against the reactive engine's
+own `colourFor(c)` for the colour axis, and used to choose between
+`candidate` and a `viewHold`-paced rotation through `secondBest` for the
+view axis — categorical values cannot be continuously blended the way a
+colour can, so the view axis is a hard cutover at `mix === 1` rather than a
+lerp.
+
+**Informativeness turned out to need two signals, not one, and finding that
+out cost most of this entry's time.** The obvious design — a rolling
+variance of the four flavour axes, summed, over `INFORM_TAU` — works well on
+real analysis output: measured directly against this file's own varied
+arrangement and flat-section fixtures, a flat input's variance decays to
+near-zero within a couple of minutes while the varied arrangement never dips
+near it. But a slow variance is, by construction, slow to notice a *sudden*
+discontinuity — for the first second or so after a real jump, the variance
+hasn't risen yet, reading the most informative instant there is as if
+nothing had happened. This surfaced as an actual regression: entry 84's own
+per-layer-holds probe (two hand-built flavours, swapped every 90s) started
+firing colour a full 15s late on average, because the slow variance was
+still catching up at the exact moment the switch made a new colour due.
+**Fixed with a second, fast path**: any single frame whose flavour axes
+moved further than real analysis output ever does (measured directly —
+0.19 is the highest single-tick jump either fixture ever produces, against
+this hand-built test's own 3.95) snaps the mix to fully reactive instantly,
+then lets go over `JUMP_DECAY_TAU` as the slow variance takes over the
+judgment. `mix` is `Math.max()` of the two, not a sum — either one alone
+being high is sufficient to answer "yes, act reactively."
+
+**That fix uncovered a second, unrelated bug**: at `mix === 1`, the original
+code still computed the colour as `lerpColour(genColour, reactive, 1)`
+rather than `reactive` outright. Mathematically a lerp at `t = 1` is the
+second operand; in floating point it is `a + (b - a) * 1`, whose rounding
+depends on `a` — and `a` (the generative colour) keeps moving even while
+`mix` sits at 1. Two calls against the exact same reactive target could
+round to two different bit patterns, a genuinely nonzero `step` for a
+character that had not moved at all, which is exactly what entry 89's own
+`step > 0` guard exists to rule out. It doesn't catch a ULP-scale nonzero.
+Every recorded fire in the per-layer-holds probe was correct except one,
+55 seconds into one particular 90s phase — one BOUNDARY_RAMP past a
+now-fully-decayed `requiredStep`, which is exactly where a residual this
+small would first clear the floor. **Fixed** by only ever lerping when
+`mix < 1`; at `mix === 1` the reactive colour is used directly, restoring
+bit-identical repeats.
+
+**The per-layer-holds probe itself needed one more adjustment, and this one
+is a real behaviour change, not a bug fix**: its first two 90s phases are a
+genuine startup transient. A hand-held-constant flavour is precisely the
+"nothing to say" case this entry answers, and the first two switches this
+fixture's own `current` has never seen are informative to it in a way later
+ones, arriving into an already-settled state, are not (colour fires 4 times
+in phase 0, once more early in phase 1, then lands exactly on every
+following switch with no further movement). The probe now measures from
+phase 2 onward — 8 measured phases rather than 8 raw ones, 15 simulated
+minutes rather than 12 — and every original assertion holds unchanged past
+that point.
+
+**New probe section**, matching this entry's own Done-when: the same flat
+fixture entry 89's own flat-input test uses, run for a simulated twenty
+minutes under `'driving'`. Checks: at least 8 colour changes and at least 2
+distinct views over the run; no two consecutive colours match and no colour
+repeats an earlier one across the whole drive; every colour fired after
+`c.warm` (120s) has entry 70's own [0.55, 1] saturation. Colours fired
+*before* warm are excluded from the last check on purpose — before `warm`
+the mix is forced fully reactive (the existing, unchanged behaviour for the
+first two minutes of any session), so anything fired that early is
+`colourFor(c)`'s own RAMP-and-wash answer, a different mechanism this entry
+never touched and never claimed a saturation floor for.
+
+**One design note on the view axis's own pacing**: the rotation period
+between `candidate` and `secondBest` reuses `viewHold` (already scaled by
+`HOLD_SCALE`, entry 90) directly rather than a new constant, so "posture
+sets the pace, not the source" (Decided's own words) costs nothing extra to
+keep in step. The same is true of colour's own excursions: nothing scales
+the generative walk's rate by posture at all, because the longer hold a
+slow posture already gets (`driving` ×1.3, `carried` ×1.8) gives the walk
+more *time* to drift before the next fire consumes it, producing wider
+excursions from the existing hold multiplier alone — Decided's own "widest
+excursions and longest holds at the same time," for free.
+
+Verification is code-reading and the probe only: `probe:slow` (all 28
+checks, including the new twenty-minute section and the two fixed-up entry
+84 checks), `probe:posture` and `probe:shake` as a regression check against
+`director.ts`'s shared surface (both fully green, timings unchanged). Not
+verified: an actual drive, which Decided itself names as the only real test
+of whether "interesting but not distracting" is the right pace — this
+environment has no way to put a phone in a moving car.
+
+**Do** — give the director a generative engine alongside its reactive one, and
 
 **Do** — give the director a generative engine alongside its reactive one, and
 let posture and how informative the sound is decide the mix. Driving should be

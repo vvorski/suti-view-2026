@@ -129,6 +129,110 @@ const MAX_BAR_WAIT_S = 2.4
  *  function's own comment). */
 const COLOUR_MIN_STEP = 0.18
 
+/**
+ * docs/todo.md entry 91 — the second, generative engine.
+ *
+ * The reactive engine above (`colourFor`, `viewFor`) is a pure function of
+ * the audio's long-scale character: steady input, steady answer. Against
+ * genuinely unchanging content (road noise, a fan, a quiet room) it does not
+ * merely repeat itself slowly, as entry 89 left it — it has nothing left to
+ * propose at all, because nothing about the input is telling it to propose
+ * anything different. This is a second source of change that comes from
+ * neither the microphone nor the person, blended in exactly where the first
+ * has nothing to say.
+ *
+ * A deterministic drift rather than a random walk — a hue that rotates at a
+ * constant rate and a saturation that breathes on a slow sine, not a
+ * per-frame reroll. Two reasons: a true random walk's own displacement grows
+ * only with the square root of elapsed time, which made every step size
+ * tried either invisible over a single `COLOUR_HOLD` or too large not to
+ * look like a jump; and this project already has one lesson on file about
+ * walking colour channels independently (entry 70's grey-clustering diagnosis)
+ * — a smooth, bounded, two-parameter path in hue/saturation space, the exact
+ * space entry 70 fixed colour into, cannot reproduce it by construction, where
+ * a stochastic walk would have needed the same care entry 70 itself took to
+ * avoid it. **Mine.**
+ */
+
+/** Full turns of the hue wheel per second — one rotation every 40 minutes,
+ *  long against any session this app is actually watched for, so a run never
+ *  sees the same hue twice by wrapping back to its start. **Mine.** */
+const GEN_HUE_DEG_PER_S = 360 / 2400
+/** Saturation breathes around the middle of entry 70's own [0.55, 1] range,
+ *  with an amplitude that reaches exactly the two ends — inside the range by
+ *  construction, not by a clamp that could pin it at an edge. **Mine.** */
+const GEN_SATURATION_MIN = 0.55
+const GEN_SATURATION_MID = (GEN_SATURATION_MIN + 1) / 2
+const GEN_SATURATION_AMPLITUDE = (1 - GEN_SATURATION_MIN) / 2
+/** Deliberately not a clean multiple of the hue rotation above, so the two
+ *  never realign into a repeating combined cycle within any run this app
+ *  will ever see. **Mine.** */
+const GEN_SATURATION_PERIOD_S = 137
+
+/**
+ * How informative the room currently is: a rolling variance, summed across
+ * the four flavour axes, over `INFORM_TAU` — Decided's own "a few minutes".
+ * High variance is real music changing shape over time; nothing about a
+ * genuinely flat input ever moves once its own analysis has settled, so its
+ * variance decays to (not merely toward) zero. Held behind `c.warm`: before
+ * the long window has any real history, this measurement is itself reading
+ * its own cold start, not the room, so the mix stays fully reactive — the
+ * existing, already-correct behaviour for the first two minutes of any
+ * session, flat or not. **Mine.**
+ */
+const INFORM_TAU = 30
+/** Above this the mix is fully reactive, clamped rather than approached —
+ *  so a genuinely varied track is pixel-identical to before this entry, not
+ *  merely close to it. Calibrated against this file's own two probe
+ *  fixtures (docs/todo.md entry 91's build note has the numbers): a flat
+ *  input's variance falls under this well inside a minute of `warm`; the
+ *  existing varied arrangement never dips under it at any of the timestamps
+ *  the pre-entry-91 probe already asserts. **Mine.** */
+const INFORM_REACTIVE = 0.018
+
+/**
+ * The variance above is deliberately slow — it has to be, to tell a genuine
+ * few-minutes-scale shift apart from a moment's noise. That slowness has a
+ * cost: for the first second or so after a real, sudden discontinuity (a
+ * track actually changing rather than drifting through a section), the
+ * variance has not risen yet, and the mix reads that instant as if nothing
+ * had happened — backwards, since a sudden change is the most informative
+ * moment there is. A second, fast path: any single frame whose flavour axes
+ * moved further than ordinary analysis noise ever does snaps the mix to
+ * fully reactive immediately, then lets go over a few seconds as the slow
+ * variance above takes over the judgment. `slow.ts`'s own smoothing
+ * (`TAU_TIMBRE`/`TAU_RHYTHM`) means a real section boundary's *smoothed*
+ * output moves gradually, not in one frame — measured directly against this
+ * file's own probe fixtures, real analysis never produces a single-frame
+ * jump above ~0.2 even at a section boundary. **Mine**, calibrated with
+ * generous margin above that ceiling. */
+const JUMP_REACTIVE = 1.0
+/** How long a snap-to-reactive from a real jump lingers before the slow
+ *  variance measurement alone decides again. **Mine.** */
+const JUMP_DECAY_TAU = 15
+
+const lerpColour = (a: GeoColour, b: GeoColour, t: number): GeoColour => ({
+  r: lerp(a.r, b.r, t),
+  g: lerp(a.g, b.g, t),
+  b: lerp(a.b, b.b, t),
+})
+
+/** HSV -> RGB with `v` pinned at 1 — same construction as `main.ts`'s own
+ *  copy (entry 70), kept separate rather than imported since `main.ts`
+ *  already imports `Director` from here and the reverse would cycle. `h` in
+ *  degrees, wrapped by the caller; `s` already within entry 70's range by
+ *  construction here. */
+function hueToColour(h: number, s: number): GeoColour {
+  const c = s
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1))
+  const m = 1 - c
+  const [r, g, b] =
+    h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x] : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x]
+  return { r: r + m, g: g + m, b: b + m }
+}
+
+const clamp01 = (v: number): number => (v < 0 ? 0 : v > 1 ? 1 : v)
+
 export interface Directives {
   geoColour?: GeoColour
   atmosphericView?: AtmosphericViewName
@@ -277,6 +381,21 @@ export class Director {
   // constant.
   private colourHold = COLOUR_HOLD
   private viewHold = VIEW_HOLD
+  // docs/todo.md entry 91 — the generative engine's own clock. Advances
+  // unconditionally, suspend included, same reasoning as `candidateHeld`
+  // above: a walk that froze while suspended would jump on resume.
+  private genPhase = 0
+  // docs/todo.md entry 91 — how informative the room currently is: an
+  // exponential mean/variance per flavour axis, seeded from the first real
+  // sample rather than a guessed constant so an arbitrary cold-start value
+  // is never mistaken for a swing the audio actually made.
+  private informMean: { bright: number; noisy: number; dense: number; rhythmic: number } | null = null
+  private informVar = { bright: 0, noisy: 0, dense: 0, rhythmic: 0 }
+  // docs/todo.md entry 91 — the fast half of informativeness: last frame's
+  // raw axis values, to measure a single-frame jump, and how much of that
+  // jump's own "snap to reactive" is still live.
+  private lastAxes: { bright: number; noisy: number; dense: number; rhythmic: number } | null = null
+  private jumpActivity = 0
 
   /** Call whenever the user changes anything by hand. */
   suspend(): void {
@@ -383,6 +502,39 @@ export class Director {
     this.sinceColour += dt
     this.sinceView += dt
 
+    // docs/todo.md entry 91 — the generative engine's clock and the
+    // informativeness measurement both run unconditionally, suspend and
+    // cold start included, for the same reason `sinceColour`/`sinceView`
+    // just did: a value that only advances while something else is true
+    // jumps the instant that condition changes.
+    this.genPhase += dt
+    if (this.informMean === null) {
+      this.informMean = { bright: c.bright, noisy: c.noisy, dense: c.dense, rhythmic: c.rhythmic }
+    }
+    if (this.lastAxes === null) {
+      this.lastAxes = { bright: c.bright, noisy: c.noisy, dense: c.dense, rhythmic: c.rhythmic }
+    }
+    const informAlpha = 1 - Math.exp(-dt / INFORM_TAU)
+    let informativeness = 0
+    let jump = 0
+    for (const axis of ['bright', 'noisy', 'dense', 'rhythmic'] as const) {
+      const d = c[axis] - this.informMean[axis]
+      this.informMean[axis] += d * informAlpha
+      this.informVar[axis] += (d * d - this.informVar[axis]) * informAlpha
+      informativeness += this.informVar[axis]
+      jump += Math.abs(c[axis] - this.lastAxes[axis])
+      this.lastAxes[axis] = c[axis]
+    }
+    this.jumpActivity = Math.max(jump, this.jumpActivity * Math.exp(-dt / JUMP_DECAY_TAU))
+    // Held behind `c.warm` — before the long window has real history this
+    // measurement is itself reading its own cold start, not the room, so
+    // the mix stays fully reactive: today's behaviour, unchanged, for
+    // exactly the window every existing flat-input and varied-arrangement
+    // timing was already measured against. The fast jump path is not held
+    // behind `warm` — a real discontinuity is exactly as informative before
+    // two minutes of history as after it.
+    const mix = c.warm ? Math.max(clamp01(this.jumpActivity / JUMP_REACTIVE), clamp01(informativeness / INFORM_REACTIVE)) : 1
+
     // docs/todo.md entry 81 — the bar clock. Runs regardless of suspend, so
     // resuming does not inherit a stale count from before the pause any
     // more than `candidateHeld`'s own hysteresis does below.
@@ -436,7 +588,30 @@ export class Director {
     if (c.warmMedium || c.warm) {
       const overdue = this.sinceColour - this.colourHold
       if (overdue >= 0) {
-        const wanted = colourFor(c)
+        // docs/todo.md entry 91 — blended with the generative engine's own
+        // hue/saturation drift, `mix` deciding the proportion. At `mix === 1`
+        // this is `colourFor(c)` outright rather than a lerp evaluating to
+        // the same thing: a lerp's floating-point rounding depends on the
+        // *other* operand, which keeps moving even while `mix` sits at 1, so
+        // two calls against the exact same reactive target could round to
+        // two different bit patterns — a genuinely nonzero `step` for a
+        // character that has not moved at all, which is exactly the failure
+        // entry 89's own `step > 0` guard exists to prevent. Only reached
+        // for `mix < 1` is the blend's rounding noise ever a real question,
+        // and at that point it is nowhere near the boundary this entry's own
+        // probe fixture sits at.
+        const reactive = colourFor(c)
+        const wanted =
+          mix >= 1
+            ? reactive
+            : lerpColour(
+                hueToColour(
+                  (this.genPhase * GEN_HUE_DEG_PER_S) % 360,
+                  GEN_SATURATION_MID + GEN_SATURATION_AMPLITUDE * Math.sin((this.genPhase * 2 * Math.PI) / GEN_SATURATION_PERIOD_S),
+                ),
+                reactive,
+                mix,
+              )
         const step = distance(wanted, current.geoColour)
         // docs/todo.md entry 89 — a literal zero distance is not a small step
         // that time should eventually forgive; it is nothing to change at
@@ -472,7 +647,16 @@ export class Director {
         // — so the target becomes the character's own runner-up instead of
         // waiting on a primary answer that can never differ from reality.
         const stuck = overdue >= BOUNDARY_RAMP && this.candidate === current.atmosphericView
-        const target = stuck ? this.secondBest : this.candidate
+        // docs/todo.md entry 91 — below full reactive confidence, rotate
+        // through the character's own ranking (entry 89's [best, second-best])
+        // rather than insisting on the single best answer forever, which is
+        // what "the room has nothing to say" otherwise looks like on this
+        // axis. The rotation period is `viewHold`, already scaled by posture
+        // — so posture sets the *pace* here exactly as Decided asks, with no
+        // second constant to keep in step with it. At `mix === 1` this plays
+        // no part: the target is `candidate`, exactly as before this entry.
+        const rotating = Math.floor(this.genPhase / this.viewHold) % 2 === 0 ? this.candidate : this.secondBest
+        const target = stuck ? this.secondBest : mix >= 1 ? this.candidate : rotating
         const neededNovelty = requiredNovelty(overdue)
         if (target === null || target === current.atmosphericView) {
           blocked = blocked ?? `view: candidate = current (${current.atmosphericView})`
