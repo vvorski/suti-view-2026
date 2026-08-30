@@ -10203,7 +10203,7 @@ can say whether the pace is right.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 92. Values arrive, they do not jump
-`status: ready` · added 2026-08-30
+`status: building` · added 2026-08-30
 
 **Do** — ramp what can be ramped and cover what cannot. A colour change should
 travel to its new value; a view change should not be a cut.
