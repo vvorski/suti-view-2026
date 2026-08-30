@@ -7245,7 +7245,7 @@ this file.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 70. Colour is chosen as a hue, and survives the composite
-`status: ready` · added 2026-08-30 · build after 68
+`status: building` · added 2026-08-30 · started 2026-08-30 · build after 68
 
 **Do** — roll colour as a hue at high saturation instead of three independent
 channel gains, drop the floor that makes a pure channel impossible, and add a
