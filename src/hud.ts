@@ -237,11 +237,12 @@ export interface Hud {
    */
   current(): { geoColour: GeoColour; atmColour: GeoColour; geoAlpha: number; atmAlpha: number }
   /**
-   * Open the panel — docs/todo.md entry 41. main.ts's single tap recogniser
-   * calls this for a tap in the middle third of the picture; this file no
-   * longer listens for that tap itself, since two independent recognisers
-   * agreeing through a capture-phase `stopPropagation()` is exactly what
-   * that entry replaces with one.
+   * Open the panel — docs/todo.md entries 41 and 52. main.ts's single
+   * recogniser calls this once it resolves a double tap anywhere on the
+   * picture (entry 52 retired the middle-third zone a plain tap used to
+   * need); this file no longer listens for that tap itself, since two
+   * independent recognisers agreeing through a capture-phase
+   * `stopPropagation()` is exactly what entry 41 replaced with one.
    */
   open(): void
   /**

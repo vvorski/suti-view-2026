@@ -439,35 +439,10 @@ function flashCapture(): void {
   requestAnimationFrame(() => el.classList.remove('on'))
 }
 
-/** The bottom band's height, as a fraction of the viewport. 1/3 as of
- *  docs/todo.md entry 41 — **supersedes entry 18's original 0.15**, more
- *  than doubling it, because the picture now has three zones rather than
- *  one carved out of the rest. The honest cost is more accidental
- *  captures; entry 41's camera-glyph flash exists so an accidental one is
- *  a thing you saw happen rather than a silent surprise. */
-const CAPTURE_BAND_FRACTION = 1 / 3
-
-/** `env(safe-area-inset-bottom)` has no JS equivalent; read back the custom
- *  property index.html sets from it on `:root`. */
-function safeBottomInset(): number {
-  const raw = getComputedStyle(document.documentElement).getPropertyValue('--safe-bottom')
-  return parseFloat(raw) || 0
-}
-
-/**
- * Where a tap on the picture belongs — docs/todo.md entry 41. The bottom
- * third saves a frame (held clear of the home indicator or gesture bar by
- * the safe-area inset, same as entry 18's original band); the middle third
- * opens the panel; the top third does nothing on its own — entry 33 gives
- * it a press-and-hold behaviour, but a plain tap up there is silent.
- */
-function zone(clientY: number): 'capture' | 'panel' | 'none' {
-  const bottom = window.innerHeight - safeBottomInset()
-  const captureTop = bottom - window.innerHeight * CAPTURE_BAND_FRACTION
-  if (clientY >= captureTop && clientY <= bottom) return 'capture'
-  if (clientY >= window.innerHeight / 3) return 'panel'
-  return 'none'
-}
+// The three zones this used to carve the screen into — CAPTURE_BAND_FRACTION,
+// safeBottomInset() and zone() — are retired by docs/todo.md entry 52: a
+// single tap now saves and a double opens, anywhere on the screen, with no
+// region either belongs to. See dispatchTouches() below.
 
 /** How many captures this session has already saved. Widens the counter's
  *  own padding past 99 on its own — docs/todo.md entry 26. */
@@ -913,7 +888,11 @@ async function main(): Promise<void> {
     // the way in — docs/todo.md entry 42, written for the fullscreen chip
     // specifically once it moved into the panel-opening middle third — is
     // what closes that gap for every chip, not only that one.
-    touchField.down(performance.now() / 1000, e.pointerId, x, y, e.clientX, e.clientY, isChip(e.target), zone(e.clientY))
+    //
+    // The zone argument is a fixed '' now that entry 52 has retired the
+    // three screen thirds it used to carry — touches.ts's own field API is
+    // untouched by that entry, so the parameter stays, carrying nothing.
+    touchField.down(performance.now() / 1000, e.pointerId, x, y, e.clientX, e.clientY, isChip(e.target), '')
   })
   document.addEventListener('pointermove', (e) => {
     const rect = canvas.getBoundingClientRect()
@@ -928,13 +907,82 @@ async function main(): Promise<void> {
   // to survive.
   document.addEventListener('lostpointercapture', (e) => touchField.cancel(e.pointerId))
 
+  // A single tap saves a frame; a double opens the panel — docs/todo.md
+  // entry 52, retiring entry 41's three screen zones. The two used to be
+  // told apart by *where* a tap landed; now they are told apart by *time*,
+  // which is the harder problem entry 41 (and, before it, the deleted
+  // gestures.ts) tried and failed to solve: a zero-delay tap-to-open
+  // listener always wins a race against a second tap that has not arrived
+  // yet, so the panel used to pre-empt every double before it could be
+  // recognised. The fix is structural, not a smarter race: whatever sits on
+  // the *single* has to tolerate a delay, because a single is only knowable
+  // once the double's window has passed without a second tap — and a save
+  // can tolerate that in a way a menu never could. Play is untouched by any
+  // of this: entry 50's emitter still fires on the raw `down`, immediately,
+  // never waiting on or cancelled by what a tap resolves to.
+  //
+  // One window serves both purposes by construction, rather than two
+  // separately-tuned numbers: a second qualifying tap arriving before
+  // TAP_RESOLVE_MS has elapsed, and close enough to the first, pre-empts
+  // the pending single and opens the panel instead; if none arrives, the
+  // same timer firing *is* what commits the first tap as a single and
+  // saves. **Mine** — the entry names 280ms for the save delay and 30px
+  // for the double's radius, but never a separate "how long may the second
+  // tap be late" figure, and there is no natural second number: the delay
+  // a single must tolerate and the window a double must arrive inside are
+  // the same wait looked at from either end of it.
+  const TAP_RESOLVE_MS = 280
+  const DOUBLE_TAP_RADIUS_PX = 30
+  // "One save per 700ms, silently dropping the rest" (Decided) — a run of
+  // taps should not write a run of near-identical PNGs to the camera roll.
+  const SAVE_RATE_LIMIT_MS = 700
+
+  // A list, not a single slot: "ten taps in five seconds save no more than
+  // seven frames" (Done-when) only holds if each tap not close enough to
+  // pair with another gets its *own* independent 280ms timer, rate-limited
+  // only by SAVE_RATE_LIMIT_MS — not silently dropped because a later,
+  // unrelated tap happened to land somewhere else on the screen first.
+  interface PendingTap {
+    x: number
+    y: number
+    timer: number
+  }
+  const pendingTaps: PendingTap[] = []
+  let lastSaveAt = -Infinity
+
+  const resolveTap = (clientX: number, clientY: number): void => {
+    const matchIndex = pendingTaps.findIndex(
+      (p) => Math.hypot(clientX - p.x, clientY - p.y) <= DOUBLE_TAP_RADIUS_PX,
+    )
+    if (matchIndex !== -1) {
+      // The match's own timer firing is what would have committed it as a
+      // single — arriving here at all means it has not fired yet, so being
+      // inside its own window is implicit and needs no separate check.
+      const [match] = pendingTaps.splice(matchIndex, 1)
+      window.clearTimeout(match.timer)
+      panel.open()
+      return
+    }
+    const entry: PendingTap = { x: clientX, y: clientY, timer: 0 }
+    entry.timer = window.setTimeout(() => {
+      const i = pendingTaps.indexOf(entry)
+      if (i !== -1) pendingTaps.splice(i, 1)
+      if (performance.now() - lastSaveAt >= SAVE_RATE_LIMIT_MS) {
+        lastSaveAt = performance.now()
+        saveCapture(visualiser)
+      }
+    }, TAP_RESOLVE_MS)
+    pendingTaps.push(entry)
+  }
+
   /**
-   * The tap/hold-vs-drag decision, and the zone dispatch — docs/todo.md
-   * entries 41, 33, 48, 49, 50 and 57. Called once per rendered frame from
-   * frame() below, which is what "sampled, not callback-driven" (touches.ts's
-   * own file comment) means in practice: every consumer of the field, this
-   * dispatch included, reads it on the same clock the picture itself
-   * redraws on rather than keeping its own timers.
+   * The tap/hold-vs-drag decision for the emitter, and the single/double
+   * tap dispatch — docs/todo.md entries 41, 33, 48, 49, 50, 52 and 57.
+   * Called once per rendered frame from frame() below, which is what
+   * "sampled, not callback-driven" (touches.ts's own file comment) means in
+   * practice: every consumer of the field, this dispatch included, reads it
+   * on the same clock the picture itself redraws on rather than keeping its
+   * own timers.
    */
   const dispatchTouches = (now: number): void => {
     const hudOpen = document.querySelector('.hud-scrim.open') !== null
@@ -960,21 +1008,28 @@ async function main(): Promise<void> {
     // panel) is untouched, further down — this is a second, independent
     // thing every contact does, not a replacement for that dispatch.
     const active: { contactId: number; x: number; y: number; speed: number }[] = []
-    // docs/todo.md entry 48's own exclusion, applied here rather than
-    // re-derived in scene.ts: the capture band never reaches the
-    // atmospheric stream (a screenshot must not contain the finger that
-    // took it), and any `.hud-chip` contact never reaches either stream —
-    // a chip's own tap is that chip's gesture, not one that reaches the
-    // picture underneath. Also inert while the HUD is open — a HUD
-    // control's own drag already stopPropagation()s before it ever reaches
-    // this field, but a tap on the scrim itself (closing the panel) would
-    // not, and the picture is hidden behind the panel at that moment
-    // regardless.
+    // Any `.hud-chip` contact never reaches either stream below — a chip's
+    // own tap is that chip's gesture, not one that reaches the picture
+    // underneath. Also inert while the HUD is open — a HUD control's own
+    // drag already stopPropagation()s before it ever reaches this field,
+    // but a tap on the scrim itself (closing the panel) would not, and the
+    // picture is hidden behind the panel at that moment regardless.
+    //
+    // Entry 48's own capture-band exclusion is gone along with the zone it
+    // was defined against (entry 52): the touch stream's own contribution
+    // can now land in a saved frame exactly as entry 50 already made the
+    // geometric emitter's ring do, for the same reason stated there — it is
+    // picture, not UI, and a save can now happen from any tap rather than
+    // only ones landing in a fixed band this file no longer has a way to
+    // name. **Mine**, since entry 52's own text does not mention the touch
+    // stream at all; leaving the old exclusion in would have needed a
+    // "was this the tap that is about to save" fact that is not knowable
+    // until 280ms after the fact, which the render loop cannot wait for.
     let streamAnyDown = false
     let streamMaxSpeed = 0
     for (const t of touchField.sample(now)) {
       const speed = Math.hypot(t.vx, t.vy)
-      if (!t.onChip && t.zone !== 'capture' && !hudOpen) {
+      if (!t.onChip && !hudOpen) {
         streamAnyDown = true
         streamMaxSpeed = Math.max(streamMaxSpeed, speed)
       }
@@ -991,7 +1046,7 @@ async function main(): Promise<void> {
     let streamBegan = false
     for (const e of events) {
       if (e.kind === 'down') {
-        if (!e.onChip && e.zone !== 'capture' && !hudOpen) streamBegan = true
+        if (!e.onChip && !hudOpen) streamBegan = true
         continue
       }
       // A cancelled contact (pointercancel, lostpointercapture) is never a
@@ -1001,24 +1056,19 @@ async function main(): Promise<void> {
       // Inert while the HUD is open: the panel owns the screen then, and a
       // tap here is what closes it (the scrim's own listener in hud.ts).
       if (hudOpen) continue
-      if (e.zone === 'none') continue
-      if (zone(e.clientY) !== e.zone) continue
-      if (Math.hypot(e.clientX - e.downClientX, e.clientY - e.downClientY) > TAP_SLOP_PX) continue
-      if (e.zone === 'capture') {
-        saveCapture(visualiser)
-        continue
-      }
-      // 'panel'. Defensive rather than load-bearing: this listener is only
-      // registered after Start, same as hud.ts's `open()`, so the gate
+      // Defensive rather than load-bearing: dispatchTouches only ever runs
+      // after Start (frame() is not scheduled before it), so the gate
       // should already be gone by the time a tap can reach here — kept in
-      // case a fade is still mid-flight. Checked by visibility rather than
-      // by containment of the original event target (which the field's
-      // event queue does not carry) — the same defensive purpose, since
-      // the whole point is not double-handling a tap the fading gate is
-      // also still showing.
+      // case a fade is still mid-flight, the same guard the zone dispatch
+      // this replaces already carried.
       const gate = document.getElementById('gate')
       if (gate && !gate.hidden) continue
-      panel.open()
+      // The tap-versus-drag distinction entry 50 explicitly names as not
+      // loosened: a release far from where the contact began is a
+      // completed drag, not a tap, and must not save or open regardless of
+      // where on screen it ends.
+      if (Math.hypot(e.clientX - e.downClientX, e.clientY - e.downClientY) > TAP_SLOP_PX) continue
+      resolveTap(e.clientX, e.clientY)
     }
 
     visualiser.setTouchStream(streamBegan, streamAnyDown, streamMaxSpeed)

@@ -3411,6 +3411,17 @@ alter them. Also `pnpm build`, `pnpm lint`.
 ### 41. One recogniser owns the picture's taps, split into thirds
 `status: done` · added 2026-08-30 · shipped at build 141
 
+**Superseded at build 186 (entry 52).** The *zone* half of this entry — the
+three screen thirds, `inCaptureBand()`, `CAPTURE_BAND_FRACTION`, and the
+"top third does nothing on a plain tap" call — is gone: a single tap now
+saves and a double opens the panel, anywhere on the screen, told apart by
+time rather than position. The *one recogniser* half this entry's title is
+actually about survives entirely unchanged and is exactly what made entry
+52 small: one dispatch owning the picture's taps is what a temporal rule
+needed to be built on top of. See entry 52's own build note for what
+replaced the zones and why its Done-when here (bottom-third-saves,
+middle-third-opens, top-third-silent) no longer describes the code.
+
 **Do** — replace the two independent tap paths with a single pointer
 recogniser on the picture that dispatches by where the tap landed: the bottom
 third saves a frame and flashes a camera glyph, the middle third opens the
@@ -4840,7 +4851,65 @@ the label. `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 52. Single tap saves a frame, double tap opens the menu
-`status: building` · added 2026-08-30 · started 2026-08-30
+`status: done` · added 2026-08-30 · shipped at build 186
+
+**Build note** — `zone()`, `CAPTURE_BAND_FRACTION` and `safeBottomInset()`
+are deleted from `main.ts`, per Decided. In their place, `resolveTap(x, y)`
+maintains a **list** of pending single-taps rather than one slot: each
+`up` event that survives the existing exclusions (chip, HUD-open, gate
+still showing, and the unloosened tap-vs-drag distance check) either
+matches an existing pending tap within 30px — cancelling that one's timer
+and opening the panel — or starts its own independent 280ms timer that, if
+nothing arrives to pair with it, commits it as a single and saves (subject
+to the 700ms rate limit).
+
+**A real bug found and fixed before it shipped, not after**: the first
+version used one global `pendingTap` slot. A second, spatially-unrelated
+tap arriving inside another tap's still-pending window unconditionally
+cancelled that first tap's timer — silently dropping its save rather than
+letting each resolve independently. Caught by testing exactly the
+scenario the entry's own Done-when names ("ten taps in five seconds save
+no more than seven frames" only holds if unmatched taps don't cancel each
+other): two taps landing 200px apart, both isolated, produced only one
+`saveCapture` call instead of two. Fixed with the list-based design above,
+re-verified: the same two-far-apart-taps case now produces two independent
+saves, and a close pair still produces exactly one `panel.open()` and no
+save.
+
+**One number is inferred rather than quoted**: the entry states 280ms for
+the save delay and 30px for the double's radius, but never a separate
+"how long may a second tap be late" figure. There isn't a second number to
+give — one timer serves both roles by construction: a second qualifying
+tap arriving before it fires pre-empts it into a double, and the timer
+itself firing *is* what commits a single. Stated as **Mine** in the code's
+own comment rather than left implicit.
+
+The touch stream's own capture-band exclusion (entry 48) is retired along
+with the zone it depended on, rather than ported to some other rule —
+**Mine**, since entry 52's own text never mentions the touch stream. The
+alternative (excluding "the tap that is about to save") is not knowable
+until 280ms after the fact, which the render loop cannot wait for; letting
+the stream's contribution land in a saved frame matches the precedent
+entry 50 already set for the geometric ring, on the same "it is picture,
+not UI" reasoning.
+
+Verified: `resolveTap`'s exact logic (copied faithfully, not paraphrased)
+tested standalone in a browser tab, with real timers, for four cases: an
+isolated tap saves; a close, quick pair opens the panel and does not save;
+two far-apart-but-quick taps each independently save (the bug above,
+confirmed fixed); and ten scattered taps over five seconds all eventually
+saved when driven by real timers — which turned out to demonstrate a
+harness limitation rather than the rate limit: this remote-controlled
+tab's backgrounded `setTimeout` calls clamp to roughly 1000ms regardless
+of the delay requested, coincidentally always exceeding the 700ms rate
+limit and never exercising it. Re-verified the rate limit's own arithmetic
+directly with injected timestamps instead (no real timers): ten taps at a
+genuine 500ms cadence over five seconds correctly cap at five saves, comfortably
+inside "no more than seven." `pnpm build`, `pnpm lint`, and `pnpm
+probe:fullscreen` (named explicitly in Verify) all pass. Not verified:
+anything requiring a real double-tap gesture from an actual finger, or the
+frame-time/visual confirmation of the ring-under-finger claim in
+Done-when, both of which need a phone this harness does not have.
 
 **Do** — retire entry 41's three zones. A single tap anywhere saves a frame; a
 double tap anywhere opens the panel.
