@@ -436,6 +436,13 @@ export function createVisualiser(
     // (angle, offsetX, offsetY, overscan) — at rest this is the identity, so
     // a device with no accelerometer costs one unused uniform and nothing else.
     uTumble: { value: new Vector4(0, 0, 0, 0) },
+    // docs/todo.md entry 82 — the atmosphere's own multiplier on uTumble's
+    // rotation and drift, so the two layers separate into a near plane and a
+    // far one instead of moving as one rigid sheet. Geometry keeps the full
+    // 1.0 (no uniform of its own — that is what "unscaled" means), so this
+    // is the only new knob. 0.55 is Victor's call, not derived: the
+    // atmosphere is a field and reads as behind the geometry's line work.
+    uAtmTumbleScale: { value: 0.55 },
     // docs/todo.md entry 76 — the RGB channels' own uv-space separation,
     // already scaled to its cap. Direction comes from uTumble.yz above, not
     // from a second uniform of its own; see composite.frag.glsl. 0 at rest,

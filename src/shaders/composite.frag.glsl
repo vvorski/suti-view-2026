@@ -46,6 +46,17 @@ uniform vec3 uCamColour;
 // shake.ts.
 uniform vec4 uTumble;
 
+// docs/todo.md entry 82. The geometry keeps the full uTumble (this is what
+// "1.0" means below — no separate multiplier for it); the atmosphere gets its
+// own rotation and offset scaled by this fraction, which is what separates
+// the two planes into a near one and a far one. The shared overscan
+// (uTumble.w) already covers whichever layer moves further, and since the
+// atmosphere's multiplier is always <= 1 that is always the geometry — no
+// second overscan computation needed. At 1.0 the atmosphere's uv collapses
+// back to exactly uTumble's own, so this is bit-identical to the tumble
+// before this entry.
+uniform float uAtmTumbleScale;
+
 // docs/todo.md entry 76 — the RGB channels' own uv-space separation, along
 // the same direction uTumble.yz already points (no second uniform for
 // direction; it is already here). Already scaled to its cap in rgb-slip.ts,
@@ -153,12 +164,24 @@ void main() {
   p = vec2(c * p.x - s * p.y, s * p.x + c * p.y) / (1.0 + uTumble.w);
   vec2 uv = clamp(p + uTumble.yz + 0.5, 0.0, 1.0);
 
+  // docs/todo.md entry 82 — the atmosphere's own uv, built the same way as
+  // the geometry's above but with the rotation and the drift both scaled
+  // down. Overscan (uTumble.w) is shared and untouched: it is already sized
+  // for the geometry's full-strength tumble, which is always the larger of
+  // the two, so the atmosphere's smaller motion is covered for free.
+  vec2 pAtm = vUv - 0.5;
+  float cAtm = cos(uTumble.x * uAtmTumbleScale);
+  float sAtm = sin(uTumble.x * uAtmTumbleScale);
+  pAtm = vec2(cAtm * pAtm.x - sAtm * pAtm.y, sAtm * pAtm.x + cAtm * pAtm.y) / (1.0 + uTumble.w);
+  vec2 uvAtm = clamp(pAtm + uTumble.yz * uAtmTumbleScale + 0.5, 0.0, 1.0);
+
   // docs/todo.md entry 76 — red leads, blue trails, green holds still, along
   // the same direction the tumble's own offset already points. A uniform
   // branch, identical for every fragment in this draw, so a still phone
   // (uSlip == 0) samples each texture once, exactly as before this entry —
   // not merely close to it, since the `else` here is those original two
-  // lines unchanged.
+  // lines unchanged. Each layer slips around its own uv (uv for geometry,
+  // uvAtm for atmosphere — entry 82), not a shared one.
   vec3 atm;
   vec3 geo;
   if (uSlip > 0.0) {
@@ -166,10 +189,12 @@ void main() {
     vec2 off = slipDir * uSlip;
     vec2 uvR = clamp(uv + off, 0.0, 1.0);
     vec2 uvB = clamp(uv - off, 0.0, 1.0);
-    atm = vec3(texture2D(uAtmosphere, uvR).r, texture2D(uAtmosphere, uv).g, texture2D(uAtmosphere, uvB).b) * uAtmColour;
+    vec2 uvAtmR = clamp(uvAtm + off, 0.0, 1.0);
+    vec2 uvAtmB = clamp(uvAtm - off, 0.0, 1.0);
+    atm = vec3(texture2D(uAtmosphere, uvAtmR).r, texture2D(uAtmosphere, uvAtm).g, texture2D(uAtmosphere, uvAtmB).b) * uAtmColour;
     geo = vec3(texture2D(uGeometry, uvR).r, texture2D(uGeometry, uv).g, texture2D(uGeometry, uvB).b) * uGeoColour;
   } else {
-    atm = texture2D(uAtmosphere, uv).rgb * uAtmColour;
+    atm = texture2D(uAtmosphere, uvAtm).rgb * uAtmColour;
     geo = texture2D(uGeometry, uv).rgb * uGeoColour;
   }
 

@@ -8922,7 +8922,34 @@ probe can answer, the same limit every beat-adjacent entry since 75 has
 disclosed.
 
 ### 82. The layers move apart
-`status: building` · added 2026-08-30
+`status: done` · added 2026-08-30 · build 283
+
+**Build note (Mine)** — `uAtmTumbleScale` (0.55) scales both the rotation and
+the drift of `uTumble` for a second, atmosphere-only `uv` in
+`composite.frag.glsl`; geometry keeps sampling the original `uv` unscaled, so
+"1.0" for geometry is just the absence of a second uniform rather than a
+literal `1.0` multiplier anywhere. The shared `uTumble.w` overscan is left
+untouched — it's already sized for the geometry's full-strength motion via
+`overscanFor` in `scene.ts`, and since the atmosphere's scale is always ≤ 1
+that's always the larger of the two, so no second overscan computation was
+needed, matching the entry's own reasoning.
+
+The RGB-slip offset (entry 76) is now applied around each layer's own uv
+(`uv` for geometry, `uvAtm` for atmosphere) rather than a single shared one —
+not called out in Lands-in, but leaving the atmosphere's slip anchored to the
+geometry's uv would have reintroduced exactly the "moves as one plane"
+problem this entry exists to fix, just for the slip effect instead of the
+tumble. Small judgment call, disclosed here.
+
+`pnpm build`, `pnpm lint`, and `pnpm probe:composite` (the only probe that
+touches this shader, in its blend/colour tail — the tumble uv itself isn't
+part of that reimplementation) all pass. The bit-identical-at-scale-1 claim in
+Done-when is a trig identity (scale 1 makes `uvAtm` collapse to exactly `uv`'s
+own formula) rather than something I additionally probed numerically. Visible
+parallax on a moving phone is the entry's own stated Verify and it says so
+itself — "Depth is not measurable offline" — so that part is unverified by me
+this session; the change is otherwise a straightforward, reviewed read of the
+existing tumble math.
 
 **Do** — give each layer its own multiplier on the tumble, so the geometry and
 the atmosphere do not move as one rigid sheet.
