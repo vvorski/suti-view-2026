@@ -2750,3 +2750,212 @@ because the buzz reads the same scale, then the phone, which is the only place
 "asks for too much force" can actually be judged. Also `pnpm build`,
 `pnpm lint`.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 37. A harness that plays a song at the views
+`status: ready` · added 2026-08-30
+
+**Do** — turn `views-probe.html` from a still life into a driven one: run the
+real `MAPPINGS` over a synthetic track and render every view live, with a
+mapping selector and a mic button.
+**Why** — "not responding well to music" is currently unfalsifiable. Nothing in
+the repo can show a view reacting; the probe renders one frozen frame per view
+and the node probes print numbers with no picture attached.
+
+**Decided**
+- What exists and what it cannot do → `views-probe.html` builds every
+  atmospheric view once from a **hardcoded params object** (`level: 0.62,
+  transient: 0.0, …`) with a comment saying a real mic would make screenshot
+  comparison meaningless. That reasoning is right for what it was for, and it
+  is exactly why the file cannot answer this question: `transient` is pinned at
+  zero, so the input entries 32 and 39 care most about is never exercised.
+- Keep the frozen mode, add a driven one → **Mine.** The still grid is a
+  regression check and deleting it would cost a test to gain a toy. A `?play`
+  switch selects driven mode; with no query string the page renders exactly
+  what it renders today.
+- What drives it → **the synthetic track `probe-mapping.ts` already
+  generates** — 6s music, 3s breakdown, 6s back in — lifted into a module both
+  can import, rather than a second copy that will diverge from it. It is
+  already the repo's definition of "a song", it already exercises the
+  breakdown and return that nothing else reaches, and it makes the harness and
+  the node probe answer about the same signal.
+- Mic too, behind a button → **Mine.** The synthetic track is what makes runs
+  comparable, but the complaint being investigated is about real music, and a
+  harness that cannot hear any is one step short of the question. Never
+  automatic: `getUserMedia` needs a gesture, and this page must stay openable
+  without a permission prompt.
+- Geometric views as well as atmospheric → today the page iterates
+  `ATMOSPHERIC_VIEWS` only, and five of the six thin shaders named in the
+  refusal note below are geometric. Iterate both.
+- Show the numbers beside the picture → each figure captions with the live
+  `level / low / mid / high / transient / surge` for the frame. **Mine**: the
+  whole diagnostic move is "the sound moved and the picture did not", and that
+  is only visible when both are on screen at once.
+- Not shipped to users → it is a dev page beside `hud-probe.html` and
+  `camera-probe.html`, not reachable from `index.html`, so the circular
+  control surface constraint does not reach it and it may have plain buttons.
+
+**Lands in**
+- `views-probe.html` — the driven mode, the selector, the captions.
+- `scripts/probe-mapping.ts` — the track generator moves out to a module it
+  imports rather than defines.
+- A new `scripts/track.ts` (or `src/engine/track.ts` if the browser import
+  needs it inside `src/`) holding that generator.
+
+**Done when** — opening `views-probe.html?play` shows every view moving in
+time with the same 15-second track, the captioned numbers move with it, and
+the mapping selector visibly changes how much they move. `views-probe.html`
+with no query string is byte-identical in output to today.
+**Verify** — the browser, because this is a page. `pnpm probe` must still pass
+with the extracted track module, which is the check that the extraction was a
+move and not a rewrite. Also `pnpm build`, `pnpm lint`.
+**Hard stops** — prefs no · url no (a dev page's own query string is not the
+app's shared-URL shape) · capture no · dependency no.
+
+### 38. Two of the three mappings cannot hear loudness at all
+`status: ready` · added 2026-08-30
+
+**Do** — give `relative` a floor of absolute response, give `auto-normalised`
+a rolling floor as well as a ceiling, and broaden `surge` so it fires on a
+rise rather than only on a return from silence.
+**Why** — measured, not guessed: across a 20× input range the default mapping
+returns a **flat 0.68** and `auto-normalised` returns a **flat 1.00**. The
+picture cannot respond to loudness because the numbers reaching it do not.
+
+**Decided**
+- The measurement, from `pnpm probe`'s own first table → input byte 10 through
+  200, which is the difference between barely audible and loud:
+
+  | byte | relative | speech-band | auto-normalised |
+  |---|---|---|---|
+  | 10 | 0.68 | 0.18 | 1.00 |
+  | 60 | 0.68 | 0.67 | 1.00 |
+  | 200 | 0.68 | 0.96 | 1.00 |
+
+  Only `speech-band` moves, and its own docstring says it is wrong for music
+  at room volume because it saturates — which the table confirms at 0.96.
+  **The default mapping has no loudness response by construction**, and that
+  single fact explains most of the complaint.
+- It is not a bug in `relative`, it is its design taken too far → it divides by
+  a running mean, so it reports *change* in loudness and not loudness. The
+  full-track trace shows it doing exactly that: 0.43 at the start, 1.00 while
+  the level is rising, settling back to 0.78 while the music continues
+  unchanged. Steady music settles; a picture driven by it settles too.
+- Fix for `relative` → **blend, do not replace**: `0.7 × relative +
+  0.3 × soften(absolute)`, reusing the `soften()` and `GAIN` already in the
+  file for `speech-band`. **Mine.** It keeps the property that makes `relative`
+  the default — it works at any input gain — while making a loud passage read
+  as louder than a quiet one. Replacing it outright would just make it
+  `speech-band`, which already exists.
+- Fix for `auto-normalised` → it stretches each band to its own **ceiling** and
+  nothing else, so any sustained sound reaches its own maximum by definition;
+  its docstring already admits this as a cost. Track a **rolling floor** with
+  the same `RollingCeiling` machinery inverted and normalise between the two,
+  so a steady tone lands mid-range and there is somewhere for a peak to go.
+  **Mine**, over dropping the mapping: it is the only one that survives
+  material with an unknown gain, which is what a stranger's phone in a strange
+  room is.
+- `surge` is dead most of the time, and that is a third fault → in the
+  15-second track it is **0.00 for twelve of the fifteen seconds**, reaching
+  0.57 exactly once, on the return from the breakdown. Music that never drops
+  out never produces surge. Any view leaning on `uSurge` is therefore reading a
+  constant zero — including `lattice.frag.glsl:311`, which entry 32 named as
+  one of only two places that view's intensity swings, and
+  `composite.frag.glsl:134`'s `- uSurge * 0.28`.
+- Fix for `surge` → fire it on any sharp rise in level sustained past a short
+  hold, not only on a rise out of a `breakdown` state. **Mine**, and the reason
+  to keep it sharp-and-sustained rather than making it a second `transient` is
+  that the two must stay distinguishable: `transient` is a hit, `surge` is the
+  music getting bigger. If they blur, views that read both lose a dimension.
+- Where the surge change lives → `CommonAnalysis`, so it reaches all three
+  mappings and the three from entry 39 at once. That is the right blast radius:
+  a feature that is dead is dead for everyone.
+- Not a `Prefs` change → no stored value moves. Mapping *behaviour* changes,
+  which is the point, and a stored `mapping` name still resolves.
+
+**Lands in**
+- `src/engine/fast.ts`, `relativeMapping()` — the blend.
+- `src/engine/fast.ts`, `autoNormalisedMapping()` — the rolling floor, and the
+  docstring paragraph that currently states the pinning as an accepted cost.
+- `src/engine/features.ts`, `CommonAnalysis` — `surge`.
+- `scripts/probe-mapping.ts` — assert the new spreads rather than print them.
+
+**Done when** — the first probe table shows `relative` spanning at least 0.35
+between byte 10 and byte 200 instead of 0.00, `auto-normalised` spanning at
+least 0.30 instead of 0.00, and the full-track trace showing `surge` above 0.2
+at more than one moment. On the phone, turning the music up makes the picture
+brighter and busier.
+**Verify** — `pnpm probe` for all three, then `views-probe.html?play` from
+entry 37 to see it, then real music on the phone. `pnpm build`, `pnpm lint`.
+**Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 39. Three more mappings, along the axes the first three do not use
+`status: ready` · added 2026-08-30
+
+**Do** — add `beat`, `dynamics` and `bass-led` to `MAPPINGS`.
+**Why** — asked for, and the gap is structural: **all three existing mappings
+differ only in how loudness is scaled.** None differs in what it listens to.
+
+**Decided**
+- The organising principle → `relative`, `speech-band` and `auto-normalised`
+  are the same analysis with three loudness curves over it, which is why they
+  feel like three settings of one thing rather than three instruments. The new
+  three each vary a different axis: **time** (`beat`), **dynamic range**
+  (`dynamics`), **spectrum** (`bass-led`). **Mine**, and this is the decision
+  most worth overturning if the taste is wrong, because everything else in the
+  entry follows from it.
+- `beat` → estimate the inter-onset interval from the existing `transient`
+  train, keep a phase that runs 0→1 across each beat, and drive `level` and the
+  bands from that phase rather than from instantaneous energy. The picture then
+  moves *with* the music rather than merely *at* it, and it keeps moving
+  through a bar where the energy is flat. **Mine**: it is the one change that
+  makes the app look like it knows what it is listening to, and the transient
+  detector it needs is already built and already proven by the ripple-spawn
+  cases at the end of `pnpm probe`.
+- `beat` must degrade honestly → with no stable interval it falls back to
+  `relative`'s behaviour rather than free-running at a guessed tempo. A
+  visualiser pulsing confidently at the wrong tempo is worse than one not
+  pulsing, because the error is legible to anyone in the room.
+- `dynamics` → fixed gain, no normalisation of any kind, with a slow ceiling
+  used only to prevent clipping. Quiet reads as quiet and loud reads as loud
+  across a whole track. This is what `speech-band` was reaching for before its
+  `GAIN` of 6 was tuned for a voice at a metre; the same idea calibrated for
+  music at room volume.
+- `bass-led` → weight `level` toward `low` and `transient`, and let `high` do
+  little. For anything kick-driven this is the honest mapping, and it is the
+  cheapest of the three to build: a re-weighting of numbers that already exist.
+- Six is the right number to stop at → `mapping` is one arc on the circular
+  surface, and the HUD's arcs already carry six merge modes
+  (`merge-modes.ts`), so six mappings need no new geometry and no new control.
+  A seventh would.
+- Not a Hard Stop, and this was checked rather than assumed → `prefs.ts:156`
+  validates with `parsed.mapping in MAPPINGS`, so a stored name that a build
+  does not know falls back instead of throwing; adding names is additive in
+  both directions. `mapping` does not appear in `share.ts`, so the shared-URL
+  shape is untouched. No new dependency: every one of the three is arithmetic
+  over `CommonAnalysis`.
+- Build after entry 38 → three of the new mappings' inputs are the ones that
+  entry come out of `CommonAnalysis`, `surge` included. Building these first
+  means calibrating them against a feature that is about to change.
+
+**Lands in**
+- `src/engine/fast.ts` — three factory functions beside the existing three,
+  and the `MAPPINGS` table at `:408`.
+- `scripts/probe-mapping.ts` — the tables iterate `MAPPINGS`, so the new three
+  appear in them for free; add a beat-tracking case to the 120bpm section.
+- `src/hud.ts` — nothing, if the mapping arc is built from `MAPPINGS` keys.
+  Confirm before building; if it is a hardcoded list of three, that is the one
+  place this entry touches the control surface.
+
+**Done when** — all six appear on the mapping arc and are selectable; in
+`pnpm probe`'s 120bpm section `beat` produces a phase that advances once per
+beat and falls back cleanly when the beat pattern is replaced by noise;
+`dynamics` spans at least 0.6 across the byte-10-to-200 table; `bass-led`
+shows `level` tracking `low` within 0.1 on the beat pattern. On the phone,
+switching mappings during one song visibly changes what the picture is
+responding to.
+**Verify** — `pnpm probe`, `views-probe.html?play` from entry 37 with the
+selector, then real music. On-screen check at 320×568 and 360×640 **only if**
+the HUD line above turns out to be needed — the mapping arc is a shared
+surface. `pnpm build`, `pnpm lint`.
+**Hard stops** — prefs no (additive union, validated by a membership test that
+already falls back) · url no · capture no · dependency no.
