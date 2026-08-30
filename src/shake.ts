@@ -341,9 +341,23 @@ export class Tumble {
    */
   gravity(): { x: number; y: number } {
     const cap = MAX_OFFSET * GRAVITY_FRACTION
+    const t = this.tilt()
+    return { x: t.x * cap, y: t.y * cap }
+  }
+
+  /**
+   * The uncapped tilt itself, -1..1 = sin(tilt) per axis — docs/todo.md
+   * entry 46. `gravity()` above is this multiplied by a cap that means
+   * something to the tumble (`MAX_OFFSET * GRAVITY_FRACTION`) and nothing to
+   * a grain of powder, which wants the raw figure to accelerate by instead.
+   * `gravity()` is expressed in terms of this rather than the reverse —
+   * dividing a capped value back out at a call site is how two meanings of
+   * "tilt" start drifting apart.
+   */
+  tilt(): { x: number; y: number } {
     return {
-      x: clampAbs(this.gravX / EARTH_G, 1) * cap,
-      y: clampAbs(this.gravY / EARTH_G, 1) * cap,
+      x: clampAbs(this.gravX / EARTH_G, 1),
+      y: clampAbs(this.gravY / EARTH_G, 1),
     }
   }
 
@@ -669,6 +683,8 @@ export interface ShakeSensor {
   takeDouble(): number
   /** The steady, motion-independent tilt offset. See Tumble.gravity. */
   gravity(): { x: number; y: number }
+  /** The same tilt, uncapped — docs/todo.md entry 46. See Tumble.tilt. */
+  tilt(): { x: number; y: number }
   /** Sample count, recent peak, and events discarded as unusable. For the
    *  numeric readout only. See Tumble. */
   diagnostics(): { samples: number; peak: number; rejected: number }
@@ -690,6 +706,7 @@ export function startShake(granted: boolean): ShakeSensor {
       takeStrong: () => 0,
       takeDouble: () => 0,
       gravity: () => ({ x: 0, y: 0 }),
+      tilt: () => ({ x: 0, y: 0 }),
       diagnostics: () => ({ samples: 0, peak: 0, rejected: 0 }),
       close: () => {},
     }
@@ -743,6 +760,7 @@ export function startShake(granted: boolean): ShakeSensor {
     takeStrong: () => tumble.takeStrong(),
     takeDouble: () => tumble.takeDouble(),
     gravity: () => tumble.gravity(),
+    tilt: () => tumble.tilt(),
     diagnostics: () => ({ ...tumble.diagnostics(), rejected }),
     close: () => window.removeEventListener('devicemotion', onMotion),
   }

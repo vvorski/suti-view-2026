@@ -39,6 +39,7 @@ import { hasMotionPermissionGate, intensity, startShake } from './shake'
 import { confirmBuzz, doubleBuzz, hapticStatus } from './haptics'
 import { IdlePreview } from './idle-preview'
 import { mountReleaseName, mountVersionHud, versionHudRunning } from './version'
+import { mountPowder } from './powder'
 import {
   ATMOSPHERIC_VIEWS,
   DEFAULT_ATMOSPHERIC_VIEW,
@@ -590,6 +591,63 @@ async function main(): Promise<void> {
   // audio.dt for this once the real render loop takes over below.
   let lastGateShakeAt = idleStart
 
+  // The powder easter egg — docs/todo.md entry 46. Wired here, before Start,
+  // since the entry's whole point is a secret found on the screen everyone
+  // sees first, not a mode reachable only after the app has already started.
+  // `() => shake.tilt()` closes over the `let` above rather than its value at
+  // this point, so it keeps reading whichever sensor `shake` is reassigned to
+  // once the gate's own motion permission resolves.
+  const powder = mountPowder(() => shake.tilt())
+  let stopGateTaps: () => void = () => {}
+  {
+    // Each tap has to land within this many milliseconds of the one before
+    // it to count toward the three — **Mine**, matching the entry's own
+    // number for the trigger.
+    const TAP_WINDOW_MS = 600
+    let tapCount = 0
+    let lastTapAt = 0
+    // On `document`, not `#gate` — "getting out" is the same three taps
+    // (Decided), landing on `#powder-canvas` while the gate is hidden, which
+    // is a DOM sibling of `#gate` rather than a descendant of it. A listener
+    // scoped to `#gate` would never see them once `#gate` is
+    // `display:none`, since a real tap cannot land on an element that is not
+    // rendered — only a synthetic, script-dispatched one can, which is how
+    // this gap first went unnoticed. `#version-hud` needs an explicit
+    // exclusion here that it did not need when the listener lived on
+    // `#gate`, for the same reason: it is a sibling, not a descendant, so it
+    // is not excluded "for free" by scoping any more.
+    //
+    // Removed the instant Start resolves (see below) — a `document`-level
+    // tap counter left running into the real session would mean three quick
+    // taps on the running picture itself (a thing entries 41/48/50 all make
+    // completely ordinary) could summon an easter egg mid-session. The
+    // powder is a fact about the gate, not about the app.
+    const onGateTap = (e: PointerEvent): void => {
+      // Every other control on this screen has the same claim to its own
+      // taps as Start does — a `closest()` test rather than a coordinate
+      // box, so this cannot drift when a later entry moves one of them
+      // around, and it applies in both directions: reload must not count
+      // toward either entering or leaving the powder.
+      if (e.target instanceof Element && e.target.closest('#start, #share, #qr, #version-hud')) return
+      const now = performance.now()
+      tapCount = now - lastTapAt <= TAP_WINDOW_MS ? tapCount + 1 : 1
+      lastTapAt = now
+      if (tapCount === 3) {
+        tapCount = 0
+        powder.toggle()
+        // "Swap the gate for a black field" is two elements changing
+        // together, not one: `#gate`'s own z-index (10) sits above
+        // `#powder`'s (6) so the black field would otherwise render
+        // underneath it, fully hidden, rather than replacing it. Hiding
+        // the gate rather than tearing it down is what makes "leaving must
+        // be exact" (Decided) free — there is nothing here to rebuild.
+        gate.hidden = powder.active
+      }
+    }
+    document.addEventListener('pointerup', onGateTap)
+    stopGateTaps = () => document.removeEventListener('pointerup', onGateTap)
+  }
+
   // Capped well below the display's own rate, and stopped outright once nobody
   // is there to see it. The idle preview (build 63) put the visualiser behind
   // the gate so the screen would not be a poster for an absent piece — but it
@@ -642,6 +700,11 @@ async function main(): Promise<void> {
   // weight on every pointer event for as long as the tab stays open.
   document.removeEventListener('pointerdown', resumeIdle)
   document.removeEventListener('pointermove', resumeIdle)
+  // The powder easter egg is a fact about the gate, not about the running
+  // app — docs/todo.md entry 46. Its tap counter goes with the gate rather
+  // than living on into the session, where three quick taps on the running
+  // picture are something entries 41/48/50 all make completely ordinary.
+  stopGateTaps()
   // The gate is going; the version chip drops to its running form — no name,
   // and a reload button that fades out of the way. See versionHudRunning().
   versionHudRunning()

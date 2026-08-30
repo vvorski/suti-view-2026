@@ -52,6 +52,28 @@
         height: 100%;
         display: block;
       }
+      /* The powder easter egg (docs/todo.md entry 46) — a black field over
+         the hidden picture, tap and drag to throw down white grains. Above
+         #canvas, below #gate: three taps on the gate's own background swap
+         one for the other by toggling `hidden` here rather than tearing the
+         gate down, so leaving restores it exactly as it was. A separate
+         layer and a separate canvas from the running piece's own, on
+         purpose — the mode is all black, so nothing the WebGL canvas draws
+         is ever visible at the same time it is, and a 2D canvas is a few
+         dozen lines against a shader-side feature that would need six
+         geometric fragment shaders taught about a mode none of them show. */
+      #powder {
+        position: fixed;
+        inset: 0;
+        z-index: 6;
+        background: #000;
+      }
+      #powder[hidden] { display: none; }
+      #powder-canvas {
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
       /* Opacity, not display: a shake fires inside the render loop and the
          transition needs a frame to actually animate rather than jumping
          straight to invisible. Layered above the canvas, below the gate. */
@@ -377,6 +399,14 @@
   </head>
   <body>
     <canvas id="canvas"></canvas>
+
+    <!-- The powder easter egg (docs/todo.md entry 46) — hidden by default,
+         shown only while main.ts's three-tap recogniser on the gate has it
+         open. See the style rule above for why it sits above #canvas and
+         below #gate. -->
+    <div id="powder" hidden>
+      <canvas id="powder-canvas"></canvas>
+    </div>
 
     <!-- Debug-only: flashes white on a detected shake, so "did anything fire"
          is answerable by eye when the phone that reported the bug is not

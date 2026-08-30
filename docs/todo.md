@@ -4035,7 +4035,71 @@ rather than removed, per the `mix` precedent · url **no**: `?auto=0` keeps its
 meaning · capture no · dependency no.
 
 ### 46. Three taps on the gate open the powder
-`status: ready` · added 2026-08-30
+`status: done` · added 2026-08-30 · shipped at build 180
+
+**Build note** — `src/powder.ts` (new), a `#powder`/`#powder-canvas` pair in
+`index.html` (z-index 6, between `#canvas` and `#gate`'s 10), and
+`shake.ts`'s `tilt()` (uncapped, `gravity()` now expressed in terms of it),
+all per Decided. The three-tap recogniser and the swap landed in `main.ts`
+as planned, but not where the entry's own Lands-in text put it — see the
+real bug below, found by testing rather than by reading.
+
+**A real bug, caught only by simulating a real tap rather than a
+script-dispatched one**: the recogniser was first written on `#gate`
+itself, which reads naturally ("taps on the gate's own background") but is
+wrong once powder is *active* — `#gate` is `display:none` at that point,
+and a real finger cannot land on an element that is not rendered. Only a
+`dispatchEvent()` called directly on the element bypasses hit-testing and
+fires anyway, which is exactly why this passed a first, naive check and
+would have shipped broken: the "getting out" gesture (Decided: "the same
+three taps") would never have fired for an actual person, because their
+tap lands on `#powder-canvas` — a DOM sibling of `#gate`, not a
+descendant — which the `#gate`-scoped listener never sees. Fixed by moving
+the listener to `document` and excluding `#version-hud` explicitly, which
+it did not need before: that exclusion used to be free (the reload glyph
+lives outside `#gate`'s subtree, so a `#gate`-scoped listener never saw it
+either), and stops being free the moment the listener moves to `document`.
+Re-verified against `#powder-canvas` as the actual dispatch target for the
+exit gesture, and it now works.
+
+**A second gap found in the same pass, before it could ship**: a
+`document`-level tap counter with no lifetime bound would still be
+listening after Start, where three quick taps on the running picture are
+something entries 41/48/50 all make completely ordinary — summoning the
+easter egg mid-session. Fixed by capturing the listener behind a
+`stopGateTaps` closure, called the instant `waitForStart()` resolves,
+right beside the existing `resumeIdle` listener cleanup that already runs
+at that exact point for the same reason.
+
+The cap-and-fade (3000 grains, oldest 200 fading linearly before removal)
+and the physics constants (tilt accel, drag, burst size/spread, per-pixel
+drag density) are all **Mine** — the entry names none of them, and calls
+the 3000 figure itself "a starting point… the numeric readout is what
+settles it," which this entry does not add a readout line for. Grains are
+walled at the canvas edge (velocity zeroed, position clamped) rather than
+wrapping or falling through, since nothing in the entry says powder should
+leave the screen it is confined to.
+
+Verified live: `getTilt()`'s wiring closes over the same `let shake`
+`main.ts` reassigns once motion permission resolves, so it reads whichever
+sensor is live without powder.ts holding a second reference. Confirmed via
+synthetic `PointerEvent`s at both 320×568 and 360×640 (iframe technique):
+three taps on the gate's background swap it for the black field and back;
+taps on `#start`/`#share`/`#qr`/`#version-hud` never count toward the
+three, in either direction; a tap sprays a burst and a drag lays a line
+along its path, confirmed by `getImageData` pixel counts at both widths
+(not by screenshot alone — a nested-iframe compositing artifact in this
+harness left one of the two screenshots visually stale despite the DOM and
+canvas state being verified identical and correct by direct inspection).
+`requestAnimationFrame` had to be overridden to fire on a `setTimeout`
+rather than a real frame, since this remote-controlled tab reports
+`visibilityState: 'hidden'` and never calls a real `rAF` callback at
+all — the same root cause behind the CSS-transition issue found in entry
+44's build. Not verified: tilt sliding the powder (this harness has no
+accelerometer and cannot synthesize `devicemotion`), the frame-time figure
+with the canvas full of grains, and anything on an actual phone — all
+explicitly named in the entry's own Verify text as needing a real device.
+`pnpm build`, `pnpm lint` both clean.
 
 **Do** — three rapid taps on the start screen, away from its controls, swap the
 gate for a black field. Tapping it throws down white powder; dragging pushes
