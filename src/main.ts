@@ -35,7 +35,7 @@ import { mountShare } from './share'
 import { Director } from './director'
 import { createVisualiser, type Visualiser } from './scene'
 import { RELEASE_NAME } from './release-name'
-import { SlowAnalysis } from './engine'
+import { SlowAnalysis, createPostureState, updatePosture } from './engine'
 import { hasMotionPermissionGate, intensity, startShake, STILL_FRAME, type ShakeFrame } from './shake'
 import { confirmBuzz, doubleBuzz, hapticStatus } from './haptics'
 import { IdlePreview } from './idle-preview'
@@ -936,6 +936,9 @@ async function main(): Promise<void> {
   // five-minute buffer.
   const slow = new SlowAnalysis()
   const director = new Director()
+  // docs/todo.md entry 90 — how the phone is currently being held, so the
+  // director can pace itself by posture rather than one fixed cadence.
+  const postureState = createPostureState()
 
   /** Held open only while passthrough is actually showing. See applyPassthrough. */
   let cameraSource: CameraSource | null = null
@@ -1513,6 +1516,19 @@ async function main(): Promise<void> {
       // and tuned, and a second copy would be a second set of constants to
       // keep in step.
       const character = slow.update(audio, params)
+      // docs/todo.md entry 90 — fed from the *previous* frame's sensor
+      // snapshot (`latestShake` is not reassigned until below): one frame
+      // of lag against a classifier whose own dwell is ten seconds and
+      // whose level reading is an 8s mean is not worth reordering the
+      // shake/tumble sequencing below to avoid.
+      const posture = updatePosture(
+        postureState,
+        audio.dt,
+        latestShake.disturb,
+        latestShake.events.length > 0,
+        params.bpm,
+        params.beatConfidence,
+      )
       if (!autoOverrideOff) {
         // docs/todo.md entry 81 — beatPhase/beatConfidence, both already on
         // params (entry 75), are what let the director hold a decision for
@@ -1526,6 +1542,7 @@ async function main(): Promise<void> {
           },
           params.beatPhase,
           params.beatConfidence,
+          posture.posture,
         )
         if (next) panel.adopt(next)
       }
@@ -1596,6 +1613,10 @@ async function main(): Promise<void> {
         // Reported whether or not autopilot is on, so the readout answers
         // "why has nothing changed" in both cases: off, or on and waiting.
         director: director.status(),
+        // docs/todo.md entry 90 — five states that silently change the
+        // director's cadence, with no way to see which is active, being
+        // exactly the shape of every diagnosis problem this project has had.
+        handling: posture,
         warm: character.warm,
         haptics: hapticStatus(),
         fullscreen: fullscreenStatus(),

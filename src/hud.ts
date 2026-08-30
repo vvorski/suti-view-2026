@@ -214,6 +214,17 @@ export interface Hud {
        *  docs/todo.md entry 58. See motion-bias.ts's own file comment for
        *  what each of the three means. */
       motion?: { posture: number; disturbance: number; agitation: number }
+      /** docs/todo.md entry 90 — how the phone is currently being held.
+       *  Named `handling` rather than `posture` to stay clear of `motion`'s
+       *  own `posture` field above, a tilt magnitude that predates this and
+       *  means something else entirely. */
+      handling?: {
+        posture: 'still' | 'carried' | 'driving' | 'dancing' | 'handled'
+        candidate: 'still' | 'carried' | 'driving' | 'dancing' | 'handled'
+        candidateHeld: number
+        periodicHz: number
+        periodicStrength: number
+      }
       /** The clock's own current pair, and the outdoor-reading override's
        *  own fade position — docs/todo.md entry 53. */
       sky?: { daylight: number; warmth: number; override: number }
@@ -1461,6 +1472,21 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
                     : `auto ${s.director.candidate ?? '—'} ` +
                       `${Math.floor(s.director.candidateHeld)}s  ` +
                       `next ${Math.ceil(s.director.tillView)}s`,
+            ]),
+        // docs/todo.md entry 90 — five states that silently change the
+        // director's own cadence, reported for the same reason the director
+        // line above is: a silent classifier is indistinguishable from a
+        // broken one. `candidate` shown only while it differs from the
+        // reported `posture` — the ~10s it takes to settle in is otherwise
+        // just noise next to the number that actually governs anything.
+        ...(s.handling === undefined
+          ? []
+          : [
+              `hold ${s.handling.posture}` +
+                (s.handling.periodicHz > 0 ? ` ${s.handling.periodicHz.toFixed(1)}Hz` : '') +
+                (s.handling.candidate !== s.handling.posture
+                  ? `  →${s.handling.candidate} ${Math.floor(s.handling.candidateHeld)}s`
+                  : ''),
             ]),
         // Separates "nothing asked for a buzz" from "asked and refused" from
         // "asked, accepted, and the phone did nothing you could feel".

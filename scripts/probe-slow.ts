@@ -163,7 +163,7 @@ for (const sec of ARRANGEMENT) {
     const params = mapping.update(makeFrame(sec, hit))
     const c = slow.update({ freq, time, binCount: BINS, sampleRate: SR, dt: DT }, params)
 
-    const next = director.update(c, DT, current, params.beatPhase, params.beatConfidence)
+    const next = director.update(c, DT, current, params.beatPhase, params.beatConfidence, 'handled')
     if (next) {
       const bits: string[] = []
       if (next.geoColour) {
@@ -252,7 +252,7 @@ console.log('\nBar-quantisation (entry 81), driven directly:\n')
   //    before this entry.
   {
     const d = new Director()
-    const next = d.update(dueCharacter, DT, idleCurrent, 0, 0)
+    const next = d.update(dueCharacter, DT, idleCurrent, 0, 0, 'handled')
     check('confidence 0 fires immediately', next?.geoColour !== undefined, `next=${JSON.stringify(next)}`)
   }
 
@@ -266,13 +266,13 @@ console.log('\nBar-quantisation (entry 81), driven directly:\n')
     let phase = 0
     for (let i = 0; i < 3; i++) {
       phase = 0.9
-      d.update({ ...BLANK, warm: true }, 0, idleCurrent, phase, 1)
+      d.update({ ...BLANK, warm: true }, 0, idleCurrent, phase, 1, 'handled')
       phase = 0.1
-      d.update({ ...BLANK, warm: true }, 0, idleCurrent, phase, 1)
+      d.update({ ...BLANK, warm: true }, 0, idleCurrent, phase, 1, 'handled')
     }
     // The fourth wrap lands on the actual due-check call itself.
-    const next = d.update(dueCharacter, DT, idleCurrent, 0.9, 1)
-    const arrived = d.update(dueCharacter, DT, idleCurrent, 0.1, 1)
+    const next = d.update(dueCharacter, DT, idleCurrent, 0.9, 1, 'handled')
+    const arrived = d.update(dueCharacter, DT, idleCurrent, 0.1, 1, 'handled')
     check(
       'confidence 1, bar arriving on the due frame, fires immediately',
       next === null && arrived?.geoColour !== undefined,
@@ -284,7 +284,7 @@ console.log('\nBar-quantisation (entry 81), driven directly:\n')
   //    exactly when the bar arrives.
   {
     const d = new Director()
-    const first = d.update(dueCharacter, DT, idleCurrent, 0, 1)
+    const first = d.update(dueCharacter, DT, idleCurrent, 0, 1, 'handled')
     check('confidence 1, no bar yet, holds rather than firing', first === null, `next=${JSON.stringify(first)}`)
     check('holding is visible on status()', d.status().waitingForBar, 'waitingForBar was false')
 
@@ -295,9 +295,9 @@ console.log('\nBar-quantisation (entry 81), driven directly:\n')
     let released: ReturnType<Director['update']> = null
     for (let i = 0; i < 4 && !released; i++) {
       phase = 0.9
-      d.update({ ...BLANK, warm: true }, DT, idleCurrent, phase, 1)
+      d.update({ ...BLANK, warm: true }, DT, idleCurrent, phase, 1, 'handled')
       phase = 0.1
-      const r = d.update({ ...BLANK, warm: true }, DT, idleCurrent, phase, 1)
+      const r = d.update({ ...BLANK, warm: true }, DT, idleCurrent, phase, 1, 'handled')
       if (r) released = r
     }
     check('released once the bar line arrives', released?.geoColour !== undefined, `released=${JSON.stringify(released)}`)
@@ -308,10 +308,10 @@ console.log('\nBar-quantisation (entry 81), driven directly:\n')
   //    releases it within a frame rather than never.
   {
     const d = new Director()
-    const first = d.update(dueCharacter, DT, idleCurrent, 0, 1)
+    const first = d.update(dueCharacter, DT, idleCurrent, 0, 1, 'handled')
     check('holds at full confidence', first === null, `next=${JSON.stringify(first)}`)
     // Confidence collapses (tempo lost) without a bar ever arriving.
-    const second = d.update({ ...BLANK, warm: true }, DT, idleCurrent, 0, 0)
+    const second = d.update({ ...BLANK, warm: true }, DT, idleCurrent, 0, 0, 'handled')
     check('a dropped lock releases the held decision rather than stranding it', second?.geoColour !== undefined, `second=${JSON.stringify(second)}`)
   }
 
@@ -319,7 +319,7 @@ console.log('\nBar-quantisation (entry 81), driven directly:\n')
   //    the user" applies to a decision not yet landed too.
   {
     const d = new Director()
-    const first = d.update(dueCharacter, DT, idleCurrent, 0, 1)
+    const first = d.update(dueCharacter, DT, idleCurrent, 0, 1, 'handled')
     check('holds before the manual change', first === null, `next=${JSON.stringify(first)}`)
     d.suspend()
     check('suspend clears the pending decision', d.status().waitingForBar === false, 'still waiting after suspend')
@@ -330,7 +330,7 @@ console.log('\nBar-quantisation (entry 81), driven directly:\n')
     let reappeared = false
     for (let i = 0; i < 400; i++) {
       phase = (phase + 0.05) % 1
-      const r = d.update({ ...BLANK, warm: true }, DT, idleCurrent, phase, 1)
+      const r = d.update({ ...BLANK, warm: true }, DT, idleCurrent, phase, 1, 'handled')
       if (r) reappeared = true
     }
     check('the discarded decision never reappears on its own', !reappeared, 'a stale decision fired after suspend')
@@ -374,7 +374,7 @@ console.log('\nPer-layer holds (entry 84), over several minutes:\n')
   for (let phase = 0; phase < PHASES; phase++) {
     const flavour = phase % 2 === 0 ? FLAVOUR_A : FLAVOUR_B
     for (let s = 0; s < PHASE_S; s += DT) {
-      const next = d.update(flavour, DT, current, 0, 0)
+      const next = d.update(flavour, DT, current, 0, 0, 'handled')
       if (next?.geoColour) {
         colourOffsets.push(s)
         current = { ...current, geoColour: next.geoColour }
@@ -449,7 +449,7 @@ console.log('\nPer-layer holds (entry 84), over several minutes:\n')
     s.suspend()
     let fired = false
     for (let i = 0; i < Math.round(25 / DT); i++) {
-      if (s.update(FLAVOUR_B, DT, idle, 0, 0)) fired = true
+      if (s.update(FLAVOUR_B, DT, idle, 0, 0, 'handled')) fired = true
     }
     check('SUSPEND silences both axes, not just one', !fired, 'a directive fired while suspended')
   }
@@ -504,7 +504,7 @@ console.log('\nA flat input (entry 89):\n')
   while (t2 < RUN_S) {
     const params = flatMapping.update(makeFrame(FLAT_SECTION, 0))
     const c = flatSlow.update({ freq, time, binCount: BINS, sampleRate: SR, dt: DT }, params)
-    const next = flatDirector.update(c, DT, flatCurrent, params.beatPhase, params.beatConfidence)
+    const next = flatDirector.update(c, DT, flatCurrent, params.beatPhase, params.beatConfidence, 'handled')
     if (next?.geoColour && colourFireAt === null) {
       colourFireAt = t2
       flatCurrent.geoColour = next.geoColour
@@ -570,7 +570,7 @@ console.log('\nA due-but-blocked window, driven directly (entry 89):\n')
   let t3 = 0
   const TOTAL = COLOUR_HOLD + BOUNDARY_RAMP + 5
   while (t3 < TOTAL) {
-    const next = d.update(nearby, DT, idleCurrent, 0, 0)
+    const next = d.update(nearby, DT, idleCurrent, 0, 0, 'handled')
     if (next?.geoColour) {
       firedAt = t3
       break

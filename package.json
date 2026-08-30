@@ -24,6 +24,7 @@
     "probe:sky": "node --experimental-strip-types scripts/probe-sky.ts",
     "probe:tap": "node --experimental-strip-types scripts/probe-tap.ts",
     "probe:rgb-slip": "node --experimental-strip-types scripts/probe-rgb-slip.ts",
+    "probe:posture": "node --experimental-strip-types scripts/probe-posture.ts",
     "format": "prettier --write .",
     "deploy": "./deploy/deploy.sh"
   },

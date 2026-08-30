@@ -33,6 +33,27 @@
 import type { GeoColour } from './geo-colour'
 import type { Character } from './engine'
 import type { AtmosphericViewName } from './views'
+import type { Posture } from './engine'
+
+/**
+ * docs/todo.md entry 90 — multipliers on `COLOUR_HOLD`/`VIEW_HOLD` by how
+ * the phone is currently being held. Multipliers rather than five pairs of
+ * constants, so the base numbers stay the one place either hold is tuned.
+ * `still` is the *shortest* hold, not the longest — Victor's own call,
+ * against every restraint this project chose while the picture was
+ * something left running: a phone alone on a table has nothing else
+ * supplying change, so the director is the only thing that can. `handled`
+ * carries no multiplier of its own; a person actively playing with the
+ * phone is already covered by `SUSPEND`, unchanged by this entry. The exact
+ * figures are **Mine**; the ordering is Decided's.
+ */
+const HOLD_SCALE: Record<Posture, number> = {
+  still: 0.55,
+  dancing: 0.7,
+  driving: 1.3,
+  carried: 1.8,
+  handled: 1,
+}
 
 /** Seconds of hands-off after any manual change. Used to be 180 — long enough
  *  to cover the length of most tracks — but the autopilot is unconditional
@@ -250,6 +271,12 @@ export class Director {
    *  did fire, or the autopilot is suspended/holding for a bar — see
    *  `status()`'s own comment for why this exists. */
   private blocked: string | null = null
+  // docs/todo.md entry 90 — the hold values `update()` last actually used,
+  // so `status()` reports `tillColour`/`tillView` against the same posture
+  // scale the decision itself is being judged by, not the flat, unscaled
+  // constant.
+  private colourHold = COLOUR_HOLD
+  private viewHold = VIEW_HOLD
 
   /** Call whenever the user changes anything by hand. */
   suspend(): void {
@@ -309,8 +336,8 @@ export class Director {
   } {
     return {
       suspended: Math.max(0, this.suspended),
-      tillColour: Math.max(0, COLOUR_HOLD - this.sinceColour),
-      tillView: Math.max(0, VIEW_HOLD - this.sinceView),
+      tillColour: Math.max(0, this.colourHold - this.sinceColour),
+      tillView: Math.max(0, this.viewHold - this.sinceView),
       candidate: this.candidate,
       candidateHeld: this.candidateHeld,
       waitingForBar: this.pending !== null,
@@ -332,6 +359,14 @@ export class Director {
    * on the spot — quantised to the beat when the tracker is confident,
    * blending continuously to immediate as confidence falls, per that
    * entry's own "no threshold to tune".
+   *
+   * `posture` is docs/todo.md entry 90 — required rather than defaulted,
+   * because the one posture whose behaviour is safest for `posture.ts`
+   * itself to guess (`'still'`) is also the *fastest* hold on this file's
+   * own ladder, and a silent default here would retune every existing
+   * caller's timing rather than only the ones that actually want it. Pass
+   * `'handled'` (×1, `HOLD_SCALE`'s own neutral entry) for today's unscaled
+   * COLOUR_HOLD/VIEW_HOLD.
    */
   update(
     c: Character,
@@ -339,7 +374,12 @@ export class Director {
     current: { geoColour: GeoColour; atmosphericView: AtmosphericViewName },
     beatPhase: number,
     beatConfidence: number,
+    posture: Posture,
   ): Directives | null {
+    const scale = HOLD_SCALE[posture]
+    this.colourHold = COLOUR_HOLD * scale
+    this.viewHold = VIEW_HOLD * scale
+
     this.sinceColour += dt
     this.sinceView += dt
 
@@ -394,7 +434,7 @@ export class Director {
     // codebase keep meaning "the director may act" without also having to
     // name the medium flag explicitly.
     if (c.warmMedium || c.warm) {
-      const overdue = this.sinceColour - COLOUR_HOLD
+      const overdue = this.sinceColour - this.colourHold
       if (overdue >= 0) {
         const wanted = colourFor(c)
         const step = distance(wanted, current.geoColour)
@@ -424,7 +464,7 @@ export class Director {
     // long axes it reads are not the ones entry 89's medium-window relief
     // applies to.
     if (c.warm && this.candidate !== null && this.candidateHeld >= VIEW_STABLE) {
-      const overdue = this.sinceView - VIEW_HOLD
+      const overdue = this.sinceView - this.viewHold
       if (overdue >= 0) {
         // docs/todo.md entry 89 — once a view change has been due for a full
         // BOUNDARY_RAMP with the suggestion still matching what is already

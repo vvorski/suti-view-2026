@@ -9879,7 +9879,84 @@ phone left playing to room noise for five minutes.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 90. Still, carried, driving, dancing — the phone knows which
-`status: building` · added 2026-08-30 · build after 88 · still-is-loudest confirmed 2026-08-30
+`status: done` · added 2026-08-30 · still-is-loudest confirmed 2026-08-30 · build 308
+
+**Build note (Mine as to the constants, the test designs below, and one
+naming call; the classification rules themselves follow Decided)** —
+`src/engine/posture.ts` is a slow mean of `disturb` for the level band
+(`LEVEL_TAU = 8`, so a traffic-light stop's few seconds near zero never reads
+as the level having actually dropped) plus an autocorrelation over a
+decimated 10 Hz ring buffer for the gait band, same construction as
+`slow.ts`'s own `computeTempo()`: search a lag range for the best correlation
+and compare its height against the mean of every lag tested.
+
+That autocorrelation needed real tuning the first pass got wrong. At the
+window length and threshold I started with, pure broadband noise (the
+`driving()` trace) produced a spurious "best lag" read as real periodicity on
+well over half of all ticks — measured directly: 88.9% false-positive rate at
+a 6s window, still 58% at 10s. A narrow, 6-8-lag gait-band search over a
+bounded window makes noise's own highest bump a routine occurrence, not a
+rare one. Fixed with two changes together, tuned as a pair against the same
+probe trace: the window grew to 12s (`GAIT_SECONDS`), and the raw per-tick
+reading is smoothed over an 8s EMA (`PERIODIC_TAU`) before `GAIT_STRENGTH_MIN`
+(raised from an initial 0.3 to 0.5) ever looks at it — comfortably above the
+smoothed noise ceiling (~0.33) and below where a real gait settles (~0.95-1.0).
+A second, smaller bug came with it: `periodicHz` could report the search
+range's own floor lag during a tick where the variance guard rejected
+computing a real one, if the smoothed strength was still above threshold from
+an earlier genuine detection. Fixed with a `lastLag` field that only updates
+on a successful computation, so `periodicHz` never means "the default" while
+looking like a real reading.
+
+`Director.update()` gained a required (not defaulted) sixth parameter,
+`posture: Posture`, scaling `COLOUR_HOLD`/`VIEW_HOLD` by `HOLD_SCALE`. Required
+rather than defaulted on purpose: the posture whose behaviour is safest for
+`posture.ts` itself to get wrong, `'still'`, is also the *fastest* multiplier
+on the ladder (×0.55) — a silent default would have retroactively retuned
+every existing call site's timing rather than only the ones that actually
+want scaling. Every pre-entry-90 call site in `probe-slow.ts` and `main.ts`
+now passes `'handled'` (×1, `HOLD_SCALE`'s own neutral entry) explicitly.
+
+Two probe checks needed a redesign, not a tuning pass, to actually test what
+they claimed to:
+
+- The traffic-light check first read the *entire* posture history for any
+  `'still'`, including the classifier's own unavoidable cold-start window —
+  `state.posture` starts at `'still'` by construction and cannot report
+  anything else until `POSTURE_DWELL` (10s) has held a new candidate, which
+  for `driving()` takes on the order of ten-odd seconds even with nothing
+  going wrong. That is a startup artifact, not the traffic-light stop the
+  check exists to catch. Fixed to find where `'driving'` is first reported
+  and only check for `'still'` reappearing from that point on — the actual
+  40-45s stop sits well past it.
+- The hold-scale check constructed two fresh `Director`s and compared their
+  time to *first* fire under `'still'` vs `'dancing'`. Both fired at 0.0s,
+  because `Director`'s own `sinceColour` field is pre-loaded at the flat,
+  unscaled `COLOUR_HOLD` (25) in its constructor — which already exceeds
+  *both* postures' scaled holds (13.75s, 17.5s) before `update()` is ever
+  called once, so the very first fire is instant under either and proves
+  nothing. Fixed by measuring the gap between the *first* fire (preload
+  driven, discarded) and the *second* (a clean read of the scaled hold from
+  `sinceColour = 0`, since the test's `current` colour is never fed back
+  after firing and stays due at the same distance forever) — 13.8s under
+  `still`, 17.5s under `dancing`, matching `HOLD_SCALE` exactly.
+
+One naming collision: `hud.ts`'s stats type already has `motion.posture` (a
+tilt-magnitude number, entry 58) unrelated to this entry's `Posture` string
+union. The new HUD field is `handling`, not `posture`, to keep the two apart
+at both ends.
+
+Verification is code-reading and the probe only. `probe:posture` was written
+before this note and passes all fifteen checks (four postures classify and
+hold, the periodicity-not-level discriminator proof, the traffic-light stop,
+and the hold-scale gap); `probe:slow`'s existing suite still passes unchanged
+with `'handled'` threaded through every pre-existing call site. The new HUD
+line (`hold <posture> …`) was reviewed by reading `hud.ts`'s layout rather
+than seen live: this environment's `getUserMedia` refusal, already disclosed
+for earlier entries touching this HUD, blocks running the actual app to
+screenshot it. A phone in a real car and on a real dancefloor — Decided's own
+stated caveat that only that test can confirm "driving" and "dancing" mean
+what the numbers think they mean — has not happened either.
 
 **Do** — classify how the phone is being held into a handful of named postures,
 and let the director's cadence follow.
