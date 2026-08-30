@@ -5236,7 +5236,51 @@ because the harness cannot tell you whether the night end is too dark to enjoy.
 **no geolocation** — see the first decision.
 
 ### 54. A shake says so, in light
-`status: building` · added 2026-08-30 · started 2026-08-30
+`status: done` · added 2026-08-30 · shipped at build 200
+
+**Build note** — `#shake-pulse` (new, `index.html`), an inward
+`box-shadow` at the frame's edges rather than a full-screen tint, driven
+by a `--pulse-amt` CSS custom property `shakePulse()` sets from
+`intensity(peak)` before adding an `.on`/`.double` class. Both classes
+restart their own animation via the same offsetWidth-reflow trick
+`flashShake`'s double path already used — needed for `.on` too now, since
+an `animation` (unlike `#shake-flash`'s `.on`, which is a plain
+`transition`) does not restart just from re-adding a class that was never
+removed for a frame. `PULSE_MIN`/`PULSE_MAX` (0.15/0.9) are **Mine** — the
+entry says "scale with depth" but names no floor, and 0 would mean the
+gentlest qualifying shake produces no visible confirmation at all, which
+is the exact failure this entry exists to close.
+
+Found and fixed one timing imprecision before it shipped: the double
+keyframes' second peak first landed at 55% of a 410ms animation (≈225ms),
+not the ~190ms Decided actually asks for. Recomputed to land the second
+peak at 46% (188.6ms, confirmed via `getAnimations()`'s own timing
+resolution rather than eyeballing the percentages).
+
+Verified live via `index.html`'s real `#shake-pulse` element (present
+regardless of Start, unlike `shakePulse()`'s own JS which lives inside
+`main.ts`'s Start-gated closure and isn't separately callable) — the
+function's exact logic replicated against the real DOM and real CSS: a
+light shake (peak 8.5, just past `STRONG_UP`) set `--pulse-amt` to 0.1875;
+a hard one (peak 18, at `PEAK_CEILING`) set it to 0.9, confirming the
+scaling. `el.getAnimations()` (not real-time playback, which this
+backgrounded remote-controlled tab throttles into not advancing at all —
+the same harness limitation hit repeatedly this session) confirmed the
+single pulse's declared keyframes (0.9 → 0, 220ms) and the double's
+(0.7 → 0.05 → 0.7 → 0, 410ms, second peak at 188.6ms) match Decided
+exactly. A forced-visible screenshot at 320×568 confirms the effect reads
+as a glow at the frame's edges with the centre of the picture still dark
+— "knocked rather than lit," not a flash — and a second check at 360×640
+confirmed the same computed opacity on that frame too (its own screenshot
+came back visually blank, the same nested-iframe compositing artifact
+found in earlier entries this session, not a real difference — the
+computed style was checked directly rather than trusted from the image
+alone). `pnpm build`, `pnpm lint`, and `pnpm probe:shake` (named
+explicitly in Verify, confirming the detector itself is untouched) all
+pass. Not verified: shaking a real phone once and twice and telling them
+apart by feel, which the entry's own Verify text says only that can
+answer, and the reduced-motion variant's own real-time playback, for the
+same throttling reason.
 
 **Do** — give a detected shake a visible confirmation that scales with how hard
 it was and tells a single from a double, always on, not gated behind the

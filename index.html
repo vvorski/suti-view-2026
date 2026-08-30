@@ -113,6 +113,74 @@
         #shake-flash { transition: none; }
         #shake-flash.double { animation: none; }
       }
+      /* docs/todo.md entry 54. `#shake-flash` is the diagnostic — gated
+         behind the numeric readout, and it stays exactly as it is, for the
+         job it already does well. This is the feedback everyone gets,
+         always on: entry 40 abandoned the buzz, which leaves the shake as
+         the one gesture in the app with no confirmation at all in
+         ordinary use. A brief inward pulse at the frame's edges rather
+         than another full-screen flash — "the picture looks knocked
+         rather than lit" is the whole shape of it, and a flash on every
+         shake once this ships permanently would turn a quiet instrument
+         into a strobe, exactly the trap `#shake-flash`'s own comment
+         already named. `--pulse-amt`, set from JS via `intensity()`, is
+         how a light shake gets a faint edge and a hard one gets an
+         unmistakable one — one normaliser, a third consumer alongside the
+         buzz and the shuffle's own depth. */
+      #shake-pulse {
+        position: fixed;
+        inset: 0;
+        z-index: 5;
+        pointer-events: none;
+        opacity: 0;
+        box-shadow: inset 0 0 14vmin 3vmin rgba(255, 255, 255, 0.9);
+      }
+      /* ~220ms — an eye can resolve this; the buzz's own 26ms on-pulses
+         cannot be borrowed here for exactly that reason. */
+      #shake-pulse.on {
+        animation: shake-pulse 220ms ease-out;
+      }
+      /* Two peaks ~190ms apart, the same shape `#shake-flash.double` above
+         already uses for the same reason: a double has to read as two
+         events, not one longer one. */
+      #shake-pulse.double {
+        animation: shake-pulse-double 410ms ease-out;
+      }
+      @keyframes shake-pulse {
+        0%   { opacity: var(--pulse-amt, 0.6); }
+        100% { opacity: 0; }
+      }
+      @keyframes shake-pulse-double {
+        /* 410ms total; the second peak lands at 46% = ~190ms, matching the
+           entry's own "about 190ms between the two of a double". */
+        0%   { opacity: var(--pulse-amt, 0.6); }
+        30%  { opacity: 0.05; }
+        46%  { opacity: var(--pulse-amt, 0.6); }
+        100% { opacity: 0; }
+      }
+      /* Softened, not removed — deleting the only confirmation this
+         gesture has would reinstate the exact bug for anyone who asked
+         for less movement. Lower peak opacity (a settle, not a pulse) and
+         a longer fade, the same call version.ts already makes for the
+         fresh-build dot: "it still goes green; it just stops blinking." */
+      @media (prefers-reduced-motion: reduce) {
+        #shake-pulse.on {
+          animation: shake-pulse-reduced 500ms ease-out;
+        }
+        #shake-pulse.double {
+          animation: shake-pulse-double-reduced 700ms ease-out;
+        }
+      }
+      @keyframes shake-pulse-reduced {
+        0%   { opacity: calc(var(--pulse-amt, 0.6) * 0.5); }
+        100% { opacity: 0; }
+      }
+      @keyframes shake-pulse-double-reduced {
+        0%   { opacity: calc(var(--pulse-amt, 0.6) * 0.5); }
+        45%  { opacity: 0.03; }
+        60%  { opacity: calc(var(--pulse-amt, 0.6) * 0.5); }
+        100% { opacity: 0; }
+      }
       /* docs/todo.md entry 41. A glyph rather than a full-screen tint —
          `#shake-flash`'s white already means "a shake was detected" when the
          readout is on, and this needs to read as a different event from
@@ -432,6 +500,11 @@
          is answerable by eye when the phone that reported the bug is not
          wired to a console. See shakeFlash() in main.ts. -->
     <div id="shake-flash" aria-hidden="true"></div>
+
+    <!-- Always on, unlike shake-flash above — docs/todo.md entry 54. This
+         is the confirmation everyone gets that a shake was accepted; see
+         shakePulse() in main.ts. -->
+    <div id="shake-pulse" aria-hidden="true"></div>
 
     <!-- Confirms a screenshot was saved (docs/todo.md entry 41) — a camera
          glyph, not the shake flash's plain white: with the numeric readout

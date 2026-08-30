@@ -391,6 +391,15 @@ function shuffled(
 /**
  * Flash the screen white on a detected shake, when the numeric readout is on.
  *
+ * The diagnostic, not the feedback — docs/todo.md entry 54 adds
+ * `shakePulse()` below as the confirmation everyone gets, always on; this
+ * one stays exactly as it is, gated and full-screen, for the debugging job
+ * it already does well. The two now sit next to each other and the
+ * difference is not obvious from the names alone, so: this is for someone
+ * who already suspects a bug and turned the readout on to look for one;
+ * `shakePulse()` is for someone who just shook the phone and wants to know
+ * it heard them.
+ *
  * Built for one report: "the shake isn't working, no double detection" — with
  * nothing to check it against but the eye. `probe:shake` passes every
  * synthetic case for both single and double, and `main.ts` calls `takeDouble`
@@ -421,6 +430,44 @@ function flashShake(double: boolean): void {
     el.classList.add('on')
     requestAnimationFrame(() => el.classList.remove('on'))
   }
+}
+
+/** Faintest and boldest a shake pulse's edge ever gets — docs/todo.md
+ *  entry 54. `intensity()` is 0 at the gentlest qualifying shake and 1 at
+ *  PEAK_CEILING, and 0 opacity would mean the gentlest shake that counts
+ *  produces no confirmation at all — the exact failure this entry exists
+ *  to close. **Mine**, no value named in the entry beyond "scale with
+ *  depth". */
+const PULSE_MIN = 0.15
+const PULSE_MAX = 0.9
+
+/**
+ * The always-on confirmation that a shake was accepted — docs/todo.md
+ * entry 54. `#shake-flash` above is the diagnostic (gated behind the
+ * numeric readout); this is the feedback, ungated, for the same two calls
+ * (`takeStrong()`/`takeDouble()`) — never for mere disturbance, which the
+ * tumble already answers continuously. `peak` sets `--pulse-amt` via
+ * `intensity()`, the same normaliser the buzz and the shuffle's depth
+ * already share, so a light shake gets a faint edge and a hard one an
+ * unmistakable one.
+ *
+ * A DOM overlay outside the canvas, like `#shake-flash` and the capture
+ * glyph: it must be visible even if the render path is the thing broken,
+ * and a screenshot (which reads the canvas) can never contain it.
+ */
+function shakePulse(double: boolean, peak: number): void {
+  const el = document.getElementById('shake-pulse')
+  if (!el) return
+  const amt = PULSE_MIN + (PULSE_MAX - PULSE_MIN) * intensity(peak)
+  el.style.setProperty('--pulse-amt', String(amt))
+  el.classList.remove('on', 'double')
+  // Restart the animation even if one is already mid-flight — the same
+  // reflow trick flashShake's double path uses, needed here for both
+  // shapes since an animation (unlike shake-flash's transition-driven
+  // `.on`) does not restart just by re-adding a class that was never
+  // removed for a frame.
+  void el.offsetWidth
+  el.classList.add(double ? 'double' : 'on')
 }
 
 /**
@@ -1171,6 +1218,7 @@ async function main(): Promise<void> {
           // Consumed, not acted on.
         } else {
           if (panel.showingStats()) flashShake(true)
+          shakePulse(true, doublePeak)
           // A double is always a full scramble, regardless of peak — see
           // shuffled()'s file comment: the deterministic route matters because
           // an accelerometer that clips low can never report a peak near
@@ -1187,6 +1235,7 @@ async function main(): Promise<void> {
         const strongPeak = shake.takeStrong()
         if (strongPeak && !panelOpen) {
           if (panel.showingStats()) flashShake(false)
+          shakePulse(false, strongPeak)
           // Graded: a colour shift at the gentlest qualifying shake, up to
           // everything at the hardest. shuffle() always rolls colours
           // regardless of depth, and re-seeds once SHUFFLE_RESEED is
