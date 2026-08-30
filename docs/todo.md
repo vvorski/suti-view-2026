@@ -9879,7 +9879,7 @@ phone left playing to room noise for five minutes.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 90. Still, carried, driving, dancing — the phone knows which
-`status: ready` · added 2026-08-30 · build after 88 · still-is-loudest confirmed 2026-08-30
+`status: building` · added 2026-08-30 · build after 88 · still-is-loudest confirmed 2026-08-30
 
 **Do** — classify how the phone is being held into a handful of named postures,
 and let the director's cadence follow.
