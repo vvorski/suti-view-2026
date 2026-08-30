@@ -9506,3 +9506,79 @@ fullscreen still take the gesture.
 **Hard stops** — prefs no · url no · capture no (the gate is gone before
 anything is captured) · dependency no — build-time parsing in a config that
 already runs `execSync`, no package added.
+
+### 94. The name decodes, and a still phone still gets to see it
+`status: ready` · added 2026-08-30
+
+**Do** — give the name flip a second phase that locks character by character
+onto the final name, and give reduced motion a *slower* version of it instead
+of no version at all.
+
+**Why** — reported as never having landed. It landed, at build 203, and it is
+skipping itself for the same reason the start disc's pulse was invisible.
+
+**Decided**
+- **It is built and it is working.** `mountReleaseName()` in `version.ts:281`
+  flips through all **91** release names on a `requestAnimationFrame` loop with
+  an ease-out, lands exactly on the current one, never delays Start, and
+  handles screen readers correctly. Nothing about it is broken.
+- **`version.ts:302` returns early under `prefers-reduced-motion: reduce`**, and
+  entry 65 established that this phone almost certainly reports that preference
+  — Android sets it under Battery Saver and under Accessibility → Remove
+  animations, and it is the leading explanation for the start disc's pulse
+  never being seen either. **Two features reported as "never landed", one
+  cause.** Entry 65 shipped the readout for exactly this: `?debug` says whether
+  motion is reduced, and that is a one-glance confirmation before anything here
+  is built.
+- **A text decode is not motion, and that distinction is the entry.**
+  `prefers-reduced-motion` exists for vestibular triggers — translation, scale,
+  parallax, rotation. **A character changing in place has no motion vector at
+  all.** The honest reduced-motion answer here is therefore not "show nothing",
+  it is "do not flicker": a slow decode, a few characters resolving per second,
+  no whole-name churn. That is entry 65's principle — *the preference asks for
+  less motion, never less information* — applied to the second place that
+  answered it by vanishing.
+- **And the caveat, so this is not a dodge**: rapid text churn is closer to
+  *flashing content* than to motion, and that is a real accessibility concern
+  in its own right. So the reduced variant is genuinely gentler — roughly
+  **3 characters resolving per second, no scrambling of unresolved positions**,
+  which reads as a name being typed rather than decoded. The full version keeps
+  the scramble; the reduced one drops it. **Mine.**
+- **The cinematic upgrade: two phases.** Phase one is what exists — the flip
+  through the app's own history, fast then decelerating. Phase two is new: the
+  remaining characters **lock left to right**, about 55ms apart, while
+  unresolved positions cycle through the alphabet. Total around 1.6s. The
+  handover is the moment worth getting right — the flip should slow into the
+  lock rather than stopping and then starting a new effect.
+- **The scramble alphabet is the app's own**, drawn from the letters that
+  actually appear in `RELEASE_NAMES` — lowercase and space. **Mine, and it is
+  a real choice**: katakana would be a costume borrowed from another work, and
+  it would not match the gate's type. Names decoding out of the letters of
+  other names is the same idea entry 55 had — the name arrives through its own
+  history — carried one level further down, into the characters.
+- **No library, and the question deserves a straight answer.** A text-animation
+  package would be tens of kilobytes for what is about forty lines inside a
+  function that already exists. `three` at 117 KB is the only runtime
+  dependency this project has, deliberately, and a title effect is not what
+  breaks that.
+- **Nothing about the layout can move** — entry 55 already reserved 18ch,
+  right-aligned, precisely so the flip cannot reflow the gate, and the longest
+  name is 16 characters. The lock phase inherits that for free.
+- **Keep every property the existing function already earned**: the synchronous
+  first call so the span is never empty, `aria-hidden` on the animating span
+  with the real name on its parent, and no gating of Start at any point. Entry
+  56 replays this from the reload chip, so it must stay a callable function.
+
+**Lands in** `src/version.ts:281-333` — the second phase and the reduced
+variant; `NAME_FLIP_MS` gains a companion for the lock.
+**Done when** — on a normal phone the name flips through its history and then
+resolves character by character; with reduced motion forced on, the name
+**still arrives visibly**, slowly and without scrambling, rather than appearing
+instantly; the gate never reflows; Start is pressable throughout and pressing
+it mid-decode simply leaves; and the reload chip still replays it.
+**Verify** — DevTools' reduced-motion emulation for both paths, then the phone
+with Battery Saver on — which is the state this was invisible in, and the only
+way to know it is fixed for the person who reported it.
+**Hard stops** — prefs no · url no · capture no · dependency **no, and asked
+directly: no text-animation library** — forty lines against tens of kilobytes,
+in a project whose only runtime dependency is `three`.
