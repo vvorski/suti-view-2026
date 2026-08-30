@@ -4426,3 +4426,90 @@ is actually judged. `pnpm probe:fullscreen` must still pass — it drives the
 gate, and this entry is the one that would break it if anything were keyed on
 the label. `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 52. Single tap saves a frame, double tap opens the menu
+`status: ready` · added 2026-08-30
+
+**Do** — retire entry 41's three zones. A single tap anywhere saves a frame; a
+double tap anywhere opens the panel.
+**Why** — asked for. One rule for the whole screen instead of three regions
+with no visible boundaries.
+
+**Decided**
+- **Double tap was tried before and could not work. It can now, and the reason
+  is precisely that the roles swap** → recovered from the history this entry
+  otherwise would have repeated. `gestures.ts`, before entry 27 deleted it,
+  carried this: *"This used to be double-tap/double-click, and it did not
+  actually work. The tap-to-open listener has zero delay by design — the panel
+  exists specifically to open on a tap with no wait — so the first tap of an
+  intended double tap already opened the panel before a second tap could ever
+  be compared against it."* There is a commit named **"Fix:
+  double-tap-to-randomise could never actually fire"**. The failure was never
+  double-tap; it was that the **panel** sat on the zero-delay tap and
+  pre-empted everything. Moving the panel *onto* the double removes the thing
+  that broke it.
+- Which names the price exactly → **whatever sits on the single tap must
+  tolerate a delay**, because a single tap is only knowable once the
+  double-tap window has passed. The panel could not tolerate that, and that is
+  why it failed. **A save can**: nobody perceives a screenshot as late.
+  **280ms.** So the capture happens 280ms after the tap, and the frame saved is
+  the frame at that moment.
+- **Play is not arbitrated, and this is the load-bearing decision** → entry
+  50's emitter fires on `pointerdown`, immediately, before any of this
+  resolves. It is not waiting on the window, it is not cancelled by a second
+  tap, and it does not care which of the two actions the tap turns out to be.
+  Otherwise every touch on the toy is 280ms late, which would undo entry 50
+  entirely. **Mine.**
+- **The collision worth your attention, and the thing to overturn if I have
+  read it wrong** → entry 50, written an hour ago, says *"drumming four times
+  quickly leaves four rings"* and *"if it becomes annoying in use, the answer
+  is to move capture off a bare tap"*. This moves capture **onto** a bare tap,
+  everywhere. Two consequences follow and neither is avoidable by cleverness:
+  **every play-tap saves a photo**, and **four rapid taps are now two double
+  taps**, so drumming opens and closes the panel instead of leaving four
+  rings.
+- How that is resolved, rather than pretended away → **the double requires the
+  second tap within 30px of the first**, not just within the window. Drumming
+  to play moves across the picture; a deliberate double tap does not. It makes
+  the two separable most of the time, and *most of the time* is the honest
+  claim — a person tapping twice in one spot to play will get the panel.
+  **Mine**, and if it is wrong in the hand, the fix is to put capture on
+  something that is not a bare tap, exactly as entry 50 predicted.
+- The rate limit on saving → **one save per 700ms**, silently dropping the
+  rest. **Mine.** Without it, a run of taps writes a run of near-identical
+  PNGs, and the thing that makes a toy unpleasant is not a missing photo, it
+  is a camera roll that has to be cleaned up afterwards.
+- **Controls are excluded from both** → the fullscreen chip (entry 42, now in
+  the centre of the screen), the HUD's own chips, and the gate's controls. A
+  tap on a control is that control's tap and neither saves nor opens. This is
+  the same `closest()` test entry 46 uses for the powder trigger, and after
+  entry 49 it belongs to the touch field so there is one copy of it.
+- **Entry 41 is superseded, not deleted** → its refactor is the reason this is
+  small: one recogniser owning the picture's taps is exactly what a temporal
+  rule needs, and it is already being built. What goes is the *zone* half —
+  the thirds, `inCaptureBand()`, `CAPTURE_BAND_FRACTION`, and Victor's "top
+  third does nothing" call, which stops having anything to be about. Mark 41
+  when this lands so its Done-when does not contradict the code.
+- The camera glyph survives and matters more → it was added in entry 41 because
+  a tap-band capture is silent. Now that a capture can happen anywhere, it is
+  the only thing that says one did. Entry 48's rule stands: the glyph is UI and
+  stays out of the saved frame; entry 50's ring is picture and stays in.
+
+**Lands in**
+- `src/main.ts` — the recogniser: the 280ms window, the 30px radius, the
+  700ms save limit; `inCaptureBand()` and `CAPTURE_BAND_FRACTION` go.
+- `src/hud.ts` — the panel opens on the double rather than on a zone.
+- `docs/todo.md` — entry 41's zone half marked superseded.
+
+**Done when** — a single tap anywhere saves one frame about a quarter-second
+later, with the camera glyph confirming it and the glyph absent from the PNG;
+a double tap anywhere opens the panel and saves nothing; a tap on any chip does
+neither; ten taps in five seconds save no more than seven frames; and in every
+case the ring from entry 50 appears under the finger with no perceptible delay.
+**Verify** — the phone, and specifically try to play with it for a minute
+without meaning to take a photo, because that is the failure this entry can
+ship with and no probe will find it. `pnpm probe:fullscreen` must still pass.
+`pnpm build`, `pnpm lint`.
+**Hard stops** — prefs no · url no · capture **already licensed** (entry 25),
+though this makes it far easier to trigger, which is the cost named above ·
+dependency no.
