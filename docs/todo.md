@@ -5499,7 +5499,7 @@ than a coordinate. `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 58. Motion reaches the colour, continuously
-`status: ready` · added 2026-08-30
+`status: building` · added 2026-08-30 · started 2026-08-30
 
 **Do** — wire `disturb` and tilt into the picture's colour as a continuous,
 render-time bias, and add the slow agitation accumulator that gives the app a
