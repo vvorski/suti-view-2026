@@ -10093,3 +10093,94 @@ at sunset.
 persisted only if a re-ask is not cheaper; url **no, and load-bearing: the
 coordinate never enters a URL**; capture no; dependency **no — computed, not
 fetched; no library and no network.**
+
+### 98. The picture answers the light in the room, camera or no camera
+`status: ready` · added 2026-08-30
+
+**Do** — read the ambient light sensor where it exists and let the real room
+brightness drive the picture's exposure and contrast, so it stays legible in
+sun and gentle in the dark. A third environmental axis, its own quantity, no
+network, degrading to nothing where the sensor is absent.
+
+**Why** — Victor, choosing ambient light over a weather API precisely because
+it senses the room without anything leaving the device. Full connection to the
+environment, kept honest.
+
+**Decided**
+- **Its own axis, perpendicular to the other two.** The sun (entries 47/53/71/
+  97) owns **colour and the day/night ground**. The moon (entry 96) owns
+  **shape**. Ambient light owns **force** — how hard the picture pushes against
+  whatever ground it is on: exposure and contrast, not hue and not form. A
+  bright room does not change what colour the picture is or what shapes it
+  draws; it makes them assert harder so they survive glare. Three natural
+  inputs, three clean axes, none reaching into another's.
+- **It generalises entry 23, which already had the idea half-built.**
+  `scene.ts:786` runs an `exposureEnvelope` that samples the *camera* frame's
+  luminance and drives `uExposure` — *"the picture answers the light in the
+  room"* — but only while passthrough is on. The ambient sensor is that same
+  answer **without needing the camera**: the room's real lux, fed into the
+  envelope that already exists, so a phone with no camera up still brightens in
+  sun and eases in the dark. When the camera *is* on, its own sample stays
+  authoritative (it is measuring the same light more directly); the sensor
+  fills the cameraless case that is almost always the actual case.
+- **Android/Chrome only, and that is stated up front, not discovered.**
+  `AmbientLightSensor` is the Generic Sensor API — **Chrome on Android has it;
+  Safari and iOS do not implement it at all.** So this is a bonus one platform
+  gets, exactly the footing the Vibration API was on before it was abandoned
+  (`haptics.ts`: *"a bonus on one platform, absent on the other, and nothing
+  may be built to depend on it"*). Nothing here may be depended on; the picture
+  must be complete and correct with the sensor absent, which on iOS it always
+  is.
+- **Absent, unsupported, or refused all resolve the same way: today's fixed
+  exposure.** Feature-detect, wrap construction in try/catch (the constructor
+  throws on unsupported and on policy refusal), and on any failure leave
+  `uExposure` exactly where it sits now. Identity-when-absent, the discipline
+  entries 47, 75, 76 and 96 all share — and here it is the *majority* platform,
+  so it must be the well-tested path, not the afterthought.
+- **Slow, or it strobes.** Room light is noisy — a hand passing over the
+  sensor, someone walking between the phone and a lamp, a car's headlights. The
+  reading feeds the existing envelope with a multi-second time constant so the
+  picture *adjusts* to a room rather than *flickering* at events in it. **Mine**,
+  and it is the difference between ambient and reactive: this axis is the
+  room's steady state, not its transients — those are the microphone's job.
+- **Mapped as a gentle lift, bounded at both ends.** Lux is unbounded and
+  wildly nonlinear (moonlight ~1, a lit room ~100, daylight ~10,000+), so map
+  it logarithmically into a small exposure range and clamp hard. A bright
+  room lifts exposure and nudges contrast up so thin rings survive; a dark room
+  lets exposure fall so the picture deepens rather than glaring. The swing is
+  small — this is legibility, not a light show. **Mine** as to the range; the
+  phone settles it, since only a real sensor in a real room can.
+- **Nothing is stored and nothing is sent.** Ambient light is live-sensed like
+  motion, not a preference — there is no `prefs` field, no persistence, and the
+  lux value enters no URL, fetch, or share payload. **The known concern is
+  named:** ambient light readings have a genuine fingerprinting and
+  side-channel history (they can leak coarse screen content and environment),
+  which is *why* browsers gate the sensor — so it is used live for our own
+  exposure and never exposed, logged, or transmitted. That it stays on the
+  device is the whole reason it was chosen over weather.
+- **Report lux and the derived lift in the readout**, beside sun and moon —
+  three environmental senses, three lines, and on iOS the ambient line honestly
+  reads unavailable, which is itself the answer to "why doesn't it respond to
+  the room here."
+
+**Lands in**
+- `src/ambient-light.ts` (new) — the sensor, feature-detected and try/catch'd,
+  shaped like `requestMotionAccess`: resolves to a reader or to nothing.
+- `src/scene.ts:783-799` — the ambient reading feeds `exposureEnvelope` in the
+  no-camera branch; the camera branch is unchanged.
+- `src/hud.ts` — the readout line.
+- `scripts/probe-*` — the lux→exposure mapping is pure and can be probed; the
+  sensor itself cannot, and the probe should say so rather than mock a sensor
+  that does not exist on the machine running it.
+
+**Done when** — on an Android phone, a bright room visibly lifts the picture's
+exposure and a dark room eases it, slowly; on iOS the picture is exactly today's
+and the readout says ambient light is unavailable; with the camera on, exposure
+behaves exactly as entry 23 already makes it; no lux value is stored or sent;
+and a hand waved over the sensor changes nothing abruptly.
+**Verify** — the phone, Android, moving between a sunlit window and a dark
+corner. The mapping is probeable; the sensor is not, and the iOS-absent path is
+verified simply by it being iOS.
+**Hard stops** — prefs no (live-sensed, nothing stored) · url no · capture no ·
+dependency **no — a built-in browser sensor, no library; and no network, which
+is the whole reason it was chosen.**
