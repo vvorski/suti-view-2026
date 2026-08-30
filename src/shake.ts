@@ -76,12 +76,24 @@ const GRAVITY_TAU = 0.5
 // m/s² value in both files rather than two constants that can drift apart.
 export const STRONG_UP = 18
 /**
- * The hardest shake this app is calibrated against — probe-shake.ts's own
- * "violent shake" case, not a real physical limit (none exists). Exported
- * alongside `intensity()` below rather than left for `haptics.ts` to
- * recompute a second time from the same two numbers.
+ * The hardest shake this app is calibrated against, not a real physical
+ * limit (none exists). Exported alongside `intensity()` below rather than
+ * left for `haptics.ts` to recompute a second time from the same two
+ * numbers.
+ *
+ * Was 45 — probe-shake.ts's own "violent shake" case sampled at 6 Hz. That
+ * was the wrong thing to calibrate against: a shake's *reported* peak falls
+ * as sampling rate rises (an accelerometer that reads faster catches less
+ * of any single spike), so 45 was the best-sampled case in the suite, not
+ * the ceiling real hardware produces. The same violent shake sampled at
+ * 12 Hz reports 40.6, and `intensity()`'s top rung needed 42.3 — unreachable
+ * in practice, not merely hard. docs/todo.md entry 36 lowers it to 36,
+ * which saturates both violent cases at 1.00 (the 12 Hz one clears the rung
+ * by 6.4 m/s² rather than missing it) while a deliberate shake still lands
+ * at 0.54 — short of the top two rungs, so "everything" still has to be
+ * meant. **Mine** as to the exact value.
  */
-export const PEAK_CEILING = 45
+export const PEAK_CEILING = 36
 
 /**
  * A shake's peak (m/s²), scaled to 0-1: 0 at STRONG_UP (the least peak that

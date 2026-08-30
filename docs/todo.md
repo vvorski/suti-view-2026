@@ -2862,7 +2862,7 @@ verified: the actual feel of ten light shakes in a row on a real phone,
 which this harness cannot exercise.
 
 ### 36. A hard shake asks for more force than a phone can report
-`status: ready` · added 2026-08-30
+`status: done` · added 2026-08-30 · shipped at build 149
 
 **Do** — lower `PEAK_CEILING` from 45 to 36 m/s². Nothing else.
 **Why** — the top of the ladder currently needs a 42.3 m/s² peak, and a
@@ -2915,6 +2915,16 @@ because the buzz reads the same scale, then the phone, which is the only place
 "asks for too much force" can actually be judged. Also `pnpm build`,
 `pnpm lint`.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+**Build note.** One constant, `PEAK_CEILING` 45 → 36, landed after entry 34
+as the entry required. `pnpm probe:shake` now reports exactly 1.00 for both
+violent cases and 0.54 for the 4 Hz deliberate one, matching Done-when
+precisely. `pnpm probe:haptics` still passes unchanged — the buzz's own
+scale-sharing test only checks relative shape (monotonic growth, the
+gentlest case at baseline, the hardest clamped at `MAX_SCALE`), all of
+which hold at any ceiling. `pnpm build`, `pnpm lint` both clean. Not
+verified: whether a hard shake that feels hard now reaches the top rung on
+a real phone, which needs one.
 
 ### 37. A harness that plays a song at the views
 `status: ready` · added 2026-08-30
