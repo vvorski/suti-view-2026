@@ -6528,7 +6528,8 @@ powder already made.
   order.
 - Not decided here → whether **kiyo** appears anywhere else, in a dedication or
   a byline. That is the open question from the Kiyo conversation and it belongs
-  in its own entry, not smuggled into a rename.
+  in its own entry, not smuggled into a rename. **Answered by entry 69:
+  nothing further is added — the name itself is the whole statement.**
 
 **Lands in**
 - `index.html:16` (`<title>`), `:563` (the `<h1>`).
@@ -7191,7 +7192,14 @@ and 0.10 are the right pair.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 69. The name is the dedication, and nothing is added to it
-`status: building` · added 2026-08-30 · started 2026-08-30
+`status: done` · added 2026-08-30 · shipped at build 231
+
+**Build note** — exactly the entry's own size: an HTML comment above the
+`<h1>` in `index.html` stating the name is deliberately wordless and that
+nothing further is to be added, and a one-line answer appended to entry
+63's own "Not decided here" note closing the open question. No visible
+change, no code logic — `pnpm build`/`pnpm lint` clean, and there is
+nothing else to run, per the entry's own Verify line.
 
 **Do** — put the reason for the name beside the name, in `index.html`, and
 close the question entry 63 left open.
