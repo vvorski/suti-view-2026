@@ -3358,3 +3358,92 @@ must be unchanged by a move; then the phone at both widths, since "looks off"
 is the report being answered and only a phone can confirm it. `pnpm build`,
 `pnpm lint`.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 43. The gate's type grows a fifth, on a band, and Start invites harder
+`status: ready` · added 2026-08-30
+
+**Do** — scale every piece of text on the start screen by 1.2, lay a
+half-opaque horizontal band behind the head block, and make the Start disc's
+existing pulse more inviting.
+**Why** — asked for. The screen has been stripped to Start and the code, so
+the little type that remains is carrying the whole page.
+
+**Decided**
+- What "all text" covers → `.gate-byline` (0.62rem), `#gate h1`
+  (clamp 1.7/9vw/2.6rem), `.gate-name` (clamp 0.95/4.4vw/1.3rem) and the small
+  print at 0.76rem. **The Start disc's own label is excluded** — **Mine.** The
+  disc's diameter is `min(36vw, min(20vh, 8rem))` and its label is fitted to
+  that; growing the label 20% inside a disc that did not grow is how the word
+  meets the edge. If Start should read bigger, the disc grows and the label
+  follows, which is a different change and a bigger one.
+- How the 1.2 is applied → **one `--gate-type-scale: 1.2` on `#gate`**, with
+  each rule becoming `calc(clamp(…) * var(--gate-type-scale))`. **Mine**, over
+  editing eight numbers across four rules: those clamps carry reasoning in
+  comments about specific viewport widths, and rewriting their terms destroys
+  the record of why they were chosen. A multiplier leaves every original number
+  legible and makes "a bit bigger again" one edit rather than eight.
+- **The 320px title is the thing to check first** → `#gate h1`'s middle term
+  becomes 10.8vw, so at 320px it renders about 34.6px against 28.8px today, in
+  uppercase Chakra Petch at 0.24em tracking, right-justified. That is the one
+  place this can overflow or wrap. If it does, **the fix is the `vw` term, not
+  the `max`** — the max only bites on wide screens, which are not where the
+  problem is.
+- The band → the gate's own background colour at 50%, full-bleed horizontally,
+  sized to the head block plus its padding, sitting behind the text and in
+  front of the idle preview. **Mine**, that it is the gate's own `#05060a`
+  rather than a new colour: the band is a scrim making the preview quieter
+  behind the words, and any other colour introduces a second surface to the
+  one screen that has deliberately been stripped to two things.
+- **Keep the text shadows.** → all three head rules carry
+  `text-shadow: 0 1px 12–14px rgba(5,6,10,0.95)`, and they are not decoration:
+  entry 28 added `.gate-byline`'s specifically because it was the only line
+  with none while the idle preview drew a moving picture behind all three, and
+  it measured 2.33:1. A 50% band leaves half the preview showing through, so
+  the shadows are still doing their job. **Mine**, and written here because the
+  band makes them *look* redundant and deleting them reintroduces a contrast
+  bug that has already been fixed once.
+- What the band costs → the gate's opening comment says its job is "to stay out
+  of its way and still be readable", of a canvas that is already drawing behind
+  it. A band moves that trade toward readable and away from out-of-the-way, on
+  purpose. Victor's call; recorded because the comment states the old balance
+  and should be updated to state the new one rather than left contradicting it.
+- "Enticingly" → **more reach, not more speed.** The ring's spread goes 18px →
+  26px and its opacity 0.4 → 0.55, and the breathe goes 1.035 → 1.05. The two
+  periods stay 3.4s and 5.9s. **Mine**, and the periods are the part not to
+  touch: the comment explains they were chosen not to divide into one another
+  so the pair re-phases about every 200s, "what keeps this reading as alive
+  rather than as a metronome". Speeding either up is the fastest way to turn
+  inviting into nagging, and it would undo entry 16's whole point.
+- The one implementation trap, already documented and easy to walk into →
+  `start-breathe` animates the **`scale` property, not `transform: scale()`**,
+  because `#start:active` animates `transform` and would silently delete the
+  press feedback. Any new or edited keyframe here must respect that.
+- **Add a reduced-motion guard** → there is none today, and making the pulse
+  more insistent without one is a regression for anyone who asked the system
+  for less movement. `@media (prefers-reduced-motion: reduce)` sets
+  `animation: none` on `#start`, matching what `#start:disabled` already does.
+  **Mine**, and it is the only thing in this entry that was not asked for; it
+  is included because the entry makes the motion louder, which is exactly when
+  the guard stops being optional.
+
+**Lands in**
+- `index.html:130` — `--gate-type-scale` on `#gate`.
+- `index.html:174-201` — the three head rules take the multiplier.
+- `index.html:297` — the small print takes it too.
+- `index.html:159` — `.gate-head` gains the band, or a wrapper does.
+- `index.html:122-129` — the gate's opening comment, which states the
+  stay-out-of-the-way balance the band changes.
+- `index.html:231-247` — the two keyframe blocks, and the new media query.
+
+**Done when** — at 320×568 and 360×640 the three head lines are visibly larger
+with no wrap and no clipping, the band spans the full width behind them at half
+opacity with the preview still visible through it, and the Start disc's ring
+reaches further without pulsing faster. With reduced motion requested the disc
+is still and everything else is unchanged.
+**Verify** — the browser at both widths, since the entire entry is a
+typographic judgement, plus the phone for the pulse, because "enticing" is not
+a thing a desktop window can settle. Check the gate over a *bright* idle
+preview specifically, which is when the band and the shadows both matter and
+the only state in which entry 28's bug was visible. `pnpm build`, `pnpm lint`.
+**Hard stops** — prefs no · url no · capture no · dependency no (Chakra Petch
+is already loaded for the title).
