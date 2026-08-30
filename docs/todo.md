@@ -3179,7 +3179,40 @@ surface. `pnpm build`, `pnpm lint`.
 already falls back) · url no · capture no · dependency no.
 
 ### 40. The buzz has never been tested apart from the shake
-`status: ready` · added 2026-08-30
+`status: blocked` · added 2026-08-30 · abandoned 2026-08-30
+
+**Blocked on:** a phone that vibrates for anything at all. Not on this repo.
+
+**Outcome, 2026-08-30 — browser vibration is given up on for now, Victor's
+call.** The ladder was built and run on the phone, and **every rung failed,
+including a flat 600 ms pulse and three continuous seconds**. Both are far
+beyond anything the app sends, so this repo was never the cause, and the
+system-level checks that follow from that — Do Not Disturb, silent mode, the
+haptic level, battery saver, Chrome's site settings — did not recover it
+either. The instrument did its job: it moved the question out of the app in
+one tap and kept it out.
+
+What that retires: entry 1's whole line of work — 22 ms, then 40 ms, then the
+primed two-pulse pattern at build 68 — was tuning a signal against a phone
+that was not going to produce one. **Do not reopen it, do not tune the
+patterns again, and do not treat a silent shake as evidence about
+`CONFIRM_PATTERN`.** If vibration is ever revisited, the ladder is the first
+thing to run and its verdict is the gate.
+
+Nothing has to be removed for this. `haptics.ts` opens by stating that the
+Vibration API "is a bonus on one platform, absent on the other, and nothing
+may be built to depend on it", and that promise is exactly what makes
+abandoning it free: the code is silent where it is unsupported, costs nothing
+when it does not fire, and no feature is waiting on it.
+
+The consequence worth knowing: **a shake now has no confirmation at all.**
+`flashShake()` is gated on the numeric readout being visible, so in ordinary
+use the only evidence a shake registered is the picture changing — which is
+the exact ambiguity `haptics.ts` was written to resolve, since "the picture
+was already moving, and it changes to a different picture that is also
+moving". Entry 1 anticipated this for iOS and said the entry would then become
+"replace the haptic with something visual". That is now the open question on
+Android too, and it wants its own entry rather than a note here.
 
 **Do** — land the haptic ladder in the repo as `haptics-probe.html`, beside
 `hud-probe.html` and `camera-probe.html`: a rung per pattern, coarsest first,
