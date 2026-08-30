@@ -7568,7 +7568,7 @@ eye") already concedes.
 meaning are untouched · url no · capture no · dependency no.
 
 ### 72. Camera mode: the room becomes the picture, and a tap is the shutter
-`status: ready` · added 2026-08-30
+`status: building` · added 2026-08-30 · started 2026-08-30
 
 **Do** — make the camera a *mode*, not a dial. One tap of the camera chip
 enters it; after that every tap of the picture takes a photo. A translucent
