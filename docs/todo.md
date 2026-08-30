@@ -11113,7 +11113,8 @@ never anybody's suspect.
 **Lands in** `src/engine/rgb-slip.ts` — the held direction state, returning a
 `vec2`; `src/scene.ts:960` and `:451` — `uSlip` becomes a `vec2`;
 `src/shaders/composite.frag.glsl:187-190` — `off` comes from the uniform
-rather than from `uTumble`; `scripts/probe-rgb-slip.ts` (new).
+rather than from `uTumble`; `scripts/probe-rgb-slip.ts`, which already exists
+and gains the reversal count and the pixel measurement.
 **Done when** — a synthetic shake produces a slip that comes apart and returns
 along one axis with **no sign reversals**; the peak separation is unchanged
 from today's measured peak; a still phone gives exactly `vec2(0.0)` so the
