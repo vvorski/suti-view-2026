@@ -228,6 +228,15 @@ export interface Hud {
   /** Whether the user has the autopilot switched on. */
   autopilot(): boolean
   /**
+   * The four continuous quantities a light shake's nudge needs to read
+   * before it can move them — docs/todo.md entry 35. `shuffled()` is pure
+   * and cannot see the screen itself, so this is the accessor that lets a
+   * nudge start from what is actually on screen rather than from an absolute
+   * roll. Read-only, the same precedent `autopilot()` already sets for
+   * reading one fact back out.
+   */
+  current(): { geoColour: GeoColour; atmColour: GeoColour; geoAlpha: number; atmAlpha: number }
+  /**
    * Open the panel — docs/todo.md entry 41. main.ts's single tap recogniser
    * calls this for a tap in the middle third of the picture; this file no
    * longer listens for that tap itself, since two independent recognisers
@@ -1149,6 +1158,12 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
     },
 
     autopilot: () => prefs.autopilot,
+    current: () => ({
+      geoColour: prefs.geoColour,
+      atmColour: prefs.atmColour,
+      geoAlpha: prefs.geoAlpha,
+      atmAlpha: prefs.atmAlpha,
+    }),
     showingStats: () => showStats,
     open: () => setOpen(true),
 

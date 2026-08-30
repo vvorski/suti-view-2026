@@ -187,9 +187,11 @@ function idleParams(t: number, spectrum: Uint8Array): VisualParams {
 
 /** What a shuffle changes at each rung. Each rung includes everything below
  *  it — see shuffled()'s own comment for the reasoning behind the order and
- *  the numbers. Colours have no threshold of their own any more (entry 29):
- *  they roll on every qualifying shake, at the very bottom of what survives,
- *  below even the re-seed. */
+ *  the numbers. Below the re-seed (docs/todo.md entry 35) the four
+ *  continuous quantities — both layers' colours and opacities — only
+ *  *nudge* from wherever they already are; a full re-roll from scratch
+ *  joins the re-seed at SHUFFLE_RESEED, since replacing the palette
+ *  outright is not the smallest change the ladder can make. */
 const SHUFFLE_RESEED = 0.3
 const SHUFFLE_MERGE = 0.45
 const SHUFFLE_VIEWS = 0.7
@@ -226,11 +228,14 @@ interface Shuffle {
  * by how little of what you had survives: a colour shift is recognisably the
  * same picture, a view change is a different instrument.
  *
- *   any qualifying shake   both layers' colours (this function only)
- *   0.30                   + re-seed (the caller's own job — see shuffle())
+ *   any qualifying shake   both layers' colours and opacities *nudge*
+ *                          (this function only — see entry 35)
+ *   0.30                   colours and opacities *re-roll* from scratch,
+ *                          + re-seed (the caller's own job — see shuffle())
  *   0.45                   + both merge modes
  *   0.70                   + both views
- *   0.90                   + opacity, mapping, the camera layer's colour
+ *   0.90                   + opacity re-rolls again (span, not nudge),
+ *                          mapping, the camera layer's colour
  *
  * Colours used to have no threshold check at all, which sounds the same as
  * "always" but is not: the *re-seed* was what actually had no threshold
@@ -240,9 +245,18 @@ interface Shuffle {
  * ladder can make, sitting where the smallest one belongs. Entry 29 gives
  * the re-seed its own threshold (`SHUFFLE_RESEED`, 0.30 — above the old
  * colour boundary, so a shake that used to re-seed silently now shifts the
- * palette instead) and puts colours at the true bottom of the ladder, with
- * no threshold of their own, so the gentlest qualifying shake still visibly
- * does *something* rather than reading as a shake that did nothing.
+ * palette instead) and puts colours at the true bottom of the ladder.
+ *
+ * A full re-roll is still the biggest change *that* rung can make, though —
+ * nothing of the palette survives it. Entry 35 makes the true bottom rung a
+ * *perturbation* instead: below SHUFFLE_RESEED, `geoColour`, `atmColour`,
+ * `geoAlpha` and `atmAlpha` each move a little from their current value
+ * (`current`, below) rather than being replaced, so the gentlest qualifying
+ * shake shifts the picture you have rather than handing you a different
+ * one. The full re-roll moves up to join the re-seed at SHUFFLE_RESEED,
+ * which is the one rung it was always meant to share — nothing of the
+ * palette surviving is exactly what a re-seed already does to everything
+ * else.
  *
  * Opacity and mapping were excluded entirely when this was a single on/off
  * shuffle (entry 6) — opacity because a shuffle that can hand back a black
@@ -281,32 +295,70 @@ interface Shuffle {
  * is enforced on the *dominant* channel specifically — see colour()'s own
  * comment for why. Worst case becomes 0.5 x 0.5 = 0.25. See docs/todo.md
  * entry 21.
+ *
+ * Entry 35's nudge below SHUFFLE_RESEED clamps to these same two floors,
+ * not a nudge-specific pair — repeated light shakes are a random walk, and
+ * a walk with no floor eventually reaches entry 21's failure by a slower
+ * road: twenty small steps down reach black exactly as one big one does.
  */
 const SHUFFLE_MIN_ALPHA = 0.5
 const SHUFFLE_MIN_DOMINANT_CHANNEL = 0.5
 
-function shuffled(depth: number): Shuffle {
+/** How far a light shake may nudge a colour channel or an opacity from its
+ *  current value — docs/todo.md entry 35. Absolute, not scaled by `depth`:
+ *  `pnpm probe:shake`'s own gentle-sustained cases report a depth of
+ *  exactly 0.00, so anything multiplied by depth would be multiplied by
+ *  zero at precisely the shake this entry is about. The nudge has to be a
+ *  floor, not a fraction. **Mine** — the entry asks for "a little" without
+ *  naming the two numbers. */
+const NUDGE_CHANNEL = 0.08
+const NUDGE_ALPHA = 0.06
+
+const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v))
+
+function shuffled(
+  depth: number,
+  current: { geoColour: GeoColour; atmColour: GeoColour; geoAlpha: number; atmAlpha: number },
+): Shuffle {
   const pick = <T,>(xs: readonly T[]): T => xs[Math.floor(Math.random() * xs.length)]
   const channel = (): number => 0.2 + Math.random() * 0.8
-  const colour = (): GeoColour => {
-    const c = { r: channel(), g: channel(), b: channel() }
+
+  // Only the channel that already leads is lifted, not all three — scaling
+  // every channel toward a floor washes each dim roll toward grey and
+  // quietly removes half the palette this exists to explore. Lifting just
+  // the one that already dominates keeps the hue the roll chose and only
+  // adds strength to it. Shared by a fresh roll and a nudge alike, since
+  // both can land with no channel above the floor.
+  const floorDominant = (c: GeoColour): GeoColour => {
     const dominant = Math.max(c.r, c.g, c.b)
     if (dominant >= SHUFFLE_MIN_DOMINANT_CHANNEL) return c
-    // Only the channel that already leads is lifted, not all three — scaling
-    // every channel toward a floor washes each dim roll toward grey and
-    // quietly removes half the palette this exists to explore. Lifting just
-    // the one that already dominates keeps the hue the roll chose and only
-    // adds strength to it.
     if (c.r === dominant) return { ...c, r: SHUFFLE_MIN_DOMINANT_CHANNEL }
     if (c.g === dominant) return { ...c, g: SHUFFLE_MIN_DOMINANT_CHANNEL }
     return { ...c, b: SHUFFLE_MIN_DOMINANT_CHANNEL }
   }
+  const colour = (): GeoColour => floorDominant({ r: channel(), g: channel(), b: channel() })
 
-  // Colours roll unconditionally — the ladder's true bottom rung, below even
-  // the re-seed. See this function's own file comment.
-  const next: Shuffle = {
-    geoColour: colour(),
-    atmColour: colour(),
+  // A little from wherever the channel already is, clamped to the same
+  // [0.2, 1] a fresh roll lives in — entry 35's bottom rung.
+  const nudgeChannel = (v: number): number => clamp(v + (Math.random() * 2 - 1) * NUDGE_CHANNEL, 0.2, 1)
+  const nudgeColour = (c: GeoColour): GeoColour =>
+    floorDominant({ r: nudgeChannel(c.r), g: nudgeChannel(c.g), b: nudgeChannel(c.b) })
+  const nudgeAlpha = (a: number): number => clamp(a + (Math.random() * 2 - 1) * NUDGE_ALPHA, SHUFFLE_MIN_ALPHA, 1)
+
+  const next: Shuffle = {}
+  if (depth >= SHUFFLE_RESEED) {
+    // The full re-roll, exactly as it was before entry 35 — this rung
+    // already replaces the arrangement via the re-seed, so replacing the
+    // palette outright belongs here rather than at the bottom.
+    next.geoColour = colour()
+    next.atmColour = colour()
+  } else {
+    // Entry 35's own point: below the re-seed, the picture you have shifts
+    // rather than being replaced.
+    next.geoColour = nudgeColour(current.geoColour)
+    next.atmColour = nudgeColour(current.atmColour)
+    next.geoAlpha = nudgeAlpha(current.geoAlpha)
+    next.atmAlpha = nudgeAlpha(current.atmAlpha)
   }
   if (depth >= SHUFFLE_MERGE) {
     next.mergeMode = pick(Object.keys(MERGE_MODES) as MergeModeName[])
@@ -588,11 +640,15 @@ async function main(): Promise<void> {
 
   /** Roll a new picture at the given depth and let the panel adopt it, so the
    *  HUD opened afterwards shows what is actually on screen rather than what
-   *  was. The colours always roll, whatever the depth; the seed only
-   *  re-rolls once SHUFFLE_RESEED is reached — see shuffled()'s own file
-   *  comment for why the two used to be backwards from each other. */
+   *  was. Below SHUFFLE_RESEED the four continuous quantities nudge from
+   *  whatever `panel.current()` reports rather than being replaced — entry
+   *  35 — which is why `shuffled()` needs to read them fresh on every call
+   *  rather than being handed a value that could go stale between shakes.
+   *  The seed only re-rolls once SHUFFLE_RESEED is reached — see
+   *  shuffled()'s own file comment for why the two used to be backwards
+   *  from each other. */
   const shuffle = (depth: number): void => {
-    const next = shuffled(depth)
+    const next = shuffled(depth, panel.current())
     panel.adopt(next)
     if (depth >= SHUFFLE_RESEED) visualiser.randomise()
   }

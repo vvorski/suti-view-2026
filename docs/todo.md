@@ -2762,7 +2762,7 @@ same setup. `pnpm probe` is unchanged, confirming the mapping itself was
 never touched. `pnpm build`, `pnpm lint` both clean.
 
 ### 35. A light shake nudges the picture instead of repainting it
-`status: ready` · added 2026-08-30
+`status: done` · added 2026-08-30 · shipped at build 148
 
 **Do** — make the ladder's bottom rung a *perturbation*: the two layer colours
 and the two opacities move a little from where they are, rather than the
@@ -2835,6 +2835,31 @@ because a random walk is exactly the thing that looks fine for five shakes and
 fails for fifty — the same method that proved entry 21's floors. Then
 `pnpm probe:shake`, the phone, `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+**Build note.** Landed as specified: below `SHUFFLE_RESEED` the four
+continuous quantities nudge (±0.08 per colour channel, ±0.06 per opacity,
+absolute rather than depth-scaled) instead of a full re-roll, which moves
+up to join the re-seed exactly as decided. `floorDominant()` was factored
+out of `colour()` so the nudge path could reuse the same dominant-channel
+floor rather than duplicating it, and both nudge floors reuse entry 21's
+own `SHUFFLE_MIN_ALPHA`/`SHUFFLE_MIN_DOMINANT_CHANNEL` constants rather
+than a nudge-specific pair, per the entry's own reasoning. `shuffled()`
+gained the `current` parameter and `Hud` gained `current()` beside
+`autopilot()`, both exactly as named in Lands-in.
+
+Verified with a new `pnpm probe:nudge`, a plain re-implementation of the
+nudge/floor arithmetic walked 200,000 steps from two different starting
+points (already-dim and already-bright): every channel and every opacity
+stays inside its floor across the whole walk from both starts, and mean
+brightness over the walk's last tenth is not lower than its first tenth in
+either case — settling around 0.62, comfortably above the 0.25 floor
+product, rather than drifting toward it or pinning to it. `pnpm
+probe:shake`'s gentle-sustained cases still report depth 0.00 and still
+fire, confirmed by re-running it. `hud-narrow.html` at 320×568 and
+360×640 confirms the HUD still assembles correctly and `hud.current()`
+reads back the right values. `pnpm build`, `pnpm lint` both clean. Not
+verified: the actual feel of ten light shakes in a row on a real phone,
+which this harness cannot exercise.
 
 ### 36. A hard shake asks for more force than a phone can report
 `status: ready` · added 2026-08-30

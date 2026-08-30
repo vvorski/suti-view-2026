@@ -16,6 +16,7 @@
     "probe:haptics": "node --experimental-strip-types scripts/probe-haptics.ts",
     "probe:emitter": "node --experimental-strip-types scripts/probe-emitter.ts",
     "probe:composite": "node --experimental-strip-types scripts/probe-composite.ts",
+    "probe:nudge": "node --experimental-strip-types scripts/probe-nudge.ts",
     "format": "prettier --write .",
     "deploy": "./deploy/deploy.sh"
   },
