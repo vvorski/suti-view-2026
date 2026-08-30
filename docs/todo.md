@@ -7396,7 +7396,7 @@ table above is the before. The camera claim is the one to check by hand, since
 sampler and a render-time stage move) · url no · capture no · dependency no.
 
 ### 71. The sky gets a noon and a night, and the override swings both ways
-`status: ready` · added 2026-08-30 · build with or after 68
+`status: building` · added 2026-08-30 · started 2026-08-30 · build with or after 68
 
 **Do** — reshape the sky's anchors so the day has a plateau and the night has a
 floor, make the chip cycle auto → day → night instead of only pinning day, and
