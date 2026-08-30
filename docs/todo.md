@@ -2968,9 +2968,9 @@ differ only in how loudness is scaled.** None differs in what it listens to.
   are the same analysis with three loudness curves over it, which is why they
   feel like three settings of one thing rather than three instruments. The new
   three each vary a different axis: **time** (`beat`), **dynamic range**
-  (`dynamics`), **spectrum** (`bass-led`). **Mine**, and this is the decision
-  most worth overturning if the taste is wrong, because everything else in the
-  entry follows from it.
+  (`dynamics`), **spectrum** (`bass-led`). Confirmed by Victor on 2026-08-30,
+  offered against a harmonic mapping built on tilt and roughness and against
+  doing none of the three; everything else in the entry follows from it.
 - `beat` → estimate the inter-onset interval from the existing `transient`
   train, keep a phase that runs 0→1 across each beat, and drive `level` and the
   bands from that phase rather than from instantaneous energy. The picture then
@@ -3096,8 +3096,8 @@ alter them. Also `pnpm build`, `pnpm lint`.
 
 **Do** — replace the two independent tap paths with a single pointer
 recogniser on the picture that dispatches by where the tap landed: the bottom
-third saves a frame and flashes a camera glyph, everything above it opens the
-panel.
+third saves a frame and flashes a camera glyph, the middle third opens the
+panel, and the top third does nothing.
 **Why** — asked for, and the current arrangement is two listeners in two files
 that have to agree with each other through a `stopPropagation()` in the
 capture phase.
@@ -3131,13 +3131,17 @@ capture phase.
   of the home indicator via `--safe-bottom`. That logic is unchanged; only the
   fraction moves. Removing it would put the capture zone under the gesture bar,
   where the tap never arrives.
-- Everything above the band opens the panel, **top third included** → **Mine.**
-  Victor named a behaviour for the bottom and middle thirds and none for the
-  top, and of the two ways to read that, a redundant third is a better outcome
-  than a dead one: a tap that does nothing, in a corner of an app with no
-  labels, is indistinguishable from the app having crashed. This is the
-  decision in the entry most worth overturning, and overturning it is a
-  one-line change to the zone function.
+- The top third does **nothing** → Victor, 2026-08-30, overturning a call of
+  mine that a redundant third beats a dead one. The thirds are literal, so the
+  zone function returns three answers rather than two: `capture`, `panel`,
+  `none`.
+- Which makes one cost real, and it is worth naming rather than discovering →
+  a tap up there is silent, and in an app with no labels silence is
+  indistinguishable from a crash. Two things already here reduce it: the panel
+  is still reachable from the whole middle third, which is where a thumb
+  naturally lands, and entry 33 gives the top third a behaviour of its own —
+  a press-and-hold emits. **Build 33 soon after this**, or the top third is
+  dead space for however long the gap lasts.
 - The flash is **a DOM overlay, and it is a camera glyph rather than a white
   screen** → **Mine**, on both counts. `flashShake()` already establishes the
   overlay precedent and states its reasoning — it must be visible even if the
@@ -3169,7 +3173,7 @@ capture phase.
 - `src/main.ts:377` — `CAPTURE_BAND_FRACTION` 0.15 → 1/3, and the comment
   recording that it supersedes entry 18.
 - `src/main.ts:386-393` — `inCaptureBand()` becomes a zone function returning
-  `capture` or `panel`.
+  `capture`, `panel` or `none`.
 - `src/main.ts:717-748` — the band's listeners become the single recogniser.
 - `src/hud.ts:1069-1077` — the document-level open listener is removed; the
   panel opens because the recogniser tells it to.
@@ -3177,8 +3181,9 @@ capture phase.
   overlay and its animation, beside `#shake-flash`.
 
 **Done when** — a tap anywhere in the bottom third saves a frame and shows a
-camera glyph that fades within about half a second; a tap anywhere above it
-opens the panel; no tap does both; the saved PNG contains no glyph; and
+camera glyph that fades within about half a second; a tap in the middle third
+opens the panel; a tap in the top third does nothing at all; no tap does two of
+those; the saved PNG contains no glyph; and
 `stopPropagation()` no longer appears in either tap path. At 320×568 the band
 is 189px tall and still clear of the home indicator.
 **Verify** — the phone, because the whole entry is about where a thumb lands,

@@ -126,7 +126,15 @@ One entry, not a project, because the recon collapses most of it:
   rather than a threshold with nothing below it.
 - The only new state is the agitation accumulator.
 
-The open question is a taste one and belongs to Victor: **how much** a still
-hand should differ from a still table. A visible difference makes the toy feel
-alive and makes every screenshot slightly unrepeatable; an invisible one is
-safe and is also what we have now.
+**Answered, 2026-08-30: slight but visible.** A still hand and a still table
+should differ enough to notice if you look, and not more. So posture biases the
+palette rather than repainting it, and picking the phone up should read as
+waking something rather than as changing a setting.
+
+That answer has a consequence worth stating before anyone builds it: **every
+screenshot becomes slightly unrepeatable**, because the tilt at the moment of
+capture is part of the picture. That is the intended trade and not a defect, so
+nothing downstream should try to normalise it away — but it does mean a
+side-by-side comparison of two builds has to hold the phone still in the same
+attitude to be worth anything, which is a new rule for anyone judging a change
+by eye.
