@@ -9061,7 +9061,7 @@ untouched.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 84. Each layer drifts on its own clock
-`status: ready` · added 2026-08-30
+`status: building` · added 2026-08-30
 
 **Do** — split the director's holds so the atmosphere and the geometry change
 on independent schedules rather than together.
