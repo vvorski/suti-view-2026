@@ -647,7 +647,27 @@ async function main(): Promise<void> {
   // `() => shake.tilt()` closes over the `let` above rather than its value at
   // this point, so it keeps reading whichever sensor `shake` is reassigned to
   // once the gate's own motion permission resolves.
-  const powder = mountPowder(() => shake.tilt())
+  //
+  // docs/todo.md entry 61 widens this from tilt alone to tilt plus disturb
+  // plus a shake's scatter impulse — one motion source, still, per the
+  // module's own comment on why it takes a getter rather than a sensor
+  // reference. `disturb` and `strongPeak` are read from the two variables
+  // below rather than calling into `shake` directly: `shake.frame()` and
+  // `shake.takeStrong()` both consume state (a decaying peak, a one-shot
+  // pending flag) and idleFrame below is already their one and only caller,
+  // every tick, whether or not the powder is up. A second caller reading
+  // `shake` here — on the powder's own, separate animation loop — would race
+  // idleFrame's for whichever fires first in a tick, and the loser would see
+  // nothing. `pendingScatterPeak` is cleared on read, right here, so a shake
+  // taken while the powder is idle-ticking but its own rAF hasn't yet run
+  // cannot be applied twice.
+  let currentDisturb = 0
+  let pendingScatterPeak = 0
+  const powder = mountPowder(() => {
+    const strongPeak = pendingScatterPeak
+    pendingScatterPeak = 0
+    return { tilt: shake.tilt(), disturb: currentDisturb, strongPeak }
+  })
   let stopGateTaps: () => void = () => {}
   {
     // Each tap has to land within this many milliseconds of the one before
@@ -692,6 +712,13 @@ async function main(): Promise<void> {
         // the gate rather than tearing it down is what makes "leaving must
         // be exact" (Decided) free — there is nothing here to rebuild.
         gate.hidden = powder.active
+        // docs/todo.md entry 61: the third tap is itself a live user gesture,
+        // so requestFullscreen() is allowed here — this is not one of the
+        // dialog-opening calls permission-gate.ts's own comment warns against
+        // spending the gesture on. Only on the way in: leaving the egg does
+        // not leave fullscreen (Decided, Mine), so there is no matching
+        // exitFullscreen() call on the other branch of this toggle.
+        if (powder.active) goFullscreen()
       }
     }
     document.addEventListener('pointerup', onGateTap)
@@ -727,13 +754,19 @@ async function main(): Promise<void> {
       // The tumble, and nothing else: no re-seed, no shuffle, at any
       // intensity. There is no audio yet and the idle programme is fixed, so
       // rerolling anything here would change what the person is about to
-      // walk into for reasons they cannot connect to anything they did. Both
-      // pending flags are still consumed and discarded — not left to fire
-      // the instant the real loop starts reading them after Start.
+      // walk into for reasons they cannot connect to anything they did.
+      // `takeDouble()` is still consumed and discarded — not left to fire the
+      // instant the real loop starts reading it after Start. `takeStrong()`
+      // is docs/todo.md entry 61: routed into `pendingScatterPeak` rather
+      // than discarded, so the powder (the only thing on screen that can act
+      // on a shake before Start) gets it instead of it vanishing into a
+      // picture nobody watching the powder can see change.
       const dt = (now - lastGateShakeAt) / 1000
       lastGateShakeAt = now
-      visualiser.setTumble(shake.frame(dt), prefs.gravity ? shake.gravity() : undefined)
-      shake.takeStrong()
+      const tumble = shake.frame(dt)
+      currentDisturb = tumble.disturb
+      visualiser.setTumble(tumble, prefs.gravity ? shake.gravity() : undefined)
+      pendingScatterPeak = shake.takeStrong()
       shake.takeDouble()
       visualiser.render(idleParams(t, idleSpectrum), idleSpectrum)
     }

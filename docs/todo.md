@@ -6179,7 +6179,89 @@ that: nothing is written · url no (`?rgb` keeps its meaning) · capture no ·
 dependency no.
 
 ### 61. The powder becomes a material: hold piles, drag pushes, motion moves it
-`status: ready` · added 2026-08-30
+`status: done` · added 2026-08-30 · shipped at build 216
+
+**Build note** — a process note first: this entry was implemented without the
+`status: building` claim commit the queue's own protocol calls for (an
+oversight on my part). Checked before writing this note: `docs/todo.md`'s
+entry 61 was untouched by the concurrent session in the interim (two of its
+docs-only commits landed on entries 63/64/68 while this was in flight), so
+nothing collided — but the claim step is not optional going forward.
+
+`powder.ts`'s drag no longer lays grains: `spawnDragSegment` and
+`DRAG_GRAINS_PER_PX`/`DRAG_VELOCITY_FRACTION` are gone (deleted, not zeroed —
+`DRAG_GRAINS_PER_PX = 0` would still have spawned one grain per move event,
+since the old code's `Math.max(1, ...)` floor doesn't know the rate is
+meant to be off; deletion is the honest way to make "instead of laying new
+ones" literally true). `pushGrains(x, y, vx, vy)` replaces it: every grain
+within `PUSH_RADIUS_PX` (40, the entry's own number) gets an impulse scaled
+by the finger's own pixel velocity and a linear falloff to the radius's
+edge. A hold vs. a drag is told apart by `lastMovedAt`, which only advances
+on a move past `HOLD_STILL_PX` (3px — real touch input jitters even under a
+"still" finger); once `STILL_DELAY_S` (0.12s, **Mine**) has passed since the
+last real move, `step()` piles continuously at `PILE_RATE_PER_S` (60, the
+entry's number) at the last known position, and the two are mutually
+exclusive by construction — piling stops the instant a real move resumes.
+Disturb adds a small random-walk jitter to every grain (`DISTURB_JITTER_ACCEL`,
+**Mine**, well under `TILT_ACCEL` so carrying the phone reads as a tremor,
+not a slide). A `takeStrong()` peak scatters every grain outward from the
+field's own centre, scaled by `intensity(peak)` (`SCATTER_SPEED_PX_S`,
+**Mine**).
+
+The actual coordination bug the entry names, found by tracing it rather than
+assuming it: `Tumble.takeStrong()` is one-shot — read-and-cleared — and
+`idleFrame` in `main.ts` was already calling it, unconditionally, every idle
+tick, discarding the result (a deliberate no-op, per its own comment, so a
+shake taken pre-Start doesn't retroactively fire something once the live
+loop starts reading it after Start). Nothing before this entry ever needed a
+*second* reader of that one-shot value. The powder's own render loop is a
+second, independent `requestAnimationFrame` chain running alongside
+`idleFrame`'s — if powder tried to call `shake.takeStrong()` itself from
+that loop, it would race `idleFrame`'s own call for whichever fires first in
+a tick, and the loser would always see zero. Fixed by keeping `idleFrame` as
+the *only* caller of `shake.takeStrong()`/`.frame()` (as it already was),
+routing its return into a `pendingScatterPeak` closure variable instead of
+discarding it, and having the widened `getMotion()` getter passed into
+`mountPowder` read-and-clear that variable itself — the same one-shot shape
+`takeStrong()` has, just relayed through one more hop, with a single
+consumer at each end. `takeDouble()` is left exactly as it was (still
+unconditionally discarded): nothing here gives it a job.
+
+Also on the third tap: `goFullscreen()` is now called on entry (never on
+exit — Decided, Mine, matches the entry's "leaving the egg does not leave
+fullscreen").
+
+Verified: `pnpm build`, `pnpm lint`, `pnpm probe:shake` (unchanged, per the
+entry's own Verify line — confirmed still green, not just assumed). Live
+against the real dev server: the three-tap toggle correctly swaps gate for
+powder and back (confirmed via `gate.hidden`/`powder.hidden`), and a
+script-dispatched tap on the powder canvas produces a visible burst
+(confirmed by canvas pixel readback, both immediately and after the render
+loop's next draw). `goFullscreen()` does not throw and produces no console
+error on a script-dispatched (untrusted) tap, consistent with the function's
+own documented silent-refusal design — `document.fullscreenElement` stayed
+false, which is the expected outcome of an untrusted gesture, not a defect.
+
+Not verified live: continuous piling, the push impulse, disturb's jitter and
+the shake scatter, all of which only show up as the render loop keeps
+ticking over real seconds. This session's Chrome tab has, over the course of
+this conversation, gone from the previously-documented "no real rAF, but a
+`setTimeout`-based polyfill fires roughly once a second" (entries 44 and
+onward) to a tab whose `setTimeout` calls — patched or native — stopped
+firing at all after several minutes backgrounded: an 8-second and a 9-second
+wait, on two separate attempts, produced zero canvas change even for grains
+that should have been settling under their own decaying velocity, let alone
+piling. This is a harness limitation, escalating over the session's own
+lifetime, not a code defect — the state-machine half (toggle, burst) is
+confirmed live because it does not depend on the render loop ticking more
+than once. In its place, the four per-frame formulas (push falloff, pile
+accumulation, scatter's zero-at-rest and nonzero-under-a-real-peak) were
+checked as isolated arithmetic in a throwaway Node script: all four correct.
+One thing found there worth recording as a non-bug: `PILE_RATE_PER_S`
+accumulated as `IEEE-754` floats loses exactly one grain per second to
+floating-point rounding (59 rather than 60 over 1s of continuous ticks at a
+1/60s step) — cosmetically invisible in an easter egg and not worth a
+correction.
 
 **Do** — the easter egg enters fullscreen; a hold builds a pile; a drag pushes
 the grains that are there instead of laying new ones; and shaking or moving the

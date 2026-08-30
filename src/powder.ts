@@ -1,12 +1,13 @@
 /**
- * The powder easter egg — docs/todo.md entry 46.
+ * The powder easter egg — docs/todo.md entry 46, made a material by entry 61.
  *
  * Three quick taps on the gate's own background (see main.ts) swap it for
- * this: a black field that throws down white grains on a tap, lays them
- * into a line on a drag — carrying the finger's own velocity, which is what
- * makes a line rather than a smudge — and lets a tilted phone slide the
- * whole picture downhill. Three taps again brings the gate back exactly as
- * it was.
+ * this, fullscreen: a black field that throws down white grains on a tap,
+ * piles them where a finger holds still, pushes the grains already there
+ * when it drags instead of laying new ones, and lets a tilted or shaken
+ * phone slide or scatter the whole pile. Three taps again brings the gate
+ * back exactly as it was — still in fullscreen, since leaving the egg is not
+ * a second, unrequested change of state.
  *
  * A separate 2D canvas over the hidden WebGL one, not the shader pipeline:
  * the mode is all black, so nothing the running piece draws is ever visible
@@ -15,12 +16,14 @@
  * about a mode none of them show.
  *
  * No permission prompt, ever — an easter egg must never be the thing that
- * asks for the accelerometer. Tilt only works where main.ts has already
- * started the sensor unconditionally (Android, where no permission gate
- * exists); on iOS `getTilt` reports the stub's `{0, 0}` and the powder
- * simply lies still under gravity's absence, which is a smaller feature
- * rather than a broken one.
+ * asks for the accelerometer. Tilt, disturb and shake only work where
+ * main.ts has already started the sensor unconditionally (Android, where no
+ * permission gate exists); on iOS `getMotion` reports the stub's stillness
+ * and the powder simply lies where it is, which is a smaller feature rather
+ * than a broken one.
  */
+
+import { intensity } from './shake'
 
 interface Grain {
   x: number
@@ -57,13 +60,40 @@ const BURST_COUNT = 16
 const BURST_SPREAD_PX = 6
 const BURST_SPEED_PX_S = 40
 
-/** Grains laid per pixel of drag distance — "gives them the finger's
- *  velocity, which is what makes a line rather than a smudge". **Mine**. */
-const DRAG_GRAINS_PER_PX = 0.5
-/** How much of the finger's own velocity a dragged grain inherits.
- *  **Mine**: less than 1 so a fast swipe still reads as powder settling
- *  into a line rather than a spray of missiles. */
-const DRAG_VELOCITY_FRACTION = 0.35
+/** docs/todo.md entry 61: a drag no longer lays grains — it pushes the ones
+ *  already there. Every grain within this many pixels of the finger gets an
+ *  impulse on each real move. **Mine on the exact radius** — the entry's own
+ *  number ("about 40px"). */
+const PUSH_RADIUS_PX = 40
+/** How much of the finger's own pixel velocity becomes impulse on a pushed
+ *  grain, at the push's centre — scaled down toward the radius's edge by
+ *  `step()`'s own falloff. **Mine**, tuned by feel against `DRAG_PER_S`
+ *  below: enough that a fast drag visibly throws grains ahead of the finger
+ *  rather than merely nudging them. */
+const PUSH_VELOCITY_SCALE = 0.6
+/** Below this many pixels of movement between two pointer samples, a finger
+ *  counts as held still rather than dragging — real touch input jitters by a
+ *  pixel or two even when a person believes they are holding still. **Mine**,
+ *  the same kind of slop `TAP_SLOP_PX` already is elsewhere in this app. */
+const HOLD_STILL_PX = 3
+/** How long after the last real move a held-still finger waits before piling
+ *  resumes — long enough that the tail of an ordinary drag's last few
+ *  sub-threshold samples does not read as "held still already". **Mine**. */
+const STILL_DELAY_S = 0.12
+/** Grains piled per second under a finger held still — docs/todo.md entry
+ *  61's own number. */
+const PILE_RATE_PER_S = 60
+
+/** Pixels/second² of jitter per unit of `disturb` (0..1) — "carrying the
+ *  phone unsettles it". **Mine**, tuned well under `TILT_ACCEL` so a phone
+ *  merely being carried reads as a tremor, not a slide. */
+const DISTURB_JITTER_ACCEL = 220
+
+/** Pixels/second of outward speed a `takeStrong()` peak of 1.0 (intensity's
+ *  own ceiling) gives every grain — docs/todo.md entry 61's "a hard shake
+ *  scatters it across the screen". **Mine**, tuned to clear a phone-sized
+ *  screen from roughly its centre well within `DRAG_PER_S`'s settling time. */
+const SCATTER_SPEED_PX_S = 900
 
 const GRAIN_RADIUS_PX = 1.1
 
@@ -74,13 +104,24 @@ export interface Powder {
   readonly active: boolean
 }
 
+/** What one frame of motion looks like to the powder — docs/todo.md entry
+ *  61 widens this from tilt alone to the three sources a phone's own sensor
+ *  already produces. `strongPeak` is 0 most frames and the raw peak (m/s²)
+ *  the one frame a shake was just taken, read-and-cleared by the caller —
+ *  the same one-shot shape `Tumble.takeStrong()` itself already has. */
+interface Motion {
+  tilt: { x: number; y: number }
+  disturb: number
+  strongPeak: number
+}
+
 /**
- * `getTilt` is a dependency rather than an import of a live sensor: main.ts
+ * `getMotion` is a dependency rather than an import of a live sensor: main.ts
  * owns the one running `ShakeSensor`, reassigned once permission resolves,
  * and this module has no business holding a second reference to it or
  * caring which state it is in.
  */
-export function mountPowder(getTilt: () => { x: number; y: number }): Powder {
+export function mountPowder(getMotion: () => Motion): Powder {
   const layer = document.getElementById('powder')
   const canvas = document.getElementById('powder-canvas')
   if (!(layer instanceof HTMLElement) || !(canvas instanceof HTMLCanvasElement)) {
@@ -107,6 +148,15 @@ export function mountPowder(getTilt: () => { x: number; y: number }): Powder {
   let lastX = 0
   let lastY = 0
   let lastMoveAt = 0
+  // docs/todo.md entry 61. lastMovedAt only advances on a real (past
+  // HOLD_STILL_PX) move, unlike lastMoveAt above which advances on every
+  // sample including jitter — the gap between the two is exactly "how long
+  // has this finger actually been still", which is what gates piling.
+  let lastMovedAt = 0
+  // Fractional grains owed to the pile, carried between frames so
+  // PILE_RATE_PER_S is a real rate rather than rounding to whole grains a
+  // frame at a time.
+  let pileAccum = 0
 
   const resize = (): void => {
     dpr = Math.min(2, window.devicePixelRatio || 1)
@@ -128,18 +178,19 @@ export function mountPowder(getTilt: () => { x: number; y: number }): Powder {
     }
   }
 
-  const spawnDragSegment = (x0: number, y0: number, x1: number, y1: number, vx: number, vy: number): void => {
-    const dist = Math.hypot(x1 - x0, y1 - y0)
-    const n = Math.max(1, Math.round(dist * DRAG_GRAINS_PER_PX))
-    for (let i = 0; i < n; i++) {
-      const t = n === 1 ? 1 : i / (n - 1)
-      grains.push({
-        x: x0 + (x1 - x0) * t,
-        y: y0 + (y1 - y0) * t,
-        vx: vx * DRAG_VELOCITY_FRACTION + (Math.random() - 0.5) * 4,
-        vy: vy * DRAG_VELOCITY_FRACTION + (Math.random() - 0.5) * 4,
-        alpha: 1,
-      })
+  /** docs/todo.md entry 61: a drag pushes the grains that are there instead
+   *  of laying new ones. Every grain within `PUSH_RADIUS_PX` of the finger
+   *  gets an impulse in the direction — and scaled by the speed — of the
+   *  finger's own move, falling off toward the radius's edge so the effect
+   *  reads as a push near a point rather than a uniform shove of everything
+   *  nearby. */
+  const pushGrains = (x: number, y: number, vx: number, vy: number): void => {
+    for (const g of grains) {
+      const dist = Math.hypot(g.x - x, g.y - y)
+      if (dist > PUSH_RADIUS_PX) continue
+      const falloff = 1 - dist / PUSH_RADIUS_PX
+      g.vx += vx * PUSH_VELOCITY_SCALE * falloff
+      g.vy += vy * PUSH_VELOCITY_SCALE * falloff
     }
   }
 
@@ -148,33 +199,82 @@ export function mountPowder(getTilt: () => { x: number; y: number }): Powder {
     lastX = e.clientX
     lastY = e.clientY
     lastMoveAt = performance.now() / 1000
+    lastMovedAt = lastMoveAt
     spawnBurst(e.clientX, e.clientY)
   }
   const onPointerMove = (e: PointerEvent): void => {
     if (!dragging) return
     const now = performance.now() / 1000
     const dt = Math.max(1 / 240, now - lastMoveAt)
-    const vx = (e.clientX - lastX) / dt
-    const vy = (e.clientY - lastY) / dt
-    spawnDragSegment(lastX, lastY, e.clientX, e.clientY, vx, vy)
+    const dist = Math.hypot(e.clientX - lastX, e.clientY - lastY)
+    // Below HOLD_STILL_PX this is jitter under a finger that believes it is
+    // holding still, not a drag — leave lastMovedAt alone so step()'s pile
+    // resumes without waiting out STILL_DELAY_S for no reason.
+    if (dist > HOLD_STILL_PX) {
+      const vx = (e.clientX - lastX) / dt
+      const vy = (e.clientY - lastY) / dt
+      pushGrains(lastX, lastY, vx, vy)
+      lastMovedAt = now
+    }
     lastX = e.clientX
     lastY = e.clientY
     lastMoveAt = now
   }
   const onPointerUp = (): void => {
     dragging = false
+    pileAccum = 0
   }
 
   const step = (dt: number): void => {
-    const tilt = getTilt()
-    const ax = tilt.x * TILT_ACCEL
-    const ay = tilt.y * TILT_ACCEL
+    const motion = getMotion()
+    const ax = motion.tilt.x * TILT_ACCEL
+    const ay = motion.tilt.y * TILT_ACCEL
     const drag = Math.exp(-DRAG_PER_S * dt)
     const w = canvas.width / dpr
     const h = canvas.height / dpr
+
+    // A stationary finger piles rather than dragging — see onPointerMove's
+    // own comment on the still/drag boundary this reads.
+    if (dragging && performance.now() / 1000 - lastMovedAt >= STILL_DELAY_S) {
+      pileAccum += PILE_RATE_PER_S * dt
+      while (pileAccum >= 1) {
+        grains.push({
+          x: lastX + (Math.random() - 0.5) * BURST_SPREAD_PX,
+          y: lastY + (Math.random() - 0.5) * BURST_SPREAD_PX,
+          vx: 0,
+          vy: 0,
+          alpha: 1,
+        })
+        pileAccum -= 1
+      }
+    } else {
+      pileAccum = 0
+    }
+
+    // "Carrying the phone unsettles it" — a small jitter proportional to
+    // disturb, applied to every grain the same way tilt already is.
+    const jitter = motion.disturb * DISTURB_JITTER_ACCEL
+
+    // "A hard shake scatters it" — an outward impulse from the field's own
+    // centre, scaled by how hard the shake was. Zero every frame but the one
+    // takeStrong() actually returned something, since getMotion() clears it.
+    const scatterSpeed = intensity(motion.strongPeak) * SCATTER_SPEED_PX_S
+    const cx = w / 2
+    const cy = h / 2
+
     for (const g of grains) {
-      g.vx = (g.vx + ax * dt) * drag
-      g.vy = (g.vy + ay * dt) * drag
+      let vx = g.vx + ax * dt + (Math.random() - 0.5) * jitter * dt
+      let vy = g.vy + ay * dt + (Math.random() - 0.5) * jitter * dt
+      if (scatterSpeed > 0) {
+        const dx = g.x - cx
+        const dy = g.y - cy
+        const dist = Math.hypot(dx, dy)
+        const [nx, ny] = dist > 0.01 ? [dx / dist, dy / dist] : [Math.cos(g.x), Math.sin(g.y)]
+        vx += nx * scatterSpeed
+        vy += ny * scatterSpeed
+      }
+      g.vx = vx * drag
+      g.vy = vy * drag
       g.x += g.vx * dt
       g.y += g.vy * dt
       // A wall, not a wrap or a fall-through — powder piles up at the edge
