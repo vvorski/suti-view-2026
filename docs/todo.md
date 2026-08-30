@@ -8320,7 +8320,7 @@ a real phone — the entry's own Verify text names this as the phone's
 question, not the probe's.
 
 ### 77. Two rings: what the wedge edits, and everything else
-`status: ready` · added 2026-08-30
+`status: building` · added 2026-08-30 · started 2026-08-30
 
 **Do** — split the icon arc in two. The four layer selectors stay on the
 current arc beside the control; the four global toggles move to a second,
