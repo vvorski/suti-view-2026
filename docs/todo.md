@@ -7408,3 +7408,138 @@ changes, and the mode itself is deliberately not stored) · url no · capture
 **yes, and answered**: the frame is the same live composite `requestCapture`
 already reads, the glyph and flash are DOM and cannot enter it, the filename
 shape is unchanged, and nothing leaves the device · dependency no.
+
+### 73. A frozen camera is reported, and the director never opens one
+`status: ready` · added 2026-08-30
+
+**Do** — stop swallowing the `play()` refusal, verify the video is actually
+advancing, resume it when the page comes back, and forbid the auto-roll from
+opening a camera it has no gesture for.
+
+**Why** — passthrough sometimes shows one still frame forever, and most often
+when the shuffle turned it on. Both halves of that sentence have a cause and
+the code already names one of them.
+
+**Decided**
+- **The cause is written in the source, as an accepted cost.** `camera.ts:76`:
+  `await video.play().catch(() => {})`, whose comment says *"The texture will
+  simply hold the first frame; that is a poor passthrough rather than a failed
+  one, and not worth refusing over."* **The frozen picture is that first
+  frame.** The judgement was defensible when the only way to reach it was
+  tapping a control; it stopped being defensible when the director could reach
+  it too.
+- **Why the auto path always hits it** → `maybeRollCamera` (`main.ts:851`)
+  runs `await hasCameraPermission()` and then `await applyPassthrough(level)`,
+  so `startCamera()` is two awaits deep in an async chain — any user activation
+  has long expired. And the chain begins at a **shake**, which is a
+  `devicemotion` event and was never an activation-triggering gesture in the
+  first place. So on the auto path `play()` is refused essentially always, and
+  the catch hides it. "Especially on auto select" is not a coincidence; it is
+  the only path that reliably reproduces it.
+- **So the director never opens a camera.** It may still turn passthrough
+  *down*, and it may raise it when a stream is **already open and playing** —
+  but a closed camera stays closed. **Mine**, and it is the same conclusion
+  entry 72 reached from the other direction: an autonomous process opening a
+  camera is not a thing this app should be able to do, regardless of whether
+  the permission was granted earlier.
+- **A second, independent freeze that hits even a properly-started camera** →
+  nothing anywhere resumes the video. Browsers pause a video element when the
+  page is hidden; the phone locks, or you switch apps, and on return the
+  texture holds the last frame with no error of any kind. `visibilitychange` is
+  listened for in `permission-gate.ts` and `version.ts` and neither knows the
+  camera exists. Add a resume: on return to visible, `play()` again if
+  `video.paused`. This is the "sometimes" that has nothing to do with the
+  director.
+- **Verify it is running rather than trusting `play()`.** A resolved `play()`
+  is not proof of frames, exactly as entry 62 found a resolved
+  `requestFullscreen` is not proof of fullscreen. Watch `video.currentTime`
+  advance across a short window — or `requestVideoFrameCallback` where it
+  exists, falling back to `currentTime` where it does not — and expose the
+  answer on `CameraSource`.
+- **Report it, because a frozen camera and a working one are identical when
+  the room is still.** The readout gains the camera's state beside the
+  fullscreen and motion fields it already carries. Same argument as
+  `shake.ts`'s `diagnostics()` and entry 66's `want`/`armed`: this app's
+  recurring failure is not that things break, it is that two different breakages
+  present as one sentence.
+- **A frozen stream is closed, not kept.** If the video never advances, release
+  it and report 0 rather than holding a powered sensor and a lit OS indicator
+  to show a still photograph — `applyPassthrough`'s own comment makes exactly
+  this argument about holding a stream behind a zero mix.
+
+**Lands in**
+- `src/camera.ts:76-92` — the refusal stops being swallowed; `CameraSource`
+  gains a liveness flag and a resume.
+- `src/main.ts:851-860` — the auto-roll requires an already-playing stream.
+- `src/main.ts:920-945` — `applyPassthrough` releases a stream that never ran.
+- `src/hud.ts` — the readout field.
+
+**Done when** — a shuffle deep enough to roll the camera never opens one that
+was closed; locking the phone and returning shows live video again, not the
+last frame; a refused `play()` leaves passthrough at 0 with the readout saying
+why, instead of a still image at the requested mix; and the OS camera
+indicator is never lit while the picture is frozen.
+**Verify** — the phone: lock it and come back, and separately shake hard enough
+to trigger a full shuffle with the camera closed. Neither is reproducible on a
+desktop, where `play()` is not refused and the page is rarely hidden.
+**Hard stops** — prefs no · url no · capture **yes, and answered**: this
+strictly *reduces* when the camera opens — the director loses the ability
+entirely — and adds no new path to a stream · dependency no.
+
+### 74. Paper: true white, true black, and ink that takes or doesn't
+`status: ready` · added 2026-08-30 · build after 68
+
+**Do** — take entry 68's ink model and push it to actual paper: a white ground,
+near-black marks, and a density curve so thin marks read as ink rather than as
+grey.
+
+**Why** — asked for directly, and it goes further than entry 68's numbers.
+68 is being built now with a 0.88 ground and 0.10 ink, which were **Mine** and
+are hereby overridden: Victor wants paper, and paper is white.
+
+**Decided**
+- **This does not touch entry 68**, which is `building`. Everything here is a
+  change of values and one curve on the mechanism 68 ships. Build 68, then
+  this. Nothing in 68's design is being revisited — the density/colour split,
+  the ink leading the paper through dawn, and the `(1 − uCameraMix)` retirement
+  all carry over exactly.
+- **Ground 0.97, ink 0.03.** A range of 0.94 against night's ~1.0, where the
+  measured original was 0.15. **Not pure 1.0/0.0**: a ground at exactly 1.0
+  cannot show a highlight and clips anything the vibrance stage (entry 70)
+  lifts, and ink at exactly 0.0 loses the hue that entry 68's colour split
+  exists to preserve. Three percent at each end is the difference between
+  paper and a clipped scan.
+- **Ink takes or it doesn't** → `density = pow(density, 0.7)` before it is
+  laid. Real ink is not linear: a mark is either on the page or the page is
+  bare, and the interesting part is how quickly it commits. The plain linear
+  density leaves every thin mark as mid-grey, which is exactly the "anaemic"
+  reading in a paper palette. **Mine**, and 0.7 is a starting point the
+  acceptance floor below can move.
+- **The paper is warm, not blue-white.** Entry 53's `uSky.y` already carries
+  warmth and entry 71 keeps it; at 0.97 it should read as cream at dawn and
+  dusk and near-neutral at noon. Real paper is warm and a blue-white ground is
+  the thing that makes a screen look like a screen. Entry 68 widened the tint
+  to ±0.10 for the same reason and that value stands.
+- **Camera off only**, as asked, and it is already true: 68 scales the whole
+  ground by `(1 − uCameraMix)`, so a real room is never papered over. Restated
+  here because "when camera off" is in the request and a builder should not
+  have to go and check.
+- **The floors move with the values.** 68 asks for ≥70% of night's tonal range
+  and saturation; with a 0.94 range available that becomes **≥85% of the range**
+  and the saturation floor stays at 70%, since ink laid on white desaturates
+  mid-densities no matter how it is done and demanding parity there would be
+  demanding something the model cannot give.
+
+**Lands in**
+- `src/shaders/composite.frag.glsl` — the two constants 68 introduces, plus the
+  density curve.
+- `scripts/probe-composite.ts` — the raised range floor.
+
+**Done when** — day mode with the camera off is white paper with near-black
+marks; a coloured layer reads as coloured ink rather than grey; contrast
+measures ≥ 85% of the same scene at night; a warm hour gives cream rather than
+blue-white; and passthrough at any non-zero mix is unaffected.
+**Verify** — the same measurement entry 68 established, on the same four views,
+plus a phone in real daylight. The number to watch is `p5`: it should sit near
+0.03, where the original frames could not go below 0.606.
+**Hard stops** — prefs no · url no · capture no · dependency no.
