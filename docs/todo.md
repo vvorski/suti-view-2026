@@ -8469,7 +8469,7 @@ entry's own Verify text names as its half of this — outside what a
 browser-only harness can answer.
 
 ### 78. Camera mode is a door back to the menu, not a one-way trip
-`status: done` · added 2026-08-30 · started 2026-08-30 · build 259
+`status: done` · added 2026-08-30 · started 2026-08-30 · build 260
 
 **Do** — make the shutter chip stay live in camera mode and return to the open
 menu when tapped, retire the two-finger exit, and show the chip as active while
@@ -9002,3 +9002,77 @@ unchanged.
 **Verify** — the probe for the physics being untouched, and a grep for
 `takeStrong`/`takeDouble` outside `shake.ts` returning nothing.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 87. Camera mode is one shot: arm, shoot, done
+`status: ready` · added 2026-08-30 · supersedes the mode built by 72 and 78
+
+**Do** — camera mode arms a single photo. Tap the chip: the menu closes and the
+camera glyph appears. The next tap takes **one** picture and leaves the mode.
+Nothing about the picture changes while armed.
+
+**Why** — Victor, asked directly: *"Enter camera mode display camera icon next
+click takes picture exits camera mode."* That is not what entries 72 and 78
+built, and the difference is not a detail — it is a different mode.
+
+**Decided**
+- **What is being corrected, plainly.** Entry 72 was mine and it misread the
+  request. "Camera mode" was taken to mean the *passthrough* camera, so
+  `enterCameraMode` calls `applyPassthrough(0.75)` and the room comes up at 75%
+  — directly against the original request's own words, **"animation not
+  affected"**. The build agent implemented the entry faithfully; the entry was
+  wrong.
+- **So entering touches the passthrough not at all.** No `applyPassthrough`, no
+  `preCameraMix`, no restore — the room layer stays exactly wherever it was,
+  including off, and the picture on screen does not change by one pixel when
+  the mode is entered. What makes it a mode is the glyph, the instant shutter
+  and the locked-out menu. Nothing visual.
+- **One shot, and this dissolves three problems rather than solving them.**
+  A mode that ends at the first photo has no exit gesture to design, so:
+  entry 78's two-finger exit and its **spurious screenshot on the first
+  finger** simply stop existing; there is no state to be stranded in; and
+  "how do I get out" never has to be discoverable. The bug is deleted along
+  with the gesture that carried it.
+- **After the shot, back to the menu.** **Mine**, and it is the direct answer
+  to *"camera mode is not connected to the menu!!"* — you entered from the
+  chip, so you land back where you came from, and a second photo is a
+  deliberate two-tap act rather than a held state that can be forgotten about.
+  Reversible if it proves annoying in a burst; nothing else depends on it.
+- **The shutter stays instant.** Entry 72's real insight survives intact and is
+  now stronger: with the menu locked out *and* only one tap to interpret, the
+  photo fires on `pointerdown` with nothing to wait for. That was always the
+  best argument for the mode existing.
+- **Kept from entry 78**: the chip paints its armed state (it was `void
+  shutterChip`, so nothing repainted it), and the exception at `hud.ts:408`
+  that keeps it live. **Dropped from entry 78**: the chip-as-exit, the
+  two-finger case, and the reopen-on-exit plumbing, all of which existed to
+  manage a mode that no longer persists.
+- **Still needed, and unrelated to any of this** → the stray pending save on the
+  ordinary two-finger menu open (`main.ts:1354`), which entry 78 also carried.
+  If 78 already fixed it, leave it; if not, it stays outstanding on its own.
+- **Entry 80 still outranks this.** Fullscreen has right of way, so a tap while
+  windowed restores fullscreen and does not spend the armed shot. Being armed
+  must survive that tap — the photo is still waiting afterwards. **Mine**, and
+  it is the one interaction between the two that could silently eat a picture.
+- **Timeout, so armed is never forever** → if no tap arrives within **10s**,
+  disarm and hide the glyph. **Mine**: a mode entered by accident should not
+  wait indefinitely to take a photo of something you have stopped looking at.
+
+**Lands in**
+- `src/main.ts:1017-1042` — `enterCameraMode` loses the passthrough call;
+  `exitCameraMode` becomes the post-shot return.
+- `src/main.ts:1331-1347` — the camera branch: one shot, then exit; the
+  two-finger case goes.
+- `src/hud.ts` — the chip keeps its armed paint, loses its exit role.
+
+**Done when** — tapping the chip changes nothing on screen except the glyph
+appearing and the menu closing; the next tap anywhere on the picture saves
+exactly one frame and returns to the menu; the passthrough mix is identical
+before and after; a tap that restores fullscreen does not consume the shot;
+and an armed mode left alone disarms after 10s.
+**Verify** — the phone, counting files, as entry 78 asked and nobody ran:
+arm, shoot, arm, shoot, and confirm exactly two frames arrived and the room
+camera never turned on.
+**Hard stops** — prefs no · url no · capture **yes, and answered**: strictly
+fewer and more deliberate captures than what shipped — one per arming, no
+accidental frame on exit, and the camera hardware is never opened by this mode
+at all · dependency no.
