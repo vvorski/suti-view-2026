@@ -9131,7 +9131,7 @@ silences both.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 85. A gentle shake asks for a shuffle and gets nothing
-`status: ready` · added 2026-08-30
+`status: building` · added 2026-08-30
 
 **Do** — derive shuffle depth from evidence the detector actually has, so the
 sustained path stops reporting zero and the same gesture means the same thing
