@@ -67,6 +67,13 @@ uniform float uLevel;
 uniform float uLow;
 uniform float uTilt;
 uniform float uBreak;
+// docs/todo.md entry 75 — the shared tempo tracker's first shader consumer.
+// uBeat is phase within the current beat, 0->1; uBeatConfidence is how much
+// to trust it, 0-1 and continuous. uBpm is unused here — the phase and the
+// confidence are what geometry needs, and the readout is where the number
+// itself belongs.
+uniform float uBeat;
+uniform float uBeatConfidence;
 uniform vec4 uSeed;
 
 // Must match MAX_RIPPLES in ripples.ts — GLSL can't import a JS constant, and
@@ -338,6 +345,21 @@ void main() {
   // outline for the same reason as everything else here.
   float centreR = 0.012 + 0.055 * uLow;
   ink += ring(dist, centreR, px * 0.9, px) * (0.25 + 0.55 * uLow);
+
+  // docs/todo.md entry 75 — a ring that spawns on the beat rather than
+  // riding a continuous drive, since the bands above already cover that and
+  // an *event* is the one thing energy alone cannot do. It travels only a
+  // short distance (unlike the audio/touch rings above, which cross the
+  // whole frame) so it reads as a pulse landing near the centre, not a
+  // third ripple system layered over the other two, and fades across the
+  // same span it travels rather than on its own separate clock. At
+  // uBeatConfidence == 0 — no lock, or no tempo at all — `beatOpacity` is
+  // exactly 0 regardless of `uBeat`'s value, so this contributes exactly 0
+  // ink and every view renders pixel-identical to before this entry.
+  float beatRadius = maxRadius * 0.30 * uBeat;
+  float beatOpacity = uBeatConfidence * (1.0 - uBeat);
+  float beatHalf = max(beatRadius * OUTER_STROKE * 0.6, px * 0.5);
+  ink += ring(dist, beatRadius, beatHalf, px) * beatOpacity;
 
   // A break thins the ink rather than draining colour — there is no colour
   // here to drain.

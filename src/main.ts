@@ -197,6 +197,10 @@ function idleParams(t: number, spectrum: Uint8Array): VisualParams {
     surge: 0,
     novelty: 0.12 * wave(17.3),
     roughness: 0.3 + 0.2 * wave(9.1, 0.65),
+    // No audio, no tempo — an idle preview must not fake a beat lock.
+    beatPhase: 0,
+    bpm: 0,
+    beatConfidence: 0,
   }
 }
 

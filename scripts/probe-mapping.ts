@@ -198,6 +198,120 @@ console.log('\nbeat: 120bpm pattern locks, then falls back on noise:\n')
   )
 }
 
+// --- the shared tracker's own accuracy, docs/todo.md entry 75 ---------------
+// `beat` no longer keeps a private tempo estimate; `bpm`/`beatConfidence` on
+// every mapping now come from CommonAnalysis's autocorrelation tracker. This
+// is the entry's own numeric Done-when, checked directly against `bpm`
+// rather than inferred from `level`'s shape the way the two checks above
+// have to (they predate the tracker reporting a tempo at all).
+
+console.log('\ntempo tracker: settles on 120bpm from a clean four-on-the-floor pattern:\n')
+{
+  const m = MAPPINGS.beat()
+  let bpmAt4s = 0
+  for (let i = 0; i < 6 * FPS; i++) {
+    const t = i / FPS
+    const hit = (t % 0.5) < 0.06
+    const p = m.update(frame(hit ? 170 : 20, hit ? 120 : 45, hit ? 90 : 40))
+    if (Math.abs(t - 4) < 0.5 / FPS) bpmAt4s = p.bpm
+  }
+  check(
+    'reports 120±2 BPM within 4 seconds of a steady 120bpm pattern',
+    Math.abs(bpmAt4s - 120) <= 2,
+    `bpm at t=4s: ${bpmAt4s.toFixed(1)}`,
+  )
+}
+
+console.log('\ntempo tracker: holds through one missed beat:\n')
+{
+  const m = MAPPINGS.beat()
+  let bpmAtEnd = 0
+  for (let i = 0; i < 8 * FPS; i++) {
+    const t = i / FPS
+    // The hit due at t=4.0 never fires — a real onset dropped from the mix.
+    const hit = (t % 0.5) < 0.06 && !(t >= 4.0 && t < 4.5)
+    const p = m.update(frame(hit ? 170 : 20, hit ? 120 : 45, hit ? 90 : 40))
+    bpmAtEnd = p.bpm
+  }
+  check('holds 120±2 BPM through one missed beat', Math.abs(bpmAtEnd - 120) <= 2, `bpm at t=8s: ${bpmAtEnd.toFixed(1)}`)
+}
+
+console.log('\ntempo tracker: holds through one inserted off-beat hit:\n')
+{
+  const m = MAPPINGS.beat()
+  let bpmAtEnd = 0
+  for (let i = 0; i < 8 * FPS; i++) {
+    const t = i / FPS
+    // A spurious extra hit at t=4.25s — exactly between two real beats.
+    const hit = (t % 0.5) < 0.06 || (t >= 4.25 && t < 4.31)
+    const p = m.update(frame(hit ? 170 : 20, hit ? 120 : 45, hit ? 90 : 40))
+    bpmAtEnd = p.bpm
+  }
+  check(
+    'holds 120±2 BPM through one inserted off-beat hit',
+    Math.abs(bpmAtEnd - 120) <= 2,
+    `bpm at t=8s: ${bpmAtEnd.toFixed(1)}`,
+  )
+}
+
+console.log('\ntempo tracker: does not report the octave-error 60 or 240 for a 120bpm input:\n')
+{
+  // The failure that "fails plausibly": a 120bpm autocorrelation peak is
+  // harmonically tied with peaks at 60 and 240, all three internally
+  // consistent about the same pattern. Run long enough (10s) that a
+  // tracker settling on the wrong one would have long since stopped moving.
+  const m = MAPPINGS.beat()
+  let bpmAtEnd = 0
+  for (let i = 0; i < 10 * FPS; i++) {
+    const t = i / FPS
+    const hit = (t % 0.5) < 0.06
+    const p = m.update(frame(hit ? 170 : 20, hit ? 120 : 45, hit ? 90 : 40))
+    bpmAtEnd = p.bpm
+  }
+  check(
+    'settles on 120, not the 60 or 240 octave error',
+    Math.abs(bpmAtEnd - 120) <= 2 && Math.abs(bpmAtEnd - 60) > 2 && Math.abs(bpmAtEnd - 240) > 2,
+    `bpm at t=10s: ${bpmAtEnd.toFixed(1)}`,
+  )
+}
+
+console.log('\ntempo tracker: stays honestly unlocked without a kick, and off random-interval noise:\n')
+{
+  const mSilent = MAPPINGS.beat()
+  let maxBpmSilent = 0
+  for (let i = 0; i < 8 * FPS; i++) {
+    const p = mSilent.update(frame(20, 45, 40))
+    maxBpmSilent = Math.max(maxBpmSilent, p.bpm)
+  }
+  check('reports no tempo at all against a flat, kickless signal', maxBpmSilent === 0, `peak bpm ${maxBpmSilent.toFixed(1)}`)
+
+  // Same deterministic LCG noise pattern the lock/unlock check above uses.
+  const mNoise = MAPPINGS.beat()
+  let rand = 42
+  const nextRand = (): number => {
+    rand = (rand * 1103515245 + 12345) & 0x7fffffff
+    return rand / 0x7fffffff
+  }
+  let nextOnsetAt = 0.2
+  let lockedFrames = 0
+  let totalFrames = 0
+  for (let i = 0; i < 10 * FPS; i++) {
+    const t = i / FPS
+    const hit = t >= nextOnsetAt
+    if (hit) nextOnsetAt = t + 0.15 + nextRand() * 0.6
+    const p = mNoise.update(frame(hit ? 170 : 20, hit ? 120 : 45, hit ? 90 : 40))
+    if (t > 6) {
+      totalFrames++
+      if (p.bpm > 0) lockedFrames++
+    }
+  }
+  check(
+    'does not invent a confident tempo from random-interval onsets',
+    lockedFrames / totalFrames < 0.1,
+    `bpm > 0 for ${((lockedFrames / totalFrames) * 100).toFixed(0)}% of frames after 6s of noise`,
+  )
+}
+
 // --- bass-led tracks the low band, not a blend of all three -----------------
 
 console.log('\nbass-led: level tracks low within 0.1 on the 120bpm pattern:\n')

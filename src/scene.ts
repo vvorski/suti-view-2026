@@ -361,6 +361,13 @@ export function createVisualiser(
     uSurge: { value: 0 },
     uNovelty: { value: 0 },
     uRoughness: { value: 0.5 },
+    // docs/todo.md entry 75. At uBeatConfidence == 0 every view must render
+    // exactly as it does today — the same algebraic-identity discipline
+    // entry 47 used for uDay — so uBeat defaults to 0 (silent) rather than
+    // to a phase that would draw something the moment a shader reads it.
+    uBeat: { value: 0 },
+    uBpm: { value: 0 },
+    uBeatConfidence: { value: 0 },
     uSpectrum: { value: spectrumTexture },
     uHistory: { value: historyTexture },
     // Where "now" sits in the ring buffer, 0-1. The shader walks backwards from
@@ -909,6 +916,12 @@ export function createVisualiser(
       uniforms.uSurge.value = params.surge
       uniforms.uNovelty.value = params.novelty
       uniforms.uRoughness.value = Math.max(params.roughness, stream.roughness)
+      // No touch-stream contribution here, unlike the audio params above it
+      // — a beat phase is a prediction about *when*, and a finger has no
+      // opinion on that; it only ever adds liveliness to an amplitude.
+      uniforms.uBeat.value = params.beatPhase
+      uniforms.uBpm.value = params.bpm
+      uniforms.uBeatConfidence.value = params.beatConfidence
       uniforms.uHistoryHead.value = historyHead / HISTORY_W
 
       // docs/todo.md entry 58. Added to the *stored* colour fresh every

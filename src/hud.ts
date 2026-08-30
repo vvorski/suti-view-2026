@@ -1199,6 +1199,12 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
         `surge ${bar(p.surge)} ${p.surge.toFixed(2)}`,
         `novel ${bar(p.novelty)} ${p.novelty.toFixed(2)}`,
         `rough ${bar(p.roughness)} ${p.roughness.toFixed(2)}`,
+        // docs/todo.md entry 75 — a tempo nobody can see cannot be
+        // debugged, the same argument that put samples/peak on the shake
+        // diagnostics below and want/armed on the fullscreen line. `bpm` is
+        // already 0 while unlocked, so "—" only ever means "no lock", never
+        // "a lock at literally 0bpm".
+        `beat  ${bar(p.beatConfidence)} ${p.beatConfidence.toFixed(2)}  ${p.bpm > 0 ? Math.round(p.bpm) + ' bpm' : '—'}`,
         // Only when there is a sensor. On a laptop this would read 0.00 forever
         // and say nothing; on a phone it is the only way to see what the shake
         // thresholds are actually being fed.

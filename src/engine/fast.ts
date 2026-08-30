@@ -57,6 +57,23 @@ export interface VisualParams {
    * high is bright and noisy. Very slow by design — it describes timbre.
    */
   roughness: number
+  /**
+   * Position within the current beat, 0→1, docs/todo.md entry 75. 0 while
+   * unlocked — geometry driven by this is an event (spawn a ring, step a
+   * rotation, advance a colour) and an unlocked 0 is silence, not a guess at
+   * where the beat would have been.
+   */
+  beatPhase: number
+  /** Estimated tempo in BPM, 0 while unlocked. For the readout — a tempo
+   *  nobody can see cannot be debugged. */
+  bpm: number
+  /**
+   * How much to trust `beatPhase`/`bpm`, 0-1 and continuous rather than a
+   * boolean lock — this is what lets a shader blend between beat-driven and
+   * energy-driven instead of switching between them. At 0, every existing
+   * view must render exactly as it does today.
+   */
+  beatConfidence: number
 }
 
 export interface Mapping {
@@ -204,20 +221,268 @@ class SpectralFlux {
   private prev: Uint8Array | null = null
   private readonly ceiling = new RollingCeiling(2, 4)
 
-  update(frame: AudioFrame, dt: number): number {
+  /** `loHz`/`hiHz` restrict the flux to a band — docs/todo.md entry 75 reuses
+   *  this scoped to the low band for `beatStrength`, so a kick sets off the
+   *  beat tracker without a hi-hat or a vocal doing the same. Defaults cover
+   *  the whole spectrum, which keeps every existing call site (the broadband
+   *  `transient`) byte-identical. */
+  update(frame: AudioFrame, dt: number, loHz = 0, hiHz = Infinity): number {
     if (!this.prev || this.prev.length !== frame.freq.length) {
       this.prev = new Uint8Array(frame.freq)
       return 0
     }
 
+    const binHz = frame.sampleRate / (frame.binCount * 2)
+    const lo = Math.max(0, Math.floor(loHz / binHz))
+    const hi = hiHz === Infinity ? frame.freq.length : Math.min(frame.freq.length, Math.ceil(hiHz / binHz))
+
     let flux = 0
-    for (let i = 0; i < frame.freq.length; i++) {
+    for (let i = lo; i < hi; i++) {
       const d = frame.freq[i] - this.prev[i]
       if (d > 0) flux += d
     }
     this.prev.set(frame.freq)
 
-    return this.ceiling.normalise(flux / frame.freq.length, dt)
+    return hi > lo ? this.ceiling.normalise(flux / (hi - lo), dt) : 0
+  }
+}
+
+/**
+ * Tracks a rolling median over a fixed window — the adaptive floor for the
+ * beat onset threshold, docs/todo.md entry 75. Re-sorts a small array on
+ * every push rather than keeping a running structure: the window is a few
+ * dozen samples, so the sort is microseconds, and there is no reason to
+ * build a heap for that.
+ */
+class RollingMedian {
+  private readonly buf: number[] = []
+  private readonly size: number
+
+  constructor(size: number) {
+    this.size = size
+  }
+
+  push(v: number): number {
+    this.buf.push(v)
+    if (this.buf.length > this.size) this.buf.shift()
+    const sorted = [...this.buf].sort((a, b) => a - b)
+    return sorted[Math.floor(sorted.length / 2)]
+  }
+}
+
+/**
+ * docs/todo.md entry 75 — a tempo every mapping can see, promoted out of
+ * `beatMapping()`'s own private two-gap estimator into something shared.
+ *
+ * Onset strength is resampled onto a fixed-rate ring buffer (autocorrelation
+ * needs a uniform time base; frame `dt` is not one), then autocorrelated to
+ * find candidate periods. Each candidate is scored by how well it lines up
+ * with a pulse train at its *best* phase offset — this is what tells a true
+ * 120bpm apart from its 60 and 240bpm harmonics, which score just as well
+ * under plain autocorrelation (fragility 2 in the entry): among candidates
+ * that tie on that score, the one nearest a resting tempo of 120bpm wins.
+ *
+ * Phase is nudged toward each real onset rather than reset to it (fragility
+ * 3): a hit landing right where the clock predicted is trusted almost
+ * fully; one landing mid-cycle — syncopation — barely moves the clock, so
+ * the picture keeps time *through* an off-beat instead of being pulled by
+ * it.
+ */
+const BEAT_BUCKET_S = 0.02
+const BEAT_WINDOW_S = 3.2
+const BEAT_BUCKETS = Math.round(BEAT_WINDOW_S / BEAT_BUCKET_S)
+/** 40-300bpm — the same bounds the old two-gap tracker used. */
+const BEAT_MIN_BPM = 40
+const BEAT_MAX_BPM = 300
+/** How often to re-run the autocorrelation. The ring buffer only advances by
+ *  one bucket every `BEAT_BUCKET_S`, so recomputing every frame would spend
+ *  cycles re-deriving a near-identical answer. **Mine**. */
+const BEAT_REFRESH_S = 0.5
+/** Minimum buffer fill before a first estimate is attempted, rather than
+ *  waiting for the full window — short enough that "120±2bpm within 4s"
+ *  has real margin, long enough to hold several cycles at the fastest
+ *  plausible tempo. **Mine**. */
+const BEAT_MIN_FILL_S = 2.0
+/** A candidate lag enters the nearest-120bpm tie-break once its pulse-train
+ *  score clears this absolute floor — deliberately not a fraction of the
+ *  best-scoring candidate. A single missed onset can let a subharmonic's
+ *  comb dodge the gap at some phase offset and score higher than the true
+ *  fundamental's, which necessarily samples every onset including the
+ *  missing one; a *relative* tolerance judged against that inflated best
+ *  score would then wrongly exclude the fundamental. An absolute floor
+ *  still excludes lags that never lined up with anything, while accepting
+ *  every octave that is genuinely, if imperfectly, periodic — found by
+ *  testing the entry's own "holds through a missed beat" case, which this
+ *  fixes. **Mine**. */
+const BEAT_CANDIDATE_FLOOR = 0.75
+/** Rolling-median onset threshold: window and margin above it. Both
+ *  **Mine** — the entry asks for the mechanism (median plus a delta, 0.5
+ *  kept as the floor) but not an exact window or margin. */
+const BEAT_MEDIAN_WINDOW = 90
+const BEAT_THRESHOLD_DELTA = 0.12
+const BEAT_ONSET_FLOOR = 0.5
+const BEAT_MIN_ONSET_GAP = 0.2
+/** Confidence above which `bpm`/`beatPhase` are reported at all, and the
+ *  same switch `beatMapping` used to make on a boolean `locked` — now made
+ *  on a threshold over the continuous replacement. **Mine**. */
+const BEAT_LOCK_CONFIDENCE = 0.5
+
+function bpmFromLag(lag: number): number {
+  return 60 / (lag * BEAT_BUCKET_S)
+}
+
+/** A phase offset needs at least this many confirming comb positions before
+ *  its average counts for anything — without a floor, a long-period
+ *  candidate near `BEAT_MAX_INTERVAL` can have as few as two comb positions
+ *  in the buffer, and searching every phase offset for the best of only two
+ *  samples finds a spuriously perfect "period" in outright noise almost
+ *  every time. Found by testing against random-interval onsets, which kept
+ *  reporting a confident, invented tempo before this. **Mine**. */
+const BEAT_MIN_COMB_SAMPLES = 4
+
+/** Best-phase-offset comb score against `buf` at spacing `lag` — the octave
+ *  disambiguator: a true fundamental scores as well as its harmonics under
+ *  plain autocorrelation, but only the fundamental (and its harmonics) score
+ *  well here at *every* multiple simultaneously checked from a shared best
+ *  phase. */
+function pulseTrainScore(buf: Float32Array, lag: number): number {
+  let best = 0
+  for (let phase = 0; phase < lag; phase++) {
+    let sum = 0
+    let count = 0
+    for (let i = phase; i < buf.length; i += lag) {
+      sum += buf[i]
+      count++
+    }
+    if (count >= BEAT_MIN_COMB_SAMPLES) best = Math.max(best, sum / count)
+  }
+  return best
+}
+
+/** Parabolic interpolation around an integer-lag autocorrelation peak, for
+ *  sub-bucket tempo precision — `BEAT_BUCKET_S` alone is too coarse to hit
+ *  ±2bpm at typical tempos. */
+function parabolicRefine(ac: Float64Array, lag: number): number {
+  if (lag <= 0 || lag >= ac.length - 1) return lag
+  const y0 = ac[lag - 1]
+  const y1 = ac[lag]
+  const y2 = ac[lag + 1]
+  const denom = y0 - 2 * y1 + y2
+  if (Math.abs(denom) < 1e-9) return lag
+  const offset = Math.max(-1, Math.min(1, (0.5 * (y0 - y2)) / denom))
+  return lag + offset
+}
+
+function estimateTempo(buf: Float32Array): { periodS: number; confidence: number } | null {
+  const n = buf.length
+  const minLag = Math.max(1, Math.round(60 / BEAT_MAX_BPM / BEAT_BUCKET_S))
+  const maxLag = Math.min(n - 2, Math.round(60 / BEAT_MIN_BPM / BEAT_BUCKET_S))
+  if (maxLag <= minLag + 1) return null
+
+  const ac = new Float64Array(maxLag + 2)
+  for (let lag = minLag; lag <= maxLag + 1; lag++) {
+    let sum = 0
+    for (let i = lag; i < n; i++) sum += buf[i] * buf[i - lag]
+    ac[lag] = sum
+  }
+
+  const peakLags: number[] = []
+  for (let lag = minLag + 1; lag <= maxLag; lag++) {
+    if (ac[lag] > ac[lag - 1] && ac[lag] >= ac[lag + 1] && ac[lag] > 0) peakLags.push(lag)
+  }
+  if (peakLags.length === 0) return null
+
+  const candidates = peakLags.map((lag) => ({ lag, pulse: pulseTrainScore(buf, lag) }))
+  const contenders = candidates.filter((c) => c.pulse >= BEAT_CANDIDATE_FLOOR)
+  if (contenders.length === 0) return null
+  contenders.sort((a, b) => Math.abs(bpmFromLag(a.lag) - 120) - Math.abs(bpmFromLag(b.lag) - 120))
+  const chosen = contenders[0]
+
+  const refinedLag = parabolicRefine(ac, chosen.lag)
+  return { periodS: refinedLag * BEAT_BUCKET_S, confidence: clamp01(chosen.pulse) }
+}
+
+class BeatTracker {
+  private readonly ring = new Float32Array(BEAT_BUCKETS)
+  private writeIdx = 0
+  private filledBuckets = 0
+  private bucketPeak = 0
+  private bucketElapsed = 0
+  private readonly median = new RollingMedian(BEAT_MEDIAN_WINDOW)
+  private lastStrength = 0
+  private sinceOnset = 1000
+  private timeSinceRefresh = 1000
+  private interval = 0 // seconds; 0 = no tempo estimate yet
+  private phase = 0
+  private confidence = 0
+  private readonly confidenceEnv = new Envelope(0.4, 0.6)
+
+  private linearize(): Float32Array {
+    const out = new Float32Array(this.filledBuckets)
+    const start = (this.writeIdx - this.filledBuckets + this.ring.length) % this.ring.length
+    for (let i = 0; i < this.filledBuckets; i++) out[i] = this.ring[(start + i) % this.ring.length]
+    return out
+  }
+
+  update(beatStrength: number, dt: number): { phase: number; bpm: number; confidence: number } {
+    // Onset detection against an adaptive threshold: a rolling median of
+    // beatStrength itself plus a fixed margin, floored so a dead-quiet
+    // source cannot cross on its own noise floor.
+    const threshold = Math.max(BEAT_ONSET_FLOOR, this.median.push(beatStrength) + BEAT_THRESHOLD_DELTA)
+    const crossedUp = beatStrength > threshold && this.lastStrength <= threshold
+    this.lastStrength = beatStrength
+    this.sinceOnset += dt
+    const isOnset = crossedUp && this.sinceOnset > BEAT_MIN_ONSET_GAP
+    if (isOnset) this.sinceOnset = 0
+
+    // Resample onset strength onto the fixed-rate ring buffer. The bucket
+    // takes the loudest sample seen in its span rather than a time-weighted
+    // average — onsets are brief spikes, and an average would blur one
+    // toward invisibility against a bucket mostly full of silence.
+    this.bucketPeak = Math.max(this.bucketPeak, beatStrength)
+    this.bucketElapsed += dt
+    while (this.bucketElapsed >= BEAT_BUCKET_S) {
+      this.ring[this.writeIdx] = this.bucketPeak
+      this.writeIdx = (this.writeIdx + 1) % this.ring.length
+      this.filledBuckets = Math.min(this.ring.length, this.filledBuckets + 1)
+      this.bucketPeak = 0
+      this.bucketElapsed -= BEAT_BUCKET_S
+    }
+
+    this.timeSinceRefresh += dt
+    if (this.timeSinceRefresh >= BEAT_REFRESH_S && this.filledBuckets * BEAT_BUCKET_S >= BEAT_MIN_FILL_S) {
+      this.timeSinceRefresh = 0
+      const estimate = estimateTempo(this.linearize())
+      this.interval = estimate ? estimate.periodS : this.interval
+      // The envelope only moves once per refresh, so it has to be pushed
+      // with the time actually elapsed since the last push (BEAT_REFRESH_S)
+      // rather than this frame's dt — pushing with dt made confidence climb
+      // at roughly 1/30th its intended rate, found by testing against the
+      // entry's own "within 4 seconds" figure before this shipped.
+      this.confidence = this.confidenceEnv.push(estimate ? estimate.confidence : 0, BEAT_REFRESH_S)
+    }
+
+    // Phase runs continuously at the current estimate rather than freezing
+    // between onsets — it is a prediction, not just a record of the last
+    // hit. A real onset then nudges it toward 0 in proportion to how close
+    // it already was to a cycle boundary (0 or 1, the same instant): a hit
+    // right on the predicted beat all but resets it, one at phase 0.5 —
+    // exactly mid-cycle, maximally syncopated — barely moves it at all.
+    if (this.interval > 0) {
+      this.phase = (this.phase + dt / this.interval) % 1
+      if (isOnset) {
+        const distanceFromBoundary = Math.min(this.phase, 1 - this.phase)
+        const nearness = clamp01(1 - distanceFromBoundary * 2)
+        this.phase *= 1 - nearness
+      }
+    }
+
+    const locked = this.confidence > BEAT_LOCK_CONFIDENCE
+    return {
+      phase: locked ? this.phase : 0,
+      bpm: locked && this.interval > 0 ? 60 / this.interval : 0,
+      confidence: this.confidence,
+    }
   }
 }
 
@@ -236,10 +501,15 @@ interface Common {
   surge: number
   novelty: number
   roughness: number
+  beatPhase: number
+  bpm: number
+  beatConfidence: number
 }
 
 class CommonAnalysis {
   private readonly flux = new SpectralFlux()
+  private readonly beatFlux = new SpectralFlux()
+  private readonly beatTracker = new BeatTracker()
   private readonly transientEnv = new Envelope(0.004, 0.16)
   // Colour moves on a scale of seconds. This is the single most important
   // number for "meaningful but not too rapid".
@@ -313,9 +583,27 @@ class CommonAnalysis {
 
     const transient = this.transientEnv.push(this.flux.update(frame, dt), dt)
 
+    // Weighted toward the low band, where the kick is — `transient` above
+    // keeps its own broadband meaning for everything else, docs/todo.md
+    // entry 75.
+    const beatStrength = this.beatFlux.update(frame, dt, BANDS.low[0], BANDS.low[1])
+    const beat = this.beatTracker.update(beatStrength, dt)
+
     const { novelty, roughness } = this.structure.update(frame)
 
-    return { raw, norm, transient, tilt, breakdown, surge, novelty, roughness }
+    return {
+      raw,
+      norm,
+      transient,
+      tilt,
+      breakdown,
+      surge,
+      novelty,
+      roughness,
+      beatPhase: beat.phase,
+      bpm: beat.bpm,
+      beatConfidence: beat.confidence,
+    }
   }
 }
 
@@ -378,6 +666,9 @@ export function relativeMapping(): Mapping {
         surge: c.surge,
         novelty: c.novelty,
         roughness: c.roughness,
+        beatPhase: c.beatPhase,
+        bpm: c.bpm,
+        beatConfidence: c.beatConfidence,
       }
     },
   }
@@ -428,6 +719,9 @@ export function speechBandMapping(): Mapping {
         surge: c.surge,
         novelty: c.novelty,
         roughness: c.roughness,
+        beatPhase: c.beatPhase,
+        bpm: c.bpm,
+        beatConfidence: c.beatConfidence,
       }
     },
   }
@@ -512,6 +806,9 @@ export function autoNormalisedMapping(): Mapping {
         surge: c.surge,
         novelty: c.novelty,
         roughness: c.roughness,
+        beatPhase: c.beatPhase,
+        bpm: c.bpm,
+        beatConfidence: c.beatConfidence,
       }
     },
   }
@@ -522,30 +819,21 @@ export function autoNormalisedMapping(): Mapping {
  *
  * The first three mappings all differ only in how loudness is scaled; this
  * is the first to vary a different axis entirely — time. `level` and the
- * bands are driven by a phase that runs 0->1 across each beat, estimated
- * from the inter-onset interval of the existing transient detector, rather
- * than from instantaneous energy — the picture then moves *with* the music
+ * bands are driven by a phase that runs 0->1 across each beat, rather than
+ * from instantaneous energy — the picture then moves *with* the music
  * through a bar where the energy sits flat, not merely at it.
  *
  * Degrades honestly: without a stable interval this reads exactly as
  * `relative` does, rather than free-running at a guessed tempo. A
  * visualiser pulsing confidently at the wrong tempo is a legible error; one
  * that has stopped pulsing is not.
+ *
+ * docs/todo.md entry 75 promoted the tempo estimate itself into
+ * `CommonAnalysis` — every mapping gets one now — so this keeps only the
+ * `locked ? beatEnv : fallbackLevel` shape that made it "beat-synced" in
+ * the first place, reading `phase`/`bpm` from the shared tracker instead of
+ * keeping its own private two-gap copy.
  */
-const BEAT_ONSET_THRESHOLD = 0.5
-/** Bounds on a plausible tempo — 300bpm down to 40bpm. Outside this, a
- *  "beat" is either the same hit ringing twice or not a beat at all. */
-const BEAT_MIN_INTERVAL = 0.2
-const BEAT_MAX_INTERVAL = 1.5
-/** How close two consecutive onset-to-onset gaps must be, as a fraction of
- *  the gap, to call the tempo stable. **Mine** — the entry asks for
- *  honesty about instability but not an exact tolerance. */
-const BEAT_STABILITY = 0.15
-/** How far past the expected next beat before giving up the lock — a
- *  pattern that has genuinely stopped should fall back quickly, not coast
- *  on a memorised tempo. */
-const BEAT_LOCK_GRACE = 1.8
-
 function beatMapping(): Mapping {
   const common = new CommonAnalysis()
   const levelEnv = new Envelope(0.03, 0.28)
@@ -557,47 +845,14 @@ function beatMapping(): Mapping {
   const LO = 0.5
   const HI = 1.7
 
-  let lastTransient = 0
-  let sinceOnset = 1000
-  let lastGap = 0
-  let interval = 0
-  let locked = false
-  let phase = 0
-
   return {
     name: 'beat',
     update(frame) {
       const { dt } = frame
       const c = common.update(frame)
-      sinceOnset += dt
 
-      const crossedUp = c.transient > BEAT_ONSET_THRESHOLD && lastTransient <= BEAT_ONSET_THRESHOLD
-      lastTransient = c.transient
-
-      if (crossedUp && sinceOnset > BEAT_MIN_INTERVAL) {
-        const gap = sinceOnset
-        sinceOnset = 0
-        phase = 0 // every real onset re-locks phase to it, locked or not
-        if (gap < BEAT_MAX_INTERVAL && lastGap > 0) {
-          const ratio = gap / lastGap
-          if (ratio > 1 - BEAT_STABILITY && ratio < 1 + BEAT_STABILITY) {
-            // Smoothed toward the new gap rather than replaced outright, so
-            // one slightly early or late hit does not retune the tempo.
-            interval = interval > 0 ? interval * 0.5 + gap * 0.5 : gap
-            locked = true
-          } else {
-            locked = false
-          }
-        } else {
-          locked = false
-        }
-        lastGap = gap
-      }
-
-      if (locked) {
-        phase = Math.min(1, phase + dt / interval)
-        if (sinceOnset > interval * BEAT_LOCK_GRACE) locked = false
-      }
+      const locked = c.bpm > 0
+      const phase = c.beatPhase
 
       const floor = Math.max(c.norm, 0.008)
       const rel = (v: number) => clamp01((v / floor - LO) / (HI - LO))
@@ -619,6 +874,9 @@ function beatMapping(): Mapping {
         surge: c.surge,
         novelty: c.novelty,
         roughness: c.roughness,
+        beatPhase: c.beatPhase,
+        bpm: c.bpm,
+        beatConfidence: c.beatConfidence,
       }
     },
   }
@@ -665,6 +923,9 @@ function dynamicsMapping(): Mapping {
         surge: c.surge,
         novelty: c.novelty,
         roughness: c.roughness,
+        beatPhase: c.beatPhase,
+        bpm: c.bpm,
+        beatConfidence: c.beatConfidence,
       }
     },
   }
@@ -714,6 +975,9 @@ function bassLedMapping(): Mapping {
         surge: c.surge,
         novelty: c.novelty,
         roughness: c.roughness,
+        beatPhase: c.beatPhase,
+        bpm: c.bpm,
+        beatConfidence: c.beatConfidence,
       }
     },
   }

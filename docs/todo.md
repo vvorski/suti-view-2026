@@ -7939,7 +7939,7 @@ plus a phone in real daylight. The number to watch is `p5`: it should sit near
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 75. A tempo every mapping can see, and geometry that lands on the beat
-`status: building` · added 2026-08-30 · started 2026-08-30
+`status: done` · added 2026-08-30 · started 2026-08-30 · build 247
 
 **Do** — promote the beat tracker out of one mapping into `CommonAnalysis`,
 replace its two-gap tempo test with autocorrelation over onset strength, report
@@ -8041,6 +8041,114 @@ ballad, and that is acceptable only if it says so rather than guessing.
 **Hard stops** — prefs no (no new mapping, no stored field; the six mapping
 names are unchanged) · url no · capture no · dependency no — autocorrelation
 over a small rolling buffer is a loop, not a library.
+
+**Build note** — implemented as decided: `BeatTracker` lives inside
+`CommonAnalysis` (`fast.ts`), fed by a new low-band-scoped `SpectralFlux`
+instance for `beatStrength` (the existing `SpectralFlux.update()` grew
+optional `loHz`/`hiHz` params rather than a new class, defaulting to full
+spectrum so the broadband `transient` call site is untouched). `beatMapping`
+now reads `c.bpm`/`c.beatPhase` and keeps only the `locked ? beatEnv :
+fallbackLevel` shape that made it "beat-synced"; its own two-gap estimator,
+and the five constants that tuned it (`BEAT_ONSET_THRESHOLD`,
+`BEAT_MIN_INTERVAL`, `BEAT_MAX_INTERVAL`, `BEAT_STABILITY`,
+`BEAT_LOCK_GRACE`), are deleted outright. All three `VisualParams` fields
+land on all six mappings via the same trailing pass-through block every
+mapping already shared for `breakdown`/`surge`/`novelty`/`roughness`.
+
+Tracker design: onset strength resampled onto a fixed 50Hz ring buffer
+(bucket = loudest sample seen in its 20ms span, not a time-weighted average —
+onsets are spikes, and averaging blurs one toward invisibility against a
+mostly-silent bucket), autocorrelated over a rolling 3.2s window every 0.5s.
+Each autocorrelation peak is scored by a pulse-train comb search — the best
+of every phase offset at that spacing — which is the octave disambiguator:
+a true fundamental and its harmonics all score well under plain
+autocorrelation, but only by searching every phase can a comb be found that
+lines up with literally every onset rather than merely some of them. Among
+candidates clearing a floor, the one nearest 120bpm wins. Phase runs
+continuously at the estimated tempo (wrapping via modulo, not clamping at 1
+the way the old tracker did — it is a live prediction, not a record of the
+last hit) and a real onset nudges it toward 0 in proportion to how close it
+already sat to a cycle boundary, per the entry's fragility-3 fix.
+
+Three bugs found by testing before this shipped, none of them from a code
+review — each surfaced by running the entry's own synthetic-onset-train
+cases and finding a wrong number:
+1. The confidence envelope was pushed with the frame's own `dt` (~16ms)
+   instead of the ~500ms actually elapsed since the last push, so confidence
+   climbed at roughly 1/30th its intended rate and never crossed the lock
+   threshold inside any reasonable test window. Fixed by pushing with
+   `BEAT_REFRESH_S` instead.
+2. The octave tie-break first used a *relative* tolerance (a candidate had
+   to score within 92% of the best). A single missed onset let a
+   subharmonic's comb dodge the gap at some phase offset and score higher
+   than the true fundamental's — which necessarily samples every onset,
+   including the missing one — so the fundamental was wrongly excluded from
+   the tie-break exactly on the entry's own "holds through a missed beat"
+   case. Fixed by switching to an absolute floor (`BEAT_CANDIDATE_FLOOR`):
+   a lag no longer has to be near the *best* score, only "clearly periodic
+   on its own terms," which lets an imperfect-but-real fundamental compete
+   even when a lucky subharmonic scores higher.
+3. Random-interval (non-periodic) onsets still produced a confident,
+   invented tempo — not one of the entry's own numeric Done-when cases, but
+   squarely against its quoted design instinct ("one that has stopped
+   pulsing is not [a legible error]") and its own Verify text ("acceptable
+   only if it says so rather than guessing"). Root cause: at the slow end of
+   the tempo range a 3.2s window holds as few as two comb positions, and
+   searching every phase offset for the best of only two samples finds a
+   spuriously perfect "period" in outright noise almost every time — a
+   small-N multiple-comparisons problem, not a threshold problem. Fixed by
+   requiring a phase offset to have at least `BEAT_MIN_COMB_SAMPLES` (4)
+   confirming positions before its average counts for anything, which as a
+   side effect means this tracker cannot confidently confirm a genuinely
+   slow tempo (well under 120bpm) inside one 3.2s window — an honest
+   trade-off for the window size the entry's own "within 4 seconds" figure
+   requires at 120bpm, not one I'd claim covers the full 40-300bpm range
+   with equal confidence at every tempo.
+
+All numeric constants in the tracker's own timing/scoring
+(`BEAT_BUCKET_S`, `BEAT_WINDOW_S`, `BEAT_REFRESH_S`, `BEAT_MIN_FILL_S`,
+`BEAT_CANDIDATE_FLOOR`, `BEAT_MIN_COMB_SAMPLES`, `BEAT_MEDIAN_WINDOW`,
+`BEAT_THRESHOLD_DELTA`, `BEAT_MIN_ONSET_GAP`, `BEAT_LOCK_CONFIDENCE`) are
+**Mine** — the entry specifies the mechanisms, not these values. Same for
+the beat-pulse ring's own shape in `circles.frag.glsl` (travels 30% of
+`maxRadius`, fades linearly across that same span) — a restrained, single
+extra `ring()` call reusing the existing primitive, deliberately not a
+second full ripple system, since the entry itself defers exploring the
+geometric language further to a future entry once this is proven on a
+phone.
+
+Verified: `pnpm build`/`pnpm lint` clean. `pnpm probe` — all thirteen checks
+pass, including six new ones written directly against the entry's own
+Done-when: 120±2bpm within 4s (locks by ~2s in practice), holds through one
+missed beat, holds through one inserted off-beat hit, settles on 120 and
+explicitly not 60 or 240, stays at bpm=0 against a flat kickless signal, and
+does not invent a tempo from random-interval onsets (this last one only
+after bug 3 above was found and fixed — it failed loudly before that).
+Byte-identical regression for the five non-beat mappings confirmed by a
+throwaway script diffing this build's output against `git show HEAD:` of the
+pre-entry `fast.ts` across the headroom table, the 120bpm pattern, and the
+full breakdown track — `===` on `level`/`low`/`mid`/`high` on every frame,
+not just close. `beat` itself is not literally byte-identical to before —
+the entry's own fragility-3 fix (nudge, not snap) necessarily changes its
+behaviour on a syncopated hit, which is the point — but both of the
+existing probe's `beat` checks (steady lock, noise fallback) still pass
+unchanged. Live in a real WebGL context (`createVisualiser` via dynamic
+import, same technique entries 71/73 used): rendered `circles` twice at
+`beatConfidence=0` with different `beatPhase` values and got pixel-identical
+readback both times, then rendered again at `beatConfidence=0.9` and got a
+visibly different, phase-dependent result — the algebraic identity holds,
+verified rather than merely reasoned about. `hud-probe.html`'s real,
+mounted HUD confirmed the new readout line renders correctly both locked
+(`beat  ###...  0.85  120 bpm`) and unlocked (`beat  #...  0.12  —`). No
+320×568/360×640 check — nothing here touches a chip or a layout surface,
+only one more line inside the existing stats `<pre>`.
+
+Not verified, and not verifiable in this harness: "Circles is visibly on
+the beat with real music" is the entry's own phone-only Verify line: no
+probe can answer it. Also untested against a real ballad or anything with a
+weak/absent kick — the closest proxy available here is the synthetic flat
+signal, which correctly reports no tempo, but a real recording's spectral
+texture is not that.
 
 ### 76. The channels lag behind the phone, and snap back
 `status: ready` · added 2026-08-30
