@@ -5311,3 +5311,68 @@ must not alter it. `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs **no**, deliberately: nothing is stored, which is what
 keeps it out of the shuffle's and the director's way · url no · capture no ·
 dependency no.
+
+### 59. Assert the ripple constants match, across seven files
+`status: ready` · added 2026-08-30
+
+**Do** — a probe that reads the six geometric shaders as text, extracts
+`MAX_RIPPLES` and `AUDIO_RIPPLES` from each, and fails if any disagrees with
+`ripples.ts`.
+**Why** — the same two numbers are declared **fourteen times** and kept in step
+by hand, the comments say so, and entry 57 is about to change both.
+
+**Decided**
+- The count, which is worse than the comments admit → `ripples.ts:24-25`
+  declares `MAX_RIPPLES = 12` and `AUDIO_RIPPLES = 8`, and **each of the six
+  geometric shaders declares both again** (`circles.frag.glsl:81-82` and its
+  five siblings). Fourteen declarations of two facts. The comment at `:72` says
+  "Must match MAX_RIPPLES in ripples.ts — GLSL can't import a JS constant",
+  which is true and is a reason to *check* it, not a reason to trust it.
+- **`AUDIO_RIPPLES` is not even exported** → it is module-private in
+  `ripples.ts`, so nothing outside that file can read the number it is supposed
+  to agree with. Exporting it is part of this entry and is the smaller half.
+- What a mismatch actually does, since "they might drift" is too vague to
+  motivate the work → if `ripples.ts` is **higher**, an array of 12 uploads
+  into a `uniform vec4[8]` and the extra ripples are dropped or rejected
+  depending on the driver. If a shader is **higher**, its loop reads uniforms
+  that were never written — garbage positions, rings appearing where nothing
+  was touched. **Either way it is one view out of six misbehaving**, which is
+  precisely the bug that survives testing: five views look right, the sixth is
+  assumed to be a shader quirk.
+- Why now rather than at leisure → the pair has already survived one change
+  (8 → 12, entry 33) and **entry 57 changes both again** (12 → 24, audio 8,
+  touch 16). Twelve of the fourteen sites move in one commit. This probe is
+  worth more before that lands than after it.
+- **Read the shaders as text, do not compile them** → the numbers are `const
+  int` declarations matched by a regex, and a probe that needs a GL context
+  cannot run in node beside the others. `probe-mapping.ts`, `probe-shake.ts`
+  and the rest all run under `node --experimental-strip-types` and touch no
+  browser; this joins them. **Mine.**
+- It also asserts the *pair* is coherent → `AUDIO_RIPPLES < MAX_RIPPLES`, and
+  the touch band non-empty. `ripples.ts` computes `TOUCH_RIPPLES = MAX_RIPPLES
+  - AUDIO_RIPPLES` while the shader loops `[AUDIO_RIPPLES, MAX_RIPPLES)` —
+  the same split expressed two ways, so a change that broke the relationship
+  would produce a negative band in one encoding and an empty loop in the other.
+- Which shaders are in scope → the six that declare the constants, discovered
+  by grep rather than listed, so a seventh geometric view added later is
+  covered without anyone remembering to add it. **Mine**, and it is the
+  difference between a check and a checklist.
+- Not a build-time codegen → generating the GLSL constants from the TS ones
+  would remove the duplication entirely and is the tidier answer, but it means
+  a shader preprocessing step this project does not have, for two integers.
+  A probe costs twenty lines and catches the same failure. **Mine**, and worth
+  revisiting only if a third constant ever needs sharing.
+
+**Lands in**
+- `scripts/probe-ripples.ts` — new, and a `probe:ripples` script beside the
+  others in `package.json`.
+- `src/engine/ripples.ts:25` — `AUDIO_RIPPLES` exported.
+
+**Done when** — `pnpm probe:ripples` passes on the tree as it stands, and fails
+with a named file and both numbers when either constant is edited in one place
+only. Deliberately test that: change one shader, watch it fail, change it back.
+**Verify** — the probe itself is the verification; the check that matters is
+that it *fails* when it should, since a green check that cannot go red is
+worse than no check. Run it before and after entry 57 moves twelve of the
+fourteen sites. `pnpm build`, `pnpm lint`.
+**Hard stops** — prefs no · url no · capture no · dependency no.
