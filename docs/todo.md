@@ -8984,7 +8984,7 @@ is bit-identical to today.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 83. Solo a layer without losing your settings
-`status: done` · added 2026-08-30 · build 286
+`status: done` · added 2026-08-30 · build 287
 
 **Build note (Mine)** — `mkChip` in `src/hud.ts` gained an optional fifth
 `solo` argument, wired only for the `geo`/`atm`/`cam` chips: a `pointerdown`
