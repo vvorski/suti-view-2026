@@ -8151,7 +8151,21 @@ signal, which correctly reports no tempo, but a real recording's spectral
 texture is not that.
 
 ### 76. The channels lag behind the phone, and snap back
-`status: done` · added 2026-08-30 · started 2026-08-30 · build 249
+`status: done · FROZEN` · added 2026-08-30 · started 2026-08-30 · build 249
+
+**Frozen 2026-08-30, by Victor: "colour lags has good colour, freeze that for
+now."** The spring and the cap shipped at build 249 as
+`STIFF = 400`, `DAMP = 14` (ζ 0.35, ω 20 rad/s) and `MAX_SLIP = 0.006`, and
+those four numbers are **not to be retuned** — not to make the effect stronger,
+not to make it subtler, not as a side effect of touching the tumble whose
+springs sit deliberately at different frequencies from these.
+
+The reason it needs saying: this landed first time, which is rare here, and the
+constants look arbitrary enough to invite adjustment. They are not arbitrary —
+ζ 0.35 is what produces the visible overshoot the entry was asked for, and
+0.006 uv is the ceiling past which line art reads as broken rather than
+dispersed. If a future request wants the effect changed, that is a new entry
+with Victor's word in it, not a tweak.
 
 **Do** — move the picture apart into its red, green and blue when the phone
 moves, and let them spring back together when it stops. Its own module, its own
