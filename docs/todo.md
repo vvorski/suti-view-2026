@@ -9996,3 +9996,100 @@ but different" is actually both.
 a dozen lines of date arithmetic; no ephemeris library, and above all no
 geolocation**, which is the whole reason presence is a proxy rather than a
 computation.
+
+### 97. Where you actually are: real sun, real moon, from a location that never leaves
+`status: ready` · added 2026-08-30
+
+**Do** — ask for location once, use it locally to compute the true position of
+the sun and the moon, and feed those into the colour cycle (sun) and the shape
+cycle (moon, entry 96). The coordinates are used on the device and transmitted
+nowhere.
+
+**Why** — Victor: *"why no geolocation? we want to be present, need it for sun
+too."* Correct, and it overturns a refusal I wrote twice on a false premise.
+
+**Decided**
+- **The premise I got wrong, stated plainly so the reversal is on the record.**
+  `sky.ts:7` refuses geolocation because the page's *"one promise is that
+  nothing leaves the device."* That conflated two different things:
+  **asking for location** and **location leaving the device**. Geolocation
+  hands coordinates to the page's own JavaScript; sun and moon altitude are
+  pure local trigonometry from lat/long and time. **The coordinates never need
+  to be sent anywhere, and here they never are.** The promise is not "we do not
+  sense where we are" — it is "what we sense stays here" — and real astronomy
+  keeps it exactly. The only true cost was ever the permission prompt, and
+  presence is worth a prompt.
+- **The gate's promise grows a clause rather than losing one.** Today it is
+  microphone, camera, motion — none of it leaves. Location joins that list on
+  the same terms: *not where you are, either.* Say so where the app makes the
+  promise, so the new permission reads as consistent with it, not against it.
+- **This supersedes the stylised sun and upgrades the moon proxy.**
+  - `sky.ts` (entries 53, 71) computes daylight from the clock alone, and its
+    own header admits *"in Reykjavík in June this will call 2am night while it
+    is broad daylight."* Real solar altitude from lat/long fixes precisely
+    that: `uDay` becomes the actual sun above or below the actual horizon,
+    sunrise and sunset land when they truly do, and the anchor table becomes a
+    fallback for when location is refused rather than the primary source.
+  - Entry 96's **presence proxy becomes a real computation.** That entry built
+    a location-free `cos`-from-transit stand-in *because* geolocation was
+    forbidden; with a latitude, lunar altitude is the genuine article, correct
+    about how high and correct at every latitude. The proxy stays as the
+    graceful fallback, exactly where the solar anchor table now sits.
+- **Refusal is a first-class path, not an error.** No location → both cycles
+  fall back to today's clock-only stylised versions, which already exist and
+  already work. The feature degrades to exactly the current app, so nothing is
+  lost by declining and the prompt carries no coercion. Same shape as
+  `requestMotionAccess` — refusal resolves to "use the stylised version," never
+  throws.
+- **Asked at the right moment, not at the gate.** The microphone is asked for
+  at Start because the app is useless without it; location is an enhancement,
+  so it is asked for the first time the sky or moon actually wants it, or from
+  a chip — never bundled into the Start gesture, which `permission-gate.ts`
+  already keeps carefully spent on fullscreen, motion and mic in that order.
+  **Mine**, and it keeps a refusable nicety from gating the one permission the
+  app cannot run without.
+- **Stored coarsely, if at all.** Astronomy needs almost no precision — a
+  degree of latitude moves sunrise by a few minutes — so round the stored
+  location hard (to ~0.1°, ~11km) before it touches `prefs`, and prefer not to
+  persist it at all if a re-ask is cheap. **A precise coordinate in
+  `localStorage` is a privacy cost with no visual benefit.** Hard-stop
+  relevant: this is a new stored field and it must be the coarse one.
+- **The math is ours, no library.** Solar position is the standard NOAA
+  algorithm (~30 lines); lunar position is Meeus's low-precision method
+  (~60 lines). Both are pure functions of time and location, both belong in
+  `sky.ts` and `moon.ts` beside the fallbacks, both are probeable headless
+  against known sunrise/moonrise times. No ephemeris package, and — the point
+  of the whole entry — **no network**: the sky is computed, not fetched.
+- **Explicitly still on the device**, and this is the line that must be
+  unmistakable in the code: the coordinates are read, used to compute two
+  angles, and discarded or coarsely stored. They are **never** put in a URL, a
+  header, a fetch body, or a share payload. The nearest existing discipline is
+  `share.ts`'s own *"nothing leaves the device on our say-so"* — same rule, new
+  sensor.
+
+**Lands in**
+- `src/sky.ts` — real solar altitude, clock table as fallback; the geolocation
+  refusal comment is deleted and replaced by the reasoning above.
+- `src/moon.ts` (entry 96) — real lunar altitude, the `cos` proxy as fallback.
+- `src/geo-location.ts` (new) — the one-time request and coarse rounding,
+  shaped like `requestMotionAccess`.
+- `src/permission-gate.ts` / `src/hud.ts` — where and how it is asked.
+- `index.html` — the promise gains its clause.
+- `src/prefs.ts` — the coarse stored location, if persisted (Hard Stop: new
+  field, coarse).
+- `scripts/probe-sky.ts`, `scripts/probe-moon.ts` — real positions against
+  known times; the refused-location fallback path.
+
+**Done when** — with location granted, `uDay` tracks the real sun for the
+actual place and moon presence is true altitude; with it refused, both are
+exactly today's clock-only behaviour; the coordinate appears in no network
+request, URL, or stored value at more than ~0.1° precision; and the Start
+gesture still asks only for mic, motion and fullscreen.
+**Verify** — `probe-sky.ts`/`probe-moon.ts` against a known place and date
+(sunrise/moonrise to the minute), and a grep proving the coordinate reaches no
+`fetch`, URL, or `prefs` at full precision. Then the phone, at a known location
+at sunset.
+**Hard stops** — prefs **yes — a new coarse-location field**, rounded to ~0.1°,
+persisted only if a re-ask is not cheaper; url **no, and load-bearing: the
+coordinate never enters a URL**; capture no; dependency **no — computed, not
+fetched; no library and no network.**
