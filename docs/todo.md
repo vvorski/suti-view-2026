@@ -2990,3 +2990,66 @@ the HUD line above turns out to be needed — the mapping arc is a shared
 surface. `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs no (additive union, validated by a membership test that
 already falls back) · url no · capture no · dependency no.
+
+### 40. The buzz has never been tested apart from the shake
+`status: ready` · added 2026-08-30
+
+**Do** — land the haptic ladder in the repo as `haptics-probe.html`, beside
+`hud-probe.html` and `camera-probe.html`: a rung per pattern, coarsest first,
+each firing `navigator.vibrate` from a real tap and reporting what it returned.
+**Why** — a weekend of not feeling anything cannot currently distinguish "the
+motor never moved" from "the shake was never detected", and those have nothing
+in common.
+
+**Decided**
+- The two faults are indistinguishable from inside the app → the buzz only
+  ever fires as a consequence of a detected shake, so a silent phone is
+  evidence about the *pair*. Every haptics change so far — 22ms, then 40ms,
+  then the primed pattern at build 68 — has been aimed at the buzz on the
+  assumption the shake was fine. That assumption has never been tested, and it
+  is free to test: a button is a user gesture, and a user gesture is all
+  `vibrate()` needs.
+- The ladder, coarsest first → **600ms flat, 300ms flat, the old bare `[40]`,
+  `CONFIRM_PATTERN`, `CONFIRM_PATTERN` at MAX_SCALE, `DOUBLE_PATTERN`,
+  `DOUBLE_PATTERN` at MAX_SCALE.** **Mine.** The top rung is far beyond
+  anything the app sends, so failing it proves the fault is the phone or a
+  system setting and not this repo — which is the single most valuable thing
+  the page can establish, and it establishes it in one tap.
+- Show the boolean → `vibrate()` returns false when the browser declines, and
+  `haptics.ts` already counts `attempts`/`accepted`/`suppressed` for exactly
+  this reason. Print the return beside each rung. A page of buttons that all
+  return true while nothing is felt is a *different* finding from one where
+  the calls are being declined, and the two want opposite next steps.
+- The patterns are imported, not retyped → `CONFIRM_PATTERN` and
+  `DOUBLE_PATTERN` are module-private in `haptics.ts` today. Export them for
+  the probe rather than copying the numbers in, because a probe that tests
+  last month's constants is worse than no probe. `MAX_SCALE` is already
+  exported.
+- What already exists and does **not** need building → `hapticStatus()` is
+  wired: `main.ts:874` feeds it to the HUD and `hud.ts:189` has a field for
+  it, so a `?debug` load already shows why there was or wasn't a buzz. **Check
+  that line before writing any code for this entry** — if it says attempts are
+  being made and accepted while a shake is being felt as nothing, the ladder
+  will confirm the pattern is the fault; if attempts are zero, the shake never
+  arrived and no haptics change can help.
+- A published copy exists already and is not a substitute → the ladder was
+  published as an artifact so it could be opened on the phone the same
+  evening, without a dev server or a deploy. That URL is not in version
+  control, does not track the constants, and cannot be run by anyone who does
+  not have the link. This entry is what makes it survive.
+- Not reachable from the app → a dev page like its two neighbours, so the
+  circular control surface constraint does not apply and it may use plain
+  buttons.
+
+**Lands in**
+- `haptics-probe.html` — new, at the repo root beside the other probe pages.
+- `src/haptics.ts` — export `CONFIRM_PATTERN` and `DOUBLE_PATTERN`.
+
+**Done when** — opening the page on the phone and working down it identifies
+the first rung that can be felt, or shows that none can while every call
+returns true. Either outcome names the next change; today neither is
+available.
+**Verify** — the phone, which is the only instrument that can answer this;
+`pnpm probe:haptics` must still pass, since exporting the patterns must not
+alter them. Also `pnpm build`, `pnpm lint`.
+**Hard stops** — prefs no · url no · capture no · dependency no.
