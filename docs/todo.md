@@ -2927,7 +2927,7 @@ verified: whether a hard shake that feels hard now reaches the top rung on
 a real phone, which needs one.
 
 ### 37. A harness that plays a song at the views
-`status: ready` · added 2026-08-30
+`status: done` · added 2026-08-30 · shipped at build 150
 
 **Do** — turn `views-probe.html` from a still life into a driven one: run the
 real `MAPPINGS` over a synthetic track and render every view live, with a
@@ -2985,6 +2985,49 @@ with the extracted track module, which is the check that the extraction was a
 move and not a rewrite. Also `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs no · url no (a dev page's own query string is not the
 app's shared-URL shape) · capture no · dependency no.
+
+**Build note.** The track generator moved to `scripts/track.ts` — `frame()`
+(now defaulting `dt` to 1/60 rather than hardcoding it, so the same
+function serves both a synthetic-time driver and a real render loop) plus
+new `trackFrame()`/`trackPlaying()`/`TRACK_LENGTH`/`TRACK_BREAKDOWN_START`/
+`TRACK_BREAKDOWN_END` exports. `probe-mapping.ts` imports them rather than
+defining its own copy; its "full track" section now derives its header and
+loop bounds from the exported constants instead of the literal 6/9/15,
+which is what makes the extraction provably a move — if the numbers ever
+drifted apart this would show up as a changed header, not a silent
+divergence. **Mine, one small addition beyond the literal extraction**:
+`trackFrame()` loops past `TRACK_LENGTH` via modulo rather than running out,
+since the driven page needs the song to keep playing indefinitely while
+`probe-mapping.ts`'s own loop never runs long enough to reach the seam —
+confirmed by inspection that this changes nothing for the existing 15-second
+usage.
+
+`views-probe.html?play` renders all thirteen views (six geometric, seven
+atmospheric) each in their own pure single-layer visualiser, a `<select>`
+for the three mappings (switching creates a fresh `Mapping` instance,
+mirroring main.ts's own `onMapping`), a microphone button behind a real
+click gesture, and a live numeric caption per view. The frozen (no-query)
+path is untouched code moved into an `if`/`else`, not rewritten.
+
+Verified in layers, since this harness's automation window never fires
+`requestAnimationFrame` (a limitation noted elsewhere in this session) and
+so cannot exercise the page's actual live-driving loop end to end: `pnpm
+probe`'s "Full track" section prints byte-identical output to before the
+extraction, confirming the move; loading the frozen page and calling the
+existing `window.drive()`/`window.probe()` hooks still work exactly as
+before; loading `?play` shows all thirteen figures with correct captions,
+the mapping `<select>` populated with all three names, and every canvas's
+`WebGL2RenderingContext` reporting `getError() === 0` after setup; a
+synthetic mapping-selector change and a mic-button click both ran without
+throwing, the latter correctly reporting a permission refusal (which is
+the only outcome this harness could ever produce, and the button's own
+error handling is what makes that non-fatal); and a separate, isolated
+render loop driving `trackFrame()` through real time confirmed the
+underlying `mapping.update()` → `render()` pipeline produces sensible,
+evolving `VisualParams` and a non-black frame. Not verified: the actual
+"does every view visibly move together with the same track" claim on a
+real screen, which needs a person watching it, exactly as the entry's own
+Verify line says. `pnpm build`, `pnpm lint` both clean.
 
 ### 38. Two of the three mappings cannot hear loudness at all
 `status: ready` · added 2026-08-30

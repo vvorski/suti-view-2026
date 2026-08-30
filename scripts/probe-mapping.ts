@@ -21,29 +21,12 @@
 import { MAX_DB, MIN_DB, type AudioFrame } from '../src/engine/capture.ts'
 import { MAPPINGS, type MappingName } from '../src/engine/fast.ts'
 import { createRippleState, MAX_RIPPLES, updateRipples } from '../src/engine/ripples.ts'
+import { frame, trackFrame, TRACK_BREAKDOWN_START, TRACK_BREAKDOWN_END, TRACK_LENGTH } from './track.ts'
 
 const SAMPLE_RATE = 48000
 const BINS = 1024
 const BIN_HZ = SAMPLE_RATE / (BINS * 2)
 const FPS = 60
-
-/** A frame with flat energy in each named band, given as 0-255 byte levels. */
-function frame(low: number, mid: number, high: number): AudioFrame {
-  const freq = new Uint8Array(BINS)
-  for (let i = 0; i < BINS; i++) {
-    const hz = i * BIN_HZ
-    if (hz >= 40 && hz < 250) freq[i] = low
-    else if (hz >= 250 && hz < 1600) freq[i] = mid
-    else if (hz >= 1600 && hz < 8000) freq[i] = high
-  }
-  return {
-    freq,
-    time: new Uint8Array(BINS),
-    binCount: BINS,
-    sampleRate: SAMPLE_RATE,
-    dt: 1 / FPS,
-  }
-}
 
 const names = Object.keys(MAPPINGS) as MappingName[]
 
@@ -96,17 +79,18 @@ console.log('\n120bpm beat pattern (break must stay ~0, transient must move):\n'
 
 // --- a real breakdown --------------------------------------------------------
 
-console.log('\nFull track: 6s music, 3s breakdown, 6s back in\n')
+console.log(
+  `\nFull track: ${TRACK_BREAKDOWN_START}s music, ` +
+    `${TRACK_BREAKDOWN_END - TRACK_BREAKDOWN_START}s breakdown, ` +
+    `${TRACK_LENGTH - TRACK_BREAKDOWN_END}s back in\n`,
+)
 {
   const m = MAPPINGS.relative()
   const rows: string[] = []
-  for (let i = 0; i < 15 * FPS; i++) {
+  for (let i = 0; i < TRACK_LENGTH * FPS; i++) {
     const t = i / FPS
-    const playing = t < 6 || t >= 9
-    const hit = playing && t % 0.5 < 0.06
-    const p = m.update(
-      playing ? frame(hit ? 170 : 20, hit ? 120 : 45, hit ? 90 : 40) : frame(2, 3, 2),
-    )
+    const playing = t < TRACK_BREAKDOWN_START || t >= TRACK_BREAKDOWN_END
+    const p = m.update(trackFrame(t, 1 / FPS))
     if (i % Math.round(0.75 * FPS) === 0) {
       rows.push(
         `${t.toFixed(2).padStart(5)}s  ${playing ? 'music ' : 'BREAK '} ` +

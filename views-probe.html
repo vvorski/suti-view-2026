@@ -5,92 +5,216 @@
   html, body { margin: 0; background: #111; color: #8f8; font: 11px ui-monospace, monospace; }
   .grid { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px; }
   figure { margin: 0; }
-  figcaption { padding: 2px 0; }
+  figcaption { padding: 2px 0; white-space: pre; }
   canvas { display: block; border: 1px solid #444; }
+  #controls {
+    display: flex; gap: 12px; align-items: center; padding: 8px;
+    background: #1a1a1a; border-bottom: 1px solid #444;
+  }
+  #controls button, #controls select { font: inherit; }
 </style>
+<div id="controls" hidden>
+  <label>mapping <select id="mapping"></select></label>
+  <button id="mic" type="button">use microphone</button>
+  <span id="source">source: synthetic track</span>
+</div>
 <div class="grid" id="grid"></div>
 <script type="module">
   import { createVisualiser } from '/src/scene.ts'
-  import { ATMOSPHERIC_VIEWS } from '/src/views.ts'
+  import { ATMOSPHERIC_VIEWS, GEOMETRIC_VIEWS } from '/src/views.ts'
+  import { MAPPINGS } from '/src/engine/fast.ts'
+  import { startMicrophone } from '/src/engine/capture.ts'
+  import { trackFrame } from '/scripts/track.ts'
 
-  // Synthetic audio. A real mic would make every render different and make a
-  // screenshot comparison meaningless, so every view is driven by exactly the
-  // same numbers — a moderately loud, mid-tilted, slightly rough signal with
-  // no transient, which is the steady state most of these views spend their
-  // time in.
-  const params = {
-    level: 0.62, low: 0.55, mid: 0.48, high: 0.34,
-    transient: 0.0, tilt: 0.45, breakdown: 0, surge: 0,
-    novelty: 0.2, roughness: 0.5,
-  }
+  const white = { r: 1, g: 1, b: 1 }
+  const driven = new URLSearchParams(window.location.search).has('play')
 
-  // A plausible falling spectrum rather than flat: a flat one hides any bug
-  // where a view reads the wrong bin, because every bin is identical.
-  const spectrum = new Uint8Array(256)
-  for (let i = 0; i < 256; i++) {
-    spectrum[i] = Math.max(0, 210 * Math.exp(-i / 60) + 40 * Math.sin(i / 7) + 25)
-  }
-
-  const made = []
-  for (const name of Object.keys(ATMOSPHERIC_VIEWS)) {
-    const fig = document.createElement('figure')
-    const cap = document.createElement('figcaption')
-    cap.textContent = name
-    const canvas = document.createElement('canvas')
-    canvas.width = 260
-    canvas.height = 200
-    canvas.style.width = '260px'
-    canvas.style.height = '200px'
-    fig.append(cap, canvas)
-    document.getElementById('grid').append(fig)
-
-    const white = { r: 1, g: 1, b: 1 }
-    const v = createVisualiser(canvas, {
-      geometricView: 'circles',
-      geoColour: white,
-      atmColour: white,
-      camColour: white,
-      atmosphericView: name,
-      mergeMode: 'normal',
-      atmMergeMode: 'screen',
-      // Pure atmosphere: geoAlpha 0 so the geometric layer cannot mask a
-      // broken atmospheric shader with its own output.
-      geoAlpha: 0,
-      atmAlpha: 1,
-    })
-    made.push({ name, v, cap })
-  }
-
-  // uFlow only advances when render() is called, so drive a fixed number of
-  // frames rather than a wall-clock duration: the same count gives the same
-  // picture on any machine, which is what makes these screenshots comparable.
-  // rAF never fires in a non-frontmost automation window — hence the plain
-  // loop with a spin-wait, written `while (cond);` WITH the semicolon.
-  window.drive = (frames = 90) => {
-    for (let f = 0; f < frames; f++) {
-      for (const m of made) m.v.render(params, spectrum)
-      const until = performance.now() + 4
-      while (performance.now() < until);
+  if (!driven) {
+    // --- frozen mode: exactly what this page has always rendered ------------
+    // A still-life regression check, byte-identical to before entry 37 — the
+    // driven mode below is a second, additive purpose, not a replacement.
+    // Synthetic audio held constant: a real mic would make every render
+    // different and a screenshot comparison meaningless, so every view is
+    // driven by exactly the same numbers — a moderately loud, mid-tilted,
+    // slightly rough signal with no transient, the steady state most of
+    // these views spend their time in.
+    const params = {
+      level: 0.62, low: 0.55, mid: 0.48, high: 0.34,
+      transient: 0.0, tilt: 0.45, breakdown: 0, surge: 0,
+      novelty: 0.2, roughness: 0.5,
     }
-    return made.map((m) => m.name).join(',')
-  }
 
-  // Read back a centre pixel per view, so "did it render anything at all" is
-  // answerable without trusting my own eyes on a thumbnail.
-  window.probe = () =>
-    made.map(({ name, v }, i) => {
-      const c = document.querySelectorAll('canvas')[i]
-      const gl = c.getContext('webgl2')
-      const px = new Uint8Array(4)
-      // drawingBufferWidth/Height, not the CSS box: Three sizes the drawing
-      // buffer to the window, and reading at CSS coordinates samples the
-      // wrong place (or off the end) — a harness bug that has been read as a
-      // shader bug here before.
-      gl.readPixels(
-        Math.floor(gl.drawingBufferWidth / 2), Math.floor(gl.drawingBufferHeight / 2),
-        1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px)
-      return { name, centre: [px[0], px[1], px[2]] }
+    // A plausible falling spectrum rather than flat: a flat one hides any bug
+    // where a view reads the wrong bin, because every bin is identical.
+    const spectrum = new Uint8Array(256)
+    for (let i = 0; i < 256; i++) {
+      spectrum[i] = Math.max(0, 210 * Math.exp(-i / 60) + 40 * Math.sin(i / 7) + 25)
+    }
+
+    const made = []
+    for (const name of Object.keys(ATMOSPHERIC_VIEWS)) {
+      const fig = document.createElement('figure')
+      const cap = document.createElement('figcaption')
+      cap.textContent = name
+      const canvas = document.createElement('canvas')
+      canvas.width = 260
+      canvas.height = 200
+      canvas.style.width = '260px'
+      canvas.style.height = '200px'
+      fig.append(cap, canvas)
+      document.getElementById('grid').append(fig)
+
+      const v = createVisualiser(canvas, {
+        geometricView: 'circles',
+        geoColour: white,
+        atmColour: white,
+        camColour: white,
+        atmosphericView: name,
+        mergeMode: 'normal',
+        atmMergeMode: 'screen',
+        // Pure atmosphere: geoAlpha 0 so the geometric layer cannot mask a
+        // broken atmospheric shader with its own output.
+        geoAlpha: 0,
+        atmAlpha: 1,
+      })
+      made.push({ name, v, cap })
+    }
+
+    // uFlow only advances when render() is called, so drive a fixed number of
+    // frames rather than a wall-clock duration: the same count gives the same
+    // picture on any machine, which is what makes these screenshots comparable.
+    // rAF never fires in a non-frontmost automation window — hence the plain
+    // loop with a spin-wait, written `while (cond);` WITH the semicolon.
+    window.drive = (frames = 90) => {
+      for (let f = 0; f < frames; f++) {
+        for (const m of made) m.v.render(params, spectrum)
+        const until = performance.now() + 4
+        while (performance.now() < until);
+      }
+      return made.map((m) => m.name).join(',')
+    }
+
+    // Read back a centre pixel per view, so "did it render anything at all" is
+    // answerable without trusting my own eyes on a thumbnail.
+    window.probe = () =>
+      made.map(({ name, v }, i) => {
+        const c = document.querySelectorAll('canvas')[i]
+        const gl = c.getContext('webgl2')
+        const px = new Uint8Array(4)
+        // drawingBufferWidth/Height, not the CSS box: Three sizes the drawing
+        // buffer to the window, and reading at CSS coordinates samples the
+        // wrong place (or off the end) — a harness bug that has been read as a
+        // shader bug here before.
+        gl.readPixels(
+          Math.floor(gl.drawingBufferWidth / 2), Math.floor(gl.drawingBufferHeight / 2),
+          1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px)
+        return { name, centre: [px[0], px[1], px[2]] }
+      })
+
+    document.title = 'ready'
+  } else {
+    // --- driven mode (?play) — docs/todo.md entry 37 -------------------------
+    // Runs the real MAPPINGS over the synthetic track scripts/track.ts already
+    // defines (probe-mapping.ts's own "a real breakdown" signal, lifted into a
+    // shared module so both drive the same song), rendering every view live —
+    // geometric as well as atmospheric, since five of the six thin shaders a
+    // "not responding to music" report would need to see are geometric. A mic
+    // button behind a real gesture reaches the actual question this exists to
+    // investigate: whether real music, not just the synthetic track, moves
+    // the picture.
+    //
+    // Not shipped to users: this is a dev page beside hud-probe.html and
+    // camera-probe.html, unreachable from index.html, so the circular control
+    // surface's non-negotiable does not reach it — plain <select>/<button> are
+    // fine here.
+    document.getElementById('controls').hidden = false
+
+    const mappingSelect = document.getElementById('mapping')
+    for (const name of Object.keys(MAPPINGS)) {
+      const opt = document.createElement('option')
+      opt.value = name
+      opt.textContent = name
+      mappingSelect.append(opt)
+    }
+
+    const views = [
+      ...Object.keys(GEOMETRIC_VIEWS).map((name) => ({ name, kind: 'geometric' })),
+      ...Object.keys(ATMOSPHERIC_VIEWS).map((name) => ({ name, kind: 'atmospheric' })),
+    ]
+
+    const made = views.map(({ name, kind }) => {
+      const fig = document.createElement('figure')
+      const cap = document.createElement('figcaption')
+      cap.textContent = `${kind} / ${name}`
+      const canvas = document.createElement('canvas')
+      canvas.width = 260
+      canvas.height = 220
+      canvas.style.width = '260px'
+      canvas.style.height = '220px'
+      fig.append(cap, canvas)
+      document.getElementById('grid').append(fig)
+
+      // Pure single-layer, whichever kind this figure is: the other layer's
+      // alpha at 0 keeps it from masking a broken shader with its own output,
+      // the same reasoning the frozen grid above already uses.
+      const v = createVisualiser(canvas, {
+        geometricView: kind === 'geometric' ? name : 'circles',
+        geoColour: white,
+        atmColour: white,
+        camColour: white,
+        atmosphericView: kind === 'atmospheric' ? name : 'field',
+        mergeMode: 'normal',
+        atmMergeMode: 'screen',
+        geoAlpha: kind === 'geometric' ? 1 : 0,
+        atmAlpha: kind === 'atmospheric' ? 1 : 0,
+      })
+      return { name, kind, v, cap }
     })
 
-  document.title = 'ready'
+    let mapping = MAPPINGS[mappingSelect.value]()
+    // Mappings carry several seconds of internal state (running means,
+    // feature history), none of which is transferable — main.ts's own
+    // onMapping does the same thing on a switch, for the same reason.
+    mappingSelect.addEventListener('change', () => {
+      mapping = MAPPINGS[mappingSelect.value]()
+    })
+
+    let micSource = null
+    document.getElementById('mic').addEventListener('click', async () => {
+      // MUST be inside this gesture handler — capture.ts's own comment on
+      // startMicrophone explains why, and it is the reason this is a click
+      // handler at all rather than something tried automatically on load.
+      try {
+        micSource = await startMicrophone()
+        document.getElementById('source').textContent = 'source: microphone'
+        document.getElementById('mic').disabled = true
+      } catch (err) {
+        document.getElementById('source').textContent = `source: mic refused (${err.message})`
+      }
+    })
+
+    const start = performance.now()
+    let lastT = start
+
+    function frame(now) {
+      const dt = Math.min((now - lastT) / 1000, 1 / 5)
+      lastT = now
+
+      const audio = micSource ? micSource.frame() : trackFrame((now - start) / 1000, dt)
+      const params = mapping.update(audio)
+
+      for (const m of made) {
+        m.v.render(params, audio.freq)
+        m.cap.textContent =
+          `${m.kind} / ${m.name}\n` +
+          `level ${params.level.toFixed(2)}  low ${params.low.toFixed(2)}  ` +
+          `mid ${params.mid.toFixed(2)}  high ${params.high.toFixed(2)}\n` +
+          `trans ${params.transient.toFixed(2)}  surge ${params.surge.toFixed(2)}`
+      }
+      requestAnimationFrame(frame)
+    }
+    requestAnimationFrame(frame)
+
+    document.title = 'ready'
+  }
 </script>
