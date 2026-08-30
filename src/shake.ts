@@ -71,9 +71,13 @@ const GRAVITY_TAU = 0.5
  * REVERSALS times inside WINDOW seconds. A single impact gives one crossing
  * and its rebound gives at most two; three means the phone is being shaken.
  */
-// Exported: haptics.ts's intensity scaling needs the same floor a shake has
-// to clear to fire at all, so "the gentlest qualifying shake" means the same
-// m/s² value in both files rather than two constants that can drift apart.
+// Exported: haptics.ts's intensity scaling reads this as its own scale's
+// zero-point. docs/todo.md entry 88 — this is no longer literally "the bar
+// a shake has to clear to fire" (STRONG_UP_CALM/BUSY below are, and they can
+// sit under this); it stays fixed as the scale's own reference regardless,
+// which envelopePeak()'s own floor (always >= this) is what actually
+// guarantees: whatever a caller receives is never below this value, however
+// low the adaptive bar that let the shake through happened to be.
 export const STRONG_UP = 18
 /**
  * The hardest shake this app is calibrated against, not a real physical
@@ -136,7 +140,45 @@ function envelopePeak(envelope: number): number {
   return STRONG_UP + depth * (PEAK_CEILING - STRONG_UP)
 }
 
+/**
+ * docs/todo.md entry 88 — the reversal path's own bar moves with how much
+ * the phone has been moving lately, between these two bounds, rather than
+ * sitting at a flat 18 always. `STRONG_UP` above (18) is deliberately left
+ * exactly where it was: `intensity()` and `envelopePeak()` still anchor
+ * their own 0-1 scale to it, so a shake that clears the *lowered* bar in a
+ * quiet room reports proportionately low on that scale rather than a
+ * moving zero-point retuning the buzz and the shuffle depth underneath
+ * this entry's own feet. Only the fire-or-not decision moves; what a fired
+ * shake is worth once it does never does.
+ *
+ * 13 calm, 20 busy — Decided's own numbers, not derived. `STRONG_DOWN`
+ * below is a ratio of whichever of these is currently in force, not a
+ * third independent bound.
+ */
+const STRONG_UP_CALM = 13
+const STRONG_UP_BUSY = 20
+
+/** docs/todo.md entry 88 — SUSTAIN_LEVEL's own calm/busy bounds, same
+ *  reasoning as STRONG_UP_CALM/BUSY above: the constant `SUSTAIN_LEVEL`
+ *  (0.55) stays put as envelopePeak()'s own calibration floor. */
+const SUSTAIN_LEVEL_CALM = 0.45
+const SUSTAIN_LEVEL_BUSY = 0.6
+
+/** docs/todo.md entry 88 — how long a slow mean of `disturb` takes to
+ *  follow a change in how much the phone has been moving: long enough that
+ *  walking to a stage raises the bar rather than a moment's fidget, short
+ *  enough that setting the phone down for half a minute makes it eager
+ *  again. Decided's own number. */
+const CALM_TAU = 25
+
 const STRONG_DOWN = 7
+/** docs/todo.md entry 88 — STRONG_DOWN's own ratio to STRONG_UP (today's
+ *  fixed 18, the same reference `intensity()` uses), reapplied to whichever
+ *  bar is currently in force so the hysteresis band narrows and widens with
+ *  it rather than staying fixed while the top of the band moves — a fixed
+ *  STRONG_DOWN against a lowered bar would start counting the same swing as
+ *  more than one reversal. */
+const STRONG_DOWN_RATIO = STRONG_DOWN / STRONG_UP
 const STRONG_REVERSALS = 3
 const STRONG_WINDOW = 1.2
 /** Long enough that one shake cannot read as two, short enough that shaking
@@ -394,15 +436,19 @@ export class Tumble {
    *
    *  "The shake doesn't work" has two causes that are indistinguishable from
    *  outside: no `devicemotion` events arriving at all, or events arriving
-   *  from a shake that never reaches STRONG_UP. Guessing between them means
-   *  either chasing a permission problem that is not there, or lowering a
-   *  threshold that was right — and lowering STRONG_UP is not free, because
-   *  what it buys back is knocks and set-downs firing a re-roll, which the
-   *  reversal counter exists to prevent.
+   *  from a shake that never reaches the current bar. Guessing between them
+   *  means either chasing a permission problem that is not there, or
+   *  second-guessing a threshold — docs/todo.md entry 88 makes the threshold
+   *  itself move with context rather than staying a single fixed guess, but
+   *  the underlying worry this comment names is unchanged: dropping it too
+   *  far would buy back knocks and set-downs firing a re-roll, which the
+   *  reversal counter (not the bar's height) is what actually prevents — see
+   *  `detectStrong`'s own comment.
    *
-   *  With both numbers on screen it is one glance: `samples` still at 0 is a
-   *  dead sensor; a `peak` well under STRONG_UP is a real sensor and a shake
-   *  that is not hard enough. */
+   *  With all three numbers on screen it is one glance: `samples` still at 0
+   *  is a dead sensor; a `peak` well under `bar` (`diagnostics()`'s own
+   *  report of `currentStrongUp()`) is a real sensor and a shake that is not
+   *  hard enough for whatever context the phone is currently in. */
   private samples = 0
   private peak = 0
 
@@ -411,6 +457,76 @@ export class Tumble {
   /** Peak-hold envelope of `disturb`, so a shake's own half-cycle dips do not
    *  read as the shake stopping. See SUSTAIN_LEVEL. */
   private envelope = 0
+
+  /** docs/todo.md entry 88 — a slow mean of `disturb`, 0-1, the "how much has
+   *  the phone been moving lately" this entry's whole adaptive range reads
+   *  from. Starts at 0 (calm), matching a real device that has not moved
+   *  yet — and matching what a fresh `Tumble` should report before its
+   *  first sample regardless. */
+  private calm = 0
+
+  /**
+   * docs/todo.md entry 88 — 0-1, how far between calm and busy the current
+   * bars sit. `sqrt(calm)` rather than `calm` itself: `disturb` spends most
+   * of an ordinary walking gait's cycle near or under `FLOOR` (only the
+   * peak of each stride clears it at all), so its time-average — which is
+   * what the EMA in `updateCalm` converges toward — undersells how much the
+   * phone has actually been moving. The probe is what surfaced this: 30s of
+   * the walking case already in this file's own table (disturb peaking at
+   * 0.15) converged `calm` to under 0.05, which barely nudged a *linear*
+   * bar (13.0 → 13.3) — nowhere near enough separation for a shake that is
+   * meant to read as clearly different in the two contexts. The square root
+   * front-loads the response to exactly the small-`calm` regime ordinary
+   * motion like walking lives in, without moving `CALM_TAU` itself off the
+   * value Decided argues for on its own terms (long enough that a fidget
+   * doesn't count, short enough that stillness forgives quickly). **Mine**
+   * — Decided names the four bounds, not this curve; the walking-then-shake
+   * probe case below is what this is tuned against.
+   */
+  private busyness(): number {
+    return Math.sqrt(this.calm)
+  }
+
+  /** docs/todo.md entry 88 — the reversal path's own current bar, between
+   *  STRONG_UP_CALM and STRONG_UP_BUSY. A pure function of `calm` via
+   *  `busyness()`, which is itself what freezes during a detection — see
+   *  `updateCalm` — so this needs no freeze logic of its own. */
+  private currentStrongUp(): number {
+    return STRONG_UP_CALM + this.busyness() * (STRONG_UP_BUSY - STRONG_UP_CALM)
+  }
+
+  /** docs/todo.md entry 88 — reapplies STRONG_DOWN_RATIO to the current
+   *  bar, so the hysteresis band scales with it rather than narrowing as
+   *  the bar falls. */
+  private currentStrongDown(): number {
+    return this.currentStrongUp() * STRONG_DOWN_RATIO
+  }
+
+  /** docs/todo.md entry 88 — the sustained path's own current bar, between
+   *  SUSTAIN_LEVEL_CALM and SUSTAIN_LEVEL_BUSY. */
+  private currentSustainLevel(): number {
+    return SUSTAIN_LEVEL_CALM + this.busyness() * (SUSTAIN_LEVEL_BUSY - SUSTAIN_LEVEL_CALM)
+  }
+
+  /**
+   * docs/todo.md entry 88 — advance the slow mean, unless a detection is
+   * currently in progress or cooling down. Without the freeze the feature
+   * eats itself: a shake is by definition a large `disturb`, so it would
+   * raise its own bar mid-gesture and the second half of a shake could fail
+   * to qualify against a bar its own first half just raised. `above` covers
+   * the reversal path from its first crossing (Decided's own "freeze on the
+   * first reversal"); `sustained > 0` covers the sustained path the same
+   * way, from the moment it starts accumulating rather than only once it
+   * fires; `cooldown`/`doubleWindow` cover the aftermath of either,
+   * including the gap before a possible second shake of a double — Decided
+   * is explicit that the second shake of a double must face the same bar as
+   * the first, and freezing through `doubleWindow` is what guarantees it.
+   */
+  private updateCalm(dt: number): void {
+    if (this.above || this.sustained > 0 || this.cooldown > 0 || this.doubleWindow > 0) return
+    const k = 1 - Math.exp(-dt / CALM_TAU)
+    this.calm += (this.disturb - this.calm) * k
+  }
 
   /**
    * Feed one sensor reading. `dt` is the time since the previous sample.
@@ -440,6 +556,10 @@ export class Tumble {
     if (mag > this.peak) this.peak = mag
 
     this.disturb = clamp01((mag - FLOOR) / (FULL - FLOOR))
+    // docs/todo.md entry 88 — reads this sample's own disturb, so it has to
+    // run after the line above and before detectSustained/detectStrong
+    // read the bar it feeds.
+    this.updateCalm(dt)
 
     if (mag > KICK_DEADZONE) {
       // The image lags the phone rather than leading it — move the device
@@ -472,7 +592,8 @@ export class Tumble {
     this.envelope *= Math.exp(-dt / ENVELOPE_TAU)
     if (this.disturb > this.envelope) this.envelope = this.disturb
 
-    if (this.envelope <= SUSTAIN_LEVEL) {
+    // docs/todo.md entry 88 — the adaptive bar, not the fixed SUSTAIN_LEVEL.
+    if (this.envelope <= this.currentSustainLevel()) {
       this.sustained = 0
       return
     }
@@ -520,9 +641,10 @@ export class Tumble {
     if (escalating) this.doubleWindow -= dt
 
     // A second shake only counts once the first has actually stopped. Below
-    // STRONG_DOWN the hand is between strokes or at rest; only a run of that
-    // longer than QUIET_GAP means the gesture ended rather than continued.
-    if (mag < STRONG_DOWN) {
+    // the current bar (docs/todo.md entry 88 — STRONG_DOWN, adaptive) the
+    // hand is between strokes or at rest; only a run of that longer than
+    // QUIET_GAP means the gesture ended rather than continued.
+    if (mag < this.currentStrongDown()) {
       this.quietFor += dt
       if (this.quietFor >= QUIET_GAP) this.armedForDouble = true
     } else {
@@ -534,7 +656,8 @@ export class Tumble {
       if (this.windowLeft <= 0) this.reversals = 0
     }
 
-    if (!this.above && mag > STRONG_UP) {
+    // docs/todo.md entry 88 — the adaptive bar, not the fixed STRONG_UP.
+    if (!this.above && mag > this.currentStrongUp()) {
       this.above = true
       this.reversals++
       // The window starts at the first crossing, not at the first sample, so
@@ -565,7 +688,7 @@ export class Tumble {
         this.cooldown = STRONG_COOLDOWN
         this.doubleWindow = DOUBLE_WINDOW
       }
-    } else if (this.above && mag < STRONG_DOWN) {
+    } else if (this.above && mag < this.currentStrongDown()) {
       this.above = false
     }
   }
@@ -656,9 +779,12 @@ export class Tumble {
     return v
   }
 
-  /** See the fields' own comment. Read-only; nothing here drives the picture. */
-  diagnostics(): { samples: number; peak: number } {
-    return { samples: this.samples, peak: this.peak }
+  /** See the fields' own comment. Read-only; nothing here drives the picture.
+   *  `bar` is docs/todo.md entry 88's own addition — the reversal path's
+   *  current adaptive threshold, m/s², so the readout can say why a shake
+   *  didn't fire beyond just "the peak was low". */
+  diagnostics(): { samples: number; peak: number; bar: number } {
+    return { samples: this.samples, peak: this.peak, bar: this.currentStrongUp() }
   }
 }
 
@@ -765,9 +891,10 @@ export interface ShakeSensor {
   gravity(): { x: number; y: number }
   /** The same tilt, uncapped — docs/todo.md entry 46. See Tumble.tilt. */
   tilt(): { x: number; y: number }
-  /** Sample count, recent peak, and events discarded as unusable. For the
-   *  numeric readout only. See Tumble. */
-  diagnostics(): { samples: number; peak: number; rejected: number }
+  /** Sample count, recent peak, the current adaptive bar (docs/todo.md
+   *  entry 88), and events discarded as unusable. For the numeric readout
+   *  only. See Tumble. */
+  diagnostics(): { samples: number; peak: number; bar: number; rejected: number }
   close(): void
 }
 
@@ -785,7 +912,7 @@ export function startShake(granted: boolean): ShakeSensor {
       frame: () => STILL_FRAME,
       gravity: () => ({ x: 0, y: 0 }),
       tilt: () => ({ x: 0, y: 0 }),
-      diagnostics: () => ({ samples: 0, peak: 0, rejected: 0 }),
+      diagnostics: () => ({ samples: 0, peak: 0, bar: STRONG_UP_CALM, rejected: 0 }),
       close: () => {},
     }
   }

@@ -9503,7 +9503,82 @@ reached at all," which is worth keeping distinct for whoever debugs this
 gap next.
 
 ### 88. A quiet phone listens harder
-`status: building` · added 2026-08-30 · build after 85 and 86
+`status: done` · added 2026-08-30 · build 302
+
+**Build note (Mine)** — `STRONG_UP`/`SUSTAIN_LEVEL` stay exactly where they
+were (18 and 0.55): `intensity()` and `envelopePeak()` still anchor their 0-1
+scale to `STRONG_UP`, so a shake that only clears a *lowered* bar reports
+proportionately low on that scale rather than the scale's own zero-point
+moving underneath entry 85's floor guarantee. What actually moved are two new
+pairs, `STRONG_UP_CALM/BUSY` (13/20) and `SUSTAIN_LEVEL_CALM/BUSY`
+(0.45/0.60), Decided's own numbers, blended by a new `calm` field — an EMA of
+`disturb` at `CALM_TAU` (25s) — via `currentStrongUp()` / `currentSustainLevel()`,
+which `detectStrong`/`detectSustained` now read instead of the constants.
+`STRONG_DOWN` is reapplied as a ratio (`STRONG_DOWN_RATIO = STRONG_DOWN /
+STRONG_UP`) against whichever bar is current, per Decided's own reasoning
+about the hysteresis band narrowing if it didn't. The freeze during a
+detection and its cooldown reuses the existing `above` / `sustained > 0` /
+`cooldown > 0` / `doubleWindow > 0` fields as the freeze condition inside
+`updateCalm` — no new boolean, and it falls directly out of Decided's "freeze
+on the first reversal, thaw when the cooldown ends."
+
+**Mine, beyond Decided's named bounds**: `busyness()` maps `calm` through
+`Math.sqrt` before blending, rather than using `calm` linearly. A linear
+mapping was my first attempt, and the probe caught it: 30s of this file's own
+"walking (3 m/s², 2 Hz)" case converges `calm` to under 0.05, because
+`disturb` spends most of a walking gait's cycle at or under `FLOOR` — only
+each stride's peak clears it — so the EMA's time-average badly undersells how
+much the phone has actually been moving. Linear, that only nudged the
+reversal bar from 13.0 to about 13.3, nowhere near enough separation for the
+Done-when case. `sqrt` front-loads the response in exactly that small-`calm`
+regime without touching `CALM_TAU` itself, and raises the post-walk bar to
+about 14.5 — verified against the real `Tumble`, not derived on paper.
+
+**A real bug, caught by the walk-then-shake probe case and worth disclosing in
+full**: the first version of that case (a 1.2s, 4 Hz burst, matching
+"deliberate shake"'s own shape) fired after both stillness *and* walking —
+the adaptive reversal bar looked right in isolation (peak 13.6 sat under a
+14.5 bar), yet the case still fired. Instrumented `detectStrong`/
+`detectSustained` directly to find out why: it was firing via the *sustained*
+path, not the reversal path. `SUSTAIN_LEVEL_BUSY` tops out at 0.60, but a
+13.5 m/s² amplitude saturates `disturb` to about 0.96 — and that is true of
+essentially any amplitude past roughly 9 m/s², regardless of context, since
+`disturb` depends only on instantaneous `mag`. So the sustained path
+structurally cannot discriminate calm from busy for any shake hard enough to
+be called one — SUSTAIN_LEVEL's adaptive range, as Decided names it, cannot
+reject this class of gesture, busy or not. Shortening the burst to 0.4s
+didn't fix it either: the envelope's own decay tail after the burst ends
+(≈0.35s, from `ENVELOPE_TAU`) supplies most of `SUSTAIN_TIME` (0.6s) on its
+own once the envelope has saturated, so total sustained-path exposure stayed
+past 0.6s regardless of how brief the burst itself was.
+
+I did not retune `SUSTAIN_LEVEL_BUSY` to chase this — Decided names 0.45 to
+0.60 specifically, marking only "the four numbers" as Mine, not a redesign of
+what the sustained path's scale means, and pushing it toward ~0.97 to reject
+a saturating shake would gut what that path is for (catching a shake whose
+*peak* was undersampled). Instead I made the two probe cases isolate what
+`STRONG_UP_CALM/BUSY` actually governs: a brief (0.26s), 7.5 Hz burst — found
+empirically against the real `Tumble` (0.24s-0.29s all separate the two cases
+correctly; 0.26s sits mid-band) — completes the three reversals
+`STRONG_REVERSALS` needs while staying under the sustained path's total
+exposure window, so the case tests the reversal bar's own adaptivity rather
+than being decided by a path this entry can't and shouldn't touch. Recorded
+in the probe's own comment so the next person hitting the same trap doesn't
+re-diagnose it. Whether a real hand-shake stays inside that 0.26s-ish window
+in practice is untested outside the synthetic probe — Verify's own phone
+check (below) is where that would show up.
+
+`pnpm build` and `pnpm lint` are clean. `pnpm probe:shake` passes, including
+the two new entry-88 cases and every prior one — the
+`disturb` column is byte-for-byte identical to the pre-entry-88 table
+(checked by diffing against `git stash`), which is what proves the frozen
+RGB slip (entry 76) and the approved colour bias (entry 70) are untouched.
+`pnpm probe:motion-bias` and `pnpm probe:rgb-slip`, both of which also read
+`disturb`, pass unchanged. The readout (`src/hud.ts`) now reports `bar`
+alongside `samples`/`peak`, per Decided's "report the live threshold." Not
+verified live on a phone in a quiet room vs. walking — the environment here
+has no accelerometer to drive; this ships on the synthetic probe and close
+reading, same disclosed gap as a few earlier entries this session.
 
 **Do** — let the shake detector's thresholds follow how much the phone has been
 moving lately: a low bar after stillness, today's bar when it is already being

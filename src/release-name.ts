@@ -128,6 +128,7 @@ export const RELEASE_NAMES: readonly string[] = [
   'own tempo',
   'gentle counts',
   'one snapshot',
+  'raised bar',
 ]
 
 /** The current release's name — derived as the list's last element, so

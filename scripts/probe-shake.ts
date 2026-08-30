@@ -227,6 +227,40 @@ const cases: Array<[string, Result]> = [
     'two shakes, 4s apart',
     run(5.6, (t) => (t < 0.8 || (t > 4.8 && t < 5.6) ? shaking(t, 28, 4) : still())),
   ],
+  // docs/todo.md entry 88 — the two cases the whole entry is about. Neither
+  // uses "deliberate"'s own 28 m/s²: this amplitude is chosen to sit under
+  // today's flat STRONG_UP (18) but over STRONG_UP_CALM (13), so it is a
+  // shake that never fired at all before this entry, in either context —
+  // the point is that context is now what decides whether it does.
+  //
+  // CALM_TAU is 25s; 30s of stillness first is long enough for `calm` to
+  // sit essentially at 0 (it starts there anyway), and 30s of the same
+  // "walking" motion the sustained-path comment already calibrates against
+  // (disturb 0.15) is long enough for `calm` to have converged most of the
+  // way toward that reading before the shake begins.
+  //
+  // The burst is brief (0.26s) and faster than "deliberate"'s 4 Hz — 7.5 Hz.
+  // This is not a stylistic choice: `disturb` at this amplitude saturates to
+  // ~0.96, far past even SUSTAIN_LEVEL_BUSY (0.60), so any burst long enough
+  // — plus the envelope's own decay tail after it ends — to hold `sustained`
+  // above SUSTAIN_TIME (0.6s) fires via the sustained path regardless of
+  // context, which would make both cases fire and prove nothing about the
+  // reversal path's own adaptive bar, the thing this entry actually changed.
+  // A first attempt at a short burst (0.4s at 5.5 Hz) still fired on both:
+  // the envelope's decay tail alone (~0.35s, from ENVELOPE_TAU) supplies
+  // most of SUSTAIN_TIME on top of any burst that reaches saturation. 0.26s
+  // at 7.5 Hz keeps total sustained-path exposure under that limit while
+  // still completing the three reversals STRONG_REVERSALS needs — checked
+  // empirically against the real Tumble, with margin either side (0.24s-
+  // 0.29s all separate the two cases correctly; this sits mid-band).
+  [
+    'a gentle shake (13.5 m/s², 7.5 Hz), after 30s of stillness',
+    run(30.26, (t) => (t < 30 ? still() : shaking(t - 30, 13.5, 7.5))),
+  ],
+  [
+    'the same gentle shake, after 30s of walking (3 m/s², 2 Hz)',
+    run(30.26, (t) => (t < 30 ? shaking(t, 3, 2) : shaking(t - 30, 13.5, 7.5))),
+  ],
 ]
 
 console.log(
@@ -276,6 +310,25 @@ if (spaced2s.doubles < 1) failures.push(`two shakes 2s apart fired ${spaced2s.do
 const spaced4s = byName('two shakes, 4s apart')
 if (spaced4s.doubles !== 0) failures.push(`two shakes 4s apart fired ${spaced4s.doubles} doubles, expected 0`)
 if (spaced4s.strongs < 2) failures.push(`two shakes 4s apart fired ${spaced4s.strongs} singles, expected 2`)
+
+// docs/todo.md entry 88. Every `run()` case starts a fresh Tumble, whose
+// `calm` field starts at 0 — the lowest, most permissive bar this entry
+// ever produces — so the knock assertions above already exercise rejection
+// at exactly the bar this entry worries could be too low to still reject
+// one. No separate case needed; this just says so.
+if (knock.strongs !== 0 || knock.doubles !== 0) {
+  failures.push('knock rejection at the lowest (calm) bar already covered above failed')
+}
+
+const calmThenShake = byName('a gentle shake (13.5 m/s², 7.5 Hz), after 30s of stillness')
+if (calmThenShake.strongs < 1) {
+  failures.push(`gentle shake after stillness fired ${calmThenShake.strongs}, expected ≥1 — the entry's whole point`)
+}
+
+const walkThenShake = byName('the same gentle shake, after 30s of walking (3 m/s², 2 Hz)')
+if (walkThenShake.strongs !== 0) {
+  failures.push(`the same gentle shake fired ${walkThenShake.strongs} times after walking, expected 0 — the bar should have risen`)
+}
 
 // Every vigorous case, not just the two above.
 //

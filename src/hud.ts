@@ -189,6 +189,10 @@ export interface Hud {
        *  magnitude in m/s². Diagnostics only — see the readout's comment. */
       samples?: number
       peak?: number
+      /** docs/todo.md entry 88 — the reversal path's own current adaptive
+       *  threshold, m/s². Reported alongside `peak` so "why didn't that
+       *  fire" can be answered from the readout rather than guessed at. */
+      bar?: number
       /** Motion events that arrived carrying no usable acceleration. */
       rejected?: number
       /** What the autopilot is waiting for. See Director.status(). */
@@ -1422,12 +1426,15 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
                     ? `  night ${Math.round(-s.sky.override * 100)}%`
                     : ''),
             ]),
-        // The two numbers that tell a dead sensor apart from a shake that is
-        // simply not hard enough.
+        // The numbers that tell a dead sensor apart from a shake that is
+        // simply not hard enough — and, docs/todo.md entry 88, from one that
+        // wasn't hard enough for the *current* context. `/18` stays fixed
+        // (intensity()'s own scale, untouched by entry 88); `bar` is the
+        // adaptive threshold a peak actually has to clear right now.
         ...(s.samples === undefined
           ? []
           : [
-              `motion ${s.samples} ev  peak ${(s.peak ?? 0).toFixed(1)}/18` +
+              `motion ${s.samples} ev  peak ${(s.peak ?? 0).toFixed(1)}/18  bar ${(s.bar ?? 0).toFixed(1)}` +
                 (s.rejected ? `  drop ${s.rejected}` : ''),
             ]),
         // Why the autopilot has not done anything. Without this the restraint
