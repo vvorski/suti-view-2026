@@ -6041,3 +6041,81 @@ motion question. Check the picture behind the egg specifically: enter, shake
 hard several times, leave, and confirm the visualiser is exactly as it was.
 `pnpm probe:shake` unchanged. `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 62. Fullscreen comes back by itself, and windowed is a state the app knows it is in
+`status: ready` · added 2026-08-30
+
+**Do** — re-arm the fullscreen retry every time fullscreen is lost, not only
+before the first entry, and mark the windowed state so the app can look and
+behave like what it is.
+**Why** — fullscreen is lost repeatedly and only comes back if you find the
+chip. The recovery already exists; it is switched off after the first success.
+
+**Decided**
+- The cause, exactly → `permission-gate.ts:144` is
+  **`if (fsArmed || fsEverEntered) return`**. `armFullscreenRetry()` arms a
+  one-shot `pointerup` handler that re-enters fullscreen, and that guard makes
+  it refuse forever once fullscreen has succeeded once. So the recovery is
+  built, tested and correct, and it is unreachable in exactly the situation
+  being complained about.
+- The second half → `watchFullscreen()` at `:127-129` sets `'exited'` with the
+  comment "**A deliberate exit. Recorded, deliberately not acted on.**" That
+  was a real decision and Victor is overturning it: an exit is now to be
+  treated as an accident until proven otherwise, because on a phone it usually
+  is — a system back-swipe, a notification, the address bar reappearing.
+- **What "never lose it" can actually mean**, and it is worth stating plainly
+  so nobody builds toward the impossible version → **a browser will not enter
+  fullscreen without a user gesture.** There is no API that keeps it. The
+  strongest achievable behaviour is *re-enter on the very next touch of the
+  picture*, silently, forever — which is what `armFullscreenRetry()` already
+  does and what removing the guard delivers.
+- **The retry listens on the picture, not on `window`** → today it is
+  `window.addEventListener('pointerup', retry, true)`. Someone who left
+  fullscreen to use the address bar or read a notification would be dragged
+  straight back by their next tap anywhere. Scoping it to the canvas means the
+  gesture that recovers fullscreen is the gesture that says "I am back to
+  playing with this". **Mine**, and it removes the need for a cooldown, a
+  deliberate-exit flag, or any attempt to read the user's mind.
+- It does not consume the tap → the handler is capture-phase and does not stop
+  propagation, so the touch that restores fullscreen also does whatever it
+  normally does. That is already true and must stay true: with entries 50 and
+  52 landing, that same tap is an emitter and a screenshot.
+- **Windowed becomes a state the document declares** → a `data-fullscreen`
+  attribute on the root element, set from the same `watchFullscreen()` that
+  already tracks this. **Mine**, and the reasoning is that "behave differently
+  in a window" is a request with no end: rather than guess which differences
+  are wanted, give CSS and the HUD one honest fact to key off and let each
+  difference be its own small decision later. The first user of it is the
+  fullscreen chip, which is already conditional and can stop reimplementing the
+  test.
+- What is deliberately **not** decided here → what should actually look
+  different when windowed. The viewport is shorter, the browser chrome is
+  present, and the composition changes; whether the HUD moves, the resolution
+  ladder relaxes, or the capture band shifts are separate questions with
+  separate answers. This entry makes them answerable and answers none of them.
+- Interaction with entry 61 → the powder now enters fullscreen on its third
+  tap. It should not also arm a retry while it is showing, since the powder
+  owns the screen and its own exit is a different thing from the app's. Route
+  it the same way the shake is routed there.
+- `probe-fullscreen.ts` is the guard on all of this → it covers the state
+  machine and its docstring already records that a browser cannot prove
+  fullscreen without real activation. The states change here; the probe's
+  thirteen checks must be updated with them rather than around them.
+
+**Lands in**
+- `src/permission-gate.ts:143-153` — the guard, and the listener's target.
+- `src/permission-gate.ts:120-132` — the exit branch calls
+  `armFullscreenRetry()` and sets the root attribute.
+- `scripts/probe-fullscreen.ts` — the re-arm case, which is the behaviour this
+  entry exists for and has no coverage today.
+
+**Done when** — leaving fullscreen by any route and then touching the picture
+puts it back, every time, not just the first; touching the address bar or a
+notification does not; the root element says which state it is in; and the
+fullscreen chip still appears while windowed. `pnpm probe:fullscreen` passes
+with a new case asserting the retry re-arms after a successful entry.
+**Verify** — the phone, leaving fullscreen the way it actually gets lost: the
+system back-swipe, and pulling down a notification. A desktop browser cannot
+answer this — `probe-fullscreen.ts`'s own docstring says so — so the probe
+covers the state machine and the phone covers the behaviour.
+**Hard stops** — prefs no · url no · capture no · dependency no.
