@@ -5113,3 +5113,82 @@ also fixes is only visible in that state, at 320×568 and 360×640. Force a
 `.fresh` state by hand to see the two-animation sequence. `pnpm build`,
 `pnpm lint`.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 57. A drag lays a trail, and taps accumulate
+`status: ready` · added 2026-08-30
+
+**Do** — spawn ripples by **distance travelled** as well as elapsed time, raise
+the touch slot count so a trail is longer than four rings, and let a finger
+leave more than one emitter behind it.
+**Why** — asked for. A drag currently drips rather than draws, and a second tap
+takes the place of the first.
+
+**Decided**
+- Why a drag drips → `emitter.ts:38` is `SPAWN_INTERVAL = 0.15`, and
+  `:110` spawns only when that much time has passed. **A ripple every 150ms
+  regardless of how far the finger moved**, so a fast swipe across the whole
+  screen leaves about seven rings spread over its length and a slow one leaves
+  the same seven bunched up. The spawn is metered by the clock when the thing
+  being drawn is a path.
+- The fix → **spawn when *either* the interval has elapsed *or* the finger has
+  moved a set distance since the last spawn.** Distance in shader uv so it is
+  independent of screen size, starting at about **0.05** — roughly twenty rings
+  across the frame. The time term stays: it is what makes a *stationary* hold
+  keep emitting, which is entry 33's behaviour and should not change.
+- **The trail is capped at four rings today, and that is the harder half** →
+  `ripples.ts:24-26`: `MAX_RIPPLES = 12`, `AUDIO_RIPPLES = 8`, leaving
+  **`TOUCH_RIPPLES = 4`**. The touch band is a ring buffer, so the fifth ring
+  of any drag overwrites the first. Spawning more often without more slots
+  makes a *shorter* trail, not a longer one — it would recycle faster.
+- So the slots go up → **`MAX_RIPPLES` 12 → 24, audio unchanged at 8, touch
+  4 → 16.** **Mine**, and the audio band deliberately does not move: it was
+  right before this entry and nothing here is about the music.
+- **The honest cost, and it is a real one** → entry 33 split the shader into
+  two loops precisely because positioned rings cannot share the hoisted
+  `rungR`: each needs its own `length(p - centre)`. So this takes the
+  positioned loop from **4 to 16 `length()` calls per fragment, in six
+  shaders**. That is the largest per-fragment cost increase anything in this
+  queue has asked for. **Frame time is a pass/fail condition below, not an
+  observation** — and if it does not hold, the fallback is 12 touch slots
+  before anything else is touched, because a shorter trail is still a trail
+  and a dropped frame rate is not recoverable by taste.
+- Emitters accumulate, which is the other half of "only starts one" → an
+  emitter should belong to **a contact, not to a pointer**. A finger that taps,
+  lifts, and taps again leaves two, because the first is still dying (entry 33
+  gives it two to four seconds of life after release). A pool of **8**, oldest
+  recycled first. `MAX_TOUCHES` stays at 4 — that is how many fingers may be
+  down *at once*, which is a different number from how many emitters may be
+  alive, and conflating them is why one finger currently yields one emitter.
+- **This absorbs entry 50's "rapid taps stack rather than replace"** → that
+  clause is the same behaviour asked for from the other direction, and 50 is
+  still unbuilt. Build them together, or 50's Done-when ("drumming four times
+  quickly leaves four rings") will be satisfied by this entry and look like a
+  coincidence.
+- What does **not** change → the emitter still follows the finger while it is
+  down, and the ripples it spawns still stay where they were born. That is
+  already true — `spawnAt(state, now, level, x, y)` records the position — and
+  it is the reason this entry is a metering change rather than a new system.
+
+**Lands in**
+- `src/engine/emitter.ts:38, 110-112` — the distance term beside the interval,
+  and the last-spawn position it needs.
+- `src/engine/ripples.ts:24-26` — `MAX_RIPPLES` 24, `TOUCH_RIPPLES` 16, and the
+  comment at `:16` warning that every geometric shader must match.
+- `src/shaders/circles.frag.glsl` and the five other geometric shaders — the
+  `MAX_RIPPLES` constant, which GLSL cannot import.
+- `src/engine/` — the emitter pool, and its ownership moving off the pointer.
+
+**Done when** — dragging a finger across the screen leaves a line of rings
+along the whole path rather than a handful near the end, and dragging slowly
+over the same path leaves a line of similar density; holding still keeps
+emitting exactly as it does today; four quick taps leave four separate places
+that fade independently; and the frame-time figure in the numeric readout with
+sixteen touch ripples live is within a frame of what it is with none, at
+320×568 and 360×640.
+**Verify** — the phone, for the drag and the frame time, since sixteen
+`length()` calls per fragment is a thing only a real GPU under a real
+resolution ladder can answer. `views-probe.html` for the trail's shape in each
+of the six geometric views, because "a line of emitters" means something
+different in Tide and Chorus, which take a position as an influence rather
+than a coordinate. `pnpm build`, `pnpm lint`.
+**Hard stops** — prefs no · url no · capture no · dependency no.
