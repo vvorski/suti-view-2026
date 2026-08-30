@@ -6886,7 +6886,7 @@ browser here cannot answer it. The phone confirms the behaviour once, via entry
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 67. The menu opens on the second touch, and has a way in that cannot be missed
-`status: ready` · added 2026-08-30
+`status: building` · added 2026-08-30 · started 2026-08-30
 
 **Do** — recognise the double on the second tap's *down* rather than its up,
 widen the window to 400ms measured from the first tap's down, and add a
