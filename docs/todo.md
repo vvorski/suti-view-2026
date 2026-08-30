@@ -8685,7 +8685,7 @@ arithmetic and needs no GPU.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 80. Fullscreen has right of way
-`status: ready` · added 2026-08-30
+`status: building` · added 2026-08-30 · started 2026-08-30
 
 **Do** — when fullscreen is wanted and absent, the next touch of the picture
 restores it **and does nothing else**: no emitter, no shutter, no pending
