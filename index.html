@@ -301,8 +301,36 @@
         letter-spacing: 0.16em;
         text-transform: uppercase;
         color: #8d88b8;
-        text-shadow: 0 1px 12px rgba(5, 6, 10, 0.95);
+        /* Two shadows, comma-separated, dark one first — docs/todo.md entry
+           55. Added alongside entry 28's dark shadow, never replacing it:
+           that shadow exists because at #8d88b8 over the moving idle
+           preview this measured 2.33:1, under the 4.5:1 small text needs,
+           and it is still doing that job here. The second, a glow in the
+           byline's own colour, animates independently below — a still
+           frame of this rule alone would make the dark shadow look
+           redundant, and it is not. */
+        text-shadow: 0 1px 12px rgba(5, 6, 10, 0.95), 0 0 8px rgba(141, 136, 184, 0);
         margin: 0 0 0.3rem;
+        /* 4.7s — chosen against the Start disc's own 3.4s and 5.9s
+           (entry 16) so the three never fall into step. A third animation
+           on the same small screen makes that matter more, not less. */
+        animation: byline-glow 4.7s ease-in-out infinite;
+      }
+      /* Only the glow term moves; the dark shadow ahead of it in both
+         keyframes is identical, so it never visibly flickers. */
+      @keyframes byline-glow {
+        0%, 100% { text-shadow: 0 1px 12px rgba(5, 6, 10, 0.95), 0 0 8px rgba(141, 136, 184, 0); }
+        50%      { text-shadow: 0 1px 12px rgba(5, 6, 10, 0.95), 0 0 8px rgba(141, 136, 184, 0.6); }
+      }
+      /* Held static at mid-strength rather than removed — the request was
+         for the name to look alive, and a still glow is still a glow. Same
+         call entry 54 makes for the shake pulse and version.ts already
+         makes for the fresh-build dot. */
+      @media (prefers-reduced-motion: reduce) {
+        .gate-byline {
+          animation: none;
+          text-shadow: 0 1px 12px rgba(5, 6, 10, 0.95), 0 0 8px rgba(141, 136, 184, 0.3);
+        }
       }
       #gate h1 {
         font-family: 'Chakra Petch', ui-sans-serif, system-ui, sans-serif;
@@ -330,6 +358,24 @@
         text-transform: uppercase;
         color: #8d88b8;
         text-shadow: 0 1px 12px rgba(5, 6, 10, 0.95);
+      }
+      /* docs/todo.md entry 55. Reserved rather than animated, so the flip
+         through the release history never reflows: `.gate-head` is
+         right-aligned, and without a fixed box here a shorter name would
+         float further right and a longer one further left as the text
+         itself changes width — "the whole line walk[ing] leftward and
+         back", in the entry's own words. `inline-block` plus its own
+         `text-align: right` is what lets the reserved box's *right* edge
+         stay exactly where the unreserved span's right edge already sat,
+         with every name — short or long — floating against it.
+         `release-name.ts`'s own docstring caps a name at "under about 18
+         characters"; reserved at that ceiling rather than at today's
+         actual longest (15, "already playing"), so a future name within
+         the file's own stated limit can never reflow this either. */
+      #release-name {
+        display: inline-block;
+        min-width: 18ch;
+        text-align: right;
       }
 
       /* The only filled shape on the screen, so the action needs no words —

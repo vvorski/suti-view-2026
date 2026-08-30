@@ -11,7 +11,7 @@
  * reloading would help.
  */
 
-import { RELEASE_NAME } from './release-name'
+import { RELEASE_NAME, RELEASE_NAMES } from './release-name'
 
 const CSS = `
 #version-hud {
@@ -211,8 +211,15 @@ function watchForNewBuild(button: HTMLButtonElement): void {
  * watch the gate element to find it out, which is a worse dependency than a
  * one-line call.
  */
+/** Milliseconds the flip runs for, start to settle — docs/todo.md entry 55.
+ *  "About 1.4 seconds": fast through the early history, decelerating into
+ *  the last few names, on a screen with a button people want to press, so
+ *  it stays well short of the ~30s a readable pace through 74 names would
+ *  actually take. */
+const NAME_FLIP_MS = 1400
+
 /**
- * Write the release name into the gate.
+ * Write the release name into the gate — docs/todo.md entries 43 and 55.
  *
  * It used to be a large pill floating at the top-left, which made a build
  * marker the loudest thing on the start screen and sat it across the title.
@@ -220,15 +227,76 @@ function watchForNewBuild(button: HTMLButtonElement): void {
  * room — but it belongs inside the composition, in the gate's own type, not
  * pasted over it. `#release-name` is a span the gate lays out; if it is
  * missing, nothing here breaks.
+ *
+ * On load, runs the chip through every name this app has ever had, first
+ * to last, settling on the real one — entry 55. A plain `textContent` swap
+ * once per frame, not a per-character scramble: `.gate-name`'s own
+ * monospace font is what makes that read as a clean flip rather than a
+ * jitter, since every character position keeps the same width regardless
+ * of which name is showing. Eased so the early history passes quickly and
+ * the last few names land slowly enough to actually read, the same
+ * "arrival rather than a stop" `.gate-name`'s own reserved width exists to
+ * support.
+ *
+ * Never delays Start: this only ever writes to `#release-name`'s own text,
+ * on a `requestAnimationFrame` loop that does not block or gate anything
+ * else — the disc is live and pressable from the very first frame, exactly
+ * as it was before this entry, and pressing it mid-flip is not a special
+ * case, it just leaves.
  */
 export function mountReleaseName(): void {
   const el = document.getElementById('release-name')
   if (!el) return
-  el.textContent = RELEASE_NAME
   // __BUILD_NUMBER__ stays in the bundle — it is what the deploy checks grep
   // for, and a tooltip is the right amount of prominence for a number nobody
   // needs unless they are debugging.
   el.title = `build ${__BUILD_NUMBER__}`
+
+  // Screen readers get the name, not the flipping — otherwise this
+  // announces every name in the history to someone who asked for one. The
+  // animating span is hidden from the accessibility tree; the wrapping
+  // element (already in the gate's own markup) carries the real name as
+  // its label regardless of which name the flip currently happens to show.
+  el.setAttribute('aria-hidden', 'true')
+  el.parentElement?.setAttribute('aria-label', RELEASE_NAME)
+
+  const n = RELEASE_NAMES.length
+  // Reduced motion shows the final name immediately — unlike entry 54's
+  // shake confirmation, removing this animation costs nothing at all: the
+  // end state *is* the content, and `prefers-reduced-motion` is a live
+  // possibility on the phone this is built for, not a hypothetical.
+  if (n === 0 || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    el.textContent = RELEASE_NAME
+    return
+  }
+
+  const start = performance.now()
+  const step = (now: number): void => {
+    const t = Math.min(1, (now - start) / NAME_FLIP_MS)
+    // Ease-out: steep early (many names pass per frame's worth of time),
+    // flattening toward 1 (the last few names each hold for longer) —
+    // "fast through the early history, decelerating into the last few
+    // names so the real one lands as an arrival rather than a stop."
+    const eased = 1 - (1 - t) * (1 - t)
+    const index = Math.min(n - 1, Math.floor(eased * n))
+    el.textContent = RELEASE_NAMES[index]
+    if (t < 1) {
+      requestAnimationFrame(step)
+    } else {
+      // Exact, rather than trusting the last frame's rounding to have
+      // already landed on it.
+      el.textContent = RELEASE_NAME
+    }
+  }
+  // Called once synchronously rather than only scheduled — a chip mounted
+  // into a tab that is backgrounded or not yet visible can have its first
+  // rAF callback deferred arbitrarily, and the span must never sit empty in
+  // the meantime: an unstarted flip is a worse failure than one that has
+  // not finished. This paints the oldest name immediately (or, on a
+  // browser that never grants this tab a frame at all, leaves it showing
+  // that name rather than nothing); `step()` schedules its own continuation
+  // internally, so this single call is the whole start of the sequence.
+  step(start)
 }
 
 export function versionHudRunning(): void {

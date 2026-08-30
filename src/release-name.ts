@@ -1,5 +1,5 @@
 /**
- * The current release's name.
+ * Every name this release chip has ever carried, oldest first.
  *
  * The build number answers "is this newer than what I had"; it cannot answer
  * "is this the one with the camera in it", and that is the question actually
@@ -15,9 +15,97 @@
  * Keep it under about 18 characters. The chip is set large on purpose — it is
  * meant to be read at arm's length from a propped-up phone — so a long name is
  * the one thing that can crowd a 320px screen. The size clamps down to fit
- * rather than truncating, but a short name gets the full size.
+ * rather than truncating, but a short name gets the full size. It is also the
+ * width `index.html` reserves for the release-name flip (docs/todo.md entry
+ * 55, `#release-name`'s own `min-width: 18ch`) — a name past this ceiling is
+ * the one thing that can make that flip reflow.
  *
- * Changed in the same commit as the work it names. Every commit that reaches
- * main deploys, so every commit that reaches main renames. It is one line.
+ * Appended in the same commit as the work it names, not changed —
+ * docs/todo.md entry 55. Every commit that reaches main deploys, so every
+ * commit that reaches main adds a line here. An append cannot silently lose
+ * the previous name the way an edit once could; the list itself is what entry
+ * 55's load animation runs through, oldest to newest, before settling on
+ * `RELEASE_NAME` below. Recovered once, in full, from `git log --follow` —
+ * the seed data below is not invented, it is what actually shipped.
  */
-export const RELEASE_NAME = 'edge glows'
+export const RELEASE_NAMES: readonly string[] = [
+  'false calm',
+  'watch fire',
+  'one window',
+  'one road',
+  'plain sight',
+  'first light',
+  'step back',
+  'one voice',
+  'wide orbit',
+  'paper lantern',
+  'quiet order',
+  'red wedge',
+  'one axis',
+  'already playing',
+  'three dials',
+  'all arcs',
+  'bare start',
+  'note board',
+  'short long',
+  'twice asked',
+  'paper trail',
+  'white noise',
+  'two colours',
+  'idle guard',
+  'first glance',
+  'quiet credit',
+  'own blend',
+  'grain speaks',
+  'harder ask',
+  'stays loud',
+  'ask twice',
+  'full reach',
+  'shake depth',
+  'soft breathe',
+  'true round',
+  'keep frame',
+  'way back',
+  'first tremor',
+  'never dark',
+  'ask first',
+  'stays hidden',
+  'own corner',
+  'local time',
+  'one gesture',
+  'now legible',
+  'light touch',
+  'ambient gain',
+  'plumb line',
+  'quiet slate',
+  'lattice pulse',
+  'three zones',
+  'finger paint',
+  'true zero',
+  'gentle nudge',
+  'lower ceiling',
+  'play it',
+  'hears loudness',
+  'six ways',
+  'dead centre',
+  'louder gate',
+  'twin chips',
+  'never waits',
+  'four fingers',
+  'living picture',
+  'quiet powder',
+  'fourteen agree',
+  'stacks up',
+  'one or two',
+  'play invites',
+  'held colour',
+  'light ground',
+  'follows sky',
+  'edge glows',
+  'own history',
+]
+
+/** The current release's name — derived as the list's last element, so
+ *  `version.ts` and every other reader is unchanged by this being an array
+ *  now instead of a single constant. */
+export const RELEASE_NAME = RELEASE_NAMES[RELEASE_NAMES.length - 1]

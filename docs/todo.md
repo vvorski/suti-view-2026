@@ -5367,7 +5367,68 @@ behaves differently at different aspect ratios. `pnpm build`, `pnpm lint`.
 frame) · dependency no.
 
 ### 55. The name arrives through its own history, and the byline glows
-`status: building` · added 2026-08-30 · started 2026-08-30
+`status: done` · added 2026-08-30 · shipped at build 203
+
+**Build note** — the entry's own "63 distinct names, from false calm to
+four fingers" was accurate when written but stale by the time this was
+built: ten more names had shipped since (this session's own entries 46
+through 54). Re-extracted from `git log --follow` at build time rather
+than trusting the entry's snapshot — 73 real names, "false calm" through
+"edge glows" — plus this commit's own new name appended, for 74 total.
+The entry's own reasoning ("the seed data is not invented and not lost;
+it is sitting in the history") is exactly why the live extraction was
+the right call over the stale count.
+
+`RELEASE_NAMES` (new export) holds all 74; `RELEASE_NAME` is derived as
+its last element, so every other reader — `version.ts`'s `title`
+attribute, the deploy check that greps for the build number — is
+untouched. `mountReleaseName()` becomes the flip's own entry point: a
+plain `textContent` swap once per animation frame (never a per-character
+scramble — nothing in Decided describes one, and `.gate-name`'s monospace
+font is what the entry credits for making even a whole-word swap read as
+clean rather than jittery), eased so `Math.floor((1-(1-t)²) * n)` lands 14
+names in the first 10% of the 1.4s window and 0 in the last 10% — verified
+directly against the pure time-to-index math, independent of frame timing.
+
+**A real robustness gap found and fixed before it shipped**: the flip was
+originally started with a bare `requestAnimationFrame(step)`, and this
+harness's tab reports `visibilityState: 'hidden'` with `hasFocus: false`
+(the same condition behind several throttling findings this session) —
+under which real `requestAnimationFrame` never fires at all. The span sat
+permanently empty, not merely un-animated. Fixed by calling `step(start)`
+once, synchronously, before rAF ever gets a chance to run — an unstarted
+flip is a worse failure than one that never finishes, and this guarantees
+the oldest name paints immediately regardless of whether the tab ever
+gets a frame. A genuinely focused, visible browser tab would never
+trigger this path, but it costs nothing to not depend on that.
+
+Width reservation (`#release-name { display: inline-block; min-width:
+18ch; text-align: right }`) is sized to `release-name.ts`'s own **stated
+maximum** (18 characters) rather than today's actual longest name (15,
+"already playing") — **Mine**: reserving at the file's documented ceiling
+means a future name within that limit can never reflow this, where
+reserving at today's historical maximum would need revisiting the moment
+someone picks a 16-character name in good faith.
+
+Verified live via `version.ts` loaded directly (mounting a fresh
+`#release-name` span, since the real page load's own instance froze
+empty for the reason above): with a `requestAnimationFrame` override
+(this tab's real one never fires), the flip started at "false calm" (the
+true oldest) and settled on exactly "own history" (the true `RELEASE_NAME`)
+after the window closed. `aria-hidden="true"` on the animating span and
+`aria-label="own history"` on its parent confirmed independent of
+animation state. Reduced motion verified two ways: `matchMedia` mocked
+for the JS-side flip showed "own history" immediately with no
+intermediate names; the CSS-side `@media (prefers-reduced-motion:
+reduce)` rule for `.gate-byline` was read back directly from the live
+stylesheet and confirmed `animation: none` with the glow held at exactly
+0.3 (half the peak 0.6, i.e. mid-strength, not removed). The ordinary
+glow's own `getAnimations()` confirmed 4700ms, infinite iterations, and
+the dark shadow term identical across all three keyframes while only the
+glow term animates 0 → 0.6 → 0. `pnpm build`, `pnpm lint`, and `pnpm
+probe:fullscreen` all pass. Not verified: the phone, and specifically
+reduced motion as a live device setting rather than a mocked API, which
+the entry's own Verify text names as the one to test first.
 
 **Do** — on load, run the release-name chip through every name this app has
 ever had, first to last, character by character, settling on the real one. And
