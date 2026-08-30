@@ -9232,7 +9232,7 @@ prints every number this entry is about.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 86. One owner for the sensor, and watchers that cannot starve each other
-`status: ready` · added 2026-08-30
+`status: building` · added 2026-08-30
 
 **Do** — make the shake sensor publish an immutable per-frame snapshot plus a
 list of events, so any number of consumers can read it without consuming it.
