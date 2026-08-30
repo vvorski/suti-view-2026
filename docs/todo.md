@@ -5404,7 +5404,7 @@ keeps it out of the shuffle's and the director's way · url no · capture no ·
 dependency no.
 
 ### 59. Assert the ripple constants match, across seven files
-`status: ready` · added 2026-08-30
+`status: building` · added 2026-08-30 · started 2026-08-30
 
 **Do** — a probe that reads the six geometric shaders as text, extracts
 `MAX_RIPPLES` and `AUDIO_RIPPLES` from each, and fails if any disagrees with
