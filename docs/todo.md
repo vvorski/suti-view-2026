@@ -10203,7 +10203,69 @@ can say whether the pace is right.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 92. Values arrive, they do not jump
-`status: building` · added 2026-08-30
+`status: done` · added 2026-08-30 · build 313
+
+**Build note (Mine).** Built `ColourRamp`/`startColourRamp`/`stepColourRamp`
+as a fixed-rate linear ramp rather than reusing `Envelope` (Decided's own
+suggestion): "about two seconds" has to be a duration the change actually
+*takes*, landing exactly on target, not a time constant an exponential
+decay asymptotically approaches forever without quite reaching — which
+would have left the settled-frame-identical claim in Done-when false by a
+few ULPs forever. `duration` is set fresh on every `startColourRamp` call,
+so retargeting mid-ramp (director speaks while a shake's own 0.25s ramp is
+still running) continues from wherever the colour currently sits rather
+than jumping back toward the original start — checked directly in
+`probe-composite.ts`'s new section 12, check (d).
+
+Threaded `rampS`/`colourRampS` as required parameters through
+`setLayerColour` → `Handlers.onColour` → `Hud.adopt()`, following entry 90's
+own precedent for `Director.update()`'s `posture` parameter: a defaulted
+"0 = instant" would silently apply everywhere a caller forgot to pass it,
+defeating the entry for the one caller — the director — that actually wants
+the 2.0s travel. The HUD's own direct-drag call site passes 0 explicitly,
+same as every other adopt() call that carries no colour field.
+
+Dip-and-swap (`ViewDip`/`startViewDip`/`tickViewDips`) fades a layer's alpha
+to 0 over 0.35s, swaps the `ShaderMaterial` while invisible, fades back in.
+The one real design problem was cross-layer coordination: a shake-triggered
+shuffle can ask for a new geometric *and* atmospheric view in the same
+instant, and the two layers must never dip together or the frame actually
+empties rather than thins. Solved with `queuedSwap` — a swap requested while
+the *other* layer is mid-dip is queued rather than started, and released the
+instant that other layer returns to idle. `probe-composite.ts`'s new section
+13 drives exactly that simultaneous-request case and asserts the two
+multipliers are never simultaneously below 1, both layers actually reach
+fully hidden, and both swaps eventually complete.
+
+`setGeoAlpha`/`setAtmAlpha` changed from writing straight to the alpha
+uniforms to storing the user's own preference; `render()` now multiplies
+that by whichever dip is in flight, once per frame, alongside stepping all
+three colour ramps (geo/atm/cam — cam gets the same mechanism for
+consistency, though nothing currently calls it with a nonzero ramp).
+
+One process note, not about the feature: partway through this entry I ran
+`prettier --write` on the four touched files after `--check` flagged them,
+which reformatted every pre-existing line in each file, not just the new
+ones, and inflated the diff with unrelated churn. Caught it before
+committing, confirmed via `.github/workflows/*.yml` that CI has no
+formatting gate — only `pnpm lint`/`pnpm build`/specific probes — and
+reverted all four files with `git checkout`, which discarded that
+reformatting along with my own not-yet-committed entry-92 edits. Redid the
+edits from scratch afterward; the diff that actually landed here was
+written once and never run through a formatter.
+
+**Verification.** `pnpm build` and `pnpm lint` clean. `pnpm probe:composite`
+— 32/32 checks pass, 11 new for this entry (four on the colour ramp's
+mid-ramp/settled/zero-duration/retarget behaviour, seven on the dip
+state machine including the simultaneous-request case). The three
+CI-required probes (`pnpm probe`, `probe:shake`, `probe:fullscreen`) still
+pass unchanged, as expected — this entry touches none of the files they
+exercise. **Not verified live on a phone**: this environment refuses
+`getUserMedia`, the same limitation noted in entries 89-91's own build
+notes, so the actual dip feel (Verify's own "0.35s is a judgement about
+feel") is unconfirmed by eye — only by the settled-frame-identical and
+never-both-dipped assertions above. Worth a real look on-device before
+trusting the duration.
 
 **Do** — ramp what can be ramped and cover what cannot. A colour change should
 travel to its new value; a view change should not be a cut.

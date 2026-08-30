@@ -137,6 +137,135 @@ const STRUCTURE_THRESHOLD = 0.5
 /** Minimum seconds between automatic reshapes, so a boundary's own decay tail can't retrigger it. */
 const STRUCTURE_COOLDOWN = 8
 
+/**
+ * docs/todo.md entry 92 — a colour travels from where it was to where it's
+ * going at a fixed rate, rather than an exponential decay (`Envelope`'s own
+ * shape, used a few hundred lines below for exposure): "about two seconds"
+ * has to be a duration a change actually takes, the same reasoning
+ * `DAY_OVERRIDE_FADE_S`'s own `overrideCurrent` chase already uses for the
+ * day/night fade — an exponential asymptotically approaches its target
+ * without quite reaching it, which would leave a settled frame never
+ * *quite* pixel-identical to what it is settling toward. `duration` lives on
+ * the ramp itself, set fresh by whichever call started it, since a HUD drag,
+ * a shake and the director all want a different duration from the exact
+ * same starting state — Lands-in gives main.ts, not this file, the actual
+ * per-source numbers.
+ */
+interface ColourRamp {
+  from: GeoColour
+  target: GeoColour
+  elapsed: number
+  duration: number
+}
+
+/** (Re)point a ramp at a new target, starting from wherever it currently
+ *  sits — never from its old start — so a change that arrives mid-ramp
+ *  continues smoothly rather than jumping back. `duration` of 0 or less
+ *  means "immediate": the very next `stepColourRamp` call lands exactly on
+ *  `target`, which is what a HUD drag needs. */
+function startColourRamp(ramp: ColourRamp, current: GeoColour, target: GeoColour, duration: number): void {
+  ramp.from = current
+  ramp.target = target
+  ramp.elapsed = 0
+  ramp.duration = duration
+}
+
+function stepColourRamp(ramp: ColourRamp, dt: number): GeoColour {
+  ramp.elapsed += dt
+  const t = ramp.duration <= 0 ? 1 : Math.min(1, ramp.elapsed / ramp.duration)
+  return {
+    r: ramp.from.r + (ramp.target.r - ramp.from.r) * t,
+    g: ramp.from.g + (ramp.target.g - ramp.from.g) * t,
+    b: ramp.from.b + (ramp.target.b - ramp.from.b) * t,
+  }
+}
+
+/** docs/todo.md entry 92 — how long a view swap's dip takes, each way (fade
+ *  out, then the same again fading back in once the material underneath has
+ *  changed). Victor's own approximate figure from Decided; **Mine** as to
+ *  applying it symmetrically. */
+const VIEW_DIP_S = 0.35
+
+/**
+ * docs/todo.md entry 92 — a view swap fades the layer to nothing, swaps the
+ * material while nobody can see it, then fades back in, since two different
+ * shader programmes have no shared parameterisation to interpolate between.
+ * `multiplier` is what render() multiplies onto that layer's own
+ * (user-set) alpha every frame; 1 outside a dip.
+ *
+ * `queuedSwap` exists for exactly one reason: **the two layers must never
+ * dip at the same time**, or the frame actually empties rather than merely
+ * thinning (Decided's own words). A shake-triggered reroll can ask for a
+ * new geometric *and* atmospheric view in the same instant; if the other
+ * layer is already mid-dip when this one is asked to start, the swap is
+ * queued rather than started, and begins the moment the other layer
+ * returns to idle — see `tickViewDips()`.
+ */
+interface ViewDip {
+  multiplier: number
+  phase: 'idle' | 'out' | 'in'
+  elapsed: number
+  swap: (() => void) | null
+  queuedSwap: (() => void) | null
+}
+
+function createViewDip(): ViewDip {
+  return { multiplier: 1, phase: 'idle', elapsed: 0, swap: null, queuedSwap: null }
+}
+
+/** Start a dip on `dip`, unless `other` is currently mid-dip, in which case
+ *  this swap is queued instead — see `ViewDip`'s own comment. A dip already
+ *  in flight on `dip` itself is simply redirected to the new swap: the same
+ *  "last request wins" rule the pre-entry-92 immediate swap always had. */
+function startViewDip(dip: ViewDip, other: ViewDip, swap: () => void): void {
+  if (other.phase !== 'idle') {
+    dip.queuedSwap = swap
+    return
+  }
+  dip.swap = swap
+  dip.phase = 'out'
+  dip.elapsed = 0
+}
+
+function tickViewDips(geo: ViewDip, atm: ViewDip, dt: number): void {
+  for (const dip of [geo, atm]) {
+    if (dip.phase === 'idle') continue
+    dip.elapsed += dt
+    if (dip.phase === 'out') {
+      dip.multiplier = Math.max(0, 1 - dip.elapsed / VIEW_DIP_S)
+      if (dip.elapsed >= VIEW_DIP_S) {
+        dip.swap?.()
+        dip.swap = null
+        dip.phase = 'in'
+        dip.elapsed = 0
+        dip.multiplier = 0
+      }
+    } else {
+      dip.multiplier = Math.min(1, dip.elapsed / VIEW_DIP_S)
+      if (dip.elapsed >= VIEW_DIP_S) {
+        dip.phase = 'idle'
+        dip.multiplier = 1
+      }
+    }
+  }
+  // A layer that just returned to idle releases whatever the *other* layer
+  // had queued against it.
+  if (geo.phase === 'idle' && atm.queuedSwap) {
+    const swap = atm.queuedSwap
+    atm.queuedSwap = null
+    atm.swap = swap
+    atm.phase = 'out'
+    atm.elapsed = 0
+  }
+  if (atm.phase === 'idle' && geo.queuedSwap) {
+    const swap = geo.queuedSwap
+    geo.queuedSwap = null
+    geo.swap = swap
+    geo.phase = 'out'
+    geo.elapsed = 0
+  }
+}
+
 export interface VisualiserOptions {
   geometricView: GeometricViewName
   geoColour: GeoColour
@@ -173,8 +302,14 @@ export interface Visualiser {
   /** Set a layer's own blend, over what's beneath it: geo over atmosphere,
    *  atm over the camera. Mirrors `setLayerColour`'s per-layer shape. */
   setMergeMode(layer: 'geo' | 'atm', mode: MergeModeName): void
-  /** Recolour a layer. Cheap: a uniform, not a recompile. */
-  setLayerColour(layer: 'geo' | 'atm' | 'cam', colour: GeoColour): void
+  /** Recolour a layer. Cheap: a uniform, not a recompile. `rampS` is how
+   *  many seconds the colour takes to travel from where it is now to
+   *  `colour` — required rather than defaulted (docs/todo.md entry 92,
+   *  the same "no silently-safe default" reasoning entry 90 already
+   *  applied to `Director.update()`'s `posture` parameter): 0 or a
+   *  default of instant would silently apply everywhere and defeat the
+   *  entry for the one caller (the director) that actually wants a ramp. */
+  setLayerColour(layer: 'geo' | 'atm' | 'cam', colour: GeoColour, rampS: number): void
   /**
    * The phone's own orientation and handling — docs/todo.md entry 58.
    * `tiltX`/`tiltY` are `shake.ts`'s uncapped `tilt()` pair; `disturb` is
@@ -591,8 +726,25 @@ export function createVisualiser(
   // already recorded here every frame by `setMotion` for the colour bias.
   // No new setter: this is the "no new plumbing at all" the entry asks for.
   const rgbSlip = createRgbSlipState()
+  // docs/todo.md entry 92 — "the stored value" above is now a ramp target,
+  // not the value itself: `baseGeoColour`/`baseAtmColour`/`baseCamColour`
+  // are what render() actually paints with each frame, and they chase
+  // whatever `setLayerColour()` last aimed the corresponding ramp at,
+  // rather than jumping to it outright.
+  const geoColourRamp: ColourRamp = { from: options.geoColour, target: options.geoColour, elapsed: 0, duration: 0 }
+  const atmColourRamp: ColourRamp = { from: options.atmColour, target: options.atmColour, elapsed: 0, duration: 0 }
+  const camColourRamp: ColourRamp = { from: options.camColour, target: options.camColour, elapsed: 0, duration: 0 }
   let baseGeoColour: GeoColour = options.geoColour
   let baseAtmColour: GeoColour = options.atmColour
+  let baseCamColour: GeoColour = options.camColour
+  // Alpha is no longer a direct uniform write either: render() multiplies
+  // the user-set value below by whichever view dip (see `ViewDip`) is
+  // currently in flight for that layer, so the stored preference and the
+  // dip's own animation stay separate concerns.
+  let baseGeoAlpha = options.geoAlpha
+  let baseAtmAlpha = options.atmAlpha
+  const geoViewDip = createViewDip()
+  const atmViewDip = createViewDip()
   // Day mode — docs/todo.md entries 47, 53 and 71. `overrideTarget` is what
   // the chip last asked for, now on -1..1: -1 pins toward night, 0 is
   // 'auto' (no pin at all), 1 pins toward day. `overrideCurrent` chases it
@@ -1003,6 +1155,19 @@ export function createVisualiser(
           ? skyDaylight + (1 - skyDaylight) * overrideCurrent
           : skyDaylight * (1 + overrideCurrent)
       compositeUniforms.uSky.value.set(skyDaylight, skyWarmth)
+
+      // docs/todo.md entry 92 — colour ramps step every frame regardless of
+      // whether one is actually in flight (a finished ramp just keeps
+      // landing on its own target, at zero cost worth guarding against).
+      // View dips likewise: both layers tick every frame so a queued swap
+      // notices the instant the other layer returns to idle.
+      baseGeoColour = stepColourRamp(geoColourRamp, dt)
+      baseAtmColour = stepColourRamp(atmColourRamp, dt)
+      baseCamColour = stepColourRamp(camColourRamp, dt)
+      tickViewDips(geoViewDip, atmViewDip, dt)
+      compositeUniforms.uGeoAlpha.value = baseGeoAlpha * geoViewDip.multiplier
+      compositeUniforms.uAtmAlpha.value = baseAtmAlpha * atmViewDip.multiplier
+
       compositeUniforms.uGeoColour.value.set(
         baseGeoColour.r + motion.r,
         baseGeoColour.g + motion.g,
@@ -1013,6 +1178,7 @@ export function createVisualiser(
         baseAtmColour.g + motion.g,
         baseAtmColour.b + motion.b,
       )
+      compositeUniforms.uCamColour.value.set(baseCamColour.r, baseCamColour.g, baseCamColour.b)
 
       // Three passes over the same quad: geometric layer to its target,
       // atmospheric layer to its target, then the composite reads both and
@@ -1048,23 +1214,33 @@ export function createVisualiser(
     },
 
     setGeometricView(name) {
-      const next = new ShaderMaterial({
-        vertexShader,
-        fragmentShader: GEOMETRIC_VIEWS[name].fragmentShader,
-        uniforms,
+      // docs/todo.md entry 92 — a view swap is a hard cut (two different
+      // shader programmes, nothing to interpolate between), so it dips the
+      // layer to nothing, swaps the material while nobody can see it, then
+      // fades back in. `atmViewDip` is passed as `other` purely so a swap
+      // requested while the atmosphere is mid-dip gets queued rather than
+      // overlapping it — the two layers must never dip together.
+      startViewDip(geoViewDip, atmViewDip, () => {
+        const next = new ShaderMaterial({
+          vertexShader,
+          fragmentShader: GEOMETRIC_VIEWS[name].fragmentShader,
+          uniforms,
+        })
+        geometryMaterial.dispose()
+        geometryMaterial = next
       })
-      geometryMaterial.dispose()
-      geometryMaterial = next
     },
 
     setAtmosphericView(name) {
-      const next = new ShaderMaterial({
-        vertexShader,
-        fragmentShader: ATMOSPHERIC_VIEWS[name].fragmentShader,
-        uniforms,
+      startViewDip(atmViewDip, geoViewDip, () => {
+        const next = new ShaderMaterial({
+          vertexShader,
+          fragmentShader: ATMOSPHERIC_VIEWS[name].fragmentShader,
+          uniforms,
+        })
+        atmosphereMaterial.dispose()
+        atmosphereMaterial = next
       })
-      atmosphereMaterial.dispose()
-      atmosphereMaterial = next
     },
 
     setMergeMode(layer, mode) {
@@ -1099,21 +1275,22 @@ export function createVisualiser(
       touchMaxSpeed = maxSpeed
     },
 
-    setLayerColour(layer, colour) {
+    setLayerColour(layer, colour, rampS) {
       // geo/atm are no longer a direct uniform write — docs/todo.md entry
       // 58 adds a render-time motion bias on top of whatever is stored, so
       // the *stored* value has to live somewhere JS can re-read it every
       // frame rather than only inside the uniform, which render() is about
-      // to start overwriting with base-plus-bias. cam is untouched: the
-      // entry names geoColour/atmColour specifically as the stored
-      // preferences in question, and a passthrough tint answering the
-      // phone's own tilt would be a stranger kind of feature than this one.
+      // to start overwriting with base-plus-bias. cam gets the same ramp
+      // treatment (entry 92) purely for consistency of the mechanism —
+      // nothing currently calls setLayerColour('cam', ...) with a nonzero
+      // rampS, since a passthrough tint answering the phone's own tilt
+      // would be a stranger kind of feature than this one.
       if (layer === 'geo') {
-        baseGeoColour = colour
+        startColourRamp(geoColourRamp, baseGeoColour, colour, rampS)
       } else if (layer === 'atm') {
-        baseAtmColour = colour
+        startColourRamp(atmColourRamp, baseAtmColour, colour, rampS)
       } else {
-        compositeUniforms.uCamColour.value.set(colour.r, colour.g, colour.b)
+        startColourRamp(camColourRamp, baseCamColour, colour, rampS)
       }
     },
 
@@ -1124,11 +1301,13 @@ export function createVisualiser(
     },
 
     setGeoAlpha(a) {
-      compositeUniforms.uGeoAlpha.value = Math.min(1, Math.max(0, a))
+      // Stored, not written straight to the uniform: render() multiplies
+      // this by the view dip's own multiplier every frame (entry 92).
+      baseGeoAlpha = Math.min(1, Math.max(0, a))
     },
 
     setAtmAlpha(a) {
-      compositeUniforms.uAtmAlpha.value = Math.min(1, Math.max(0, a))
+      baseAtmAlpha = Math.min(1, Math.max(0, a))
     },
 
     setSkyOverride(state) {

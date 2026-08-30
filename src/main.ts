@@ -350,6 +350,14 @@ const NUDGE_HUE_DEG = 20
 const NUDGE_SATURATION = 0.08
 const NUDGE_ALPHA = 0.06
 
+/** docs/todo.md entry 92 — how long a colour ramp takes, by source: "a
+ *  machine's changes ease; a person's changes are instant." The director
+ *  gets a slow, visible travel; a shake reads as a single event rather
+ *  than a graceful glide, so it gets a short one instead of the
+ *  director's — both figures are **Mine**, Decided names neither. */
+const COLOUR_RAMP_DIRECTOR_S = 2.0
+const COLOUR_RAMP_SHAKE_S = 0.25
+
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v))
 
 /** HSV -> RGB with `v` pinned at 1 — see SHUFFLE_MIN_SATURATION's own
@@ -846,8 +854,8 @@ async function main(): Promise<void> {
   // path that mutates the gate's visualiser before Start.
   visualiser.setGeometricView(prefs.geometricView)
   visualiser.setAtmosphericView(prefs.atmosphericView)
-  visualiser.setLayerColour('geo', prefs.geoColour)
-  visualiser.setLayerColour('atm', prefs.atmColour)
+  visualiser.setLayerColour('geo', prefs.geoColour, 0)
+  visualiser.setLayerColour('atm', prefs.atmColour, 0)
   visualiser.setMergeMode('geo', prefs.mergeMode)
   visualiser.setMergeMode('atm', prefs.atmMergeMode)
   // The idle loop is done for the session; its own listeners are now dead
@@ -880,7 +888,7 @@ async function main(): Promise<void> {
    *  from each other. */
   const shuffle = (depth: number): void => {
     const next = shuffled(depth, panel.current())
-    panel.adopt(next)
+    panel.adopt(next, COLOUR_RAMP_SHAKE_S)
     if (depth >= SHUFFLE_RESEED) visualiser.randomise()
   }
 
@@ -924,7 +932,7 @@ async function main(): Promise<void> {
       // function only ever runs later, after that declaration.
       if (level > 0 && !(cameraSource?.isLive() ?? false)) return
       const actual = await applyPassthrough(level)
-      panel.adopt({ passthrough: actual })
+      panel.adopt({ passthrough: actual }, 0)
     })()
   }
 
@@ -1083,7 +1091,7 @@ async function main(): Promise<void> {
 
   const panel = createHud(prefs, {
     onGeometricView: (name: GeometricViewName) => visualiser.setGeometricView(name),
-    onColour: (layer, colour) => visualiser.setLayerColour(layer, colour),
+    onColour: (layer, colour, rampS) => visualiser.setLayerColour(layer, colour, rampS),
     onSkyOverride: (state) => visualiser.setSkyOverride(state),
     onAtmosphericView: (name: AtmosphericViewName) => visualiser.setAtmosphericView(name),
     onMergeMode: (layer, mode: MergeModeName) => visualiser.setMergeMode(layer, mode),
@@ -1544,7 +1552,7 @@ async function main(): Promise<void> {
           params.beatConfidence,
           posture.posture,
         )
-        if (next) panel.adopt(next)
+        if (next) panel.adopt(next, COLOUR_RAMP_DIRECTOR_S)
       }
 
       latestShake = shake.frame(audio.dt)

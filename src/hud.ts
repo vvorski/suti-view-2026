@@ -257,7 +257,13 @@ export interface Hud {
   /** Adopt a change decided elsewhere — the autopilot (director.ts) or a
    *  shake-driven shuffle (main.ts). Updates the stored preferences and the
    *  dial without itself reporting a manual change; whether the autopilot
-   *  should stand down is the caller's decision, not this one's. */
+   *  should stand down is the caller's decision, not this one's.
+   *
+   *  `colourRampS` (docs/todo.md entry 92) applies to any `geoColour`/
+   *  `atmColour`/`camColour` present on `next` for this one call —
+   *  required, not defaulted, so the caller states its own source's
+   *  travel time explicitly rather than the dial picking one on its
+   *  behalf. */
   adopt(next: {
     geometricView?: GeometricViewName
     atmosphericView?: AtmosphericViewName
@@ -277,7 +283,7 @@ export interface Hud {
      *  ever records the result, the same way it never itself asks for a
      *  colour or a merge mode. */
     passthrough?: number
-  }): void
+  }, colourRampS: number): void
   /**
    * The four continuous quantities a light shake's nudge needs to read
    * before it can move them — docs/todo.md entry 35. `shuffled()` is pure
@@ -327,8 +333,10 @@ interface Handlers {
   onMapping(name: MappingName): void
   /** 0-1, a layer's opacity. */
   onAlpha(layer: 'geo' | 'atm', a: number): void
-  /** A layer's colour gain. */
-  onColour(layer: 'geo' | 'atm' | 'cam', colour: GeoColour): void
+  /** A layer's colour gain. `rampS` is how long the colour should take to
+   *  travel there (docs/todo.md entry 92) — 0 for a direct drag, which
+   *  must stay immediate. */
+  onColour(layer: 'geo' | 'atm' | 'cam', colour: GeoColour, rampS: number): void
   /**
    * 0-1 of the passthrough camera.
    *
@@ -672,7 +680,7 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
         if (layer === 'geo') prefs.geoColour = next
         else if (layer === 'atm') prefs.atmColour = next
         else prefs.camColour = next
-        handlers.onColour(layer, next)
+        handlers.onColour(layer, next, 0)
         manual()
       },
       settle: save,
@@ -1542,7 +1550,7 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
       paint()
     },
 
-    adopt(next) {
+    adopt(next, colourRampS) {
       if (next.geometricView) {
         prefs.geometricView = next.geometricView
         handlers.onGeometricView(prefs.geometricView)
@@ -1568,7 +1576,7 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
         if (layer === 'geo') prefs.geoColour = colour
         else if (layer === 'atm') prefs.atmColour = colour
         else prefs.camColour = colour
-        handlers.onColour(layer, colour)
+        handlers.onColour(layer, colour, colourRampS)
       }
       if (next.geoAlpha !== undefined) {
         prefs.geoAlpha = next.geoAlpha

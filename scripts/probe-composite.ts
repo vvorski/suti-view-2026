@@ -408,5 +408,171 @@ function vibrance(col: Vec3): Vec3 {
   check('screening a real photograph onto black leaves it unchanged', close(camOnly, [0.4, 0.5, 0.3]), JSON.stringify(camOnly))
 }
 
+// 12. docs/todo.md entry 92 — colour ramps. Plain re-implementation of
+//     scene.ts's ColourRamp/startColourRamp/stepColourRamp, kept in
+//     lockstep by eye the same way this file's own header already asks of
+//     blendWith(): scene.ts imports `three` and Vite's `?raw` shader
+//     imports, so it cannot run under plain node.
+{
+  interface Ramp {
+    from: Vec3
+    target: Vec3
+    elapsed: number
+    duration: number
+  }
+  const startRamp = (ramp: Ramp, current: Vec3, target: Vec3, duration: number): void => {
+    ramp.from = current
+    ramp.target = target
+    ramp.elapsed = 0
+    ramp.duration = duration
+  }
+  const stepRamp = (ramp: Ramp, dt: number): Vec3 => {
+    ramp.elapsed += dt
+    const t = ramp.duration <= 0 ? 1 : Math.min(1, ramp.elapsed / ramp.duration)
+    return mixV(ramp.from, ramp.target, t)
+  }
+
+  const FROM: Vec3 = [1, 1, 1]
+  const TARGET: Vec3 = [0.86, 0.53, 0.45]
+
+  // (a) An intermediate frame is neither endpoint.
+  {
+    const ramp: Ramp = { from: FROM, target: FROM, elapsed: 0, duration: 0 }
+    startRamp(ramp, FROM, TARGET, 2.0)
+    let mid: Vec3 = FROM
+    for (let i = 0; i < 100; i++) mid = stepRamp(ramp, 0.01) // 1.0s of a 2.0s ramp
+    check('a colour mid-ramp matches neither endpoint (from)', !close(mid, FROM, 1e-6), JSON.stringify(mid))
+    check('a colour mid-ramp matches neither endpoint (target)', !close(mid, TARGET, 1e-6), JSON.stringify(mid))
+  }
+
+  // (b) One step past the duration lands exactly on target — the ULP bug
+  //     entry 91 found (`a + (b-a)*1 !== b` bitwise) is exactly what this
+  //     guards against: stepColourRamp must clamp t to 1 and mix from the
+  //     *fixed* ramp.from/target, not re-derive either from something that
+  //     moves between calls.
+  {
+    const ramp: Ramp = { from: FROM, target: FROM, elapsed: 0, duration: 0 }
+    startRamp(ramp, FROM, TARGET, 2.0)
+    let last: Vec3 = FROM
+    for (let i = 0; i < 201; i++) last = stepRamp(ramp, 0.01) // 2.01s of a 2.0s ramp
+    check('a settled ramp is pixel-identical to its target', close(last, TARGET), JSON.stringify(last))
+  }
+
+  // (c) Duration 0 reaches target on the very next step — what an
+  //     immediate HUD drag needs.
+  {
+    const ramp: Ramp = { from: FROM, target: FROM, elapsed: 0, duration: 0 }
+    startRamp(ramp, FROM, TARGET, 0)
+    const next = stepRamp(ramp, 0.016)
+    check('a zero-duration ramp reaches target on the next step', close(next, TARGET), JSON.stringify(next))
+  }
+
+  // (d) Retargeting mid-ramp continues from the current position, not from
+  //     the original `from` — a director update arriving while a shake's
+  //     own ramp is still in flight must not visibly jump backwards.
+  {
+    const RETARGET: Vec3 = [0.1, 0.9, 0.2]
+    const ramp: Ramp = { from: FROM, target: FROM, elapsed: 0, duration: 0 }
+    startRamp(ramp, FROM, TARGET, 2.0)
+    let current: Vec3 = FROM
+    for (let i = 0; i < 100; i++) current = stepRamp(ramp, 0.01) // 1.0s in
+    startRamp(ramp, current, RETARGET, 2.0)
+    const justAfter = stepRamp(ramp, 0.001)
+    check(
+      'retargeting mid-ramp continues from the current position',
+      close(justAfter, current, 0.05),
+      `${JSON.stringify(justAfter)} vs current ${JSON.stringify(current)}`,
+    )
+  }
+}
+
+// 13. docs/todo.md entry 92 — the two layers never dip together. Plain
+//     re-implementation of scene.ts's ViewDip/startViewDip/tickViewDips.
+{
+  const VIEW_DIP_S = 0.35
+  interface Dip {
+    multiplier: number
+    phase: 'idle' | 'out' | 'in'
+    elapsed: number
+    swap: (() => void) | null
+    queuedSwap: (() => void) | null
+  }
+  const freshDip = (): Dip => ({ multiplier: 1, phase: 'idle', elapsed: 0, swap: null, queuedSwap: null })
+  const start = (dip: Dip, other: Dip, swap: () => void): void => {
+    if (other.phase !== 'idle') {
+      dip.queuedSwap = swap
+      return
+    }
+    dip.swap = swap
+    dip.phase = 'out'
+    dip.elapsed = 0
+  }
+  const tick = (geo: Dip, atm: Dip, dt: number): void => {
+    for (const dip of [geo, atm]) {
+      if (dip.phase === 'idle') continue
+      dip.elapsed += dt
+      if (dip.phase === 'out') {
+        dip.multiplier = Math.max(0, 1 - dip.elapsed / VIEW_DIP_S)
+        if (dip.elapsed >= VIEW_DIP_S) {
+          dip.swap?.()
+          dip.swap = null
+          dip.phase = 'in'
+          dip.elapsed = 0
+          dip.multiplier = 0
+        }
+      } else {
+        dip.multiplier = Math.min(1, dip.elapsed / VIEW_DIP_S)
+        if (dip.elapsed >= VIEW_DIP_S) {
+          dip.phase = 'idle'
+          dip.multiplier = 1
+        }
+      }
+    }
+    if (geo.phase === 'idle' && atm.queuedSwap) {
+      const swap = atm.queuedSwap
+      atm.queuedSwap = null
+      atm.swap = swap
+      atm.phase = 'out'
+      atm.elapsed = 0
+    }
+    if (atm.phase === 'idle' && geo.queuedSwap) {
+      const swap = geo.queuedSwap
+      geo.queuedSwap = null
+      geo.swap = swap
+      geo.phase = 'out'
+      geo.elapsed = 0
+    }
+  }
+
+  const geo = freshDip()
+  const atm = freshDip()
+  let geoSwapped = 0
+  let atmSwapped = 0
+  let neverBothDipped = true
+  let geoHitZero = false
+  let atmHitZero = false
+
+  // A shake-triggered reroll asking for both a new geometric and a new
+  // atmospheric view in the same instant — the exact case queuedSwap
+  // exists for.
+  start(geo, atm, () => geoSwapped++)
+  start(atm, geo, () => atmSwapped++)
+
+  for (let i = 0; i < 300; i++) {
+    tick(geo, atm, 0.01) // 3.0s total — enough for two full dip-and-swap cycles in sequence
+    if (geo.multiplier < 1 && atm.multiplier < 1) neverBothDipped = false
+    if (geo.multiplier === 0) geoHitZero = true
+    if (atm.multiplier === 0) atmHitZero = true
+  }
+
+  check('both swaps eventually complete (geo)', geoSwapped === 1, `geoSwapped=${geoSwapped}`)
+  check('both swaps eventually complete (atm)', atmSwapped === 1, `atmSwapped=${atmSwapped}`)
+  check('the two layers are never simultaneously below full visibility', neverBothDipped, 'both dipped at once')
+  check('geo layer actually reaches fully hidden at some point', geoHitZero, 'geo multiplier never hit 0')
+  check('atm layer actually reaches fully hidden at some point', atmHitZero, 'atm multiplier never hit 0')
+  check('geo ends idle and fully visible', geo.phase === 'idle' && geo.multiplier === 1, JSON.stringify(geo))
+  check('atm ends idle and fully visible', atm.phase === 'idle' && atm.multiplier === 1, JSON.stringify(atm))
+}
+
 console.log(failures === 0 ? '\nall composite checks passed' : `\n${failures} failed`)
 process.exit(failures === 0 ? 0 : 1)
