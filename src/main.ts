@@ -86,6 +86,7 @@ function resolvePrefs(): Prefs {
     autopilot: true,
     showStats: false,
     gravity: false,
+    day: false,
   })
 
   // A URL parameter is an explicit instruction for this load and overrides what
@@ -143,6 +144,10 @@ function resolvePrefs(): Prefs {
     // rest rather than its appearance, and every parameter here today is the
     // latter. Reached from the HUD like autopilot and the numeric readout.
     gravity: stored.gravity,
+    // No URL parameter either, for the same reason gravity has none — a
+    // shared link is about what to show, not what the room looks like on
+    // the far end. Reached from the HUD chip.
+    day: stored.day,
   }
 }
 
@@ -546,6 +551,7 @@ async function main(): Promise<void> {
     atmMergeMode: prefs.atmMergeMode,
     geoAlpha: prefs.geoAlpha,
     atmAlpha: prefs.atmAlpha,
+    day: prefs.day,
   })
 
   // Flipped by the real loop taking over, which is what stops the idle frames.
@@ -821,6 +827,7 @@ async function main(): Promise<void> {
   const panel = createHud(prefs, {
     onGeometricView: (name: GeometricViewName) => visualiser.setGeometricView(name),
     onColour: (layer, colour) => visualiser.setLayerColour(layer, colour),
+    onDayMode: (on) => visualiser.setDayMode(on),
     onAtmosphericView: (name: AtmosphericViewName) => visualiser.setAtmosphericView(name),
     onMergeMode: (layer, mode: MergeModeName) => visualiser.setMergeMode(layer, mode),
     onAlpha: (layer, a) => {

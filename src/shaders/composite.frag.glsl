@@ -64,6 +64,14 @@ uniform vec2 uCameraFit;
 // existing.
 uniform float uExposure;
 
+// Day mode — docs/todo.md entry 47. 0 is identity (and everything this ever
+// is off by default), same shape uCameraMix and uExposure already use in
+// this file, which is also what lets the chip fade this rather than snap it.
+// Not folded into uExposure: that uniform is already claimed, rewritten every
+// frame from the camera's own light envelope (scene.ts), and a day-mode write
+// into it would be silently overwritten the instant the room is visible.
+uniform float uDay;
+
 vec3 overlayBlend(vec3 base, vec3 top) {
   vec3 lo = 2.0 * base * top;
   vec3 hi = 1.0 - 2.0 * (1.0 - base) * (1.0 - top);
@@ -151,6 +159,21 @@ void main() {
   // other. Re-clamped because a gain above 1 can push a bright pixel out of
   // range.
   col = clamp(col * uExposure, 0.0, 1.0);
+
+  // Screened over a light ground rather than lifted by a curve — entry 47's
+  // own reasoning: these pictures are mostly pure black, thin bright rings on
+  // an empty field, and pow(0.0, 1/gamma) is 0.0, so a gamma lift leaves the
+  // field exactly as dark as it started and reads as the feature not
+  // working. Screening turns black into the ground colour, leaves white as
+  // white, and lifts everything between with no clipping possible — a gain
+  // cannot promise that. 0.6 at full day, scaled by (1 - uCameraMix): a light
+  // ground under a real camera frame washes the room to milk, and the room
+  // does not need it — uExposure two lines up already answers the actual
+  // light in it. The ground itself stays a plain neutral vec3(0.6), not
+  // tinted here — entry 53 tints this exact number from the hour of day, and
+  // a ground with its own opinion about warmth would fight it.
+  float ground = 0.6 * uDay * (1.0 - uCameraMix);
+  col = 1.0 - (1.0 - col) * (1.0 - ground);
 
   gl_FragColor = vec4(col, 1.0);
 }

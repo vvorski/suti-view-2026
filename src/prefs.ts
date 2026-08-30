@@ -91,6 +91,13 @@ export interface Prefs {
    * alone never did.
    */
   gravity: boolean
+  /**
+   * Whether the picture sits on a light ground instead of black —
+   * docs/todo.md entry 47. Defaults off, same reason `gravity` does: it
+   * changes what an untouched picture looks like, and a returning visitor
+   * should find what they left.
+   */
+  day: boolean
 }
 
 /** `valid` narrows `raw ?? null` rather than `raw` itself, so the ternary needs
@@ -160,6 +167,7 @@ export function loadPrefs(fallback: Prefs): Prefs {
         typeof parsed.showStats === 'boolean' ? parsed.showStats : fallback.showStats,
       gravity:
         typeof parsed.gravity === 'boolean' ? parsed.gravity : fallback.gravity,
+      day: typeof parsed.day === 'boolean' ? parsed.day : fallback.day,
     }
   } catch {
     // Private mode, blocked site data, corrupt JSON — all the same to us.

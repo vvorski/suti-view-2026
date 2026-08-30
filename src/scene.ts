@@ -65,6 +65,12 @@ import {
 /** Texels in the instantaneous spectrum texture. 128 reads smoothly. */
 const SPECTRUM_SIZE = 128
 
+/** Seconds for day mode's toggle to fade fully on or off — docs/todo.md
+ *  entry 47. Long enough to read as a transition, short enough to still
+ *  feel like a button; entry 53's own override crossfade reuses this
+ *  constant rather than inventing a second one. */
+const DAY_FADE_S = 0.4
+
 /**
  * Rolling spectrogram uploaded to the GPU: one column per time slot, one row
  * per log-spaced frequency band.
@@ -124,6 +130,11 @@ export interface VisualiserOptions {
   geoAlpha: number
   /** 0-1. The atmospheric layer's opacity, applied before the merge mode. */
   atmAlpha: number
+  /** Day mode's starting state — docs/todo.md entry 47. Seeded directly
+   *  rather than always starting at 0 and fading in via `setDayMode()`, so
+   *  a session that left day mode on finds it already on, not fading in
+   *  over 400ms on every load. */
+  day: boolean
 }
 
 export interface Visualiser {
@@ -196,6 +207,14 @@ export interface Visualiser {
   setGeoAlpha(a: number): void
   /** 0-1, the atmospheric layer's opacity. */
   setAtmAlpha(a: number): void
+  /**
+   * Day mode on or off — docs/todo.md entry 47. A boolean in, not 0-1: the
+   * chip is a toggle, and the fade between its two states over about 400ms
+   * is `render()`'s own job, ticked once per frame the same way every other
+   * per-frame quantity here is, so the transition rides the render loop's
+   * own clock rather than a CSS transition or a second timer.
+   */
+  setDayMode(on: boolean): void
   /**
    * Attach or detach the passthrough camera, and set how much of it shows.
    *
@@ -381,6 +400,11 @@ export function createVisualiser(
     // down, so a session that never raises it pays nothing for this uniform
     // existing.
     uExposure: { value: 1 },
+    // Day mode — docs/todo.md entry 47. 0 is identity and everything this
+    // ever is off by default, same shape uCameraMix/uExposure already use.
+    // Seeded from options.day so a stale first frame (before render() has
+    // ticked dayCurrent even once) matches what was actually stored.
+    uDay: { value: options.day ? 1 : 0 },
   }
   const compositeMaterial = new ShaderMaterial({
     vertexShader,
@@ -490,6 +514,14 @@ export function createVisualiser(
   let motionDisturb = 0
   let baseGeoColour: GeoColour = options.geoColour
   let baseAtmColour: GeoColour = options.atmColour
+  // Day mode — docs/todo.md entry 47. `dayTarget` is what the chip last
+  // asked for; `dayCurrent` chases it at a fixed rate so the fade takes
+  // about DAY_FADE_S regardless of frame rate, ticked in render() the same
+  // way every other per-frame quantity here is rather than through a CSS
+  // transition or a second timer. Both seeded from options.day, not 0 — a
+  // session that left it on should find it already on, not fading in.
+  let dayTarget = options.day ? 1 : 0
+  let dayCurrent = dayTarget
   // For stats() below, which is called independently of render() — the
   // numeric readout's own posture/disturbance/agitation line reads this.
   let lastMotion: MotionBias = { r: 0, g: 0, b: 0, posture: 0, disturbance: 0, agitation: 0 }
@@ -819,6 +851,14 @@ export function createVisualiser(
       // that darkens the picture the way entry 21's floors once did.
       const motion = updateMotionBias(motionBias, dt, motionTiltX, motionTiltY, motionDisturb)
       lastMotion = motion
+
+      // docs/todo.md entry 47. A fixed rate rather than an exponential
+      // envelope, so "about 400ms" is a duration the toggle actually takes
+      // rather than a time constant it asymptotically approaches.
+      const dayStep = dt / DAY_FADE_S
+      dayCurrent =
+        dayTarget > dayCurrent ? Math.min(dayTarget, dayCurrent + dayStep) : Math.max(dayTarget, dayCurrent - dayStep)
+      compositeUniforms.uDay.value = dayCurrent
       compositeUniforms.uGeoColour.value.set(
         baseGeoColour.r + motion.r,
         baseGeoColour.g + motion.g,
@@ -945,6 +985,10 @@ export function createVisualiser(
 
     setAtmAlpha(a) {
       compositeUniforms.uAtmAlpha.value = Math.min(1, Math.max(0, a))
+    },
+
+    setDayMode(on) {
+      dayTarget = on ? 1 : 0
     },
 
     setPassthrough(source, mix) {

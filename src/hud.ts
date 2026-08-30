@@ -278,6 +278,11 @@ interface Handlers {
    * to 0 on a refusal rather than sitting somewhere untrue.
    */
   onPassthrough(a: number): Promise<number>
+  /** Day mode on or off — docs/todo.md entry 47. Unlike `gravity`, which
+   *  main.ts reads from `prefs` itself once per frame, this is a scene.ts
+   *  render setting with its own fade, so it needs an explicit call rather
+   *  than a value polled every frame. */
+  onDayMode(on: boolean): void
   /** Fired on every change the user makes by hand, so the autopilot can get
    *  out of the way. Not fired for `adopt`. */
   onManualChange(): void
@@ -326,6 +331,22 @@ const ICONS: Record<string, string> = {
     '<path d="M8 1.4h8v2.6H8z"/>' +
     '<path d="M11.2 4v7.4h1.6V4z"/>' +
     '<circle cx="12" cy="16.4" r="6.2"/>',
+  // A filled disc with eight rays — docs/todo.md entry 47. Named for what
+  // turning the chip *on* does, not a moon: the icon set is already a
+  // visual vocabulary (three wedges for geo, stacked waves for atm,
+  // concentric arcs for the ear) and a sun needs no explaining next to them.
+  day:
+    '<circle cx="12" cy="12" r="4.6"/>' +
+    '<g stroke="currentColor" stroke-width="2" stroke-linecap="round">' +
+    '<line x1="12" y1="0.8" x2="12" y2="3.4"/>' +
+    '<line x1="12" y1="20.6" x2="12" y2="23.2"/>' +
+    '<line x1="0.8" y1="12" x2="3.4" y2="12"/>' +
+    '<line x1="20.6" y1="12" x2="23.2" y2="12"/>' +
+    '<line x1="4.2" y1="4.2" x2="6.1" y2="6.1"/>' +
+    '<line x1="17.9" y1="17.9" x2="19.8" y2="19.8"/>' +
+    '<line x1="4.2" y1="19.8" x2="6.1" y2="17.9"/>' +
+    '<line x1="17.9" y1="6.1" x2="19.8" y2="4.2"/>' +
+    '</g>',
 }
 
 const CSS = `
@@ -862,13 +883,25 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
     save()
     paint()
   })
+  // docs/todo.md entry 47. A boolean gets a chip rather than a band, same
+  // precedent gravity set at entry 30. Unlike gravity, day mode is a
+  // scene.ts render setting with its own fade rather than something
+  // main.ts polls from prefs each frame, so the toggle also calls
+  // handlers.onDayMode() explicitly.
+  const dayChip = mkChip('day', 'Day', '#9d9bf0', () => {
+    prefs.day = !prefs.day
+    handlers.onDayMode(prefs.day)
+    save()
+    paint()
+  })
 
   /** Lay the icons along their own arc. Spacing comes from the measured chip
    *  size, so a larger root font spreads them rather than overlapping them.
-   *  Six now that entry 45 has removed the autopilot chip — the fullscreen
-   *  chip moved off this arc entirely in entry 25, which is what left the
-   *  slot autopilot then took, and now frees again; see CHIP_ARC_MIN_START's
-   *  own comment, written for exactly this. */
+   *  Seven now that entry 47 has added the day chip, having come down to
+   *  six once entry 45 removed the autopilot chip — the fullscreen chip
+   *  moved off this arc entirely in entry 25, which is what left the slot
+   *  autopilot then took; see CHIP_ARC_MIN_START's own comment, written for
+   *  exactly this. */
   function placeChips(): void {
     const all = [...chips.values()]
     const size = all[0]?.offsetWidth || 48
@@ -1045,11 +1078,14 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
           ? showStats
           : id === 'grav'
             ? prefs.gravity
-            : group === id
+            : id === 'day'
+              ? prefs.day
+              : group === id
       chip.setAttribute('aria-pressed', String(on))
     }
     void statsChip
     void gravChip
+    void dayChip
   }
 
   build()

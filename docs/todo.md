@@ -4199,7 +4199,56 @@ powder still works with no accelerometer at all, which is the iOS path.
 no · dependency no (2D canvas, no library).
 
 ### 47. Day mode: a light ground, so the picture survives daylight
-`status: building` · added 2026-08-30 · started 2026-08-30
+`status: done` · added 2026-08-30 · shipped at build 194
+
+**Build note** — `uDay` added to `composite.frag.glsl`, applied after the
+exposure clamp exactly as Decided: `col = 1.0 - (1.0 - col) * (1.0 -
+ground)` with `ground = 0.6 * uDay * (1.0 - uCameraMix)`. At `uDay = 0`
+this is `col = 1.0 - (1.0-col)*1.0 = col`, an algebraic identity, not an
+approximation — "pixel-identical to today" when off is a property of the
+formula, not something that needs separate tuning to hold.
+
+`scene.ts` needed the same kind of surgery entry 58 just did for colour: a
+new `dayTarget`/`dayCurrent` pair, ticked toward each other at a fixed
+rate (`dt / DAY_FADE_S`) once per frame in `render()`, rather than an
+`Envelope`-style exponential tau — "about 400ms" reads as a duration the
+toggle takes, not a time constant it asymptotically approaches, so a
+linear ramp is the more literal reading. Both are seeded from a new
+`VisualiserOptions.day` at construction (mirroring `geoAlpha`/`atmAlpha`'s
+own pattern) rather than always starting at 0, so a session that left day
+mode on finds it already on rather than fading in over 400ms on load.
+`day: boolean` added to `Prefs` (the safe half of the stored-shape rule,
+per Hard Stops) and threaded through `resolvePrefs()`'s fallback and
+return, same shape as `gravity`.
+
+The chip needed one more wire than `gravity`'s own precedent: `gravity` is
+read straight from `prefs` by `main.ts` every frame, but day mode is a
+`scene.ts` render setting with its own fade, so it needs an explicit call
+on toggle. Added `onDayMode` to `hud.ts`'s `Handlers` interface (`main.ts`
+wires it to `visualiser.setDayMode`), following the same
+callback-on-user-action shape `onColour`/`onAlpha` already use rather than
+inventing a new one. The sun glyph is eight `<line>` rays (four cardinal,
+four diagonal) around a filled `<circle>`, in the same `ICONS`
+`fill="currentColor"` vocabulary as every other chip.
+
+Verified live via `scene.ts` loaded directly over Vite's dev server: five
+settled frames at day off gave a reference pixel sum; pumping frames for
+700ms after `setDayMode(true)` (long enough for the 400ms fade to
+complete) gave a sum about 30% higher, confirming a real, substantial
+lightening; toggling back off and pumping another 700ms returned to the
+**exact same pixel sum** as the reference, not merely a close one —
+concrete proof the round trip loses nothing. Separately verified the
+entry's own named risk directly: with a fake `CameraSource` and
+`setPassthrough(source, 1)` (full passthrough), day on and day off
+rendered **bit-identical** sums, confirming `(1 - uCameraMix)` genuinely
+retires the ground once the real room takes over, rather than trusting
+the algebra alone. Confirmed via `hud-narrow.html` at 320×568 and 360×640
+that the arc now reports 7 chips including "Day", with nothing escaping
+either viewport. `pnpm build`, `pnpm lint`, `pnpm probe:composite` (the
+existing blend-math regression guard), `pnpm probe:motion-bias`, and
+`pnpm probe:ripples` all pass unchanged. Not verified: actual daylight
+legibility on a real phone, which the entry's own Verify text says only
+that can answer.
 
 **Do** — add a day mode that puts the picture on a **light ground** instead of
 a black one, on a chip, off by default.
