@@ -8610,3 +8610,75 @@ which is the case that produces the mass. `probe-ripples.ts` can assert the
 combine never exceeds 1 for any number of overlapping contributions, which is
 arithmetic and needs no GPU.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 80. Fullscreen has right of way
+`status: ready` · added 2026-08-30
+
+**Do** — when fullscreen is wanted and absent, the next touch of the picture
+restores it **and does nothing else**: no emitter, no shutter, no pending
+screenshot, no menu, no camera mode. Everything else waits its turn.
+
+**Why** — a stated priority: fullscreen first and it blocks everything, then
+camera or menu. Today the opposite is true — the tap does its ordinary job
+*and* restores fullscreen, so the one gesture does two things at once.
+
+**Decided**
+- **This overturns a decision made on purpose**, so it is worth quoting what is
+  being reversed. `armFullscreenRetry`'s comment: *"Does not stop propagation or
+  call preventDefault itself, so the same tap still does whatever it normally
+  does — with entries 50 and 52 landed, that same tap is also an emitter and a
+  screenshot."* That was chosen as generosity — nothing is lost, you get both.
+  Victor's ordering says the opposite: a tap that means *give me my screen back*
+  should not also spend itself on something else.
+- **`stopPropagation()` on the retry is not sufficient, and this is the trap.**
+  The retry listens on `pointerup`, but the emitter and the camera shutter both
+  fire on `pointerdown` (entries 50 and 72), and `touches.ts` records contacts
+  through its own listeners rather than through the retry's. By the time the
+  `up` arrives, a ring has already been drawn and a photo may already be
+  written. **The block has to happen at `down`, in the dispatch, not on the
+  listener.**
+- **So the dispatch gets a first question, before every other branch** — *is
+  fullscreen wanted and absent?* If yes, the contact is consumed: no
+  `visualiser.setTouches` entry for it, no pending tap, no shutter, no
+  two-finger case. The request itself still goes out on `up`, where entry 62
+  put it deliberately (*"pointerup is the one every engine agrees on"* for
+  activation), so this entry changes what a contact *does*, not how fullscreen
+  is asked for.
+- **The precedence is written down as one list**, in `main.ts`'s dispatch,
+  because it now has four claimants on the same tap and they have never been
+  ranked anywhere: **1. fullscreen · 2. camera mode · 3. menu · 4. play.**
+  Camera mode above menu because in it the menu cannot open at all (entry 72),
+  and play last because it is the only one that is never the *point* of a tap
+  — entry 50's own generosity is what makes it the right thing to yield.
+- **Entry 50 gets an explicit exception, not a quiet one.** *"A tap plays,
+  everywhere"* is a principle this repo has defended repeatedly, and this is the
+  first place it does not hold. It holds again the moment fullscreen is back —
+  which is one tap. State it in the code beside the check, or the next reader
+  will file it as a bug.
+- **One tap, not a mode.** The block lasts exactly as long as
+  `want && !document.fullscreenElement`, which after entry 66 is derived fresh
+  every `fullscreenchange`. There is no state to get stuck in, and nothing to
+  reset — the same property that made entry 66's rewrite worth doing.
+- **The chip is unaffected.** It is `onChip`, excluded before any of this, and
+  it is the deliberate way in for someone who left fullscreen on purpose and
+  does not want to be dragged back by a tap on the picture.
+
+**Lands in**
+- `src/main.ts:1320-1360` — the precedence check at the top of the `down`
+  branch, reading `fullscreenStatus()` which is already imported (`:25`).
+- `src/permission-gate.ts:189-199` — the comment that documents the old
+  behaviour, which becomes wrong the moment this lands.
+- `scripts/probe-fullscreen.ts` — that a contact while `want && !active` is
+  consumed, alongside the re-arm cycle entry 66 added.
+
+**Done when** — leaving fullscreen and then tapping the picture restores it and
+leaves no ring, no photo, no pending save and no menu; the tap after that
+behaves entirely normally; in camera mode the same holds, so a tap while
+windowed restores fullscreen rather than taking a picture; and the fullscreen
+chip still works without any of this applying.
+**Verify** — the phone, since fullscreen cannot be entered honestly anywhere
+else. Count files again, as entry 78 does: leave fullscreen, tap once, and
+confirm the camera roll is unchanged.
+**Hard stops** — prefs no · url no · capture **yes, and answered**: strictly
+fewer captures — a tap that used to save while windowed no longer does ·
+dependency no.
