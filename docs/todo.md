@@ -4357,3 +4357,72 @@ whether a person who has never seen it touches it a second time without being
 asked. `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs no · url no · capture no, and the emitter-in-frame
 question is a picture decision rather than a new capture · dependency no.
+
+### 51. The disc says "play with me"
+`status: ready` · added 2026-08-30
+
+**Do** — change the Start button's label to "play with me", set in three
+centred lines, and take the shout out of it.
+**Why** — the toy wants to be played with, and the one word on the screen
+currently issues an instruction.
+
+**Decided**
+- **Lowercase**, dropping `text-transform: uppercase` → Victor typed it
+  lowercase and "PLAY WITH ME" is the opposite of friendly: it is the same
+  sentence delivered as an order. **Mine**, and it is most of the "friendly"
+  in this entry — the words alone do not get there while the CSS is still
+  shouting them.
+- **Three lines, one word each** → a circle is widest across its middle, so a
+  short stack fits the shape where a single long line does not: "play with me"
+  set on one line inside a 115px disc at 320px is not going to happen at any
+  weight worth reading. Three centred lines at `line-height: 1.15`. **Mine.**
+- **Tracking 0.14em → 0.02em**, and `text-indent: 0.14em` goes with it → that
+  indent exists only to cancel the phantom space wide tracking adds after the
+  last glyph, so it is not a separate decision, it is the same one. Wide
+  tracking on lowercase reads as a luxury logotype, which is a different kind
+  of unfriendly from shouting but still not warm.
+- **Weight 700 → 600** → 700 was carrying a five-letter word alone. Three
+  short lowercase words at 700 is a slab.
+- **The disc does not grow, unless 320px says otherwise** → its diameter is
+  `min(36vw, min(20vh, 8rem))`, which is about 115px at the narrowest target.
+  Three lines at the current `clamp(0.95rem, 4vw, 1.15rem)` should sit inside
+  that with room; if they do not, the disc grows through that existing
+  expression rather than gaining a new rule. **The 320×568 check is the one
+  that decides this entry**, and it is the same width entry 43's title check
+  turns on.
+- **`id="start"` stays, and so does every internal use of the word** →
+  `main.ts:58`, `main.ts:517` and `permission-gate.ts` all address it by id,
+  and the label is a single string at `index.html:437` that nothing else
+  reads or rewrites. Checked rather than assumed: the gate only ever sets
+  `disabled` on it, never its text. Renaming the concept would touch four
+  files and a dozen comments to change nothing anybody sees.
+- The disabled state needs no separate copy → `#start:disabled` dims it and
+  stops the animation while permission is being asked for. A greyed "play with
+  me" reads correctly as *not yet*, where a greyed "Start" read as *broken*.
+- **One honest observation, not a blocker** → the gate's own comment records
+  that the two paragraphs it used to carry are gone at Victor's instruction,
+  and that one of them "carried the promise the page makes about the
+  microphone". So after this change the first thing a stranger meets is an
+  invitation to play, and the second is a browser asking for their microphone,
+  with no sentence anywhere saying why. The friendlier the invitation, the
+  larger that gap gets. Worth a decision at some point; not this entry's to
+  make.
+- **Build with or after entry 43** → that entry rescales the gate's type, adds
+  the band and reworks the disc's pulse, and both touch `#start` and the same
+  block of `index.html`. Doing them together means judging the screen once.
+
+**Lands in**
+- `index.html:437` — the label.
+- `index.html:213-222` — `#start`'s type: case, tracking, indent, weight,
+  line-height.
+
+**Done when** — the disc reads "play with me" in three centred lowercase lines
+at 320×568 and 360×640, with even margins inside the circle and no line
+touching the edge. It still reads as the one thing on the screen to press.
+Disabled, during the permission prompt, it is legibly the same words dimmed.
+**Verify** — the browser at both widths, since this is a fitting problem inside
+a fixed circle, and then the phone at arm's length, which is where "friendly"
+is actually judged. `pnpm probe:fullscreen` must still pass — it drives the
+gate, and this entry is the one that would break it if anything were keyed on
+the label. `pnpm build`, `pnpm lint`.
+**Hard stops** — prefs no · url no · capture no · dependency no.
