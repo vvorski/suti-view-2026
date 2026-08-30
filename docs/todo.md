@@ -3875,7 +3875,49 @@ against the chip. `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 45. The director is always on, and never waits more than 30s
-`status: ready` · added 2026-08-30
+`status: done` · added 2026-08-30 · shipped at build 166
+
+**Build note** — `SUSPEND`, `COLOUR_HOLD` and `VIEW_HOLD` all moved to 30 per
+Decided; `VIEW_STABLE` was already there. The autopilot chip, its icon, its
+`aria-pressed` case, its slot in `Hud.autopilot()`, and `panel.autopilot()`'s
+read in the render loop are gone — the render loop now gates on a
+session-only `autoOverrideOff` read straight from `?auto=` in `main()`,
+never merged into `prefs`, specifically so it can never leak into storage
+the next time an unrelated control calls `save()`. `prefs.autopilot` itself
+is untouched: still declared, still round-tripped by `loadPrefs`/`savePrefs`,
+just never read by anything any more, exactly as Decided.
+
+**One judgment call on the boundary decay, worth stating precisely rather
+than leaving to guess.** `requiredNovelty(sinceDue)` ramps `BOUNDARY` linearly
+to 0 over `BOUNDARY_RAMP` (30s) seconds, counted from the moment a change's
+*other* conditions clear — hold satisfied, distance/candidate-stability
+satisfied — not from the previous change itself. That makes the honest
+worst-case gap between two autopilot colour changes on a track with no
+distinct sections **HOLD + BOUNDARY_RAMP = 60s**, not literally 30s. I
+considered starting the ramp at the same origin as the hold timer, which
+would make the decay complete exactly when the hold does and hit a clean
+30s bound — but at `COLOUR_HOLD` now also 30, that collapses to "boundary
+requirement is always already fully decayed the instant hold clears,"
+which makes `BOUNDARY` dead weight in every ordinary case, not a decaying
+rule — precisely what the entry's own text says this must not become: "the
+boundary requirement decays instead of being deleted." Verified numerically
+with a throwaway script: a constant sub-threshold novelty of 0.2 still
+produces a change at ~47s since the prior one (30s hold + ~17s into the
+ramp), and a genuinely novel boundary (≥0.45) still fires right at the
+30s hold with no extra wait. In practice this rarely matters — real music
+almost always offers a boundary well inside 30s of a change becoming due —
+but the mathematically guaranteed bound is 60s and I'd rather say that
+plainly than round it down to match the entry's title.
+
+Verified the re-spaced arc directly: `hud-narrow.html` now reports 6 chips
+at both 320×568 and 360×640 (down from 7), labelled geo/atm/cam/ear/num/grav
+with no "Autopilot" among them, nothing escaping either viewport, and even
+spacing in a screenshot of both frames side by side. Did not re-verify real
+audio behaviour live (no probe exists for `director.ts` and the harness
+cannot drive the microphone gate) — the numeric-readout's `auto held Ns`
+line already reads `s.director.suspended`/`tillView`, which now count from
+the new constants automatically, with no separate code path to break.
+`pnpm build` and `pnpm lint` both clean.
 
 **Do** — drop the autopilot chip, run `director.ts` unconditionally, and cap
 every one of its timers at 30 seconds.

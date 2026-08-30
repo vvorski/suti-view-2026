@@ -10,14 +10,19 @@
  *
  *   NEVER FIGHT THE USER. Any manual change suspends the whole thing for
  *   SUSPEND seconds. Someone who has just picked a colour is not asking for a
- *   second opinion, and an autopilot that overrides a deliberate choice thirty
- *   seconds later is worse than no autopilot.
+ *   second opinion, and an autopilot that overrides a deliberate choice a
+ *   half-minute later is worse than no autopilot — that is the balance at 30s;
+ *   it used to be three minutes, when the whole system waited far longer than
+ *   this file's other numbers now do (docs/todo.md entry 45).
  *
  *   NEVER ARRIVE UNANNOUNCED. A change only lands on a section boundary. The
  *   novelty curve is already there, so a new palette can coincide with the
  *   music changing rather than turning up in the middle of a phrase. This is
  *   the single thing that makes the difference between reading as "it is
- *   listening" and reading as "it is drifting".
+ *   listening" and reading as "it is drifting" — which is also why capping the
+ *   hold timers alone (entry 45) cannot bound the wait: on material with no
+ *   distinct sections this rule stays silent no matter how low the holds go.
+ *   So it decays rather than disappears — see BOUNDARY_RAMP below.
  *
  *   NEVER FLICKER. Every categorical decision goes through a dead band and has
  *   to hold its new answer for a while before it counts. A classification that
@@ -29,21 +34,38 @@ import type { GeoColour } from './geo-colour'
 import type { Character } from './engine'
 import type { AtmosphericViewName } from './views'
 
-/** Seconds of hands-off after any manual change. Long, deliberately: this is
- *  about three tracks. */
-const SUSPEND = 180
+/** Seconds of hands-off after any manual change. Used to be 180 — long enough
+ *  to cover the length of most tracks — but the autopilot is unconditional
+ *  now (entry 45), and a mode nobody can turn off has to give a deliberate
+ *  choice back within a bound short enough that it never reads as ignored. */
+const SUSPEND = 30
 
-/** A change rides in on a boundary at least this novel. */
+/** A change rides in on a boundary at least this novel — while there is time
+ *  left to wait for one. See BOUNDARY_RAMP below for what happens once there
+ *  is not. */
 const BOUNDARY = 0.45
+
+/** Once a change is otherwise due — its hold has cleared, its own conditions
+ *  are met — but no boundary novel enough has arrived, BOUNDARY decays to 0
+ *  across this many seconds rather than blocking forever. This is what turns
+ *  "changes only land on a section boundary" into a rule with a bound: on
+ *  material with no distinct sections at all, the change still lands, just
+ *  without one to land on. A genuinely novel moment inside the ramp still
+ *  wins early — the decay only matters once none arrives. */
+const BOUNDARY_RAMP = 30
 
 /** Minimum seconds between changes of each kind. Colour is cheap to accept and
  *  can move with the sections; a programme swap replaces the whole picture and
- *  should feel like it belongs to a movement, not a verse. */
-const COLOUR_HOLD = 45
-const VIEW_HOLD = 120
+ *  should feel like it belongs to a movement, not a verse. Both used to be
+ *  larger (45 and 120) before entry 45 capped every timer here at 30 — the
+ *  distinction between them survives only in how quickly BOUNDARY_RAMP can
+ *  still matter once each one clears. */
+const COLOUR_HOLD = 30
+const VIEW_HOLD = 30
 
 /** A suggested programme must be the suggestion for this long before it is
- *  acted on — the dead band that stops two near-tied options alternating. */
+ *  acted on — the dead band that stops two near-tied options alternating.
+ *  Already at entry 45's cap; unchanged by it. */
 const VIEW_STABLE = 30
 
 /** Colour only moves if it would move far enough to notice. Below this the
@@ -130,6 +152,22 @@ export function viewFor(c: Character): AtmosphericViewName {
 const distance = (a: GeoColour, b: GeoColour): number =>
   Math.abs(a.r - b.r) + Math.abs(a.g - b.g) + Math.abs(a.b - b.b)
 
+/**
+ * How novel a boundary has to be, given how long a change has already been
+ * otherwise due.
+ *
+ * `sinceDue` is negative before the hold has even cleared — a change is not
+ * due yet, so this is called only once it's non-negative — and 0 at the
+ * instant it clears, where the full BOUNDARY still applies: an ordinary
+ * change still waits for a real section boundary, exactly as before entry
+ * 45. From there the requirement falls linearly to 0 by BOUNDARY_RAMP
+ * seconds later, which is what keeps a track with no distinct sections from
+ * blocking a change forever rather than merely delaying it past its hold.
+ */
+function requiredNovelty(sinceDue: number): number {
+  return BOUNDARY * Math.max(0, 1 - Math.max(0, sinceDue) / BOUNDARY_RAMP)
+}
+
 export class Director {
   private suspended = 0
   private sinceColour = COLOUR_HOLD
@@ -153,9 +191,10 @@ export class Director {
    * This exists because the three rules at the top of this file add up to
    * something that is, during any hands-on session, completely silent — and
    * indistinguishable from broken. Touching any control suspends it for
-   * SUSPEND (180s). A programme swap then additionally needs a warm buffer,
-   * a boundary over BOUNDARY, VIEW_HOLD (120s) since the last one, and the
-   * same suggestion held for VIEW_STABLE (30s). Every one of those is
+   * SUSPEND (30s). A programme swap then additionally needs a warm buffer,
+   * VIEW_HOLD (30s) since the last one, the same suggestion held for
+   * VIEW_STABLE (30s), and a boundary that is either over BOUNDARY or has
+   * simply waited long enough (BOUNDARY_RAMP). Every one of those is
    * deliberate and defensible; together they mean someone adjusting the HUD
    * and watching for a change will wait forever and conclude nothing is
    * connected.
@@ -181,8 +220,9 @@ export class Director {
 
   /**
    * Advance and decide. Returns null when there is nothing to do, which is
-   * almost always — a boundary that carries a change comes along every couple
-   * of minutes at most.
+   * common but, since docs/todo.md entry 45, bounded: a change that is
+   * otherwise due lands within BOUNDARY_RAMP of becoming due even if the
+   * music never offers a boundary novel enough to carry it sooner.
    *
    * `current` is what is on screen now, so a decision that agrees with reality
    * is not reported as a change.
@@ -210,13 +250,14 @@ export class Director {
     // initial values, and acting on them is acting on the initial values.
     if (!c.warm) return null
 
-    // Everything below rides in on a boundary.
-    if (c.noveltyMedium < BOUNDARY) return null
-
     const out: Directives = {}
 
     const wanted = colourFor(c)
-    if (this.sinceColour >= COLOUR_HOLD && distance(wanted, current.geoColour) >= COLOUR_MIN_STEP) {
+    if (
+      this.sinceColour >= COLOUR_HOLD &&
+      distance(wanted, current.geoColour) >= COLOUR_MIN_STEP &&
+      c.noveltyMedium >= requiredNovelty(this.sinceColour - COLOUR_HOLD)
+    ) {
       out.geoColour = wanted
       this.sinceColour = 0
     }
@@ -225,7 +266,8 @@ export class Director {
       this.sinceView >= VIEW_HOLD &&
       this.candidate !== null &&
       this.candidate !== current.atmosphericView &&
-      this.candidateHeld >= VIEW_STABLE
+      this.candidateHeld >= VIEW_STABLE &&
+      c.noveltyMedium >= requiredNovelty(this.sinceView - VIEW_HOLD)
     ) {
       out.atmosphericView = this.candidate
       this.sinceView = 0

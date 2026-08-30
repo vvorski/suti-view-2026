@@ -99,7 +99,6 @@ function resolvePrefs(): Prefs {
   const geo = query.get('geo')
   const atm = query.get('atm')
   const mapping = query.get('mapping')
-  const auto = query.get('auto')
 
   return {
     geometricView: isGeometricViewName(geometric) ? geometric : stored.geometricView,
@@ -126,7 +125,13 @@ function resolvePrefs(): Prefs {
     // The camera is turned on from the HUD, by the person holding the phone.
     passthrough: 0,
     mapping: mapping && mapping in MAPPINGS ? (mapping as MappingName) : stored.mapping,
-    autopilot: auto === null ? stored.autopilot : auto !== '0' && auto !== 'off',
+    // The autopilot is unconditional now (docs/todo.md entry 45) and nothing
+    // reads this field to decide whether it runs any more — it survives here
+    // only because the stored-shape rule keeps a field once added. `?auto=`
+    // is handled separately, in main(), precisely so it never gets merged
+    // into this object and saved back the next time an unrelated control
+    // calls save() — see the comment there.
+    autopilot: stored.autopilot,
     // `?debug` is deliberately NOT merged in here any more — docs/todo.md
     // entry 31. This field is "the setting this person chose", full stop;
     // what a `?debug` load shows on screen is a separate, per-load session
@@ -537,6 +542,15 @@ async function main(): Promise<void> {
   }
 
   const prefs = resolvePrefs()
+
+  // docs/todo.md entry 45: the autopilot is unconditional now, and
+  // `prefs.autopilot` is kept only as a stored-shape fact, no longer
+  // consulted below. `?auto=0` (or `off`) is the one way left to run with it
+  // off, and read straight from the URL rather than merged into `prefs` —
+  // see the comment on that field in resolvePrefs() — so a session that asks
+  // for it can never leak the choice into storage via an unrelated save().
+  const autoParam = new URLSearchParams(window.location.search).get('auto')
+  const autoOverrideOff = autoParam === '0' || autoParam === 'off'
 
   // Built before the gate resolves, not after.
   //
@@ -974,7 +988,7 @@ async function main(): Promise<void> {
       // and tuned, and a second copy would be a second set of constants to
       // keep in step.
       const character = slow.update(audio, params)
-      if (panel.autopilot()) {
+      if (!autoOverrideOff) {
         const next = director.update(character, audio.dt, {
           geoColour: prefs.geoColour,
           atmosphericView: prefs.atmosphericView,

@@ -228,15 +228,12 @@ export interface Hud {
      *  colour or a merge mode. */
     passthrough?: number
   }): void
-  /** Whether the user has the autopilot switched on. */
-  autopilot(): boolean
   /**
    * The four continuous quantities a light shake's nudge needs to read
    * before it can move them — docs/todo.md entry 35. `shuffled()` is pure
    * and cannot see the screen itself, so this is the accessor that lets a
    * nudge start from what is actually on screen rather than from an absolute
-   * roll. Read-only, the same precedent `autopilot()` already sets for
-   * reading one fact back out.
+   * roll. Read-only, one fact read back out rather than pushed in.
    */
   current(): { geoColour: GeoColour; atmColour: GeoColour; geoAlpha: number; atmAlpha: number }
   /**
@@ -303,9 +300,6 @@ const ICONS: Record<string, string> = {
     '<path d="M9.6 9.6a3.4 3.4 0 0 1 4.8 4.8" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>' +
     '<path d="M6.4 6.4a8 8 0 0 1 11.2 11.2" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-opacity=".62"/>' +
     '<path d="M3.2 3.2a12.6 12.6 0 0 1 17.6 17.6" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-opacity=".34"/>',
-  auto:
-    '<path d="M12 1.4a10.6 10.6 0 1 1-10.4 12.7l4.5-.9A6 6 0 1 0 12 6z"/>' +
-    '<path d="M13.4 0 7.6 4.2l5.8 4.2z"/>',
   num:
     '<path d="M1.6 21V13.4h5.2V21zM9.4 21V6.6h5.2V21zM17.2 21V1.4h5.2V21z"/>' +
     '<path d="M1 22.4h22v1.6H1z" fill-opacity=".45"/>',
@@ -843,14 +837,6 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
       build()
     })
   }
-  const autoChip = mkChip('auto', 'Autopilot', '#9d9bf0', () => {
-    prefs.autopilot = !prefs.autopilot
-    save()
-    paint()
-    // Turning it on is not a manual change to what is on screen, so it does
-    // not suspend — switching it on and then waiting minutes for anything to
-    // happen would read as broken.
-  })
   const statsChip = mkChip('num', 'Numeric readout', '#9d9bf0', () => {
     // A tap is an explicit choice, so it is the one thing that writes back
     // to prefs — arriving via ?debug and never touching this chip writes
@@ -863,9 +849,9 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
     paint()
   })
   // docs/todo.md entry 30. A boolean needs a chip rather than a band, same
-  // as autopilot and the readout above — no visualiser call here, either:
-  // main.ts reads prefs.gravity itself, once per frame, the same way it
-  // already reads prefs.showStats.
+  // as the readout above — no visualiser call here, either: main.ts reads
+  // prefs.gravity itself, once per frame, the same way it already reads
+  // prefs.showStats.
   const gravChip = mkChip('grav', 'Gravity', '#9d9bf0', () => {
     prefs.gravity = !prefs.gravity
     save()
@@ -874,9 +860,10 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
 
   /** Lay the icons along their own arc. Spacing comes from the measured chip
    *  size, so a larger root font spreads them rather than overlapping them.
-   *  Seven as of entry 30's gravity chip — the fullscreen chip moved off
-   *  this arc entirely in entry 25, which is what left a seventh slot free;
-   *  see CHIP_ARC_MIN_START's own comment, written for exactly this. */
+   *  Six now that entry 45 has removed the autopilot chip — the fullscreen
+   *  chip moved off this arc entirely in entry 25, which is what left the
+   *  slot autopilot then took, and now frees again; see CHIP_ARC_MIN_START's
+   *  own comment, written for exactly this. */
   function placeChips(): void {
     const all = [...chips.values()]
     const size = all[0]?.offsetWidth || 48
@@ -1049,16 +1036,13 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
 
     for (const [id, chip] of chips) {
       const on =
-        id === 'auto'
-          ? prefs.autopilot
-          : id === 'num'
-            ? showStats
-            : id === 'grav'
-              ? prefs.gravity
-              : group === id
+        id === 'num'
+          ? showStats
+          : id === 'grav'
+            ? prefs.gravity
+            : group === id
       chip.setAttribute('aria-pressed', String(on))
     }
-    void autoChip
     void statsChip
     void gravChip
   }
@@ -1160,7 +1144,6 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
       ].join('\n')
     },
 
-    autopilot: () => prefs.autopilot,
     current: () => ({
       geoColour: prefs.geoColour,
       atmColour: prefs.atmColour,
