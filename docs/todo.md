@@ -9161,3 +9161,137 @@ is the difference the numbers are standing in for.
 the four**: entry 76 is frozen and entry 70's colour is approved; both consume
 `disturb`, and this entry's central constraint is that neither changes by a
 single frame.
+
+### 89. The director always eventually moves
+`status: ready` · added 2026-08-30
+
+**Do** — make the two gates that can hold forever decay like the novelty gate
+already does, so a still phone in front of unchanging sound still changes
+picture.
+
+**Why** — reported: left alone, such as propped up while driving, it does not
+chain. Correct, and entry 45's promise that it "never waits longer than 30s"
+is not true of the outcome — only of one of the four conditions.
+
+**Decided**
+- **The cause, precisely.** A colour change needs *three* things:
+  `sinceColour >= COLOUR_HOLD`, a novelty boundary, **and**
+  `distance(wanted, current.geoColour) >= COLOUR_MIN_STEP`. Entry 45 gave the
+  novelty requirement a decay — `requiredNovelty()` ramps it to zero over
+  `BOUNDARY_RAMP` — so *that* gate always opens. **The distance gate never
+  decays.** `wanted` is `colourFor(character)`, and if the character is steady
+  the wanted colour is the colour already showing, distance is ~0, and the
+  condition is false forever. The view path has the identical shape:
+  `this.candidate !== current.atmosphericView` — a suggestion equal to what is
+  on screen can never fire, no matter how long it has been.
+- **Why driving is the case that exposes it.** A phone in a car hears road
+  noise: broadband, spectrally flat, and *unchanging* for tens of minutes. The
+  character axes settle and stop moving, so `colourFor` returns one answer and
+  `viewFor` returns one answer, and both gates latch shut. The same happens
+  with a fan, a train, or an empty room — driving is simply where it was
+  noticed. **This is not a motion bug at all**, which is worth stating because
+  the report arrived as one: it is the audio character being stable, and a
+  still phone only makes it more obvious because nothing else is changing
+  either.
+- **The fix mirrors the one entry 45 already made.** `COLOUR_MIN_STEP` decays
+  toward 0 over the same `BOUNDARY_RAMP` window once the hold is past, so a
+  long wait accepts a smaller and smaller step and eventually any step at all.
+  Same shape, same constant, same reasoning — the director's own comment calls
+  this turning a rule into "a rule with a bound", and one of its two rules
+  never got the bound.
+- **The view gate needs a different answer**, because there is no "smaller
+  step" between two named views. Once `VIEW_HOLD + BOUNDARY_RAMP` has passed
+  with the suggestion equal to what is showing, take the **second-best** view
+  for the current character instead. **Mine.** Not a random view — that throws
+  away the character analysis that is the director's whole point — the
+  runner-up, which is still an honest answer to the music and is merely not
+  the first one.
+- **`viewFor` must therefore be able to return a ranking**, not one name. It
+  is a small branch tree today (`director.ts:143-150`); returning an ordered
+  pair costs nothing and makes the runner-up well-defined rather than
+  arbitrary.
+- **The floor is a floor, not a metronome.** These decays mean *eventually*,
+  not *on schedule*: with genuinely varied music nothing about today's
+  behaviour changes, because the gates open on merit long before the ramp
+  matters. Entry 81's bar-quantising sits on top of this untouched.
+- Deliberately **not** changed: `SUSPEND`. A person who has just chosen
+  something is still not asking for the autopilot's opinion, however long the
+  silence.
+
+**Lands in** `src/director.ts:255-273` — both gates; `:143-150` — `viewFor`
+returns a ranking; `scripts/probe-slow.ts` — the case below.
+**Done when** — a synthetic run with a *constant* character produces a colour
+change and then a view change within roughly `HOLD + BOUNDARY_RAMP`, rather
+than never; a run with varied music produces the same changes at the same
+times as today; and `SUSPEND` still silences everything.
+**Verify** — `probe-slow.ts` with a flat input, which is the case nobody wrote
+because nobody expected the input to be flat. Then a phone left playing to
+room noise for five minutes.
+**Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 90. Still, carried, driving, dancing — the phone knows which
+`status: ready` · added 2026-08-30 · build after 88
+
+**Do** — classify how the phone is being held into a handful of named postures,
+and let the director's cadence follow.
+
+**Why** — asked for directly. The app currently has one number for handling
+(`disturb`) and it cannot tell a car from a dancefloor, though they want
+opposite things from the picture.
+
+**Decided**
+- **Five postures, and each is separable with signals we already compute:**
+  **still** (on a table — `disturb` ~0, tilt fixed), **carried** (in a hand or
+  pocket, walking — `disturb` ~0.15 *with a gait periodicity near 2 Hz*),
+  **driving** (sustained low agitation, **no** gait band, tilt drifting slowly
+  on turns), **dancing** (mid agitation *correlated with the tempo the beat
+  tracker already reports*), and **handled** (high `disturb`, reversals — the
+  shake path, which already exists).
+- **The discriminator that makes this work is periodicity, not level.**
+  Driving and carrying can sit at the same `disturb`; walking has a strong ~2 Hz
+  component and a car does not. And dancing is separable from both by the one
+  signal entry 75 just shipped: **agitation that matches the music's tempo is a
+  person moving with it.** That is a genuinely new capability as of build 247
+  and it is the reason this entry is possible now and was not last week.
+- **It reads; it never writes.** Same constraint as entry 88 and for the same
+  reason: `disturb` feeds the frozen RGB slip (entry 76) and the approved
+  colour bias (entry 70). The classifier is a pure function of signals that
+  already exist and changes none of them.
+- **What each posture is for**, and this is the useful half:
+  **still** → the director is the only thing that will ever change the
+  picture, so it should be the *most* willing to (entry 89 is what makes that
+  possible at all). **driving** → nobody is going to touch it and it is watched
+  sideways; longer holds, gentler steps, and no expectation of interaction.
+  **carried** → the picture is in a pocket or a swinging hand and largely
+  unwatched; slowest of all, and the cheapest thing the app can do here is
+  little. **dancing** → the best case: shortest holds, and every change lands
+  on the bar via entry 81. **handled** → a person is playing; the director
+  should mostly get out of the way, which `SUSPEND` already does.
+- **A posture is a slow thing.** Minimum dwell of ~10s before a change is
+  reported, and hysteresis on the way out, or the picture's cadence would
+  jitter between two rulesets at a traffic light. **Mine.**
+- **Default is `still`, and unknown resolves to `still`.** It is the posture
+  whose behaviour is safest to be wrong about — the director being willing when
+  it need not be is a picture that changes; the reverse is the complaint that
+  started this.
+- **Report it in the readout.** Five states that silently change the app's
+  cadence, with no way to see which one is active, would be the exact shape of
+  every diagnosis problem this project has had — entry 66's `want`/`armed` and
+  entry 88's live threshold are the precedent.
+- **Not decided here** → whether anything *other* than the director should read
+  posture. Colour, the powder, the ink — all plausible, all separate entries.
+  This one establishes the signal and gives it exactly one consumer.
+
+**Lands in** `src/engine/posture.ts` (new, pure state and a pure update, same
+shape as `motion-bias.ts`); `src/main.ts` — fed from the sensor snapshot entry
+86 introduces; `src/director.ts` — holds scale by posture;
+`scripts/probe-posture.ts` (new).
+**Done when** — synthetic traces for a table, a 2 Hz walk, a car's broadband
+hum and a 120 bpm dance each classify correctly and hold for at least 10s; a
+traffic-light stop does not flip driving to still; and the director's holds
+visibly differ between the still and dancing traces.
+**Verify** — the probe for the classifier, since every posture can be
+synthesised. Then a phone actually in a car and actually on a dancefloor, which
+is the only test of whether "driving" and "dancing" mean what the numbers think
+they mean.
+**Hard stops** — prefs no · url no · capture no · dependency no.
