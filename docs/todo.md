@@ -10958,3 +10958,94 @@ visible. Then the armed path, twice in a row, to confirm arming is not sticky.
 narrows it**: strictly fewer images are written and never without an explicit
 arming gesture, so the change moves capture in the conservative direction only ·
 dependency no.
+
+### 104. The slip needs a direction of its own
+`status: ready` · added 2026-08-30 · fixes 76 without touching what 76 froze
+
+**Do** — give the RGB slip its own held direction vector instead of borrowing
+the tumble offset's instantaneous one. The magnitude spring, its two constants
+and `MAX_SLIP` are not touched.
+
+**Why** — reported: *"the RGB offset on move, have we got that? not really
+seeing it"*. We have got it — entry 76, build 249, and it is wired end to end:
+`updateRgbSlip` runs every frame (`scene.ts:960`), `uSlip` reaches the
+compositor, and the branch at `composite.frag.glsl:187` samples R and B at
+offset uvs. Nothing is disabled and nothing is gated on `prefers-reduced-motion`.
+It is nonetheless close to invisible, for a reason in the one line that was
+never anybody's suspect.
+
+**Decided**
+- **The mechanism.** The magnitude is this effect's own spring; the *direction*
+  is `normalize(uTumble.yz)` — the tumble's translational offset. That offset
+  is itself a spring (`OFF_STIFF 80`, `OFF_DAMP 7.1`, so ω ≈ 8.9 rad/s), and a
+  spring **oscillates through zero**. Two consequences, both fatal and both
+  invisible in the source:
+  - Because the direction is `normalize`d, the offset's magnitude is discarded
+    and only its *sign* survives. So the slip does not fade in and out with the
+    tumble — it **flips end for end at the offset's own frequency**, roughly
+    three reversals a second while a shake decays. Red leads, then trails, then
+    leads again, faster than the eye can resolve as displacement. Integrated,
+    that reads as a faint shimmer, which is exactly the "not really seeing it"
+    being reported.
+  - And the two springs run at deliberately different frequencies — rgb-slip.ts
+    says so, and is right to: ω ≈ 20 against the tumble's 8.9, chosen so this
+    would not read as the tumble happening twice. The unintended consequence is
+    that the slip's own peak lands at an arbitrary phase of the direction's
+    oscillation, including near its zero crossing, where `length(uTumble.yz) >
+    1e-5` fails and the direction is `vec2(0.0)` — **full magnitude, multiplied
+    by nothing.** The very decoupling that makes the effect its own is what
+    makes it cancel.
+- **So the fix is a direction, and only a direction.** A dispersion has to
+  come apart *along a line* and spring back along the same line. That means the
+  direction must be **held**, not sampled: its own slow state, easing toward
+  where the phone is actually being moved, and **never reset to zero when the
+  input is degenerate** — it keeps pointing where it last pointed while the
+  magnitude decays to nothing on its own. A held direction with a springing
+  magnitude is the whole effect; a springing direction with a springing
+  magnitude is noise.
+- **The freeze is respected, and this is the reason it can be.** `STIFF = 400`,
+  `DAMP = 14` and `MAX_SLIP = 0.006` were approved at build 249 and are **not
+  changed by this entry** — the fault is not in the magnitude and re-tuning it
+  would be treating a symptom of something a floor below. What changes is where
+  the direction comes from, which lives in `composite.frag.glsl` and in a new
+  piece of state, not in the frozen numbers. If after this the amplitude still
+  wants adjusting, that is a separate conversation with Victor and a separate
+  entry; nobody gets to reopen those three constants as a side effect of fixing
+  this one.
+- **Direction from the disturbance, not from the offset.** `shake.ts` already
+  has the in-plane acceleration the tumble is built from; the slip takes its
+  own low-passed unit vector from that, in `rgb-slip.ts` alongside the
+  magnitude, and hands the compositor a `vec2` instead of a `float`. That also
+  removes the last coupling between two modules that the file's own header is
+  proud of keeping apart — today it silently depends on a uniform another
+  system owns and can zero at any moment.
+- **Measured, not eyeballed.** "Not really seeing it" has now been the report
+  on three separate features in a week, and each time the thing was built. So
+  this entry's acceptance is a **number**: a browser probe that shakes a
+  synthetic `disturb` through one decay and records the peak on-screen R-to-B
+  separation in device pixels, plus how many times the direction reverses
+  during that decay. Today's answer, predicted: a healthy peak and **three or
+  four reversals**. After: the same peak, **zero reversals**. A rule that says
+  "it should look dispersed" cannot be checked by whoever ships it next.
+- **The other number to check while in there**, without changing it:
+  `MAX_SLIP`'s comment says "about two to four pixels on a phone", but `uv` in
+  the compositor spans 0–1 across the frame, which on a 1080-wide phone makes
+  0.006 about six pixels each way and thirteen of separation. Either the
+  comment is stale or the geometry is not what it says. **Measure it and fix
+  whichever is wrong** — and if it is the comment, say so there rather than
+  quietly adjusting the constant to match a sentence.
+
+**Lands in** `src/engine/rgb-slip.ts` — the held direction state, returning a
+`vec2`; `src/scene.ts:960` and `:451` — `uSlip` becomes a `vec2`;
+`src/shaders/composite.frag.glsl:187-190` — `off` comes from the uniform
+rather than from `uTumble`; `scripts/probe-rgb-slip.ts` (new).
+**Done when** — a synthetic shake produces a slip that comes apart and returns
+along one axis with **no sign reversals**; the peak separation is unchanged
+from today's measured peak; a still phone gives exactly `vec2(0.0)` so the
+`uSlip > 0.0` branch is not taken and the frame is byte-identical to one
+compiled without this entry; and `STIFF`, `DAMP` and `MAX_SLIP` are unchanged
+in the diff.
+**Verify** — the probe, for the reversal count and the pixel measurement, since
+both are the things the eye has already failed at twice. Then the phone, moved
+briskly once, which is the gesture the report was made about.
+**Hard stops** — prefs no · url no · capture no · dependency no.
