@@ -46,8 +46,35 @@ hand is fine too; the format is below.
 in Decided, and without it the status is `blocked`, not `ready`.
 ```
 
-`status:` is one of `ready`, `blocked` (needs a decision — say which), or
-`done` (leave it, with the build number that shipped it).
+`status:` is one of `ready`, `building`, `blocked` (needs a decision — say
+which), or `done` (leave it, with the build number that shipped it).
+
+## Claiming an entry
+
+**Whoever starts building an entry sets it to `building` first, in its own
+commit, before touching any other file.** Two agents work this file: one
+captures entries, one builds them, and they share a checkout. `building` is how
+each knows what the other is holding.
+
+```markdown
+`status: building` · added YYYY-MM-DD · started YYYY-MM-DD
+```
+
+Three rules follow from it:
+
+- **A `building` entry is not to be edited by anyone else** — not amended, not
+  superseded, not re-scoped. An entry rewritten under a builder mid-flight is
+  how both halves end up wrong; it has already been avoided once by leaving
+  entry 33 alone as a single emitter while entry 49 was written around it.
+- **A capture session may still append entries that supersede a `building`
+  one**, and should say so in the new entry rather than editing the old. The
+  claim protects the text, not the idea.
+- **Set it back to `ready` if the work is abandoned**, with a line saying what
+  was learned. A `building` entry nobody is building is worse than a `ready`
+  one, because it stops anybody else picking it up.
+
+The status moves `ready` → `building` → `done` in the same commit as the work
+it names, so the build number and the status never disagree.
 
 ## Entries
 
