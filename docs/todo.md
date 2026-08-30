@@ -8922,7 +8922,7 @@ probe can answer, the same limit every beat-adjacent entry since 75 has
 disclosed.
 
 ### 82. The layers move apart
-`status: ready` · added 2026-08-30
+`status: building` · added 2026-08-30
 
 **Do** — give each layer its own multiplier on the tumble, so the geometry and
 the atmosphere do not move as one rigid sheet.
