@@ -3633,7 +3633,7 @@ actually looks on a phone, which this entry's own Verify line already
 says only a phone can answer.
 
 ### 43. The gate's type grows a fifth, on a band, and Start invites harder
-`status: ready` · added 2026-08-30
+`status: done` · added 2026-08-30 · shipped at build 159
 
 **Do** — scale every piece of text on the start screen by 1.2, lay a
 half-opaque horizontal band behind the head block, and make the Start disc's
@@ -3720,6 +3720,42 @@ preview specifically, which is when the band and the shadows both matter and
 the only state in which entry 28's bug was visible. `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs no · url no · capture no · dependency no (Chakra Petch
 is already loaded for the title).
+
+**Build note.** Landed as specified, with one factual correction worth
+recording: the reduced-motion guard this entry says "there is none today"
+for was already present (`@media (prefers-reduced-motion: reduce) {
+#start { animation: none; } }`, from build "The start screen is the piece,
+running", well before this entry existed) — checked via `git log -S`
+rather than trusting the entry's own premise, since "add a guard" against
+one that already exists would have meant a dead, unreachable second rule.
+Nothing needed adding there; noted rather than silently skipped.
+
+`--gate-type-scale: 1.2` landed on `#gate`, and `.gate-byline`, `#gate
+h1`, `.gate-name` and `#error` all take it via `calc()` inside their
+existing `font`/`font-size` declarations, none of the original clamp()
+numbers touched. The band is a `.gate-head::before` rather than a new
+wrapper element — `position: relative; z-index: 0` on `.gate-head` gives
+it its own stacking context so the pseudo-element's `z-index: -1` stays
+scoped to sitting behind this block's own text, and `inset: 0 -1.5rem`
+reaches exactly past `#gate`'s own horizontal padding for a true
+edge-to-edge band without touching markup. The pulse ring's spread and
+starting opacity moved (18px→26px, 0.4→0.55) and the breathe's scale
+moved (1.035→1.05); the two animation periods are untouched, as decided.
+
+Verified in the browser via two iframes at 320×568 and 360×640 (the same
+technique `hud-narrow.html` uses, for the same reason — this needs a true
+viewport size, and `resize_window` does not reliably change one in this
+harness): `#gate h1`'s computed font size measured 34.56px at 320px width
+and 38.88px at 360px, matching the entry's own predicted "~34.6px" almost
+to the decimal, with `scrollWidth === clientWidth` at both — no wrap, no
+overflow, the one failure mode this entry flagged as worth checking first.
+The band's computed background matched `rgba(5, 6, 10, 0.5)` exactly at
+both sizes, and a screenshot confirms it visibly spans edge to edge behind
+the text rather than only behind the (narrower, right-aligned) type
+itself. `pnpm build`, `pnpm lint` both clean. Not verified: the pulse's
+feel on a real phone, and the gate over a genuinely bright idle-preview
+frame — both need a person and real hardware, per this entry's own Verify
+line.
 
 ### 44. The reload glyph gets the share button's chip
 `status: ready` · added 2026-08-30

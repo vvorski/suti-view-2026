@@ -121,7 +121,10 @@
       }
       /* The gate is an overlay on the running piece, not a page in front of it.
          The canvas behind is already drawing (see idleParams in main.ts), so
-         this screen's job is to stay out of its way and still be readable.
+         this screen's job is to stay out of its way and still be readable —
+         and, since docs/todo.md entry 43, to lean a little further toward
+         readable: the type is bigger and the head block sits on its own band,
+         which trades a bit of "out of its way" for legibility on purpose.
 
          Stripped to Start and the code. The two paragraphs that used to sit
          here are gone at Victor's instruction; what that removed is noted in
@@ -140,6 +143,12 @@
         text-align: right;
         z-index: 10;
         transition: opacity 700ms ease;
+        /* One multiplier on every gate text rule rather than eight edited
+           numbers — docs/todo.md entry 43. Each clamp() below carries its
+           own reasoning about specific viewport widths in a comment; a
+           multiplier leaves every one of those numbers legible and makes
+           "a bit bigger again" a single edit instead of eight. */
+        --gate-type-scale: 1.2;
         /* Dark where the words are, clear where the picture is. Without this
            the type sits on whatever the visualiser happens to be doing and
            becomes unreadable a few seconds in. */
@@ -155,8 +164,33 @@
       #gate.fading { opacity: 0; pointer-events: none; }
 
       /* Title and build name, right-justified and large. With the copy gone
-         these are the only type on the screen, so they carry it. */
-      .gate-head { text-align: right; }
+         these are the only type on the screen, so they carry it.
+
+         The band (docs/todo.md entry 43) is the gate's own #05060a at 50%,
+         not a new colour: it is a scrim making the preview quieter behind
+         the words, and any other colour would introduce a second surface to
+         a screen deliberately stripped to two things. `position: relative`
+         plus an explicit `z-index` gives this element its own stacking
+         context, so the band's `z-index: -1` stays scoped to sitting behind
+         this block's own text rather than competing with #gate's other
+         children (Start, the QR code, the share button) for stacking order.
+         Full-bleed horizontally via `inset` reaching past this element's own
+         box by exactly #gate's own 1.5rem side padding, so the band spans
+         edge to edge regardless of where the (right-aligned, narrow) text
+         itself sits. */
+      .gate-head {
+        position: relative;
+        z-index: 0;
+        text-align: right;
+        padding: 0.5rem 0;
+      }
+      .gate-head::before {
+        content: '';
+        position: absolute;
+        inset: 0 -1.5rem;
+        background: rgba(5, 6, 10, 0.5);
+        z-index: -1;
+      }
       /* Byline (queue entry 10, revised by entry 28). Entry 10 set this
          deliberately quieter than .gate-name below it, reasoning that the
          screen has exactly one thing designed to dominate — the filled Start
@@ -172,7 +206,8 @@
          colours just makes the bottom of that order legible instead of
          nearly invisible. */
       .gate-byline {
-        font: 400 0.62rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+        font: 400 calc(0.62rem * var(--gate-type-scale))/1 ui-monospace, SFMono-Regular, Menlo,
+          monospace;
         letter-spacing: 0.16em;
         text-transform: uppercase;
         color: #8d88b8;
@@ -181,7 +216,12 @@
       }
       #gate h1 {
         font-family: 'Chakra Petch', ui-sans-serif, system-ui, sans-serif;
-        font-size: clamp(1.7rem, 9vw, 2.6rem);
+        /* docs/todo.md entry 43: at 320px the middle term becomes 10.8vw,
+           rendering about 34.6px against 28.8px before this — the one place
+           this change can overflow or wrap. If it does, the fix is this vw
+           term, not the max: the max only bites on wide screens, which are
+           not where the problem would be. */
+        font-size: calc(clamp(1.7rem, 9vw, 2.6rem) * var(--gate-type-scale));
         font-weight: 600;
         letter-spacing: 0.24em;
         /* Optical alignment: the tracking adds a phantom space after the last
@@ -193,7 +233,8 @@
         line-height: 1;
       }
       .gate-name {
-        font: 500 clamp(0.95rem, 4.4vw, 1.3rem)/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+        font: 500 calc(clamp(0.95rem, 4.4vw, 1.3rem) * var(--gate-type-scale))/1 ui-monospace,
+          SFMono-Regular, Menlo, monospace;
         letter-spacing: 0.2em;
         margin-right: -0.2em;
         text-transform: uppercase;
@@ -227,21 +268,28 @@
       }
       /* One slow ring leaving the button — the only motion this screen adds to
          what the visualiser is already doing, and it exists to say which of the
-         things on screen is the one to press. */
+         things on screen is the one to press. More reach, not more speed
+         (docs/todo.md entry 43): the spread grew 18px -> 26px and the starting
+         opacity 0.4 -> 0.55, but the two periods below are untouched — they are
+         chosen not to divide into one another, so the pulse and the breathe
+         re-phase roughly every 200s, which is what keeps this reading as alive
+         rather than as a metronome. Speeding either up is the fastest way to
+         turn inviting into nagging. */
       @keyframes start-pulse {
-        0% { box-shadow: 0 0 0 0 rgba(157, 155, 240, 0.4); }
-        70% { box-shadow: 0 0 0 18px rgba(157, 155, 240, 0); }
+        0% { box-shadow: 0 0 0 0 rgba(157, 155, 240, 0.55); }
+        70% { box-shadow: 0 0 0 26px rgba(157, 155, 240, 0); }
         100% { box-shadow: 0 0 0 0 rgba(157, 155, 240, 0); }
       }
-      /* A slow breathe, lightly — about 4px of growth on a 114px disc. The
-         `scale` property, not `transform: scale()`: #start:active already
-         animates `transform`, which would silently outrank and delete the
-         press feedback if this used the same property. `alternate` mirrors
-         the easing at both ends, so it dwells the way breathing does, where a
-         0-100% keyframe loop would snap back instead. */
+      /* A slow breathe — about 6px of growth on a 114px disc, up from about 4px
+         (docs/todo.md entry 43). The `scale` property, not `transform:
+         scale()`: #start:active already animates `transform`, which would
+         silently outrank and delete the press feedback if this used the same
+         property. `alternate` mirrors the easing at both ends, so it dwells the
+         way breathing does, where a 0-100% keyframe loop would snap back
+         instead. */
       @keyframes start-breathe {
         from { scale: 1; }
-        to { scale: 1.035; }
+        to { scale: 1.05; }
       }
       #start:hover,
       #start:focus-visible { background: #b9b7ff; }
@@ -294,7 +342,7 @@
         color: #d08a8a;
         background: rgba(42, 20, 20, 0.92);
         padding: 0.5rem 0.7rem;
-        font-size: 0.76rem;
+        font-size: calc(0.76rem * var(--gate-type-scale));
         max-width: 22rem;
         text-align: left;
       }

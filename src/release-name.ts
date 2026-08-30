@@ -20,4 +20,4 @@
  * Changed in the same commit as the work it names. Every commit that reaches
  * main deploys, so every commit that reaches main renames. It is one line.
  */
-export const RELEASE_NAME = 'dead centre'
+export const RELEASE_NAME = 'louder gate'
