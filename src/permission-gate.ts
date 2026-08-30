@@ -194,9 +194,12 @@ function watchFullscreen(): void {
  * unambiguously a tap. Capture phase so it sees the gesture whatever the HUD
  * does with it — several HUD controls call preventDefault, which would lose
  * a listener waiting for `click`. Does not stop propagation or call
- * preventDefault itself, so the same tap still does whatever it normally
- * does — with entries 50 and 52 landed, that same tap is also an emitter and
- * a screenshot.
+ * preventDefault itself — this listener only ever fires the actual
+ * `goFullscreen()` request, entry 62's own choice for where that has to
+ * happen; docs/todo.md entry 80 is what makes the same contact do nothing
+ * else while fullscreen is wanted and absent, and it does that in main.ts's
+ * own dispatch, at `down`, not here. Before entry 80, the same tap was also
+ * an emitter and a screenshot (entries 50 and 52) — that is no longer true.
  */
 function armFullscreenRetry(): void {
   if (!wantFullscreen || fsArmed || !retryTarget) return

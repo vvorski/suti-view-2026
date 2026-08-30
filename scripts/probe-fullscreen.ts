@@ -331,5 +331,51 @@ function check(name: string, ok: boolean, detail: string): void {
   )
 }
 
+// 7. docs/todo.md entry 80 — a contact is consumed exactly when fullscreen
+//    is wanted and not currently active, across the same loss/recovery
+//    cycle case 6 already drives, and never for a contact that lands on a
+//    chip regardless of that state. This is `main.ts`'s own `dispatchTouches`
+//    gate (`fsBlocking = fullscreenStatus().want && !document.fullscreenElement`,
+//    with every chip contact excluded ahead of it) reimplemented here rather
+//    than imported — that gate lives inline in `main()`'s own closure, the
+//    same reason `probe-tap.ts` reimplements `resolveTapDown` instead of
+//    importing `main.ts` directly, and this probe already has the real,
+//    unmodified `fullscreenStatus()` output to drive it against, which is
+//    the half actually worth testing here: whether the *signal* main.ts
+//    reads flips at the right moments, not the dispatch loop itself.
+{
+  const { stub, canvas } = install(true)
+  const gate = await freshGate()
+  gate.setFullscreenRetryTarget(canvas as never)
+
+  // Mirrors main.ts's own fsBlocking exactly, including reading the same
+  // `document.fullscreenElement` main.ts reads rather than this module's own
+  // `state` string — see this section's own comment for why this is
+  // reimplemented rather than imported.
+  const consumes = (onChip: boolean): boolean => {
+    if (onChip) return false
+    const fsElement = (globalThis as { document: { fullscreenElement: unknown } }).document.fullscreenElement
+    return gate.fullscreenStatus().want && !fsElement
+  }
+
+  check('before ever asking, a contact is not consumed', consumes(false) === false, 'consumed with no want recorded yet')
+
+  stub.outcome = 'enter'
+  gate.goFullscreen()
+  await settle()
+  check('active → a contact is not consumed', consumes(false) === false, 'consumed while active')
+  check('active → a chip contact is never consumed either', consumes(true) === false, 'consumed a chip contact')
+
+  stub.exit()
+  await settle()
+  check('lost → a non-chip contact is consumed', consumes(false) === true, 'not consumed while lost and wanted')
+  check('lost → a chip contact is still unaffected', consumes(true) === false, 'a chip contact was consumed')
+
+  stub.tap()
+  await settle()
+  check('recovered by the consumed contact\'s own tap → active again', gate.fullscreenStatus().state === 'active', gate.fullscreenStatus().state)
+  check('recovered → no longer consuming', consumes(false) === false, 'still consuming after recovery')
+}
+
 console.log(failures === 0 ? '\nall fullscreen checks passed' : `\n${failures} failed`)
 process.exit(failures === 0 ? 0 : 1)

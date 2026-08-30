@@ -8685,7 +8685,7 @@ arithmetic and needs no GPU.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 80. Fullscreen has right of way
-`status: building` · added 2026-08-30 · started 2026-08-30
+`status: done` · added 2026-08-30 · started 2026-08-30 · build 277
 
 **Do** — when fullscreen is wanted and absent, the next touch of the picture
 restores it **and does nothing else**: no emitter, no shutter, no pending
@@ -8755,6 +8755,60 @@ confirm the camera roll is unchanged.
 **Hard stops** — prefs no · url no · capture **yes, and answered**: strictly
 fewer captures — a tap that used to save while windowed no longer does ·
 dependency no.
+
+**Build note** — implemented as decided. `dispatchTouches` computes
+`fsBlocking = fullscreenStatus().want && !document.fullscreenElement` once,
+fresh, at the top of every call — the same two facts entry 66 already
+exposes, no new state. It gates three separate places, all needing the
+same `!onChip` exception so the chip stays the deliberate way in Decided
+names:
+- The contact-sampling loop that feeds `visualiser.setTouches` (the
+  emitter) and the atmospheric stream's `streamAnyDown`/`streamMaxSpeed` —
+  a blocked non-chip contact now skips `nonChipDown++` too, not only the
+  emitter, since "does nothing else" reads as nothing else, not merely "no
+  ring". This was a **judgment call beyond Decided's own itemised list**
+  (which names the emitter, the shutter, the pending save and the menu
+  specifically, not the atmospheric stream or the two-finger counter) —
+  **Mine**, on the reading that the *principle* stated ("everything else
+  waits its turn") is the actual spec and the itemised list is illustrative
+  rather than exhaustive.
+- The `down`-kind event loop's own `streamBegan` flag, checked and skipped
+  before it can be set to true — this is the actual block Decided asks for
+  ("the block has to happen at down, in the dispatch, not on the
+  listener"), placed before the existing `e.onChip || hudOpen || gateShowing`
+  check so it also precedes the camera-mode branch (entry 87's own
+  forward-reference: "a tap while windowed restores fullscreen rather than
+  taking a picture" — confirmed by ordering, `fsBlocking`'s `continue` now
+  sits textually above `if (cameraMode)`).
+- `permission-gate.ts`'s `armFullscreenRetry` doc comment, rewritten: it no
+  longer claims "the same tap still does whatever it normally does", which
+  became false the moment this landed.
+
+Verified: `pnpm build`/`pnpm lint` clean; `pnpm probe` 0 failures and
+`pnpm probe:tap` all pass (both unaffected — this entry touches neither
+file's own logic). `scripts/probe-fullscreen.ts` gained a new section
+(case 7) reimplementing `fsBlocking` itself — kept in lockstep by eye
+against `main.ts`, the same precedent `probe-tap.ts` set for logic that
+lives inline in `main()`'s own closure and cannot be imported — driven
+against the probe's own **real, unmodified `fullscreenStatus()`** output
+across the identical loss/recovery cycle case 6 already exercises: not
+consumed before ever asking, not consumed while active, a non-chip contact
+consumed the instant fullscreen is lost, a chip contact never consumed
+regardless of state, and no longer consumed immediately after the
+consumed contact's own tap recovers it. All 39 checks across the file
+pass, including the 32 pre-existing ones, confirmed unaffected.
+
+Not verified live: this entry's own Verify text names the phone as the
+only honest test ("fullscreen cannot be entered honestly anywhere else"),
+and this session's own attempt to reach real `dispatchTouches` behaviour
+live — documented at length in entry 87's build note just above this one —
+got further than ever before (a real Start, a real running render loop)
+but the synthetic touch dispatch itself did not cooperate for reasons not
+resolved there either. `fsBlocking`'s own boolean logic is now covered
+arithmetically against the real `fullscreenStatus()` signal (see above);
+the three call sites that read it inside `dispatchTouches` are verified by
+code review and by the diff's own shape, not by watching a real tap
+consumed.
 
 ### 81. The director waits for the bar
 `status: ready` · added 2026-08-30

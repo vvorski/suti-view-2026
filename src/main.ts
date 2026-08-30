@@ -1267,6 +1267,14 @@ async function main(): Promise<void> {
    */
   const dispatchTouches = (now: number): void => {
     const hudOpen = document.querySelector('.hud-scrim.open') !== null
+    // docs/todo.md entry 80 — fullscreen has right of way, rank 1 of the
+    // four claimants on a tap (fullscreen, camera mode, menu, play). One
+    // tap, not a mode: this is recomputed fresh every call from the same
+    // two facts entry 66 already derives `fullscreenStatus().want` from and
+    // the DOM's own `document.fullscreenElement`, so there is no separate
+    // state to fall out of sync or get stuck in — the moment fullscreen is
+    // back, this is false again on its own.
+    const fsBlocking = fullscreenStatus().want && !document.fullscreenElement
 
     // Drained once, read twice below — minting/clearing contact ids first,
     // so the sample pass that follows always has an id ready for a contact
@@ -1315,6 +1323,13 @@ async function main(): Promise<void> {
     let nonChipDown = 0
     for (const t of touchField.sample(now)) {
       const speed = Math.hypot(t.vx, t.vy)
+      // docs/todo.md entry 80: a non-chip contact this file is currently
+      // spending on restoring fullscreen counts toward nothing else here —
+      // not the emitter, not the atmospheric stream, not the two-finger
+      // recogniser below — "does nothing else" means nothing else, not
+      // merely "no ring". A chip contact is unaffected, exactly as Decided
+      // states — the `!t.onChip` guard here is what keeps that true.
+      if (!t.onChip && fsBlocking) continue
       if (!t.onChip) nonChipDown++
       if (!t.onChip && !hudOpen) {
         streamAnyDown = true
@@ -1341,6 +1356,15 @@ async function main(): Promise<void> {
     let streamBegan = false
     for (const e of events) {
       if (e.kind === 'down') {
+        // docs/todo.md entry 80 — checked first, before every other
+        // claimant on this tap: the emitter and the camera shutter both
+        // fire on `down` (entries 50 and 72/87), so waiting for this
+        // contact's own `up` — where the retry that actually re-requests
+        // fullscreen already lives, entry 62's own choice — would let a
+        // ring already be drawn or a photo already written before the
+        // request even goes out. `e.onChip` is checked first of all,
+        // inside the combined condition below, so the chip stays unaffected.
+        if (!e.onChip && !hudOpen && fsBlocking) continue
         if (!e.onChip && !hudOpen) streamBegan = true
         if (e.onChip || hudOpen || gateShowing) continue
         // docs/todo.md entry 87: one shot, then done. Entry 78's two-finger
