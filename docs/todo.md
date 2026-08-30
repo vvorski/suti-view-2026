@@ -10041,7 +10041,7 @@ they mean.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 91. The director gets a second engine, for when the room has nothing to say
-`status: done` · added 2026-08-30 · build after 89 and 90 · build 309
+`status: done` · added 2026-08-30 · build after 89 and 90 · build 310
 
 **Build note (Mine as to every constant, the informativeness measure's own
 design, and the two probe fixes below; the two-engine split and what each
