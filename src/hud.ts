@@ -281,6 +281,15 @@ export interface Hud {
    *  all. */
   close(): void
   /**
+   * Whether camera mode is on right now — docs/todo.md entry 78, so the
+   * shutter chip can show which state it is in, the way `day` already
+   * shows its own cycle. main.ts calls this at every point its own
+   * `cameraMode` boolean actually changes, including the asynchronous
+   * revert on a refused or absent camera — the chip only ever shows the
+   * truth, never an optimistic guess about a permission not yet answered.
+   */
+  setCameraActive(active: boolean): void
+  /**
    * Whether the numeric readout is showing this session — docs/todo.md
    * entry 31. Not the same as `prefs.showStats`: a `?debug` load shows the
    * readout for that load only, without writing the choice back, so a
@@ -314,10 +323,15 @@ interface Handlers {
    *  scene.ts render setting with its own fade, so it needs an explicit
    *  call rather than a value polled every frame. */
   onSkyOverride(state: SkyOverride): void
-  /** Enter camera mode — docs/todo.md entry 72. The panel is already closed
-   *  by the time this fires (the chip's own onTap calls `setOpen(false)`
-   *  directly); this is only main.ts's half — raising the passthrough
-   *  override and taking over the tap dispatch. */
+  /**
+   * Toggle camera mode — docs/todo.md entries 72 and 78. The chip is now the
+   * only way in *or* out (entry 78 retired the two-finger exit, which fired
+   * a spurious screenshot on every use), so this one call has to mean
+   * "whichever direction main.ts's own `cameraMode` isn't currently in"
+   * rather than only ever entering. The panel is already closed by the time
+   * this fires on the way in (the chip's own onTap calls `setOpen(false)`
+   * directly); on the way out, main.ts reopens it itself.
+   */
   onCameraMode(): void
   /** Fired on every change the user makes by hand, so the autopilot can get
    *  out of the way. Not fired for `adopt`. */
@@ -446,6 +460,14 @@ const CSS = `
    meant to open the thing. Nothing visible happened, which is the worst
    version of that bug. */
 .hud-scrim:not(.open) .hud-chip { pointer-events: none; }
+/* docs/todo.md entry 78 — the one exception: the shutter chip stays live
+   while camera mode is on, closed panel and all, since it is the only way
+   back to the menu now that the two-finger exit is gone. Gated on
+   aria-pressed (set by the same paint() loop every other chip's state
+   already goes through) rather than a second class, so there is exactly
+   one place "is camera mode on" is decided. Every other chip is untouched
+   by this rule and stays inert while closed, exactly as before. */
+.hud-scrim:not(.open) .hud-chip--shutter[aria-pressed='true'] { pointer-events: auto; }
 /* docs/todo.md entry 77: the button itself is the touch target and stays a
    fixed 3rem always — a hand doesn't get less thumb-safe for being on the
    outer ring. Everything drawn (the circle, the border, the icon) lives on
@@ -563,6 +585,14 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
    *  Starts from the stored preference or, for this load only, `?debug`;
    *  only the `num` chip below ever writes it back to `prefs`. */
   let showStats = debugFromUrl || prefs.showStats
+  /** docs/todo.md entry 78 — whether camera mode is currently on, so the
+   *  shutter chip can show which state it is in, the way `day` already does
+   *  for its own cycle. Not `prefs` — camera mode is deliberately render-time
+   *  only (entry 72's own hard stop) — so this exists purely to paint the
+   *  chip, set by `setCameraActive` whenever main.ts's own boolean changes,
+   *  including the asynchronous case where a refused or absent camera
+   *  reverts it moments after entry looked like it had succeeded. */
+  let cameraActive = false
 
   const stats = document.createElement('pre')
   stats.className = 'hud-stats'
@@ -996,12 +1026,12 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
     },
     'outer',
   )
-  // docs/todo.md entry 72. A momentary action, not a toggle — camera mode
-  // is not stored and this chip does not track being "in" it, the way
-  // gravity or the sky override do. Closes the panel itself, directly,
-  // rather than asking main.ts to call back into it: "one tap enters the
-  // mode and closes the panel" is one gesture, and this module already
-  // owns setOpen().
+  // docs/todo.md entries 72 and 78. Now a toggle, not a momentary action:
+  // entering closes the panel itself, directly, the same "one tap enters
+  // the mode and closes the panel" gesture entry 72 shipped; exiting is
+  // main.ts's own half (`exitCameraMode` reopens the panel), which is why
+  // this tap unconditionally calls `setOpen(false)` either way — already
+  // closed, on the way out, so it is a harmless no-op there.
   const shutterChip = mkChip(
     'shutter',
     'Camera mode',
@@ -1012,6 +1042,10 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
     },
     'outer',
   )
+  // docs/todo.md entry 78 — the one chip allowed to stay live while the
+  // panel is closed, but only while camera mode is actually on; see the
+  // `.hud-chip--shutter[aria-pressed='true']` exception above.
+  shutterChip.classList.add('hud-chip--shutter')
 
   /**
    * Lay the icons along their own arc — now two, docs/todo.md entry 77:
@@ -1212,7 +1246,9 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
             ? prefs.gravity
             : id === 'day'
               ? prefs.skyOverride !== 'auto'
-              : group === id
+              : id === 'shutter'
+                ? cameraActive
+                : group === id
       chip.setAttribute('aria-pressed', String(on))
     }
     // docs/todo.md entry 71: the day chip says which of its three states it
@@ -1394,6 +1430,10 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
     showingStats: () => showStats,
     open: () => setOpen(true),
     close: () => setOpen(false),
+    setCameraActive: (active) => {
+      cameraActive = active
+      paint()
+    },
 
     adopt(next) {
       if (next.geometricView) {

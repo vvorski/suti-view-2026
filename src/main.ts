@@ -1017,6 +1017,7 @@ async function main(): Promise<void> {
   function enterCameraMode(): void {
     if (cameraMode) return
     cameraMode = true
+    panel.setCameraActive(true)
     preCameraMix = prefs.passthrough
     const glyph = document.getElementById('shutter-glyph')
     if (glyph) glyph.hidden = false
@@ -1027,6 +1028,7 @@ async function main(): Promise<void> {
       // opened.
       if (actual <= 0) {
         cameraMode = false
+        panel.setCameraActive(false)
         if (glyph) glyph.hidden = true
       }
     })
@@ -1035,9 +1037,14 @@ async function main(): Promise<void> {
   function exitCameraMode(): void {
     if (!cameraMode) return
     cameraMode = false
+    panel.setCameraActive(false)
     const glyph = document.getElementById('shutter-glyph')
     if (glyph) glyph.hidden = true
     void applyPassthrough(preCameraMix)
+    // docs/todo.md entry 78 overturns entry 72's "exit goes to the normal
+    // picture rather than opening the panel" — every other chip leaves you
+    // where you were, and the trip being one-way was the whole complaint.
+    panel.open()
   }
 
   const panel = createHud(prefs, {
@@ -1057,7 +1064,10 @@ async function main(): Promise<void> {
       mapping = MAPPINGS[name]()
     },
     onPassthrough: applyPassthrough,
-    onCameraMode: enterCameraMode,
+    // docs/todo.md entry 78: the chip is now a toggle — one call means
+    // "leave if in, enter if not", since the two-finger exit is gone and
+    // the chip is the only way either direction now.
+    onCameraMode: () => (cameraMode ? exitCameraMode() : enterCameraMode()),
     onManualChange: () => director.suspend(),
   }, new URLSearchParams(window.location.search).has('debug'))
 
@@ -1324,21 +1334,19 @@ async function main(): Promise<void> {
       if (e.kind === 'down') {
         if (!e.onChip && !hudOpen) streamBegan = true
         if (e.onChip || hudOpen || gateShowing) continue
-        // docs/todo.md entry 72: in camera mode, two fingers exit rather
-        // than opening the menu — "the menu cannot open until you leave"
-        // is what makes the mode's own bookkeeping this simple, since
-        // there is no pending-tap state below to ever interact with.
+        // docs/todo.md entry 78 retires the two-finger exit entirely: it
+        // fired a spurious screenshot on every use (the first finger's own
+        // `down` already satisfies the shutter's own uninterrupted fall-
+        // through below, since `nonChipDown` is only 1 until the second
+        // finger lands) and no timing rule can fix that without giving
+        // back the shutter's whole point — firing on `down` with no wait.
+        // The chip is the exit now; see `exitCameraMode`.
         if (cameraMode) {
-          if (nonChipDown === 2) {
-            exitCameraMode()
-            continue
-          }
           // The shutter is instant — no TAP_RESOLVE_MS wait, no drag
           // check, no pending-tap bookkeeping — because outside this mode
           // that wait exists solely to learn whether a second tap is
           // coming to open the menu, and in here the menu cannot open at
-          // all. Fires on this tap's own down, the same event a two-finger
-          // exit is recognised on above.
+          // all. Fires on this tap's own down.
           if (performance.now() - lastSaveAt >= CAMERA_SAVE_RATE_LIMIT_MS) {
             lastSaveAt = performance.now()
             saveCapture(visualiser)
@@ -1352,6 +1360,12 @@ async function main(): Promise<void> {
         // what keeps it from being confused with play: a single contact's
         // own `down` never satisfies `nonChipDown === 2`.
         if (nonChipDown === 2) {
+          // docs/todo.md entry 78: the first finger's own `down`, moments
+          // earlier, already started a pending single-tap resolution below
+          // (nonChipDown was 1 then) — left running, it fires a screenshot
+          // 400ms later regardless of the menu having opened in between.
+          // Opening the menu supersedes any tap still waiting to resolve.
+          for (const p of [...pendingTaps]) cancelPendingTap(p.pointerId)
           panel.open()
           continue
         }

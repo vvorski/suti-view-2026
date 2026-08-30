@@ -1,5 +1,6 @@
 /**
- * Offline check of the single/double-tap resolver — docs/todo.md entry 67.
+ * Offline check of the single/double-tap resolver — docs/todo.md entry 67,
+ * extended by entry 78 for the separate two-finger-simultaneous open path.
  *
  * A plain JS re-implementation of `resolveTapDown`'s state machine, rather
  * than importing main.ts directly: that file runs its own bootstrap at
@@ -57,6 +58,19 @@ function makeResolver() {
     if (i !== -1) pendingTaps.splice(i, 1)
   }
 
+  // docs/todo.md entry 78 — the separate two-finger-simultaneous open path
+  // (unrelated to the proximity-matched double above: this one fires the
+  // instant a second contact is down at all, wherever it lands), mirroring
+  // the fix's own `for (const p of [...pendingTaps]) cancelPendingTap(...)`.
+  // A first finger's earlier `down` already started a pending single (its
+  // own `nonChipDown` read 1 before the second finger landed); left running,
+  // it fires as a save 400ms later regardless of the menu having opened in
+  // between.
+  const openTwoFinger = (): void => {
+    for (const p of [...pendingTaps]) cancel(p.pointerId)
+    opened++
+  }
+
   const tick = (now: number): void => {
     for (let i = pendingTaps.length - 1; i >= 0; i--) {
       if (now >= pendingTaps[i].firesAt) {
@@ -66,7 +80,15 @@ function makeResolver() {
     }
   }
 
-  return { down, cancel, tick, opened: () => opened, saved: () => saved, pending: () => pendingTaps.length }
+  return {
+    down,
+    cancel,
+    openTwoFinger,
+    tick,
+    opened: () => opened,
+    saved: () => saved,
+    pending: () => pendingTaps.length,
+  }
 }
 
 let failures = 0
@@ -132,6 +154,24 @@ function check(name: string, ok: boolean, detail: string): void {
   r.cancel(1)
   r.tick(TAP_RESOLVE_MS)
   check('a cancelled (dragged-away) tap never saves', r.saved() === 0, `saved=${r.saved()}`)
+}
+
+// 6. docs/todo.md entry 78's own bug: a first finger lands, is still short
+//    of its own 400ms window, and a second finger landing elsewhere opens
+//    the menu — the first finger's pending single must not survive to fire
+//    a stray save after the menu has already opened.
+{
+  const r = makeResolver()
+  r.down(1, 100, 100, 0) // finger 1's own down — starts a pending single
+  r.openTwoFinger() // finger 2 lands 150ms later, the ordinary two-finger open
+  check('the two-finger open itself opens exactly once', r.opened() === 1, `opened=${r.opened()}`)
+  check('finger 1 has no pending tap left to fire', r.pending() === 0, `pending=${r.pending()}`)
+  r.tick(TAP_RESOLVE_MS)
+  check(
+    'no stray save fires 400ms after the menu already opened',
+    r.saved() === 0,
+    `saved=${r.saved()}`,
+  )
 }
 
 console.log(failures === 0 ? '\nall tap checks passed' : `\n${failures} failed`)
