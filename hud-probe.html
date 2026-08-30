@@ -72,7 +72,14 @@
     return describe()
   }
 
-  window.openHud = () => window.tap(window.innerWidth / 2, window.innerHeight / 2)
+  // docs/todo.md entry 41 moved tap-to-open out of hud.ts and into a single
+  // recogniser in main.ts, which this probe doesn't load — so open the panel
+  // directly rather than simulating a document-level tap that nothing here
+  // listens for any more.
+  window.openHud = () => {
+    hud.open()
+    return describe()
+  }
 
   // Drag along the ring, in screen coordinates.
   //

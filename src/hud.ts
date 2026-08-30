@@ -228,6 +228,14 @@ export interface Hud {
   /** Whether the user has the autopilot switched on. */
   autopilot(): boolean
   /**
+   * Open the panel — docs/todo.md entry 41. main.ts's single tap recogniser
+   * calls this for a tap in the middle third of the picture; this file no
+   * longer listens for that tap itself, since two independent recognisers
+   * agreeing through a capture-phase `stopPropagation()` is exactly what
+   * that entry replaces with one.
+   */
+  open(): void
+  /**
    * Whether the numeric readout is showing this session — docs/todo.md
    * entry 31. Not the same as `prefs.showStats`: a `?debug` load shows the
    * readout for that load only, without writing the choice back, so a
@@ -1061,23 +1069,6 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
     else stats.textContent = ''
   }
 
-  // Tap the page to open. pointerup rather than click avoids the tap delay some
-  // mobile browsers still apply; the distance check keeps it from firing at
-  // the end of a drag — turning a band, or (before entry 27) a swipe.
-  let downX = 0
-  let downY = 0
-  document.addEventListener('pointerdown', (e) => {
-    downX = e.clientX
-    downY = e.clientY
-  })
-  document.addEventListener('pointerup', (e) => {
-    if (open) return
-    const gate = document.getElementById('gate')
-    if (gate && !gate.hidden && gate.contains(e.target as Node)) return
-    if (Math.hypot(e.clientX - downX, e.clientY - downY) > TAP_SLOP_PX) return
-    setOpen(true)
-  })
-
   // Anything reaching the scrim itself is outside the wedge — the arcs and the
   // icons stop their own events.
   scrim.addEventListener('pointerup', (e) => {
@@ -1159,6 +1150,7 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
 
     autopilot: () => prefs.autopilot,
     showingStats: () => showStats,
+    open: () => setOpen(true),
 
     adopt(next) {
       if (next.geometricView) {

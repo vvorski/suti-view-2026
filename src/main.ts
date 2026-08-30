@@ -360,21 +360,34 @@ function flashShake(double: boolean): void {
   }
 }
 
-/** One white flash confirming a screenshot was saved — reuses #shake-flash's
- *  `.on` fade, which already does exactly this and needs no new DOM. Unlike
- *  flashShake, never gated behind `showStats`: this is feedback for an
- *  action just taken, not a diagnostic. */
+/**
+ * A camera glyph confirming a screenshot was saved, fading within about
+ * half a second — docs/todo.md entry 41. Not `#shake-flash`'s white `.on`
+ * fade, which this used to reuse: with the readout on, a single shake and
+ * a capture produced the exact same full-screen white flash, which is
+ * indistinguishable at exactly the moment someone is trying to tell them
+ * apart. A distinct glyph fixes that and reads more clearly now that the
+ * capture zone is a third of the screen rather than a fifteenth of it.
+ *
+ * Never gated behind `showStats`, unlike flashShake: this is feedback for
+ * an action just taken, not a diagnostic. A DOM overlay outside the
+ * canvas, so it can never end up in the saved PNG — the capture reads the
+ * canvas, drawn and read before this is ever called.
+ */
 function flashCapture(): void {
-  const el = document.getElementById('shake-flash')
+  const el = document.getElementById('capture-flash')
   if (!el) return
-  el.classList.remove('on', 'double')
   el.classList.add('on')
   requestAnimationFrame(() => el.classList.remove('on'))
 }
 
-/** The bottom band's height, as a fraction of the viewport — docs/todo.md
- *  entry 18. */
-const CAPTURE_BAND_FRACTION = 0.15
+/** The bottom band's height, as a fraction of the viewport. 1/3 as of
+ *  docs/todo.md entry 41 — **supersedes entry 18's original 0.15**, more
+ *  than doubling it, because the picture now has three zones rather than
+ *  one carved out of the rest. The honest cost is more accidental
+ *  captures; entry 41's camera-glyph flash exists so an accidental one is
+ *  a thing you saw happen rather than a silent surprise. */
+const CAPTURE_BAND_FRACTION = 1 / 3
 
 /** `env(safe-area-inset-bottom)` has no JS equivalent; read back the custom
  *  property index.html sets from it on `:root`. */
@@ -383,13 +396,19 @@ function safeBottomInset(): number {
   return parseFloat(raw) || 0
 }
 
-/** Whether a point sits in the screenshot band: the bottom
- *  CAPTURE_BAND_FRACTION of the viewport, held clear of the home indicator
- *  or gesture bar by the safe-area inset. */
-function inCaptureBand(clientY: number): boolean {
+/**
+ * Where a tap on the picture belongs — docs/todo.md entry 41. The bottom
+ * third saves a frame (held clear of the home indicator or gesture bar by
+ * the safe-area inset, same as entry 18's original band); the middle third
+ * opens the panel; the top third does nothing on its own — entry 33 gives
+ * it a press-and-hold behaviour, but a plain tap up there is silent.
+ */
+function zone(clientY: number): 'capture' | 'panel' | 'none' {
   const bottom = window.innerHeight - safeBottomInset()
-  const top = bottom - window.innerHeight * CAPTURE_BAND_FRACTION
-  return clientY >= top && clientY <= bottom
+  const captureTop = bottom - window.innerHeight * CAPTURE_BAND_FRACTION
+  if (clientY >= captureTop && clientY <= bottom) return 'capture'
+  if (clientY >= window.innerHeight / 3) return 'panel'
+  return 'none'
 }
 
 /** How many captures this session has already saved. Widens the counter's
@@ -714,41 +733,42 @@ async function main(): Promise<void> {
     onRandomise: () => visualiser.randomise(),
   })
 
-  // The screenshot band: a tap low on the screen saves the frame instead of
-  // opening the HUD. Registered on the capturing phase and *ahead* of
-  // hud.ts's own tap-to-open listener in the traversal — capture always runs
-  // before bubble regardless of registration order — so stopPropagation()
-  // here reaches hud.ts's bubble-phase document listener before it can also
-  // open the panel for the same tap. Nothing else on the page reads a raw
-  // pointer gesture any more (entry 27 deleted the swipe handlers), so this
-  // guard is now the *only* thing standing between a tap here and the panel
-  // opening underneath it, rather than one of several competing claimants.
+  // One recogniser for every tap on the picture — docs/todo.md entry 41.
+  // Two separate listeners in two files used to agree only because the
+  // screenshot band listened in the capture phase and called
+  // stopPropagation() before hud.ts's own bubble-phase tap-to-open listener
+  // ran. hud.ts no longer listens for that tap at all; this decides
+  // tap-versus-not once and dispatches by zone, so where a tap goes is a
+  // value read in one place rather than a race reasoned about after the
+  // fact — and neither path needs stopPropagation() any more.
   {
-    let bandDownX = 0
-    let bandDownY = 0
-    let bandDownInBand = false
-    document.addEventListener(
-      'pointerdown',
-      (e) => {
-        bandDownX = e.clientX
-        bandDownY = e.clientY
-        bandDownInBand = inCaptureBand(e.clientY)
-      },
-      true,
-    )
-    document.addEventListener(
-      'pointerup',
-      (e) => {
-        // Inert while the HUD is open: the panel owns the screen then, and a
-        // tap here is what closes it.
-        if (document.querySelector('.hud-scrim.open')) return
-        if (!bandDownInBand || !inCaptureBand(e.clientY)) return
-        if (Math.hypot(e.clientX - bandDownX, e.clientY - bandDownY) > TAP_SLOP_PX) return
-        e.stopPropagation()
+    let downX = 0
+    let downY = 0
+    let downZone: ReturnType<typeof zone> = 'none'
+    document.addEventListener('pointerdown', (e) => {
+      downX = e.clientX
+      downY = e.clientY
+      downZone = zone(e.clientY)
+    })
+    document.addEventListener('pointerup', (e) => {
+      // Inert while the HUD is open: the panel owns the screen then, and a
+      // tap here is what closes it (the scrim's own listener in hud.ts).
+      if (document.querySelector('.hud-scrim.open')) return
+      if (downZone === 'none') return
+      if (zone(e.clientY) !== downZone) return
+      if (Math.hypot(e.clientX - downX, e.clientY - downY) > TAP_SLOP_PX) return
+      if (downZone === 'capture') {
         saveCapture(visualiser)
-      },
-      true,
-    )
+        return
+      }
+      // 'panel'. Defensive rather than load-bearing: this listener is only
+      // registered after Start, same as hud.ts's `open()`, so the gate
+      // should already be gone by the time a tap can reach here — kept in
+      // case a fade is still mid-flight.
+      const gate = document.getElementById('gate')
+      if (gate && !gate.hidden && gate.contains(e.target as Node)) return
+      panel.open()
+    })
   }
 
   // The way back into fullscreen once it has been lost — docs/todo.md entry

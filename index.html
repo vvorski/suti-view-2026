@@ -91,6 +91,34 @@
         #shake-flash { transition: none; }
         #shake-flash.double { animation: none; }
       }
+      /* docs/todo.md entry 41. A glyph rather than a full-screen tint —
+         `#shake-flash`'s white already means "a shake was detected" when the
+         readout is on, and this needs to read as a different event from
+         that at the exact moment someone is trying to tell them apart. */
+      #capture-flash {
+        position: fixed;
+        inset: 0;
+        z-index: 5;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 480ms ease-out;
+      }
+      #capture-flash svg {
+        width: 22vmin;
+        height: 22vmin;
+        color: #fff;
+        filter: drop-shadow(0 2px 10px rgba(5, 6, 10, 0.65));
+      }
+      #capture-flash.on {
+        opacity: 0.92;
+        transition: none;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #capture-flash { transition: none; }
+      }
       /* The gate is an overlay on the running piece, not a page in front of it.
          The canvas behind is already drawing (see idleParams in main.ts), so
          this screen's job is to stay out of its way and still be readable.
@@ -298,6 +326,18 @@
          is answerable by eye when the phone that reported the bug is not
          wired to a console. See shakeFlash() in main.ts. -->
     <div id="shake-flash" aria-hidden="true"></div>
+
+    <!-- Confirms a screenshot was saved (docs/todo.md entry 41) — a camera
+         glyph, not the shake flash's plain white: with the numeric readout
+         on, a shake and a capture used to produce the exact same flash. See
+         flashCapture() in main.ts. -->
+    <div id="capture-flash" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M1.4 2.6h6v3.4H4.8v12H7.4v3.4h-6z" />
+        <path d="M22.6 2.6h-6V6h2.6v12h-2.6v3.4h6z" />
+        <circle cx="12" cy="12" r="5.6" />
+      </svg>
+    </div>
 
     <!-- The way back into fullscreen once it has been lost (docs/todo.md
          entry 19) — hidden by default, shown by main.ts only while

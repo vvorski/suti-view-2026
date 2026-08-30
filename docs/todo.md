@@ -3092,7 +3092,7 @@ alter them. Also `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 41. One recogniser owns the picture's taps, split into thirds
-`status: ready` · added 2026-08-30
+`status: done` · added 2026-08-30 · shipped at build 141
 
 **Do** — replace the two independent tap paths with a single pointer
 recogniser on the picture that dispatches by where the tap landed: the bottom
@@ -3192,3 +3192,46 @@ both need. `pnpm build`, `pnpm lint`. `pnpm probe:fullscreen` must still pass:
 it exercises the gate's gesture path, which shares this surface.
 **Hard stops** — prefs no · url no · capture **already licensed** (entry 25;
 this moves the trigger region, not what is captured) · dependency no.
+
+**Build note.** Landed as specified: `CAPTURE_BAND_FRACTION` is `1/3`;
+`inCaptureBand()` became `zone(clientY)` returning `'capture' | 'panel' |
+'none'`; `hud.ts`'s own `pointerdown`/`pointerup` document listeners and
+its `downX`/`downY` state are gone, replaced by a new `Hud.open()` the
+recogniser calls for the panel zone; the recogniser itself is one
+`pointerdown`/`pointerup` pair with no `stopPropagation()` anywhere in
+either path. The gate-visibility guard hud.ts's old listener carried moved
+with the panel branch rather than being dropped, since nothing in the
+entry said to remove it, only to relocate the recognition.
+
+The capture flash is a camera glyph (`hud.ts`'s own `cam` icon markup,
+inlined into `index.html` rather than redrawn, for one visual language for
+"camera" across the app) in a new `#capture-flash` overlay, fading over
+480ms via the same opacity-snap-then-transition pattern `#shake-flash`
+already uses. `flashCapture()` no longer touches `#shake-flash` at all.
+`saveCapture()`'s call order was already right — the blob callback only
+runs after `visualiser.requestCapture()` has the pixels, and `flashCapture()`
+was already the last thing in it — so no reordering was needed, only
+confirmed by reading it.
+
+`hud-probe.html`'s `window.openHud()` broke immediately, since it worked by
+dispatching a synthetic document-level tap that nothing listens for any
+more; fixed to call `hud.open()` directly, which is the more honest thing
+for a probe to do anyway — it is testing what opens the panel, not
+re-deriving the gesture that used to.
+
+Verified two ways neither of which is the real app end to end, since this
+harness still cannot get past Start's microphone gate and both listeners
+only register after it resolves (a fact this session re-learned the hard
+way while first implementing entry 33, then confirmed applies here too by
+reading `waitForStart`'s call site): `hud-narrow.html` at 320×568 and
+360×640 confirms `hud.open()` still opens the panel with all seven chips
+present and nothing off-screen; a byte-for-byte copy of the new
+recogniser's logic, run standalone against synthetic pointer events,
+confirms all six cases in Done-when — bottom-third tap captures,
+middle-third tap opens the panel, top-third tap does nothing, a tap whose
+down and up land in different zones does nothing, a drag past
+`TAP_SLOP_PX` does nothing, and the recogniser is fully inert while
+`.hud-scrim.open` is present. The 189px band height at 320×568 was checked
+by arithmetic (`568 × 1/3 = 189.3`) rather than a live measurement, for the
+same reason. `pnpm probe:fullscreen` passes unchanged. `pnpm build`, `pnpm
+lint` both clean.
