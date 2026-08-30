@@ -71,14 +71,24 @@ uniform vec4 uSeed;
 
 // Must match MAX_RIPPLES in ripples.ts — GLSL can't import a JS constant, and
 // a mismatch here means scene.ts uploads an array of the wrong length.
-const int MAX_RIPPLES = 8;
-// (birthTime, birthLevel) pairs. An unborn slot sits at birthTime -1000, and
-// it no longer falls out of the loop's LIFESPAN `continue` — the wake ladder
-// reads dead slots on purpose, so that test now sits below it rather than
-// guarding it. What neutralises an unborn slot instead is its birthLevel of
-// 0, and the wake's own `min(since, 24.0)` clamp, which caps the contribution
-// at e^-15. Both live in the ripple loop further down.
-uniform vec2 uRipples[MAX_RIPPLES];
+//
+// Twelve total: eight reserved for audio (unchanged from before entry 33)
+// and four for a touch emitter, in slots [AUDIO_RIPPLES, MAX_RIPPLES) — see
+// ripples.ts. Split into two constants rather than one, because the two
+// halves are drawn by two separate loops further down: audio rings share
+// this view's one hoisted `dist`/`rungR` (both centre-based, see below),
+// while touch rings each carry their own origin and cannot.
+const int MAX_RIPPLES = 12;
+const int AUDIO_RIPPLES = 8;
+// (birthTime, birthLevel, x, y) per slot. An unborn slot sits at birthTime
+// -1000, and it no longer falls out of the loop's LIFESPAN `continue` — the
+// wake ladder reads dead slots on purpose, so that test now sits below it
+// rather than guarding it. What neutralises an unborn slot instead is its
+// birthLevel of 0, and the wake's own `min(since, 24.0)` clamp, which caps
+// the contribution at e^-15. Both live in the ripple loop further down. x/y
+// are unused here — the wake ladder and the audio loop are both centred on
+// the frame's own centre, never on a touch's position.
+uniform vec4 uRipples[MAX_RIPPLES];
 
 const float LIFESPAN = 3.2; // seconds from birth to vanishing at the rim
 const float FADE_FROM = 0.6; // fraction of LIFESPAN where fade-out begins
@@ -212,7 +222,7 @@ void main() {
   float reached = step(rungR, maxRadius);
   float wake = 0.0;
 
-  for (int i = 0; i < MAX_RIPPLES; i++) {
+  for (int i = 0; i < AUDIO_RIPPLES; i++) {
     float birth = uRipples[i].x;
     float birthLevel = uRipples[i].y;
     float age = uTime - birth;
@@ -267,6 +277,43 @@ void main() {
     // Both rings at full strength: they are the same white stroke in the
     // source, and dimming the inner one to 0.65 — as an earlier version did —
     // turns a matched pair into a ring with a shadow.
+    ink += (outer + inner) * opacity;
+  }
+
+  // Touch rings — docs/todo.md entry 33. A second, separate loop rather than
+  // folding into the one above: every audio ring shares this view's single
+  // hoisted `dist` (distance from the frame's centre), which is also what
+  // the wake ladder below is built on, but a touch ring is born wherever the
+  // finger was and needs its own `length(uv - origin)`. Splitting the loops
+  // is the whole performance argument — a session that never touches the
+  // screen pays four extra length() calls rather than twelve, and the
+  // audio-only cost is unchanged from before this entry. The wake ladder
+  // itself stays audio-only: it is a standing structure keyed to distance
+  // from centre, which a touch ring's own off-centre front does not cross
+  // in any way the ladder's arithmetic understands, so touch rings draw the
+  // same double stroke as an audio ring without also lighting rungs.
+  for (int i = AUDIO_RIPPLES; i < MAX_RIPPLES; i++) {
+    float birth = uRipples[i].x;
+    float birthLevel = uRipples[i].y;
+    float age = uTime - birth;
+    if (age < 0.0 || age > LIFESPAN) continue;
+
+    vec2 origin = uRipples[i].zw;
+    float tDist = length(uv - origin);
+
+    float percent = age / LIFESPAN;
+    float radius = maxRadius * percent;
+
+    float opacity = percent > FADE_FROM ? 1.0 - (percent - FADE_FROM) / (1.0 - FADE_FROM) : 1.0;
+    opacity *= 0.35 + 0.65 * birthLevel;
+
+    float scale = 0.8 + 0.4 * birthLevel;
+    float outerHalf = max(radius * OUTER_STROKE * 0.5 * scale, px * 0.5);
+    float innerHalf = max(radius * INNER_STROKE * 0.5 * scale, px * 0.5);
+
+    float outer = ring(tDist, radius, outerHalf, px);
+    float inner = ring(tDist, radius * INNER_RADIUS, innerHalf, px);
+
     ink += (outer + inner) * opacity;
   }
 

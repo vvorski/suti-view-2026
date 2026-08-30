@@ -42,8 +42,12 @@ uniform vec4 uSeed;
 
 // Must match MAX_RIPPLES in ripples.ts — GLSL can't import a JS constant, and
 // a mismatch here means scene.ts uploads an array of the wrong length.
-const int MAX_RIPPLES = 8;
-uniform vec2 uRipples[MAX_RIPPLES];
+//
+// Twelve since docs/todo.md entry 33: eight audio slots as before, plus four
+// reserved for a touch emitter carrying (x, y) in .zw — see ripples.ts.
+const int MAX_RIPPLES = 12;
+const int AUDIO_RIPPLES = 8;
+uniform vec4 uRipples[MAX_RIPPLES];
 
 const float TAU = 6.28318530718;
 
@@ -97,7 +101,13 @@ void main() {
     // edges, so every origin near the vertical would be born a long way inside
     // the frame and the view would stop being an edge emitter for half its
     // hits.
-    float a = (hash(birth) + uSeed.x) * TAU;
+    // docs/todo.md entry 33: a touch ring is born at the frame edge nearest
+    // the finger, rather than at a hashed direction — point the same ray
+    // toward the touch instead of a random angle, and the existing
+    // ray-leaves-the-frame math below finds the nearest edge point for free.
+    float a = i < AUDIO_RIPPLES
+      ? (hash(birth) + uSeed.x) * TAU
+      : atan(uRipples[i].w, uRipples[i].z);
     vec2 dir = vec2(cos(a), sin(a));
     vec2 hit = halfExtent / max(abs(dir), vec2(1e-3));
     vec2 origin = dir * min(hit.x, hit.y);

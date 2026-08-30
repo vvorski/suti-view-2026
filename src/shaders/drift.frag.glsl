@@ -37,8 +37,12 @@ uniform vec4 uSeed;
 
 // Must match MAX_RIPPLES in ripples.ts — GLSL can't import a JS constant, and
 // a mismatch here means scene.ts uploads an array of the wrong length.
-const int MAX_RIPPLES = 8;
-uniform vec2 uRipples[MAX_RIPPLES];
+//
+// Twelve since docs/todo.md entry 33: eight audio slots as before, plus four
+// reserved for a touch emitter carrying (x, y) in .zw — see ripples.ts.
+const int MAX_RIPPLES = 12;
+const int AUDIO_RIPPLES = 8;
+uniform vec4 uRipples[MAX_RIPPLES];
 
 const float TAU = 6.28318530718;
 
@@ -117,7 +121,12 @@ void main() {
     float age = uTime - birth;
     if (age < 0.0 || age > LIFESPAN) continue;
 
-    float dist = length(uv - emitterAt(birth, halfExtent));
+    // docs/todo.md entry 33: a touch ring's wander starts at the finger
+    // rather than at its seeded phase — the one branch this view needs,
+    // since it already recomputes its origin per ring rather than sharing
+    // one hoisted value the way Circles does.
+    vec2 origin = i < AUDIO_RIPPLES ? emitterAt(birth, halfExtent) : uRipples[i].zw;
+    float dist = length(uv - origin);
 
     float percent = age / LIFESPAN;
     float radius = maxRadius * percent; // linear, as Circles: the band thickens as it travels

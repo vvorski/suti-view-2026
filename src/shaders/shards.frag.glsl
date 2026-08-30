@@ -31,8 +31,12 @@ uniform vec4 uSeed;
 
 // Must match MAX_RIPPLES in ripples.ts — GLSL can't import a JS constant, and
 // a mismatch here means scene.ts uploads an array of the wrong length.
-const int MAX_RIPPLES = 8;
-uniform vec2 uRipples[MAX_RIPPLES];
+//
+// Twelve since docs/todo.md entry 33: eight audio slots as before, plus four
+// reserved for a touch emitter carrying (x, y) in .zw — see ripples.ts.
+const int MAX_RIPPLES = 12;
+const int AUDIO_RIPPLES = 8;
+uniform vec4 uRipples[MAX_RIPPLES];
 
 const float TAU = 6.28318530718;
 const float LIFESPAN = 2.6; // shorter than Circles: debris, not a swell
@@ -40,8 +44,6 @@ const float FADE_FROM = 0.45;
 
 void main() {
   vec2 uv = (gl_FragCoord.xy - 0.5 * uResolution) / min(uResolution.x, uResolution.y);
-  float dist = length(uv);
-  float angle = atan(uv.y, uv.x);
   float maxRadius = 0.5 * length(uResolution) / min(uResolution.x, uResolution.y);
   float px = 1.0 / min(uResolution.x, uResolution.y);
 
@@ -58,6 +60,15 @@ void main() {
     float birthLevel = uRipples[i].y;
     float age = uTime - birth;
     if (age < 0.0 || age > LIFESPAN) continue;
+
+    // docs/todo.md entry 33: a touch-born burst throws its fragments outward
+    // from the finger rather than from centre. dist/angle move inside the
+    // loop for this — an audio burst still measures from centre every time,
+    // so this costs one extra length()/atan() only on the four touch slots.
+    vec2 origin = i < AUDIO_RIPPLES ? vec2(0.0) : uRipples[i].zw;
+    vec2 rel = uv - origin;
+    float dist = length(rel);
+    float angle = atan(rel.y, rel.x);
 
     float percent = age / LIFESPAN;
     // Ease-out, as in Circles: a shatter throws hardest at the instant of the
@@ -100,9 +111,12 @@ void main() {
   }
 
   // A thin ring at the origin that snaps outward on the highs, so the frame is
-  // not empty between bursts.
+  // not empty between bursts. Always the frame's own centre — this mark says
+  // where an *audio* burst comes from, unaffected by whatever a touch burst
+  // in the loop above used as its own origin.
+  float distFromCentre = length(uv);
   float centreR = 0.010 + 0.030 * uHigh;
-  float centre = 1.0 - smoothstep(0.0, px * 1.5, abs(dist - centreR) - px);
+  float centre = 1.0 - smoothstep(0.0, px * 1.5, abs(distFromCentre - centreR) - px);
   ink += centre * (0.20 + 0.5 * uHigh);
 
   // A break thins the ink rather than draining colour — there is none here.

@@ -29,8 +29,12 @@ uniform float uBreak;
 uniform vec4 uSeed;
 
 // Must match MAX_RIPPLES in ripples.ts.
-const int MAX_RIPPLES = 8;
-uniform vec2 uRipples[MAX_RIPPLES];
+//
+// Twelve since docs/todo.md entry 33: eight audio slots as before, plus four
+// reserved for a touch emitter carrying (x, y) in .zw — see ripples.ts.
+const int MAX_RIPPLES = 12;
+const int AUDIO_RIPPLES = 8;
+uniform vec4 uRipples[MAX_RIPPLES];
 
 const float LIFESPAN = 2.2;
 const float FADE_FROM = 0.5;
@@ -52,8 +56,6 @@ void main() {
   // Position within the cell, -1..1 on each axis, for the inset below.
   vec2 within = (uv - cellCentre) / (cellSize * 0.5);
 
-  // Chebyshev distance in cells — this is what makes the fronts square.
-  float ring = max(abs(cell.x), abs(cell.y));
   float maxRing = 0.5 * length(uResolution) / min(uResolution.x, uResolution.y) / cellSize;
 
   float rand = hash(cell);
@@ -65,6 +67,13 @@ void main() {
     float birthLevel = uRipples[i].y;
     float age = uTime - birth;
     if (age < 0.0 || age > LIFESPAN) continue;
+
+    // docs/todo.md entry 33: the wavefront starts at the finger's cell.
+    // Chebyshev distance in cells — this is what makes the fronts square —
+    // now measured from each ring's own origin cell rather than a value
+    // hoisted once for all twelve, since a touch ring's origin moves.
+    vec2 originCell = i < AUDIO_RIPPLES ? vec2(0.0) : floor(uRipples[i].zw / cellSize);
+    float ring = max(abs(cell.x - originCell.x), abs(cell.y - originCell.y));
 
     float percent = age / LIFESPAN;
     float eased = 1.0 - (1.0 - percent) * (1.0 - percent);

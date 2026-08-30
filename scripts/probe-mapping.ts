@@ -240,8 +240,13 @@ for (const fps of [60, 30, 15, 10, 6]) {
 console.log('\nCircles ripple spawn triggers (see ripples.ts):\n')
 
 function countActive(state: ReturnType<typeof createRippleState>): number {
+  // Stride 4 since docs/todo.md entry 33 widened each slot to carry a
+  // position (birthTime, birthLevel, x, y); this test only ever spawns
+  // audio ripples, so the touch slots stay at their -1000 sentinel and
+  // would not count even with the old stride, but the stride itself has
+  // to match ripples.ts's own or every index after slot 0 reads garbage.
   let n = 0
-  for (let i = 0; i < MAX_RIPPLES; i++) if (state.slots[i * 2] > -100) n++
+  for (let i = 0; i < MAX_RIPPLES; i++) if (state.slots[i * 4] > -100) n++
   return n
 }
 

@@ -32,8 +32,12 @@ uniform vec4 uSeed;
 
 // Must match MAX_RIPPLES in ripples.ts — GLSL can't import a JS constant, and
 // a mismatch here means scene.ts uploads an array of the wrong length.
-const int MAX_RIPPLES = 8;
-uniform vec2 uRipples[MAX_RIPPLES];
+//
+// Twelve since docs/todo.md entry 33: eight audio slots as before, plus four
+// reserved for a touch emitter carrying (x, y) in .zw — see ripples.ts.
+const int MAX_RIPPLES = 12;
+const int AUDIO_RIPPLES = 8;
+uniform vec4 uRipples[MAX_RIPPLES];
 
 const float TAU = 6.28318530718;
 
@@ -88,7 +92,16 @@ void main() {
     float age = uTime - birth;
     if (age < 0.0 || age > LIFESPAN) continue;
 
-    float which = floor(hash(birth) * nodes);
+    // docs/todo.md entry 33: a touch ring fires the nearest of the fixed
+    // nodes rather than an arbitrary hashed one — the finger is an
+    // *influence* on which origin fires, not a new origin of its own, since
+    // this view's identity is its ring of fixed nodes. Closed-form nearest
+    // rather than a small loop over each node: the node spacing is exactly
+    // `sector`, so rounding the touch's own angle to the nearest multiple of
+    // it is the same answer a loop would find.
+    float which = i < AUDIO_RIPPLES
+      ? floor(hash(birth) * nodes)
+      : mod(floor((atan(uRipples[i].w, uRipples[i].z) - phase) / sector + 0.5), nodes);
     float a = phase + which * sector;
     vec2 origin = NODE_RADIUS * vec2(cos(a), sin(a));
     float dist = length(uv - origin);

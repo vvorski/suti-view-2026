@@ -38,7 +38,14 @@ import type { CameraSource } from './camera'
 import { type GeoColour } from './geo-colour'
 import { MERGE_MODES, type MergeModeName } from './merge-modes'
 import type { VisualParams } from './engine'
-import { createRippleState, Envelope, MAX_RIPPLES, updateRipples } from './engine'
+import {
+  createEmitterState,
+  createRippleState,
+  Envelope,
+  MAX_RIPPLES,
+  updateEmitter,
+  updateRipples,
+} from './engine'
 import { MAX_OFFSET, overscanFor, type TumbleState } from './shake'
 import compositeFrag from './shaders/composite.frag.glsl?raw'
 import vertexShader from './shaders/fullscreen.vert.glsl?raw'
@@ -137,6 +144,17 @@ export interface Visualiser {
    * enforced against the combined value.
    */
   setTumble(t: TumbleState, gravity?: { x: number; y: number }): void
+  /**
+   * Where main.ts's pointer recogniser currently believes a hold/drag
+   * emitter should be — docs/todo.md entry 33. `x`/`y` are in the same
+   * normalised space every geometric shader's own `uv` already lives in:
+   * `(gl_FragCoord.xy - 0.5 * uResolution) / min(uResolution.x,
+   * uResolution.y)`, centred on the frame. Only recorded here; `render()`
+   * is what ticks it into the emitter once per frame, so `x`/`y` are
+   * ignored (and may be anything) when `active` is false — the emitter
+   * keeps its own last position for its afterlife.
+   */
+  setTouch(active: boolean, x: number, y: number): void
   /** 0-1, the geometric layer's opacity. Formerly setMix. */
   setGeoAlpha(a: number): void
   /** 0-1, the atmospheric layer's opacity. */
@@ -258,10 +276,14 @@ export function createVisualiser(
     // its four components however suits its own look — scene.ts hands them
     // out and stays agnostic, same as with the fragment shader itself.
     uSeed: { value: new Vector4(Math.random(), Math.random(), Math.random(), Math.random()) },
-    // (birthTime, birthLevel) per active ring. Only the geometric layer's
-    // event-driven views read this; see ripples.ts.
+    // (birthTime, birthLevel, x, y) per active ring — widened from vec2 for
+    // docs/todo.md entry 33's touch emitter, which needs somewhere to carry
+    // *where* it was born. Only the geometric layer's event-driven views
+    // read this; see ripples.ts. x/y are unused (and unwritten) for the
+    // audio-born slots; every view's own origin logic reaches for them only
+    // in the reserved touch range.
     uRipples: {
-      value: Array.from({ length: MAX_RIPPLES }, () => new Vector2(-1000, 0)),
+      value: Array.from({ length: MAX_RIPPLES }, () => new Vector4(-1000, 0, 0, 0)),
     },
   }
 
@@ -373,6 +395,14 @@ export function createVisualiser(
   let historyAccum = 0
   let contextLost = false
   const ripples = createRippleState()
+  // docs/todo.md entry 33. What main.ts's pointer recogniser last reported —
+  // ticked into `emitter` once per rendered frame, in render() below, rather
+  // than acted on directly in setTouch(), so spawn cadence and charge stay
+  // tied to wall-clock time rather than to how often pointer events arrive.
+  const emitter = createEmitterState()
+  let touchActive = false
+  let touchX = 0
+  let touchY = 0
   let lastNovelty = 0
   let lastAutoReroll = -1000
   // The canvas's own client box, as of the last applySize() — see
@@ -611,8 +641,19 @@ export function createVisualiser(
       flow += churn * (1 - 0.85 * params.breakdown) * dt
 
       updateRipples(ripples, now, params.transient, params.breakdown)
+      // docs/todo.md entry 33 — ticked here, not in setTouch(), for the same
+      // reason updateRipples runs here rather than on each audio frame: one
+      // wall-clock tick per rendered frame is what makes charge and spawn
+      // cadence mean seconds rather than pointer-event rate.
+      updateEmitter(emitter, ripples, now, touchActive, touchX, touchY)
       for (let i = 0; i < MAX_RIPPLES; i++) {
-        uniforms.uRipples.value[i].set(ripples.slots[i * 2], ripples.slots[i * 2 + 1])
+        const o = i * 4 // stride must match ripples.ts's own STRIDE
+        uniforms.uRipples.value[i].set(
+          ripples.slots[o],
+          ripples.slots[o + 1],
+          ripples.slots[o + 2],
+          ripples.slots[o + 3],
+        )
       }
 
       // A real structural boundary re-rolls the seed on its own — same
@@ -714,6 +755,12 @@ export function createVisualiser(
       // did, and the overscan has to cover whatever is actually on screen.
       const zoom = Math.max(t.zoom, overscanFor(t.angle, offsetX, offsetY))
       compositeUniforms.uTumble.value.set(t.angle, offsetX, offsetY, zoom)
+    },
+
+    setTouch(active, x, y) {
+      touchActive = active
+      touchX = x
+      touchY = y
     },
 
     setLayerColour(layer, colour) {

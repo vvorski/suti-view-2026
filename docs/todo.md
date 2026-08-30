@@ -2435,7 +2435,7 @@ mapping itself was never touched, only this one shader. `pnpm build`,
 `pnpm lint` both clean.
 
 ### 33. Touch drops a fading emitter into any geometric view
-`status: ready` · added 2026-08-29
+`status: done` · added 2026-08-29 · shipped at build 143
 
 **Do** — in any geometric view, a press-and-hold or a drag places an emitter at
 the finger that spawns rings from that point and dies away over a few seconds.
@@ -2587,6 +2587,58 @@ four emitters live, since the resolution ladder will otherwise absorb a
 regression by quietly dropping quality. Also `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs no · url no · capture no (touch coordinates drive the
 frame and are neither stored nor sent) · dependency no.
+
+**Build note.** Landed close to the plan, with one real deviation forced by
+entry 41 landing in between: `ripples.ts` widened to 12 slots (8 audio + 4
+reserved touch, stride 4 to carry an `(x, y)`), a new `engine/emitter.ts`
+owns the charge/life state machine exactly as specified — floor 0.4,
+saturating at 1.0 over 2.5s, life 2.0–4.0s — and each of the six geometric
+shaders got the table's own origin rule: Circles a genuinely separate
+second loop (its wake ladder is centre-only and cannot share a touch
+ring's distance), the other five a single branch inside their existing
+loop, since none of them hoists a shared distance the way Circles does.
+
+The deviation: entry 41 landed mid-implementation and deleted the exact
+`stopPropagation()` coordination this entry's own text describes reusing —
+its own note said as much ("Build this before entry 33... currently
+describes reusing the capture band's own capture-phase stopPropagation()
+— which is the mechanism this entry deletes"). Reconciled by scoping the
+press-and-hold emitter to the top third specifically — the zone entry 41's
+own text names as "a behaviour of its own" for this entry — rather than
+"anywhere on the picture" as originally written. **Mine**, and it is the
+only scoping that does not need the tap recogniser and the hold recogniser
+to agree on precedence at the same point on screen: a still hold in the
+capture or panel thirds is, by the tap test entry 41 already applies,
+indistinguishable from a slow tap, and letting it also emit would mean a
+screenshot or a panel-open that happened to also draw a stray ring.
+
+A second, small drive-by: `views-probe.html` turned out to already be
+broken (a stale `VisualiserOptions` shape from before the geo/atm colour
+split), discovered while trying to verify this entry the way its own
+Verify line describes; fixed in the same session, credited to entry 32's
+build note since that is where it was actually found and fixed.
+
+Verified in layers, since this harness cannot reach the phone gesture
+itself: `pnpm probe:emitter` (new) checks the charge/life arithmetic
+directly — floor charge, saturation, life-to-zero, a longer hold buying
+more afterlife, and a spawned ripple landing in a reserved touch slot,
+never an audio one. A `views-probe.html`-based check drove all six
+geometric views with an active touch emitter and confirmed every shader
+compiles, links, and renders (`gl.getError()` clean throughout) with mean
+frame brightness rising measurably while touched. A byte-for-byte copy of
+the final merged recogniser, run standalone against synthetic pointer
+events, confirmed all eleven cases that matter: each zone's tap still
+dispatches correctly, a hold or a drag in the top third emits and stops on
+release, a slow hold in the capture or panel thirds never emits but still
+completes its own tap action on release, and a hold in the top third is
+suppressed entirely while the panel is open. `pnpm probe`'s ripple-spawn
+counts needed a stride fix (`i * 2` → `i * 4`) to keep reading the widened
+buffer correctly; fixed, and its output is back to byte-identical with
+before this entry. Not verified anywhere in this harness: the actual feel
+of the gesture on a phone — whether 220ms reads as immediate, whether the
+charge curve feels right under a real thumb — which is a hand question the
+entry's own Verify line already says a mouse cannot answer. `pnpm build`,
+`pnpm lint` both clean.
 
 ### 34. A layer at zero opacity still imposes its blend mode
 `status: ready` · added 2026-08-29

@@ -733,24 +733,98 @@ async function main(): Promise<void> {
     onRandomise: () => visualiser.randomise(),
   })
 
-  // One recogniser for every tap on the picture — docs/todo.md entry 41.
-  // Two separate listeners in two files used to agree only because the
-  // screenshot band listened in the capture phase and called
+  // One recogniser for every gesture on the picture — docs/todo.md entries
+  // 41 and 33. Two separate listeners in two files used to agree only
+  // because the screenshot band listened in the capture phase and called
   // stopPropagation() before hud.ts's own bubble-phase tap-to-open listener
   // ran. hud.ts no longer listens for that tap at all; this decides
-  // tap-versus-not once and dispatches by zone, so where a tap goes is a
-  // value read in one place rather than a race reasoned about after the
-  // fact — and neither path needs stopPropagation() any more.
+  // tap-versus-hold-versus-drag once and dispatches by zone, so where a
+  // gesture goes is a value read in one place rather than a race reasoned
+  // about after the fact — and no path needs stopPropagation() any more.
+  //
+  // The top third does nothing on a plain tap (entry 41), which is what
+  // entry 33's press-and-hold emitter fills — reconciling the two: entry
+  // 33's own text predates the three zones and says "any" screen position,
+  // but a hold anywhere in the capture or panel thirds would race the tap
+  // those thirds already own (a still hold released there is, by the tap
+  // test below, indistinguishable from a tap). **Mine.** Scoping the
+  // emitter to the one zone a tap already leaves dead is what entry 41's
+  // own note ("entry 33 gives the top third a behaviour of its own") is
+  // describing, and it is the only scoping that does not need the two
+  // gestures to also agree on precedence at the same point on screen.
   {
+    // Long enough that an ordinary tap-and-release never arms it, short
+    // enough that "holding a finger still for a moment" feels immediate.
+    // **Mine** — entry 33 names the two thresholds but not a value for
+    // either; the drag one reuses TAP_SLOP_PX rather than inventing a
+    // second distance, since that is already this file's answer to "how
+    // far is a drag" everywhere else a gesture needs to tell one from a tap.
+    const HOLD_MS = 220
+
     let downX = 0
     let downY = 0
     let downZone: ReturnType<typeof zone> = 'none'
+    let emitting = false
+    let holdTimer: number | undefined
+
+    // The canvas's own box, not the window's: the drawing buffer can be a
+    // different aspect from the viewport under the resolution ladder, but
+    // every geometric shader's own `uv` is built from `gl_FragCoord` against
+    // `uResolution`, which tracks the canvas — so converting against the
+    // canvas's client rect is what actually lands on the same point the
+    // shader would draw at. y is flipped: gl_FragCoord's origin is the
+    // bottom of the frame, DOM client coordinates the top.
+    const toShaderUv = (clientX: number, clientY: number): [number, number] => {
+      const rect = canvas.getBoundingClientRect()
+      const minDim = Math.min(rect.width, rect.height)
+      return [
+        (clientX - rect.left - rect.width / 2) / minDim,
+        (rect.height / 2 - (clientY - rect.top)) / minDim,
+      ]
+    }
+
+    const startEmitting = (clientX: number, clientY: number): void => {
+      if (emitting || downZone !== 'none' || document.querySelector('.hud-scrim.open')) return
+      emitting = true
+      const [x, y] = toShaderUv(clientX, clientY)
+      visualiser.setTouch(true, x, y)
+    }
+
+    const stopEmitting = (): void => {
+      window.clearTimeout(holdTimer)
+      if (!emitting) return
+      emitting = false
+      // x/y are ignored while inactive — the emitter keeps its own last
+      // position through its afterlife. See Visualiser.setTouch.
+      visualiser.setTouch(false, 0, 0)
+    }
+
     document.addEventListener('pointerdown', (e) => {
       downX = e.clientX
       downY = e.clientY
       downZone = zone(e.clientY)
+      emitting = false
+      window.clearTimeout(holdTimer)
+      if (downZone === 'none') {
+        holdTimer = window.setTimeout(() => startEmitting(e.clientX, e.clientY), HOLD_MS)
+      }
+    })
+    document.addEventListener('pointermove', (e) => {
+      if (emitting) {
+        const [x, y] = toShaderUv(e.clientX, e.clientY)
+        visualiser.setTouch(true, x, y)
+        return
+      }
+      if (downZone === 'none' && Math.hypot(e.clientX - downX, e.clientY - downY) > TAP_SLOP_PX) {
+        startEmitting(e.clientX, e.clientY)
+      }
     })
     document.addEventListener('pointerup', (e) => {
+      // Ends an emitter before anything else: an emitting gesture's release
+      // is never also a tap, and downZone is 'none' whenever emitting is
+      // true, so the zone dispatch below already falls through for it —
+      // this just stops the emitter promptly rather than waiting for that.
+      stopEmitting()
       // Inert while the HUD is open: the panel owns the screen then, and a
       // tap here is what closes it (the scrim's own listener in hud.ts).
       if (document.querySelector('.hud-scrim.open')) return
@@ -769,6 +843,7 @@ async function main(): Promise<void> {
       if (gate && !gate.hidden && gate.contains(e.target as Node)) return
       panel.open()
     })
+    document.addEventListener('pointercancel', stopEmitting)
   }
 
   // The way back into fullscreen once it has been lost — docs/todo.md entry

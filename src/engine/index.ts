@@ -9,6 +9,8 @@
  *   slow.ts      AudioFrame → Character    30 s – 5 min
  *   features.ts  descriptors both tiers share
  *   ripples.ts   the transient → event-buffer edge detector
+ *   emitter.ts   the touch → event-buffer equivalent, a held gesture rather
+ *                than a threshold crossing
  *
  * This became a directory when the slow tier arrived. Before that there was one
  * interpretation of the captured audio living behind an interface, which is a
@@ -43,5 +45,8 @@ export type { Features } from './features.ts'
 export { SlowAnalysis, BLANK } from './slow.ts'
 export type { Character } from './slow.ts'
 
-export { createRippleState, updateRipples, MAX_RIPPLES } from './ripples.ts'
+export { createRippleState, updateRipples, spawnAt, MAX_RIPPLES } from './ripples.ts'
 export type { RippleState } from './ripples.ts'
+
+export { createEmitterState, updateEmitter } from './emitter.ts'
+export type { EmitterState } from './emitter.ts'
