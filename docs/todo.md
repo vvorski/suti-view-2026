@@ -2620,3 +2620,133 @@ Then on screen at 320×568 and 360×640, because the merge arcs are a shared
 surface. `pnpm build`, `pnpm lint`, and `pnpm probe` unchanged.
 **Hard stops** — prefs no (no field added, changed or reinterpreted) · url no ·
 capture no · dependency no.
+
+### 35. A light shake nudges the picture instead of repainting it
+`status: ready` · added 2026-08-30
+
+**Do** — make the ladder's bottom rung a *perturbation*: the two layer colours
+and the two opacities move a little from where they are, rather than the
+colours being re-rolled from scratch. The full colour re-roll moves up one rung
+to join the re-seed.
+**Why** — a light shake currently replaces the palette outright, which is the
+largest change the bottom of the scale can make, not the smallest.
+
+**Decided**
+- This is the same correction entry 29 made, one rung further down → that entry
+  moved the *re-seed* off the bottom rung on the principle that the ladder
+  should be ordered "by how little of what you had survives". A full colour
+  re-roll fails that test the same way: nothing of the palette survives it.
+  A nudge is the rung that was missing beneath it. **Mine**, that this is a
+  continuation rather than a reversal — entry 29's principle is what decides
+  it, and "tweak" was the word in the request.
+- New ladder → **nudge at any qualifying shake; full colour re-roll joins the
+  re-seed at 0.30**; merge, views and everything unchanged at 0.45, 0.70, 0.90.
+  So a light shake shifts the picture you have, a deliberate one hands you a
+  new one. That is the same sentence entry 29 ended on, now true one rung
+  lower.
+- What is nudged → **`geoColour`, `atmColour`, `geoAlpha`, `atmAlpha`**, and
+  nothing else. They are the four continuous quantities that are always
+  visible whatever the view. **Mine.** Deliberately excluded: `camColour`,
+  which is invisible unless the room is up, and `passthrough`, because raising
+  the room a little is not a small change to the picture — it is a different
+  picture, and entry 22 already governs when the camera may be touched.
+- How much is "a little" → **±0.08 per colour channel and ±0.06 per opacity**,
+  absolute, not scaled by depth. **Mine**, and the reason it is not
+  depth-scaled is measured: `pnpm probe:shake` reports a depth of exactly
+  **0.00** for both gentle sustained cases, so anything multiplied by depth is
+  multiplied by zero at precisely the shake this entry is about. The nudge has
+  to be a floor, not a fraction.
+- Repeated light shakes are a random walk, so **the floors from entry 21 apply
+  to the nudge, not only to the re-roll** → each nudged channel clamps to
+  `[0.2, 1]` with `SHUFFLE_MIN_DOMINANT_CHANNEL` re-applied to whichever
+  channel leads afterwards, and each nudged opacity clamps to
+  `[SHUFFLE_MIN_ALPHA, 1]`. Without this, twenty light shakes can walk the
+  picture to black one step at a time, which is entry 21's failure arriving by
+  a slower road. **Mine**, and worth a comment at the clamp saying so.
+- It needs the current values, which `shuffled()` cannot see → it is pure and
+  random today, returning absolute values with no knowledge of what is on
+  screen. A nudge is relative, so **`shuffled()` gains the current four as a
+  parameter and the `Hud` interface gains a read-only accessor** for them.
+  **Mine**, over the alternative of doing the nudge inside `Hud.adopt()`:
+  that method's own contract says it "only ever records the result", and
+  moving a random roll inside it would break the one property that makes the
+  shuffle testable from outside.
+- Not a `Prefs` change → no field is added, removed or reinterpreted. The
+  accessor exposes fields that already exist, and `Shuffle` already carries all
+  four as optional. The Hard Stop is not tripped.
+
+**Lands in**
+- `src/main.ts:288`, `shuffled()` — the signature, the nudge helpers, and the
+  colour block moving behind `SHUFFLE_RESEED`.
+- `src/main.ts:186-192` — the file comment stating colours have no threshold of
+  their own; it is about to be exactly wrong, the same way entry 29 found it.
+- `src/main.ts:575-579`, `shuffle()` — passes the current values in.
+- `src/hud.ts:208-228`, the `Hud` interface — the accessor, next to
+  `autopilot()`, which is the existing precedent for reading one fact back out.
+
+**Done when** — on the phone, a light shake visibly shifts the palette and the
+balance without the picture becoming a different picture, and ten light shakes
+in a row leave something still worth looking at rather than a black or grey
+frame. `pnpm probe:shake`'s gentle sustained cases still report depth 0.00 and
+still fire.
+**Verify** — a node probe walking the nudge 200k times from a random start,
+asserting the clamps hold and the mean brightness does not trend downward,
+because a random walk is exactly the thing that looks fine for five shakes and
+fails for fifty — the same method that proved entry 21's floors. Then
+`pnpm probe:shake`, the phone, `pnpm build`, `pnpm lint`.
+**Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 36. A hard shake asks for more force than a phone can report
+`status: ready` · added 2026-08-30
+
+**Do** — lower `PEAK_CEILING` from 45 to 36 m/s². Nothing else.
+**Why** — the top of the ladder currently needs a 42.3 m/s² peak, and a
+genuinely violent shake sampled at a realistic rate reports 40.6, so the rung
+is unreachable in practice rather than merely hard.
+
+**Decided**
+- It is the ceiling, not the thresholds → `intensity()` is
+  `(peak - 18) / (45 - 18)`, so the four rungs sit at **26.1, 30.1, 36.9 and
+  42.3 m/s²**. Moving four constants to fix a scale is how they drift apart;
+  moving the one that defines "hardest" fixes all four at once and keeps their
+  relative spacing, which entry 15 chose deliberately.
+- The evidence that 45 is unreachable, from `pnpm probe:shake`'s own cases →
+  the violent shake reads **43.3** sampled at 6 Hz but **40.6** at 12 Hz, and a
+  deliberate one reads 27.8 at 4 Hz but **21.8** at 12 Hz. Sampling a shake
+  under-reports its peak, real hardware samples it, and 45 was taken from the
+  best-sampled synthetic case in the suite. So the scale's top is calibrated
+  against a number the sensor does not produce.
+- 36, specifically → **Mine.** It puts both violent cases at a saturated 1.00,
+  with the 12 Hz one clearing the top rung by 6.4 m/s² rather than missing it
+  by 1.7, and it leaves a deliberate shake at 0.54 rather than 0.36 — still
+  short of the top two rungs, so "everything" stays something you have to mean.
+  The rungs become 23.4, 26.1, 30.6 and 34.2 m/s².
+- `STRONG_UP` stays at 18 → **Mine**, and this is the part not to get talked
+  into. It decides what *counts* as a shake, not how hard the hardest one is;
+  lowering it is how a knock, a pocket or a walk starts re-rolling the picture,
+  which is the failure the reversal counter exists to prevent and which the
+  probe has three cases guarding. The request was that a hard shake take less
+  force, not that more things become shakes.
+- Knock-on for the haptics → the buzz shares this scale on purpose
+  (`shake.ts:74`, exported so the two cannot drift). The buzz will reach full
+  strength sooner, which is correct and in the same direction as the request.
+- **Build entry 34 first, or in the same change.** At the new ceiling a plain
+  deliberate shake clears `SHUFFLE_MERGE` where today it does not, so merge
+  modes start rolling on ordinary shakes — and until entry 34 lands, one roll
+  in three puts the atmosphere on Multiply or Overlay, which can black the
+  frame. This entry makes that path *more* likely, so shipping it alone would
+  turn a rare fault into a common one.
+
+**Lands in**
+- `src/shake.ts:84` — the constant, and its comment, which names 45 as
+  "probe-shake.ts's own violent shake case" and should now say why that case
+  was the wrong thing to calibrate against.
+
+**Done when** — `pnpm probe:shake` reports 1.00 for both violent cases and
+0.54 for the deliberate one, and on the phone a hard shake that feels hard
+reaches the top rung rather than stopping one short of it.
+**Verify** — `pnpm probe:shake` for the depth column, `pnpm probe:haptics`
+because the buzz reads the same scale, then the phone, which is the only place
+"asks for too much force" can actually be judged. Also `pnpm build`,
+`pnpm lint`.
+**Hard stops** — prefs no · url no · capture no · dependency no.
