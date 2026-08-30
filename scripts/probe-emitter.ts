@@ -1,8 +1,10 @@
 /**
- * Offline check of the touch emitter's charge/life math (docs/todo.md entry
- * 33): does a longer hold actually charge higher and buy more afterlife,
- * does the afterlife actually run out, and does a spawned ripple land in a
- * reserved touch slot rather than stepping on the audio ones?
+ * Offline check of the touch emitter's charge/life math (docs/todo.md
+ * entries 33, 50 and 57): does a longer hold actually charge higher and buy
+ * more afterlife, does the afterlife actually run out, does a spawned
+ * ripple land in a reserved touch slot rather than stepping on the audio
+ * ones, does drag speed boost the birth level, and does a drag spawn on
+ * distance moved rather than only on the clock?
  *
  * Pure state, no DOM and no clock of its own — same discipline as
  * ripples.ts and shake.ts — so this runs against synthetic `now`/`dt`
@@ -23,16 +25,17 @@ function check(name: string, ok: boolean, detail: string): void {
 
 const DT = 1 / 60
 
-// 1. The briefest qualifying hold still charges at the floor, not at zero —
-//    the entry's own reasoning for why 0.4 and not 0: an emitter that began
-//    at nothing would read as unresponsive at exactly the moment someone is
-//    learning the gesture.
+// 1. The briefest qualifying contact still charges at the floor, not at
+//    zero — the floor is what a bare tap is worth since entry 50 removed
+//    the gesture threshold (0.4 → 0.6): an emitter that began at nothing
+//    would read as unresponsive at exactly the moment someone is learning
+//    the gesture, and a tap is the first touch anyone gives this thing.
 {
   const ripples = createRippleState()
   const emitter = createEmitterState()
   updateEmitter(emitter, ripples, 0, true, 0, 0)
-  check('an instant hold charges at the 0.4 floor, not 0', emitter.releaseCharge === 0.4, String(emitter.releaseCharge))
-  check('an instant hold has the 2.0 minimum life', emitter.life === 2, String(emitter.life))
+  check('an instant contact charges at the 0.6 floor, not 0', emitter.releaseCharge === 0.6, String(emitter.releaseCharge))
+  check('an instant contact has the 2.0 minimum life', emitter.life === 2, String(emitter.life))
 }
 
 // 2. Charge rises with contact time and saturates at 1.0 by CHARGE_TIME
@@ -118,9 +121,53 @@ const DT = 1 / 60
   const near = (a: number, b: number): boolean => Math.abs(a - b) < 1e-5
   check(
     'the first touch slot carries the birth, charge, and position',
-    touchSlot0[0] === 5 && near(touchSlot0[1], 0.4) && near(touchSlot0[2], 0.4) && near(touchSlot0[3], -0.2),
+    touchSlot0[0] === 5 && near(touchSlot0[1], 0.6) && near(touchSlot0[2], 0.4) && near(touchSlot0[3], -0.2),
     JSON.stringify(Array.from(touchSlot0)),
   )
+}
+
+// 6. Drag speed boosts a spawned ring's birth level on top of charge,
+//    capped at 1 — entry 50's "a fling throws further" — and never lowers
+//    it below what charge alone would give.
+{
+  const ripples = createRippleState()
+  const still = createEmitterState()
+  const fast = createEmitterState()
+  updateEmitter(still, ripples, 0, true, 0, 0, 0)
+  updateEmitter(fast, ripples, 0, true, 0, 0, 3)
+  check('drag speed raises the birth level above a still contact\'s', fast.releaseCharge > still.releaseCharge, `${fast.releaseCharge} vs ${still.releaseCharge}`)
+  const veryFast = createEmitterState()
+  updateEmitter(veryFast, ripples, 0, true, 0, 0, 50)
+  check('the boosted level still caps at 1', veryFast.releaseCharge === 1, String(veryFast.releaseCharge))
+}
+
+// 7. A drag spawns on distance moved, not only on the clock — entry 57.
+//    Two updates a frame apart, moved well past SPAWN_DIST, should each
+//    spawn even though far less than SPAWN_INTERVAL has elapsed.
+{
+  const ripples = createRippleState()
+  const emitter = createEmitterState()
+  updateEmitter(emitter, ripples, 0, true, 0, 0)
+  const spawnsAfterFirst = ripples.touchCursor
+  updateEmitter(emitter, ripples, 1 / 60, true, 0.2, 0) // far past SPAWN_DIST, well under SPAWN_INTERVAL
+  check(
+    'a large move one frame later spawns again despite the short interval',
+    ripples.touchCursor !== spawnsAfterFirst,
+    `cursor stayed at ${ripples.touchCursor}`,
+  )
+}
+
+// 8. Holding still relies on the clock alone — no distance to spend, and it
+//    still has to keep emitting (entry 33's original behaviour, unchanged).
+{
+  const ripples = createRippleState()
+  const emitter = createEmitterState()
+  updateEmitter(emitter, ripples, 0, true, 0, 0)
+  const afterFirst = ripples.touchCursor
+  updateEmitter(emitter, ripples, 0.05, true, 0, 0) // no movement, under SPAWN_INTERVAL
+  check('no movement and no elapsed interval spawns nothing new', ripples.touchCursor === afterFirst, 'spawned early')
+  updateEmitter(emitter, ripples, 0.2, true, 0, 0) // no movement, past SPAWN_INTERVAL
+  check('a still hold still spawns once the interval elapses', ripples.touchCursor !== afterFirst, 'never spawned')
 }
 
 console.log(failures === 0 ? '\nall emitter checks passed' : `\n${failures} failed`)

@@ -4637,7 +4637,45 @@ this can actually ship with. `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 50. Touch is generous: a tap plays, everywhere
-`status: building` · added 2026-08-30 · started 2026-08-30 · built together with entry 57, per that entry's own instruction
+`status: done` · added 2026-08-30 · shipped at build 184 (built together with entry 57)
+
+**Build note** — the hold/drag threshold that used to gate the geometric
+emitter is gone from `main.ts`'s `dispatchTouches()`: the inclusion test
+for the emitter is now `!t.onChip && !hudOpen`, with no zone and no
+`downFor`/drag-distance check at all, so every one of the three zones —
+top, panel, capture — qualifies from the instant a contact begins, exactly
+per Decided. `HOLD_S` and the stale comment explaining the old
+threshold-reconciliation between entries 33 and 41 are both deleted rather
+than left as dead weight. `CHARGE_FLOOR` moved 0.4 → 0.6 in `emitter.ts`,
+with its comment rewritten to describe what a *tap* is worth rather than
+a threshold that no longer exists. Drag speed now boosts a spawned ring's
+birth level on top of charge (`SPEED_LEVEL_SCALE`, **Mine**, no value
+named in the entry), reading the same velocity `engine/touch.ts` already
+computes for entry 48's atmospheric stream — "both read the velocity
+entry 49's field already computes," per Decided.
+
+"Rapid taps stack rather than replace, up to the four slots entry 49
+establishes" **did not ship as literally written** — entry 57 landed in
+the queue after this one and explicitly absorbs this exact clause,
+replacing "four slots keyed by pointer" with "a pool of eight, keyed by
+contact." Building them together (that entry's own instruction, to avoid
+this one satisfying 57's Done-when by coincidence) means the stacking
+behaviour shipped through 57's newer, more correct mechanism — see that
+entry's build note for why pointer-keyed slots were wrong in the first
+place (a finger that taps, lifts and taps again can reuse the same
+pointer id on real hardware, and the old slots would have silently
+treated that as one contact continuing rather than two).
+
+Verified live, via `engine/touches.ts` and `engine/emitter.ts` loaded
+directly over Vite's dev server (bypassing the Start-gated harness
+limitation, same technique as entries 48/49): synthetic taps in all three
+zones (`none`/`panel`/`capture`) each satisfy the emitter's inclusion
+test with zone recorded but never checked; `createVisualiser()` renders a
+frame with two simultaneous contacts and `gl.getError()` returns 0.
+`pnpm build`, `pnpm lint`, and `pnpm probe:emitter` (extended with two new
+checks for the speed boost) all pass. See entry 57's build note for the
+shared pool-eviction and ripple-slot verification, which covers both
+entries' Done-when together since they landed in one commit.
 
 **Do** — make every contact leave something at the point it happened, with no
 threshold in front of it. This entry is the taste direction for entries 33, 41,
@@ -5233,7 +5271,60 @@ also fixes is only visible in that state, at 320×568 and 360×640. Force a
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 57. A drag lays a trail, and taps accumulate
-`status: building` · added 2026-08-30 · started 2026-08-30 · built together with entry 50, per this entry's own instruction
+`status: done` · added 2026-08-30 · shipped at build 184 (built together with entry 50)
+
+**Build note** — `MAX_RIPPLES` 12 → 24 in `ripples.ts` and all six
+geometric shaders (`AUDIO_RIPPLES` unchanged at 8, so `TOUCH_RIPPLES` goes
+4 → 16 automatically), verified across all seven sites by entry 59's
+probe, built and landed just ahead of this one for exactly the reason its
+own Decided text gives. `emitter.ts` gained a distance trigger
+(`SPAWN_DIST = 0.05` uv, **Mine**) alongside the existing time trigger, so
+a spawn fires on *either* — a drag now leaves a continuous-looking line
+rather than rings every 150ms regardless of speed, while a stationary
+hold (no distance to spend) still relies on the clock exactly as before.
+
+**The emitter pool is the harder half, and it required a real
+architectural change, not a parameter bump.** Entry 49 kept four fixed
+scene.ts slots keyed by the touch field's own pointer id — reasonable
+when "one emitter per currently-down finger" was the whole requirement,
+wrong once "a finger that taps, lifts, and taps again should leave two"
+is: a platform's pointer id can be reused across two separate contacts of
+the same finger, and slots keyed by that id would read a second tap as
+"the same emitter continuing," silently dropping the stacking this entry
+and entry 50 both ask for. Fixed with a `contactId` layer: `main.ts` now
+mints a fresh, monotonically increasing id on every qualifying `down`
+(kept in a `Map<pointerId, contactId>`, cleared on `up`/`cancel`) and
+`scene.ts`'s pool — now 8 slots, up from 4 — is keyed by that id instead.
+"Oldest recycled first" is implemented as least-remaining-`life` recycled
+first when the pool is full and no slot has naturally freed: a literal
+spawn-order FIFO would need a second field this pool has no other use
+for, and the least-life emitter is, in every case that matters, the one
+closest to disappearing on its own regardless — recycling it early is the
+least noticeable choice available. **Mine**, stated as an interpretation
+of "oldest" rather than assumed identical to it.
+
+Verified: a synthetic pointer id tapping, lifting, and tapping again
+(via `engine/touches.ts` loaded directly over Vite's dev server, real
+`PointerEvent`s dispatched at `document`, mirroring `main.ts`'s exact
+listener code) mints two distinct contact ids, not one reused — the
+precise bug this entry exists to close. A standalone script against the
+real `emitter.ts`/`ripples.ts` filled all 8 pool slots with 8 fresh
+contacts, released them, and confirmed a 9th contact arriving mid-decay
+recycles a slot rather than being dropped. `scene.ts`'s `setTouches()`
+call (with real `contactId`/`speed` fields) rendered one frame through
+`createVisualiser()` with `MAX_RIPPLES` at 24 and `gl.getError()` returned
+0 — the shader compiles and runs with the new bound. `pnpm probe:ripples`
+(entry 59) confirms all seven sites agree at 24/8; `pnpm probe:emitter`
+(extended with two new checks) confirms the distance trigger and the
+speed boost. `pnpm build`, `pnpm lint` both clean.
+
+Not verified: real frame-time cost of sixteen `length()` calls per
+fragment against four — the entry's own pass/fail condition — since this
+harness has no GPU frame-time measurement and no physical phone. This is
+the one finding that could still reverse the touch-slot count if it
+fails on real hardware; the entry's own fallback (12 touch slots instead
+of 16) is unapplied and would need a one-line revert of `MAX_RIPPLES` to
+20 if that measurement comes back bad.
 
 **Do** — spawn ripples by **distance travelled** as well as elapsed time, raise
 the touch slot count so a trail is longer than four rings, and let a finger

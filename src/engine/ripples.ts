@@ -15,13 +15,17 @@
 
 // Must match MAX_RIPPLES in every geometric shader — GLSL can't import this
 // constant, so a change here has to be made by hand on every side.
+// scripts/probe-ripples.ts (entry 59) checks that it actually did.
 //
-// Twelve, not eight — docs/todo.md entry 33 reserves four slots for a touch
-// emitter alongside the original eight for audio. Reserving rather than
-// sharing the one buffer keeps a finger from evicting the music's own rings
-// within a second: AUDIO_RIPPLES stays exactly the buffer Circles always
-// had, and touch gets its own ring-buffer cursor over the slots above it.
-export const MAX_RIPPLES = 12
+// Twenty-four, not twelve — docs/todo.md entry 57 raises the touch band from
+// four slots to sixteen, on top of the eight audio always had. Four slots in
+// a ring buffer meant the fifth ring of any drag overwrote the first:
+// spawning more often (this entry also adds a distance-based trigger, below)
+// without more slots would have made a *shorter* trail, not a longer one, by
+// recycling the buffer faster. AUDIO_RIPPLES is unchanged: reserving rather
+// than sharing the one buffer keeps a finger from evicting the music's own
+// rings within a second, and nothing about that argument is about the music.
+export const MAX_RIPPLES = 24
 // Exported so scripts/probe-ripples.ts (docs/todo.md entry 59) can check
 // every geometric shader's own copy of this number against the one place it
 // is actually meant to live — before this it was module-private, and

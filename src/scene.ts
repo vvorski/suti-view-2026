@@ -149,17 +149,24 @@ export interface Visualiser {
   setTumble(t: TumbleState, gravity?: { x: number; y: number }): void
   /**
    * Every touch main.ts's pointer recogniser currently believes should be
-   * emitting — docs/todo.md entries 33 and 49. `x`/`y` are in the same
-   * normalised space every geometric shader's own `uv` already lives in:
-   * `(gl_FragCoord.xy - 0.5 * uResolution) / min(uResolution.x,
-   * uResolution.y)`, centred on the frame. Only recorded here; `render()`
-   * is what ticks each one into its own emitter slot once per frame, up to
-   * four at once, matching `engine/touches.ts`'s own cap. A touch absent
-   * from one call that was present in the last is simply not emitting any
-   * more — its slot's emitter keeps its own last position through its
-   * afterlife regardless.
+   * emitting — docs/todo.md entries 33, 49, 50 and 57. `x`/`y` are in the
+   * same normalised space every geometric shader's own `uv` already lives
+   * in: `(gl_FragCoord.xy - 0.5 * uResolution) / min(uResolution.x,
+   * uResolution.y)`, centred on the frame. `speed` is the same drag
+   * velocity (uv units/second) `engine/touch.ts` reads for the atmospheric
+   * views, 0 for a still contact — entry 50's "a fling throws further".
+   *
+   * `contactId` is not the touch field's own pointer id: main.ts mints a
+   * fresh one on every qualifying `down`, so a finger that taps, lifts and
+   * taps again is two contacts rather than one pointer id reused, and gets
+   * two independent emitters rather than one restarted (entry 57). Only
+   * recorded here; `render()` is what ticks each one into its own emitter
+   * slot once per frame, up to eight at once. A contact absent from one
+   * call that was present in the last is simply not emitting any more —
+   * its slot's emitter keeps its own last position through its afterlife
+   * regardless.
    */
-  setTouches(touches: ReadonlyArray<{ id: number; x: number; y: number }>): void
+  setTouches(touches: ReadonlyArray<{ contactId: number; x: number; y: number; speed: number }>): void
   /**
    * What the picture as a whole should feel from every finger on it right
    * now — docs/todo.md entry 48, and independent of `setTouches()` above:
@@ -419,19 +426,27 @@ export function createVisualiser(
   // cadence and charge stay tied to wall-clock time rather than to how often
   // pointer events arrive.
   //
-  // Four fixed slots, matching ripples.ts's four reserved touch slots — a
-  // slot's `id` is `null` while free. A slot is claimed by whichever
-  // incoming touch id matches it, or the first free slot for a new id; one
-  // that drops out of the incoming set keeps ticking through its own
-  // afterlife (see emitter.ts) rather than being freed immediately, exactly
-  // as the single emitter this replaces did. A touch with no free slot is
-  // simply not emitted this frame — the same "a fifth is ignored" rule
-  // entry 49's touch field already applies one level up.
-  const emitterSlots: { id: number | null; state: EmitterState }[] = Array.from({ length: 4 }, () => ({
-    id: null,
+  // Eight fixed slots — docs/todo.md entry 57, up from the four this
+  // replaces. A slot's `contactId` is `null` while free. Keyed by *contact*
+  // rather than by pointer id on purpose: entry 49's field can report the
+  // same pointer id across two separate taps of the same finger (lift,
+  // then tap again), and reusing a slot for "the same id" would restart an
+  // emitter that should instead have started a second, independent one
+  // alongside the first, which is still dying — main.ts's `dispatchTouches`
+  // mints a fresh, monotonically increasing contact id on every qualifying
+  // `down`, specifically so this pool sees two contacts rather than one
+  // pointer touching down twice. A contact that drops out of the incoming
+  // set keeps ticking through its own afterlife (see emitter.ts) rather
+  // than being freed immediately. When a new contact arrives and every slot
+  // already holds one, the slot with the least life remaining — the one
+  // closest to disappearing on its own regardless — is recycled rather than
+  // the new contact being dropped, matching "a pool of eight, oldest
+  // recycled first."
+  const emitterSlots: { contactId: number | null; state: EmitterState }[] = Array.from({ length: 8 }, () => ({
+    contactId: null,
     state: createEmitterState(),
   }))
-  let touches: ReadonlyArray<{ id: number; x: number; y: number }> = []
+  let touches: ReadonlyArray<{ contactId: number; x: number; y: number; speed: number }> = []
   // docs/todo.md entry 48. What main.ts's dispatchTouches() last reported
   // about the picture as a whole (contact, hold, drag speed), independent of
   // the positioned per-touch emitters above — the atmospheric views have no
@@ -680,28 +695,32 @@ export function createVisualiser(
       flow += churn * (1 - 0.85 * params.breakdown) * dt
 
       updateRipples(ripples, now, params.transient, params.breakdown)
-      // docs/todo.md entries 33 and 49 — ticked here, not in setTouches(),
-      // for the same reason updateRipples runs here rather than on each
-      // audio frame: one wall-clock tick per rendered frame is what makes
-      // charge and spawn cadence mean seconds rather than pointer-event
-      // rate. Slots whose id is no longer in `touches` still get ticked,
-      // inactive, so their afterlife keeps running down; a slot only frees
-      // once its own life reaches 0.
+      // docs/todo.md entries 33, 49 and 57 — ticked here, not in
+      // setTouches(), for the same reason updateRipples runs here rather
+      // than on each audio frame: one wall-clock tick per rendered frame is
+      // what makes charge and spawn cadence mean seconds rather than
+      // pointer-event rate. Slots whose contact is no longer in `touches`
+      // still get ticked, inactive, so their afterlife keeps running down;
+      // a slot only frees once its own life reaches 0.
       for (const slot of emitterSlots) {
-        const live = slot.id === null ? undefined : touches.find((t) => t.id === slot.id)
+        const live = slot.contactId === null ? undefined : touches.find((t) => t.contactId === slot.contactId)
         if (live) {
-          updateEmitter(slot.state, ripples, now, true, live.x, live.y)
-        } else if (slot.id !== null) {
+          updateEmitter(slot.state, ripples, now, true, live.x, live.y, live.speed)
+        } else if (slot.contactId !== null) {
           updateEmitter(slot.state, ripples, now, false, 0, 0)
-          if (slot.state.life <= 0) slot.id = null
+          if (slot.state.life <= 0) slot.contactId = null
         }
       }
       for (const t of touches) {
-        if (emitterSlots.some((s) => s.id === t.id)) continue
-        const free = emitterSlots.find((s) => s.id === null)
-        if (!free) continue // all four slots busy with other still-decaying emitters
-        free.id = t.id
-        updateEmitter(free.state, ripples, now, true, t.x, t.y)
+        if (emitterSlots.some((s) => s.contactId === t.contactId)) continue
+        // A free slot first; if the pool is genuinely full, recycle the one
+        // with the least life left rather than dropping the new contact —
+        // "a pool of eight, oldest recycled first" (entry 57).
+        const free =
+          emitterSlots.find((s) => s.contactId === null) ??
+          emitterSlots.reduce((a, b) => (a.state.life <= b.state.life ? a : b))
+        free.contactId = t.contactId
+        updateEmitter(free.state, ripples, now, true, t.x, t.y, t.speed)
       }
       for (let i = 0; i < MAX_RIPPLES; i++) {
         const o = i * 4 // stride must match ripples.ts's own STRIDE

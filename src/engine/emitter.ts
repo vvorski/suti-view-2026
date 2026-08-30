@@ -1,49 +1,76 @@
 /**
- * The touch-driven emitter — docs/todo.md entry 33.
+ * The touch-driven emitter — docs/todo.md entries 33, 50 and 57.
  *
- * A press-and-hold or a drag places an emitter at the finger that spawns
- * rings from that point in whichever geometric view is showing, and dies
- * away over a few seconds after the finger lifts. Contact time charges a
- * single quantity that does everything the gesture needs to communicate
- * — see the entry's own reasoning for why one knob rather than three: a
- * longer hold spawns brighter rings while the finger is down (via the
- * charge fed straight into a ripple's birth level, the same field a drum
- * hit's loudness rides), and it grants the emitter more life to keep firing
+ * A tap, hold or drag places an emitter at the finger that spawns rings from
+ * that point in whichever geometric view is showing, and dies away over a
+ * few seconds after the finger lifts. Contact time charges a single
+ * quantity that does most of what the gesture needs to communicate — see
+ * the entry's own reasoning for why one knob rather than three: a longer
+ * hold spawns brighter rings while the finger is down (via the charge fed
+ * straight into a ripple's birth level, the same field a drum hit's
+ * loudness rides), and it grants the emitter more life to keep firing
  * weaker rings after it lifts, so the response thins out rather than
- * stopping dead.
+ * stopping dead. Drag speed (entry 50's "a fling throws further") rides
+ * alongside charge rather than replacing it, boosting the birth level a
+ * fast swipe leaves without taking anything away from a slow, deliberate
+ * hold.
  *
  * Pure state and a pure update function, same discipline as ripples.ts and
  * shake.ts: no DOM, no clock of its own, everything arrives as `now` and
  * `dt` is derived from it. main.ts owns the only judgment call this module
- * doesn't make — whether a gesture has cleared the hold/drag threshold that
- * separates it from a tap.
+ * doesn't make any more — entry 50 removed the hold/drag threshold that
+ * used to separate a qualifying gesture from a tap, so `active` now means
+ * simply "a qualifying contact is down", decided once in main.ts's
+ * dispatch (chip and capture-zone exclusions) rather than reasoned about
+ * per-frame here.
  */
 
 import { spawnAt, type RippleState } from './ripples.ts'
 
 /** Seconds of continuous contact before charge saturates at 1.0. */
 const CHARGE_TIME = 2.5
-/** Charge at the very first qualifying instant, not 0 — so the briefest
- *  hold that clears the gesture threshold still visibly does something.
- *  An emitter that began at nothing would read as unresponsive at exactly
- *  the moment someone is learning the gesture. */
-const CHARGE_FLOOR = 0.4
+/** Charge at the very first qualifying instant, not 0 — so the briefest tap
+ *  still visibly does something. Raised from 0.4 to 0.6 by entry 50: it used
+ *  to be chosen as "the briefest hold that clears the gesture threshold",
+ *  and that threshold is gone — this is now what a bare *tap* is worth, and
+ *  a tap is the first touch anyone gives this thing, the only chance to make
+ *  them touch it twice. */
+const CHARGE_FLOOR = 0.6
 /** Seconds of afterlife a released emitter gets, at CHARGE_FLOOR and at
  *  full charge respectively. */
 const LIFE_MIN = 2.0
 const LIFE_MAX = 4.0
 /** How often, in seconds, an active or dying emitter spawns a new ring —
  *  fast enough that "they keep coming" reads as continuous rather than as
- *  a metronome. */
+ *  a metronome. Still the only trigger while releasing (afterlife) or
+ *  holding still; SPAWN_DIST below is what a *moving* contact adds. */
 const SPAWN_INTERVAL = 0.15
+/** uv units of drag since the last spawn that also triggers one — entry 57.
+ *  About a twentieth of the frame, so a drag draws a continuous-looking
+ *  line rather than a handful of rings near wherever the finger happened to
+ *  be every 150ms. The time term stays alongside it rather than being
+ *  replaced by it: a *stationary* hold has no distance to spend, and still
+ *  needs to keep emitting. */
+const SPAWN_DIST = 0.05
+/** uv units/second of drag speed that adds this much to a spawned ring's
+ *  birth level, on top of charge — entry 50's "a fling throws further".
+ *  **Mine**, on the same footing as `engine/touch.ts`'s own speed scale: a
+ *  full-screen swipe in roughly a third of a second is near this fast. */
+const SPEED_LEVEL_SCALE = 0.25
 
 export interface EmitterState {
-  /** Whether the finger is down past main.ts's hold/drag threshold. */
+  /** Whether a qualifying contact is currently down. */
   active: boolean
   x: number
   y: number
   /** When the current unbroken contact began; null between gestures. */
   contactStart: number | null
+  /** Where the most recent spawn happened, in the same uv space as x/y —
+   *  entry 57's distance trigger measures drag against this, not against
+   *  the previous frame's position, so a series of tiny sub-threshold
+   *  moves still accumulates toward the next spawn correctly. */
+  lastSpawnX: number
+  lastSpawnY: number
   /** Seconds of afterlife remaining. 0 when nothing is emitting at all. */
   life: number
   /** The life this afterlife started with, for scaling loudness as a
@@ -64,6 +91,8 @@ export function createEmitterState(): EmitterState {
     x: 0,
     y: 0,
     contactStart: null,
+    lastSpawnX: 0,
+    lastSpawnY: 0,
     life: 0,
     totalLife: 0,
     releaseCharge: 0,
@@ -84,8 +113,11 @@ function lifeFor(c: number): number {
 /**
  * Call once per rendered frame, alongside `updateRipples`. `active`/`x`/`y`
  * are main.ts's pointer recogniser's current answer to "is a qualifying
- * hold or drag underway, and where" — this function only decides *when* to
- * spawn from that and how strong, never whether the gesture qualifies.
+ * contact down, and where" — this function only decides *when* to spawn
+ * from that and how strong, never whether the contact qualifies. `speed` is
+ * the same drag velocity (uv units/second) `engine/touch.ts` reads for the
+ * atmospheric views — 0 for a still hold, ignored entirely while releasing,
+ * since the afterlife's position is frozen and has no speed of its own.
  */
 export function updateEmitter(
   state: EmitterState,
@@ -94,22 +126,30 @@ export function updateEmitter(
   active: boolean,
   x: number,
   y: number,
+  speed = 0,
 ): void {
   const dt = Math.max(0, now - state.lastTick)
   state.lastTick = now
 
   if (active) {
-    if (!state.active) state.contactStart = now
+    if (!state.active) {
+      state.contactStart = now
+      state.lastSpawnX = x
+      state.lastSpawnY = y
+    }
     state.active = true
     state.x = x
     state.y = y
-    const c = charge(now - (state.contactStart ?? now))
+    const c = Math.min(1, charge(now - (state.contactStart ?? now)) + speed * SPEED_LEVEL_SCALE)
     state.life = lifeFor(c)
     state.totalLife = state.life
     state.releaseCharge = c
-    if (now - state.lastSpawn >= SPAWN_INTERVAL) {
+    const moved = Math.hypot(x - state.lastSpawnX, y - state.lastSpawnY)
+    if (now - state.lastSpawn >= SPAWN_INTERVAL || moved >= SPAWN_DIST) {
       spawnAt(ripples, now, c, x, y)
       state.lastSpawn = now
+      state.lastSpawnX = x
+      state.lastSpawnY = y
     }
     return
   }

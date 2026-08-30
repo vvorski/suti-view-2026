@@ -43,9 +43,9 @@ uniform vec4 uSeed;
 // Must match MAX_RIPPLES in ripples.ts — GLSL can't import a JS constant, and
 // a mismatch here means scene.ts uploads an array of the wrong length.
 //
-// Twelve since docs/todo.md entry 33: eight audio slots as before, plus four
-// reserved for a touch emitter carrying (x, y) in .zw — see ripples.ts.
-const int MAX_RIPPLES = 12;
+// Twenty-four since docs/todo.md entry 57: eight audio slots as before,
+// plus sixteen reserved for touch, up from four — see ripples.ts.
+const int MAX_RIPPLES = 24;
 const int AUDIO_RIPPLES = 8;
 uniform vec4 uRipples[MAX_RIPPLES];
 

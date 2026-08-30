@@ -867,7 +867,7 @@ async function main(): Promise<void> {
   })
 
   // One recogniser for every gesture on the picture — docs/todo.md entries
-  // 41, 33 and 49. Two separate listeners in two files used to agree only
+  // 41, 33, 48, 49, 50 and 57. Two separate listeners in two files used to agree only
   // because the screenshot band listened in the capture phase and called
   // stopPropagation() before hud.ts's own bubble-phase tap-to-open listener
   // ran. hud.ts no longer listens for that tap at all; this decides
@@ -881,32 +881,26 @@ async function main(): Promise<void> {
   // capacity change, not a behaviour one: a single finger reads the same
   // per-touch facts a scalar recorded before, and gets the same answer.
   //
-  // The top third does nothing on a plain tap (entry 41), which is what
-  // entry 33's press-and-hold emitter fills — reconciling the two: entry
-  // 33's own text predates the three zones and says "any" screen position,
-  // but a hold anywhere in the capture or panel thirds would race the tap
-  // those thirds already own (a still hold released there is, by the tap
-  // test below, indistinguishable from a tap). **Mine.** Scoping the
-  // emitter to the one zone a tap already leaves dead is what entry 41's
-  // own note ("entry 33 gives the top third a behaviour of its own") is
-  // describing, and it is the only scoping that does not need the two
-  // gestures to also agree on precedence at the same point on screen.
-  // Long enough that an ordinary tap-and-release never arms it, short
-  // enough that "holding a finger still for a moment" feels immediate.
-  // **Mine** — entry 33 names the two thresholds but not a value for
-  // either; the drag one reuses TAP_SLOP_PX rather than inventing a second
-  // distance, since that is already this file's answer to "how far is a
-  // drag" everywhere else a gesture needs to tell one from a tap. Compared
-  // against `downFor` once per rendered frame (see dispatchTouches() below)
-  // rather than armed on a single `setTimeout` — engine/touches.ts is
-  // sampled, not callback-driven, and polling it once per frame is what
-  // "sampled" means in practice. Indistinguishable to a finger from the
-  // timer this replaces, at 60fps.
-  const HOLD_S = 0.22
-
+  // The emitter used to be scoped to the top third only, and only past a
+  // hold/drag threshold that separated it from a tap — entry 33's original
+  // shape, reconciled against entry 41's three zones. Entry 50 overturns
+  // both: with the panel now owning only the middle third, a threshold in
+  // the other two zones was protecting nothing, and every zone answers a
+  // contact immediately now — see dispatchTouches() below.
   const isChip = (t: EventTarget | null): boolean => t instanceof Element && t.closest('.hud-chip') !== null
 
   const touchField = createTouchField()
+
+  // Contact ids for the geometric emitter's pool (scene.ts) — docs/todo.md
+  // entry 57. `touchField`'s own id is a *pointer* id, which the platform
+  // can reuse across two separate taps of the same finger (lift, then tap
+  // again); minted fresh on every qualifying `down` instead, so a pointer
+  // id being reused never reads as "the same contact continuing" to the
+  // emitter pool. Cleared on `up`/`cancel` — the id itself lives on inside
+  // scene.ts's pool for as long as that emitter's afterlife runs, but
+  // nothing here needs to remember it once the pointer is gone.
+  let nextContactId = 0
+  const contactIdFor = new Map<number, number>()
 
   document.addEventListener('pointerdown', (e) => {
     const rect = canvas.getBoundingClientRect()
@@ -936,40 +930,66 @@ async function main(): Promise<void> {
 
   /**
    * The tap/hold-vs-drag decision, and the zone dispatch — docs/todo.md
-   * entries 41, 33 and 49. Called once per rendered frame from frame()
-   * below, which is what "sampled, not callback-driven" (touches.ts's own
-   * file comment) means in practice: every consumer of the field, this
+   * entries 41, 33, 48, 49, 50 and 57. Called once per rendered frame from
+   * frame() below, which is what "sampled, not callback-driven" (touches.ts's
+   * own file comment) means in practice: every consumer of the field, this
    * dispatch included, reads it on the same clock the picture itself
    * redraws on rather than keeping its own timers.
    */
   const dispatchTouches = (now: number): void => {
     const hudOpen = document.querySelector('.hud-scrim.open') !== null
-    const active: { id: number; x: number; y: number }[] = []
+
+    // Drained once, read twice below — minting/clearing contact ids first,
+    // so the sample pass that follows always has an id ready for a contact
+    // that began on this exact frame. events() only ever drains in the
+    // order things happened, so a down always precedes any up for the same
+    // id within one call.
+    const events = touchField.events()
+    for (const e of events) {
+      if (e.kind === 'down') {
+        if (!e.onChip) contactIdFor.set(e.id, nextContactId++)
+        continue
+      }
+      contactIdFor.delete(e.id)
+    }
+
+    // docs/todo.md entry 50: no threshold, every zone — a contact emits the
+    // instant it begins, wherever it lands, as long as it isn't a chip's
+    // own tap and the HUD isn't covering the picture. Entry 41's own
+    // zone-and-threshold logic for what a *release* does (save, open the
+    // panel) is untouched, further down — this is a second, independent
+    // thing every contact does, not a replacement for that dispatch.
+    const active: { contactId: number; x: number; y: number; speed: number }[] = []
     // docs/todo.md entry 48's own exclusion, applied here rather than
-    // re-derived in scene.ts: the capture band and any `.hud-chip` contact
-    // never reach the atmospheric stream, for the same reasons they never
-    // reach the geometric emitter above — a screenshot must not contain the
-    // finger that took it, and a chip's own tap is that chip's gesture, not
-    // one that reaches the picture underneath. Also inert while the HUD is
-    // open — a HUD control's own drag already stopPropagation()s before it
-    // ever reaches this field, but a tap on the scrim itself (closing the
-    // panel) would not, and the picture is hidden behind the panel at that
-    // moment regardless.
+    // re-derived in scene.ts: the capture band never reaches the
+    // atmospheric stream (a screenshot must not contain the finger that
+    // took it), and any `.hud-chip` contact never reaches either stream —
+    // a chip's own tap is that chip's gesture, not one that reaches the
+    // picture underneath. Also inert while the HUD is open — a HUD
+    // control's own drag already stopPropagation()s before it ever reaches
+    // this field, but a tap on the scrim itself (closing the panel) would
+    // not, and the picture is hidden behind the panel at that moment
+    // regardless.
     let streamAnyDown = false
     let streamMaxSpeed = 0
     for (const t of touchField.sample(now)) {
+      const speed = Math.hypot(t.vx, t.vy)
       if (!t.onChip && t.zone !== 'capture' && !hudOpen) {
         streamAnyDown = true
-        streamMaxSpeed = Math.max(streamMaxSpeed, Math.hypot(t.vx, t.vy))
+        streamMaxSpeed = Math.max(streamMaxSpeed, speed)
       }
-      if (t.onChip || t.zone !== 'none' || hudOpen) continue
-      const dragged = Math.hypot(t.clientX - t.downClientX, t.clientY - t.downClientY)
-      if (t.downFor >= HOLD_S || dragged > TAP_SLOP_PX) active.push({ id: t.id, x: t.x, y: t.y })
+      if (t.onChip || hudOpen) continue
+      const contactId = contactIdFor.get(t.id)
+      // Absent only for a chip contact (never minted one) reaching here by
+      // a stale id, which should not happen given the exclusion above —
+      // defensive rather than load-bearing.
+      if (contactId === undefined) continue
+      active.push({ contactId, x: t.x, y: t.y, speed })
     }
     visualiser.setTouches(active)
 
     let streamBegan = false
-    for (const e of touchField.events()) {
+    for (const e of events) {
       if (e.kind === 'down') {
         if (!e.onChip && e.zone !== 'capture' && !hudOpen) streamBegan = true
         continue

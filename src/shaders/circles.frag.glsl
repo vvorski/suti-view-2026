@@ -72,13 +72,18 @@ uniform vec4 uSeed;
 // Must match MAX_RIPPLES in ripples.ts — GLSL can't import a JS constant, and
 // a mismatch here means scene.ts uploads an array of the wrong length.
 //
-// Twelve total: eight reserved for audio (unchanged from before entry 33)
-// and four for a touch emitter, in slots [AUDIO_RIPPLES, MAX_RIPPLES) — see
+// Twenty-four total since docs/todo.md entry 57 (was twelve): eight
+// reserved for audio (unchanged since before entry 33) and sixteen for
+// touch, up from four, in slots [AUDIO_RIPPLES, MAX_RIPPLES) — see
 // ripples.ts. Split into two constants rather than one, because the two
 // halves are drawn by two separate loops further down: audio rings share
 // this view's one hoisted `dist`/`rungR` (both centre-based, see below),
-// while touch rings each carry their own origin and cannot.
-const int MAX_RIPPLES = 12;
+// while touch rings each carry their own origin and cannot — which is also
+// the honest cost of this entry: the positioned loop below now runs sixteen
+// `length()` calls per fragment rather than four, the largest per-fragment
+// increase anything in this project has asked for. See docs/todo.md entry
+// 57's own Verify text for the frame-time condition this is contingent on.
+const int MAX_RIPPLES = 24;
 const int AUDIO_RIPPLES = 8;
 // (birthTime, birthLevel, x, y) per slot. An unborn slot sits at birthTime
 // -1000, and it no longer falls out of the loop's LIFESPAN `continue` — the
