@@ -5236,7 +5236,7 @@ because the harness cannot tell you whether the night end is too dark to enjoy.
 **no geolocation** — see the first decision.
 
 ### 54. A shake says so, in light
-`status: ready` · added 2026-08-30
+`status: building` · added 2026-08-30 · started 2026-08-30
 
 **Do** — give a detected shake a visible confirmation that scales with how hard
 it was and tells a single from a double, always on, not gated behind the
