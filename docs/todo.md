@@ -9004,7 +9004,7 @@ unchanged.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 87. Camera mode is one shot: arm, shoot, done
-`status: building` · added 2026-08-30 · started 2026-08-30 · supersedes the mode built by 72 and 78
+`status: done` · added 2026-08-30 · started 2026-08-30 · build 272 · supersedes the mode built by 72 and 78
 
 **Do** — camera mode arms a single photo. Tap the chip: the menu closes and the
 camera glyph appears. The next tap takes **one** picture and leaves the mode.
@@ -9076,6 +9076,95 @@ camera never turned on.
 fewer and more deliberate captures than what shipped — one per arming, no
 accidental frame on exit, and the camera hardware is never opened by this mode
 at all · dependency no.
+
+**Build note** — implemented as decided. `enterCameraMode` lost the
+`applyPassthrough(0.75)` call, the refusal-revert branch that existed only
+to unwind it, and `preCameraMix` entirely — entering now does nothing but
+set the flag, tell the HUD (`panel.setCameraActive(true)`), and show the
+glyph. The dispatch's camera branch takes the shot (respecting the existing
+`CAMERA_SAVE_RATE_LIMIT_MS`/`lastSaveAt` guard, untouched — Lands-in didn't
+ask for it and one-shot arming makes a self-repeat within a single arm
+structurally impossible anyway, since `cameraMode` flips false synchronously
+before the event loop's next iteration) and calls `exitCameraMode`
+unconditionally, even on the rare frame the rate limit itself suppressed the
+save — leaving the mode armed after its one qualifying tap would be a worse
+failure than an occasional shot lost to a limit built for the ordinary
+tap-to-save path, not this one. **Mine**, since the entry doesn't say which
+way to break that specific tie.
+
+The 10s auto-disarm (`CAMERA_ARM_MS`, **Mine** — the entry asks for a
+timeout, not the figure) is a *separate* inline path from `exitCameraMode`,
+not a call to it: it flips the same three things `exitCameraMode` does
+(flag, `setCameraActive(false)`, hide glyph) but deliberately does **not**
+call `panel.open()`. Reasoned rather than found in the entry's own text:
+"a mode entered by accident should not wait indefinitely to take a photo of
+something you have stopped looking at" reads as someone who has moved on,
+and forcing the menu open over whatever they moved on to would be its own
+surprise — reopening on the *timeout* path is not the same claim as
+reopening after an actual photo. `cameraArmTimeout` is cleared in
+`exitCameraMode` so a shot at 9s does not also fire a disarm at 10s.
+
+Entry 78's toggle is gone from `onCameraMode` — it reverts to
+`enterCameraMode` directly, exactly as entry 72 had it, since the chip
+"loses its exit role" per Decided: `enterCameraMode`'s own
+`if (cameraMode) return` already makes a second tap on an already-armed
+chip a harmless no-op, so no dedicated handling was needed for that case.
+Kept from entry 78 completely unchanged, per the entry's own "Kept from
+entry 78" bullet: `Hud.setCameraActive`, the `.hud-chip--shutter` class,
+the `.hud-scrim:not(.open) .hud-chip--shutter[aria-pressed='true']`
+exception, and the chip's own paint-through-`aria-pressed` mechanism —
+"armed" reuses the exact same true/false the old "in persistent mode" used,
+so nothing about how the chip is *painted* needed to change, only what
+causes the flag to flip back to false.
+
+Verified: `pnpm build`/`pnpm lint` clean; `pnpm probe` and `pnpm probe:tap`
+both unaffected (0 failures / all pass) — this entry touches neither the
+mapping engine nor the tap-resolver's own state machine. `grep -n
+preCameraMix src/main.ts` returns nothing, confirming the removal is
+complete rather than merely unused.
+
+**A genuine new capability, and an honest account of where it stopped**:
+for the first time this session, Start was reached live rather than being
+disclosed as unreachable. `navigator.mediaDevices.getUserMedia` stubbed to
+return a real oscillator-backed `MediaStreamAudioDestinationNode` stream
+(the same shape of trick entry 73 used for the camera, applied here to the
+microphone for the first time) plus `requestAnimationFrame` patched to a
+`setTimeout`-driven version *before* clicking Start with the real
+`computer` tool for a genuine trusted gesture — together these got past the
+gate, into the real render loop, live: the gate hid, the picture began
+actively animating in response to the fake tone, and this was confirmed
+directly (an `await new Promise` chained to real `requestAnimationFrame`
+timed out completely before the patch, and produced a visibly evolving
+frame after it). This is further than entries 67, 72, 73 or 78 got.
+
+It stopped there. Synthetic `PointerEvent`s dispatched at the canvas
+(`pointerdown`/`pointerup`, matched to `elementFromPoint`, `isPrimary:
+true`) were confirmed to reach `document`-level listeners generally (a
+throwaway listener of my own fired on the identical dispatch), and the
+canvas's own `getBoundingClientRect()` was sane — but neither a lone tap
+nor several double-tap variants (immediate synthetic pairs at 150ms
+apart, the real `computer` tool's own `double_click`, before and after the
+rAF fix) ever produced an observable effect: no `.hud-scrim.open`, and — the
+most direct test available, since `saveCapture` calls
+`URL.createObjectURL` — zero calls to a monkey-patched
+`URL.createObjectURL` after a single ordinary tap that should have saved a
+frame 400ms later. The gap between "the event reaches `document`" and "the
+app's own dispatch loop visibly acts on it" was not tracked down further
+within this entry's own scope — most likely `dispatchTouches`'s own
+per-frame consumption of `touchField`'s queue behaving differently under a
+`setTimeout`-driven rAF than a real one, but that is a diagnosis, not a
+finding.
+
+So: `enterCameraMode`/`exitCameraMode`/the one-shot dispatch branch and the
+10s timeout are verified by careful reading against the entry's own text
+and by the shape of the diff (a pure subtraction of the passthrough call
+plus one unconditional `exitCameraMode()` call added where the two-finger
+case used to be), not by watching them run. The entry's own Verify line —
+the phone, counting files — remains the phone's question, same as entry 78
+before it; what's new here is that the *reason* is now "the harness's touch
+dispatch didn't cooperate this time" rather than "Start could not be
+reached at all," which is worth keeping distinct for whoever debugs this
+gap next.
 
 ### 88. A quiet phone listens harder
 `status: ready` · added 2026-08-30 · build after 85 and 86
@@ -9582,3 +9671,80 @@ way to know it is fixed for the person who reported it.
 **Hard stops** — prefs no · url no · capture no · dependency **no, and asked
 directly: no text-animation library** — forty lines against tens of kilobytes,
 in a project whose only runtime dependency is `three`.
+
+### 95. A layer at zero opacity leaves the room alone
+`status: ready` · added 2026-08-30
+
+**Do** — mix the camera blend across its *result* by how much picture there
+actually is, so a picture turned off cannot govern the room through its blend
+mode.
+
+**Why** — reported: with the layer off, its blend mode still modifies the
+camera. Correct, and it is entry 34's bug at the seam entry 34 did not reach.
+
+**Decided**
+- **Reproduced, numerically.** With `uGeoAlpha` and `uAtmAlpha` both 0, the
+  composite line yields `col = 0`, and `blendWith(cam, 0, uAtmMode)` at
+  `uCameraMix = 1` turns a room pixel of **0.620** into:
+
+  | mode | out |
+  |---|---|
+  | normal | **0.000** |
+  | add | 0.620 |
+  | screen | 0.620 |
+  | multiply | **0.000** |
+  | overlay | **0.240** |
+  | difference | 0.620 |
+
+  **The same three modes entry 34 caught**, for the same reason, one seam
+  further down: a layer at zero opacity does not disappear, it hands the blend
+  a black input and the blend still fully governs the frame. Under Normal and
+  Multiply the camera goes black — the room is *wiped by a layer that is
+  switched off*.
+- **The fix is entry 34's fix, applied to the second pair.** That entry's own
+  words: keep the input undimmed going into the blend and *"mix `uAtmAlpha`
+  across the blend's **result** — between the geometry alone and the full
+  blend"*. Here the equivalent is between **the room alone** and the full
+  blend:
+
+  ```glsl
+  float picture = max(uGeoAlpha, uAtmAlpha);   // is there a picture at all
+  vec3 lit = mix(cam, blendWith(cam, col, uAtmMode), picture);
+  col = mix(col, lit, uCameraMix);
+  ```
+  At `picture == 1` this is exactly today's line, so nothing about any
+  existing composition changes. At `picture == 0` the room passes through
+  untouched under every mode, which is what "off" has to mean.
+- **`max`, not a sum or a product**, and this is the one judgement in the
+  entry: the picture is present if *either* layer is on. Multiplying would make
+  turning one layer off dim the other's relationship with the room, and adding
+  would exceed 1 with both layers up. **Mine.**
+- **Presence is the alphas, never the luminance.** A genuinely black picture
+  and an absent picture look identical in `col` and must not be treated
+  identically — a dark frame is a picture and Normal is entitled to replace the
+  room with it. Only the alphas know the difference, which is exactly why the
+  fix reads them rather than testing `col`.
+- **This is a third instance of one shape**, and it is worth naming as a rule
+  rather than fixing a third time later: **wherever a layer's presence is
+  applied by multiplying its colour before a blend, it is wrong**; presence
+  belongs in a `mix` across the blend's output. Entry 34 fixed geo-over-atm,
+  this fixes picture-over-camera, and any future layer must arrive built this
+  way.
+- **`probe-composite.ts` should assert it for both seams**, since it already
+  exists for exactly this class and its whole reason for being is that "the
+  browser cannot tell 0.51 from 0.46". It currently covers the layer pair only.
+  The new case is: at every mode, both alphas 0, the camera output equals the
+  camera input — the table above, expected all-passthrough.
+
+**Lands in**
+- `src/shaders/composite.frag.glsl:240-245`.
+- `scripts/probe-composite.ts` — the camera seam, all six modes.
+
+**Done when** — with both layer opacities at zero and the camera up, the room
+is untouched under all six modes; with either layer up, the picture composites
+over the room exactly as it does today; and the probe fails if the old form is
+restored.
+**Verify** — the probe carries this entirely: it is arithmetic, the same
+arithmetic entry 34's probe already models, and the numbers above are the
+expected-failure baseline to check against.
+**Hard stops** — prefs no · url no · capture no · dependency no.
