@@ -316,5 +316,97 @@ function fieldStats(samples: Vec3[]): { meanL: number; p5: number; p95: number; 
   )
 }
 
+// docs/todo.md entry 70: colour is chosen as a hue now, not three
+// independent channel gains, and a vibrance stage runs on the composited
+// picture before the camera mix. A plain re-implementation of both, same
+// discipline as composite() and dayTransform() above.
+function hueToColour(h: number, s: number): Vec3 {
+  const c = s
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1))
+  const m = 1 - c
+  const rgb: Vec3 =
+    h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x] : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x]
+  return rgb.map((v) => v + m) as Vec3
+}
+
+/** The exact vibrance block from composite.frag.glsl, applied to `col`. */
+function vibrance(col: Vec3): Vec3 {
+  const max = Math.max(...col)
+  const min = Math.min(...col)
+  const sat = max - min
+  const boost = 1.0 * (1 - sat)
+  const avg = (col[0] + col[1] + col[2]) / 3
+  return col.map((v) => Math.min(1, Math.max(0, avg + (v - avg) * (1 + boost)))) as Vec3
+}
+
+// 10. The entry's own acceptance test: a rendered night frame reaches mean
+//     saturation >= 0.30 and p95 saturation >= 0.60, against the 0.10-0.25
+//     and 0.15-0.36 the entry's own table measured. Simulated with the new
+//     hue-and-saturation sampler feeding the real composite() line above
+//     (screen, the default merge for geo-over-atmosphere), at a spread of
+//     alphas and per-pixel texture intensities, then vibrance applied —
+//     this probe cannot render the real shaders, per this file's own
+//     docstring, so this stands in for a re-shoot of the entry's own four
+//     frames.
+{
+  const N = 3000
+  const before: Vec3[] = []
+  const after: Vec3[] = []
+  for (let i = 0; i < N; i++) {
+    const geoColour = hueToColour(Math.random() * 360, 0.55 + Math.random() * 0.45)
+    const atmColour = hueToColour(Math.random() * 360, 0.55 + Math.random() * 0.45)
+    const geoI = Math.random()
+    const atmI = Math.random()
+    const geo = scale(geoColour, geoI)
+    const atm = scale(atmColour, atmI)
+    const geoAlpha = 0.5 + Math.random() * 0.5
+    const atmAlpha = 0.5 + Math.random() * 0.5
+    // mode 2 = screen, DEFAULT_MERGE_MODE and DEFAULT_ATM_MERGE_MODE alike.
+    const col = composite(atm, geo, 2, atmAlpha, geoAlpha)
+    before.push(col)
+    after.push(vibrance(col))
+  }
+  const stats = (samples: Vec3[]): { meanS: number; p95: number } => {
+    const s = samples.map((c) => lightnessAndSaturation(c).s).sort((a, b) => a - b)
+    return { meanS: s.reduce((a, b) => a + b, 0) / s.length, p95: s[Math.floor(s.length * 0.95)] }
+  }
+  const withoutVibrance = stats(before)
+  const withVibrance = stats(after)
+  check(
+    `mean saturation (${withVibrance.meanS.toFixed(3)}) reaches the entry's 0.30 floor`,
+    withVibrance.meanS >= 0.3,
+    `${withVibrance.meanS} < 0.30 (pre-vibrance was ${withoutVibrance.meanS.toFixed(3)})`,
+  )
+  check(
+    `p95 saturation (${withVibrance.p95.toFixed(3)}) reaches the entry's 0.60 floor`,
+    withVibrance.p95 >= 0.6,
+    `${withVibrance.p95} < 0.60 (pre-vibrance was ${withoutVibrance.p95.toFixed(3)})`,
+  )
+  // The new sampler alone (before vibrance) already clears both floors in
+  // this simulation — worth asserting directly, since it means vibrance is
+  // a genuine addition on top of the sampler fix, not the only thing
+  // standing between this entry and its own acceptance test, matching the
+  // entry's own "this is the whole fix for cause one and two" framing.
+  check(
+    'the new sampler alone (no vibrance) already clears both floors here',
+    withoutVibrance.meanS >= 0.3 && withoutVibrance.p95 >= 0.6,
+    JSON.stringify(withoutVibrance),
+  )
+}
+
+// 11. Vibrance runs before the camera mix, not after — composite.frag.glsl
+//     places the block immediately after `col` is computed, so a camera
+//     texture's own colour is never touched by it. Checked here as the
+//     algebraic fact that makes that placement correct: at uCameraMix = 1,
+//     the room shows through blendWith(cam, col, mode); vibrance changes
+//     what `col` contributes to that blend (the visualiser gains colour)
+//     but the function never receives `cam` as an argument at all, so a
+//     `cam` on its own — passthrough with nothing drawn over it — cannot be
+//     touched by this entry regardless of uCameraMix.
+{
+  const camOnly = blendWith([0.4, 0.5, 0.3], [0, 0, 0], 2) // screen with black col is identity
+  check('screening a real photograph onto black leaves it unchanged', close(camOnly, [0.4, 0.5, 0.3]), JSON.stringify(camOnly))
+}
+
 console.log(failures === 0 ? '\nall composite checks passed' : `\n${failures} failed`)
 process.exit(failures === 0 ? 0 : 1)

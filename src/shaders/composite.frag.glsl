@@ -167,6 +167,29 @@ void main() {
     1.0
   );
 
+  // A vibrance lift — docs/todo.md entry 70's third cause: screen is the
+  // default merge for both geo-over-atmosphere and atmosphere-over-camera,
+  // and `a + b - ab` pulls toward white on every application, which pulls
+  // toward grey. Applied here, to the two-layer picture and before the
+  // camera mix below, so the visualiser gains colour and a real photograph
+  // of grass does not — after the camera mix this would repaint the room.
+  // Vibrance rather than a flat saturation multiply: the boost scales by
+  // how *unsaturated* a pixel already is (`1.0 - sat`), so thin colour
+  // lifts and anything already vivid is left close to untouched — the
+  // entry's own "scale by how unsaturated a pixel already is". VIBRANCE
+  // = 1.0, **Mine**: entry 70's own new hue-and-saturation sampler already
+  // clears its stated floors on its own in this file's offline simulation
+  // (see probe-composite.ts), so this is a genuine but modest lift for the
+  // residual screen-desaturation specifically, not the load-bearing fix.
+  {
+    float maxc = max(col.r, max(col.g, col.b));
+    float minc = min(col.r, min(col.g, col.b));
+    float sat = maxc - minc;
+    float boost = 1.0 * (1.0 - sat);
+    float avg = (col.r + col.g + col.b) / 3.0;
+    col = clamp(avg + (col - vec3(avg)) * (1.0 + boost), 0.0, 1.0);
+  }
+
   // The room goes underneath, and the picture becomes light falling on it.
   //
   // The blend here used to be hardcoded to screen, which is why it is not

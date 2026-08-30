@@ -300,61 +300,96 @@ interface Shuffle {
 /**
  * A layer's actual brightness is its opacity times its colour gain's peak
  * channel (composite.frag.glsl: `base = atmosphere * uAtmAlpha *
- * uAtmColour`) — a product, not either number in isolation. Flooring each
- * independently (0.35 for opacity, 0.2 per colour channel) left the product
- * as low as 0.07, which read as the screen going dark for no reason anyone
- * could trace back to a shake. Both floors rise here, and the colour floor
- * is enforced on the *dominant* channel specifically — see colour()'s own
- * comment for why. Worst case becomes 0.5 x 0.5 = 0.25. See docs/todo.md
- * entry 21.
+ * uAtmColour`) — a product, not either number in isolation. Flooring
+ * opacity alone (0.35) left the product as low as 0.07, which read as the
+ * screen going dark for no reason anyone could trace back to a shake. See
+ * docs/todo.md entry 21.
  *
- * Entry 35's nudge below SHUFFLE_RESEED clamps to these same two floors,
- * not a nudge-specific pair — repeated light shakes are a random walk, and
+ * docs/todo.md entry 70 removes the other half of that floor rather than
+ * raising it: `colour()` below now rolls a hue at full value (HSV,
+ * `v = 1`), so the dominant channel is always exactly 1 by construction —
+ * there is no longer a dim-roll case for a floor to catch. Worst case is
+ * 0.5 (this alpha floor) × 1 (the roll's own guaranteed peak) = 0.5,
+ * better than entry 21's own 0.25 target, for free.
+ *
+ * Entry 35's nudge below SHUFFLE_RESEED clamps alpha to this same floor,
+ * not a nudge-specific one — repeated light shakes are a random walk, and
  * a walk with no floor eventually reaches entry 21's failure by a slower
  * road: twenty small steps down reach black exactly as one big one does.
  */
 const SHUFFLE_MIN_ALPHA = 0.5
-const SHUFFLE_MIN_DOMINANT_CHANNEL = 0.5
 
-/** How far a light shake may nudge a colour channel or an opacity from its
- *  current value — docs/todo.md entry 35. Absolute, not scaled by `depth`:
- *  `pnpm probe:shake`'s own gentle-sustained cases report a depth of
- *  exactly 0.00, so anything multiplied by depth would be multiplied by
- *  zero at precisely the shake this entry is about. The nudge has to be a
- *  floor, not a fraction. **Mine** — the entry asks for "a little" without
- *  naming the two numbers. */
-const NUDGE_CHANNEL = 0.08
+/** docs/todo.md entry 70: a fresh colour is a hue and a saturation, not
+ *  three independent channel gains — sampling r, g and b independently
+ *  clusters around the grey diagonal (the three land near each other far
+ *  more often than far apart, and near each other *is* grey), and capping
+ *  each channel at a 0.2 floor made a pure hue unreachable regardless.
+ *  Saturation 0.55-1.0, **Mine** as to the range: high enough that even the
+ *  low end reads as colourful, wide enough that "the same colour every
+ *  time" is not traded for "the same saturation every time". Value pinned
+ *  at 1 (the largest of the three gains is always exactly 1) rather than
+ *  independently chosen — gains can only ever remove light, so a saturated
+ *  red must already be as bright as gains allow, and letting saturation
+ *  and brightness vary independently would make "more colourful" quietly
+ *  mean "darker" again. */
+const SHUFFLE_MIN_SATURATION = 0.55
+
+/** How far a light shake may nudge a colour's hue (degrees) or saturation,
+ *  or an opacity, from its current value — docs/todo.md entry 35's floor,
+ *  entry 70's hue/saturation split. **Mine** — neither entry names the
+ *  hue/saturation pair; chosen so a single gentle shake visibly rotates the
+ *  hue a little without ever crossing into "a different colour". */
+const NUDGE_HUE_DEG = 20
+const NUDGE_SATURATION = 0.08
 const NUDGE_ALPHA = 0.06
 
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v))
+
+/** HSV -> RGB with `v` pinned at 1 — see SHUFFLE_MIN_SATURATION's own
+ *  comment for why value is never independent of saturation here. `h` in
+ *  degrees, wrapped by the caller; `s` already clamped by the caller. */
+function hueToColour(h: number, s: number): GeoColour {
+  const c = s
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1))
+  const m = 1 - c
+  const [r, g, b] =
+    h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x] : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x]
+  return { r: r + m, g: g + m, b: b + m }
+}
+
+/** The inverse of hueToColour(), for nudging a colour that is already
+ *  stored as three gains rather than a hue/saturation pair. Value is
+ *  discarded (recomputed as 1 on the way back by hueToColour itself) since
+ *  every colour this module ever produces already has it pinned there. */
+function colourToHueSat(c: GeoColour): { h: number; s: number } {
+  const max = Math.max(c.r, c.g, c.b)
+  const min = Math.min(c.r, c.g, c.b)
+  const d = max - min
+  const s = max === 0 ? 0 : d / max
+  if (d === 0) return { h: 0, s }
+  let h = max === c.r ? ((c.g - c.b) / d) % 6 : max === c.g ? (c.b - c.r) / d + 2 : (c.r - c.g) / d + 4
+  h *= 60
+  if (h < 0) h += 360
+  return { h, s }
+}
 
 function shuffled(
   depth: number,
   current: { geoColour: GeoColour; atmColour: GeoColour; geoAlpha: number; atmAlpha: number },
 ): Shuffle {
   const pick = <T,>(xs: readonly T[]): T => xs[Math.floor(Math.random() * xs.length)]
-  const channel = (): number => 0.2 + Math.random() * 0.8
+  const colour = (): GeoColour =>
+    hueToColour(Math.random() * 360, SHUFFLE_MIN_SATURATION + Math.random() * (1 - SHUFFLE_MIN_SATURATION))
 
-  // Only the channel that already leads is lifted, not all three — scaling
-  // every channel toward a floor washes each dim roll toward grey and
-  // quietly removes half the palette this exists to explore. Lifting just
-  // the one that already dominates keeps the hue the roll chose and only
-  // adds strength to it. Shared by a fresh roll and a nudge alike, since
-  // both can land with no channel above the floor.
-  const floorDominant = (c: GeoColour): GeoColour => {
-    const dominant = Math.max(c.r, c.g, c.b)
-    if (dominant >= SHUFFLE_MIN_DOMINANT_CHANNEL) return c
-    if (c.r === dominant) return { ...c, r: SHUFFLE_MIN_DOMINANT_CHANNEL }
-    if (c.g === dominant) return { ...c, g: SHUFFLE_MIN_DOMINANT_CHANNEL }
-    return { ...c, b: SHUFFLE_MIN_DOMINANT_CHANNEL }
+  // A little from wherever the hue and saturation already are, wrapping hue
+  // and clamping saturation to the same [0.55, 1] a fresh roll lives in —
+  // entry 35's bottom rung, entry 70's hue/saturation split.
+  const nudgeColour = (c: GeoColour): GeoColour => {
+    const { h, s } = colourToHueSat(c)
+    const newH = (h + (Math.random() * 2 - 1) * NUDGE_HUE_DEG + 360) % 360
+    const newS = clamp(s + (Math.random() * 2 - 1) * NUDGE_SATURATION, SHUFFLE_MIN_SATURATION, 1)
+    return hueToColour(newH, newS)
   }
-  const colour = (): GeoColour => floorDominant({ r: channel(), g: channel(), b: channel() })
-
-  // A little from wherever the channel already is, clamped to the same
-  // [0.2, 1] a fresh roll lives in — entry 35's bottom rung.
-  const nudgeChannel = (v: number): number => clamp(v + (Math.random() * 2 - 1) * NUDGE_CHANNEL, 0.2, 1)
-  const nudgeColour = (c: GeoColour): GeoColour =>
-    floorDominant({ r: nudgeChannel(c.r), g: nudgeChannel(c.g), b: nudgeChannel(c.b) })
   const nudgeAlpha = (a: number): number => clamp(a + (Math.random() * 2 - 1) * NUDGE_ALPHA, SHUFFLE_MIN_ALPHA, 1)
 
   const next: Shuffle = {}

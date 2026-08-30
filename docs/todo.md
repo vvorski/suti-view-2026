@@ -7245,7 +7245,67 @@ this file.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 70. Colour is chosen as a hue, and survives the composite
-`status: building` · added 2026-08-30 · started 2026-08-30 · build after 68
+`status: done` · added 2026-08-30 · shipped at build 234 · build after 68
+
+**Build note** — `main.ts`'s `channel()`/`colour()`/`nudgeChannel()` are gone;
+`hueToColour(h, s)` (HSV with `v` pinned at 1) and its inverse
+`colourToHueSat()` replace them. A fresh roll (`SHUFFLE_RESEED` and above)
+is `hueToColour(random hue, 0.55-1.0 saturation)`; the below-`SHUFFLE_RESEED`
+nudge converts the current colour back to hue/saturation, nudges each
+(`NUDGE_HUE_DEG=20`, `NUDGE_SATURATION=0.08`, both **Mine** — the entry
+names the floors, not a nudge size), clamps saturation to the same
+`[0.55, 1]` a fresh roll lives in, wraps hue mod 360, and converts back.
+`floorDominant`/`SHUFFLE_MIN_DOMINANT_CHANNEL` are deleted outright rather
+than kept as dead code: the new roll guarantees the dominant channel is
+exactly 1 by construction, at every step, so the floor they enforced can
+never fire again — confirmed, not assumed, by `probe:nudge`'s 200k-step
+walks (see below).
+
+The vibrance stage lives in `composite.frag.glsl`, right after `col` is
+computed and before the `uCameraMix` block — entry's own placement,
+verified to matter: after the camera mix would repaint a real photograph
+with borrowed saturation. `boost = 1.0 * (1.0 - sat)` (VIBRANCE=1.0, **Mine**)
+scales the pull away from the pixel's own grey average, so a thin-colour
+pixel lifts hard and an already-vivid one is left close to untouched.
+
+`scripts/probe-nudge.ts` rewritten to match: the two dominant-channel
+checks became "stays exactly 1" (a guarantee, not a floor) and a new
+saturation-floor check; the settling-brightness check's own target moved
+from 0.25 (0.5 alpha × 0.5 old channel floor) to 0.5 (0.5 alpha × the new,
+always-1 dominant channel) — the arithmetic changed along with the model,
+not just the assertion. All ten checks pass, from both a dim and a bright
+seed.
+
+`scripts/probe-composite.ts` gained the saturation floor as a simulation:
+the new sampler feeding the real `composite()` line already in this file
+(screen, the default merge for both geo-over-atmosphere and
+atmosphere-over-camera), across a spread of alphas and per-pixel
+intensities, then vibrance applied. Mean saturation 0.77, p95 1.00 — both
+comfortably clear the entry's 0.30/0.60 floors. Worth recording honestly:
+in this simulation, **the sampler fix alone (vibrance at zero) already
+clears both floors** (asserted directly as its own check) — matching the
+entry's own "this is the whole fix for cause one and two" framing, and
+meaning vibrance is a genuine addition for the residual screen-desaturation
+cause, not the only thing standing between this entry and its acceptance
+test. Also added: an algebraic check that screening a real photograph onto
+black (`col` = 0, the camera-only case) leaves the photograph's own colour
+untouched, which is what the vibrance-before-camera-mix placement actually
+buys.
+
+Verified live against the real dev server: the shader compiles with no
+console errors (embedded GLSL is invisible to `tsc`/`eslint`, same caveat
+as entry 68), and two page loads (a fresh `localStorage`, no `?rgb`, so the
+gate's own entry-60 roll picks the colour) each produced a clearly tinted,
+non-grey picture — a vivid dark red on one load, a muted salmon on the
+next — genuine variety, neither washed toward grey.
+
+Not verified: a re-shoot of the entry's own four measured frames (this
+session has no access to the original files, and this is a synthetic
+simulation standing in for real render statistics, per this file's own
+established docstring on why). The camera-untouched claim is verified
+algebraically (vibrance's function signature never receives `cam`) rather
+than by an actual passthrough session, since this harness cannot grant
+camera permission any more than it can grant the microphone.
 
 **Do** — roll colour as a hue at high saturation instead of three independent
 channel gains, drop the floor that makes a pure channel impossible, and add a
