@@ -4273,3 +4273,87 @@ the frame time with four emitters live at 320×568 and 360×640. Then hand the
 phone over mid-drag and watch for an emitter that never dies — the failure
 this can actually ship with. `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 50. Touch is generous: a tap plays, everywhere
+`status: ready` · added 2026-08-30
+
+**Do** — make every contact leave something at the point it happened, with no
+threshold in front of it. This entry is the taste direction for entries 33, 41,
+48 and 49, and it overturns three specific decisions in them.
+**Why** — Victor, 2026-08-30: "make it very touch sensitive in a playful way",
+after watching people reach for the phone. Playful means the response arrives
+before you have finished deciding to ask for it.
+
+**Decided**
+- **A tap emits.** → overturns entry 33's "hold or drag emits; a plain tap
+  still opens the HUD". That call was right when a tap anywhere opened the
+  panel, because the two would have fought over the whole screen. Entry 41
+  has since given the panel **only the middle third**, so in the other two
+  thirds a tap has nothing to fight and the threshold is protecting nothing.
+  A gesture that requires you to *wait* is the least playful gesture there is.
+- **In the middle third a tap does both** → the panel opens *and* an emitter
+  lands. **Mine.** They do not compete: the panel is a HUD over the picture,
+  the emitter is in the picture, and a tap that opens a menu while the thing
+  underneath answers you is more alive than one that does only the
+  administrative half.
+- **The top third becomes the play zone**, and this sharpens rather than
+  reverses Victor's earlier call → he chose "nothing" for a tap up there over
+  "opens the menu", and that stands: nothing *administrative* happens. Which
+  is exactly what makes it the one region where touching the picture is the
+  only thing touching the picture does. Entry 41's discoverability worry is
+  answered by this entry rather than by the menu — the third is not dead, it
+  is the purest of the three.
+- **The emitter fires in the capture band too, and appears in the saved
+  frame** → **Mine**, and it is a deliberate split from entry 48's rule.
+  That entry excludes the *flash* from the capture band so a screenshot does
+  not contain the white pulse. That still holds, and the distinction is the
+  reason: **the flash is UI and must never be in the picture; the emitter is
+  picture and should be.** A frame with the ring your own finger made is a
+  better thing to have saved than one without it.
+- **A tap is instantly worth it** → `emitter.ts`'s `CHARGE_FLOOR` of 0.4 was
+  chosen as "the briefest hold that clears the gesture threshold". With no
+  threshold left, the floor is now what a *tap* is worth, and it should be
+  higher — **0.6**, with `CHARGE_TIME` unchanged at 2.5s so a hold still
+  climbs to something more. **Mine**: the first touch anyone gives this thing
+  is a tap, and it is the only chance to make them touch it twice.
+- **Rapid taps stack rather than replace** → up to the four slots entry 49
+  establishes, so drumming on the screen with one finger builds up rather than
+  restarting. **Mine**, and it is the difference between a toy and a control:
+  a control debounces, a toy accumulates.
+- **A fling throws further** → drag speed scales the emitted ring's birth
+  level, so a fast swipe leaves a brighter, wider trail than a slow drag over
+  the same path. Entry 48 already feeds drag speed into `roughness` for the
+  atmospheric views; this is the geometric half of the same idea, and both
+  read the velocity entry 49's field already computes.
+- **What is deliberately not loosened** → the shake ladder's thresholds, and
+  the tap-versus-drag distinction inside entry 41's dispatch. Sensitivity here
+  means *the picture answers everything*; it does not mean the app should start
+  guessing which administrative action you wanted. A screenshot taken by
+  accident is still a bad outcome and entry 41 already names that cost.
+- The honest risk → **more accidental captures**, because the bottom third now
+  rewards touching it and then also photographs it. Entry 41 already accepted
+  that cost and added the camera glyph so it is at least legible. If it becomes
+  annoying in use, the answer is to move capture off a bare tap, not to make
+  the picture less responsive — the responsiveness is the feature and the
+  capture is the thing that can move.
+
+**Lands in**
+- `src/engine/emitter.ts` — `CHARGE_FLOOR` 0.4 → 0.6, and the comment that
+  explains it in terms of a threshold that no longer exists.
+- `src/main.ts` — the dispatch: a tap in any zone spawns an emitter, in
+  addition to whatever else that zone does.
+- Entry 41's zone handling — the middle third stops being exclusive.
+- Entry 49's field — drag velocity into the emitted level.
+
+**Done when** — a single tap anywhere on the picture leaves a visible ring at
+the point it landed, in every geometric view, with no wait. Tapping in the
+middle third opens the panel and leaves a ring. Drumming four times quickly
+leaves four rings, not one. A fast swipe is visibly brighter than a slow one
+along the same path. A screenshot taken from the bottom band contains the ring
+but not the white flash.
+**Verify** — the phone, and specifically **someone else's** hands: the entry
+exists because of how other people reach for it, and the test of "playful" is
+whether a person who has never seen it touches it a second time without being
+asked. `pnpm build`, `pnpm lint`.
+**Hard stops** — prefs no · url no · capture no, and the emitter-in-frame
+question is a picture decision rather than a new capture · dependency no.
