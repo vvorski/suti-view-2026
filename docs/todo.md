@@ -4570,11 +4570,23 @@ currently issues an instruction.
   that decides this entry**, and it is the same width entry 43's title check
   turns on.
 - **`id="start"` stays, and so does every internal use of the word** →
-  `main.ts:58`, `main.ts:517` and `permission-gate.ts` all address it by id,
-  and the label is a single string at `index.html:437` that nothing else
-  reads or rewrites. Checked rather than assumed: the gate only ever sets
-  `disabled` on it, never its text. Renaming the concept would touch four
-  files and a dozen comments to change nothing anybody sees.
+  `main.ts:58`, `main.ts:517` and `permission-gate.ts` all address it by id, so
+  renaming the concept would touch four files and a dozen comments to change
+  nothing anybody sees.
+- **Correction, 2026-08-30: the label is not a single string.** This entry
+  first claimed the gate "only ever sets `disabled` on it, never its text",
+  and said so as a checked fact. It is wrong. `permission-gate.ts`'s error
+  path sets **`els.button.textContent = 'Try again'`**, which replaces the
+  label outright — so after a failed start the disc says "Try again" and every
+  type decision above has to hold for that string too.
+- Which needs its own answer, and the friendly one is not "Try again" →
+  **"once more"**, in the same three-line lowercase setting. **Mine.** "Try
+  again" is the voice of a form that rejected you; a toy that failed to start
+  should sound like it is still willing. Two words also fit the disc more
+  comfortably than three, so nothing about the fitting changes.
+- The error text itself is untouched → `#error` carries the actual reason
+  (`explain(err)`), and that is where a real explanation belongs. The disc's
+  job is the invitation, in both states.
 - The disabled state needs no separate copy → `#start:disabled` dims it and
   stops the animation while permission is being asked for. A greyed "play with
   me" reads correctly as *not yet*, where a greyed "Start" read as *broken*.
