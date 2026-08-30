@@ -7568,7 +7568,7 @@ eye") already concedes.
 meaning are untouched · url no · capture no · dependency no.
 
 ### 72. Camera mode: the room becomes the picture, and a tap is the shutter
-`status: done` · added 2026-08-30 · shipped at build 241
+`status: done` · added 2026-08-30 · shipped at build 242
 
 **Build note** — `main.ts` gained `cameraMode`/`preCameraMix` state and
 `enterCameraMode()`/`exitCameraMode()`. Entering captures `prefs.passthrough`
