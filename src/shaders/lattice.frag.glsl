@@ -196,8 +196,10 @@ void main() {
   vec2 cell = fract(cellId) - 0.5;
 
   // Nodes: the jewels. Size breathes with the bass, so the whole network
-  // inhales on a kick.
-  float nodeR = length(cell) * (2.6 - 0.7 * uLow - 0.5 * past);
+  // inhales on a kick. `past`'s weight raised from 0.5 toward 1.0 — docs/
+  // todo.md entry 32 — so two shells carrying different history are
+  // distinguishable by node size, not only by colour.
+  float nodeR = length(cell) * (2.6 - 0.7 * uLow - 1.0 * past);
   float node = exp(-nodeR * nodeR * 7.0);
 
   // --- what populates the lattice ------------------------------------------
@@ -251,8 +253,10 @@ void main() {
   // Filaments: the links. Distance to the nearer grid axis, kept thin — the
   // fine line work is most of why this style reads as drawn rather than
   // rendered.
+  // Width's uLevel term raised from 9 toward 14 — docs/todo.md entry 32 —
+  // so lines visibly thicken with loudness rather than only tinting.
   vec2 toLine = abs(cell);
-  float filament = exp(-min(toLine.x, toLine.y) * (26.0 - 9.0 * uLevel));
+  float filament = exp(-min(toLine.x, toLine.y) * (26.0 - 14.0 * uLevel));
 
   // Radiating rays from the centre — the "godhead" halo. Sharpened by the
   // treble, so cymbals and air make the figure bristle.
@@ -292,7 +296,15 @@ void main() {
   // competing with them for the same lines.
   float recede = 1.0 - 0.55 * popAmount;
 
-  col += nodeCol * node * (0.55 + 2.2 * past + 1.5 * energy) * depthFade * recede;
+  // The global transient term docs/todo.md entry 32 asks for: the travelling
+  // ring above is deliberately kept — a hit should be something you watch
+  // move — but the same hit also lifts every node's brightness here, so it
+  // flashes the whole network rather than only the one shell the ring is
+  // passing through. Weighted the same as `energy` above: it is the other
+  // fast, rhythmic term this shader was missing, not a bigger effect than
+  // loudness already gets. **Mine** — the entry names the fix but not this
+  // exact coefficient.
+  col += nodeCol * node * (0.55 + 2.2 * past + 1.5 * energy + 1.5 * uTransient) * depthFade * recede;
   // The population is drawn in the node colour but brighter and less tied to
   // the spectrum — a body in the lattice is a presence, not a meter.
   col += mix(nodeCol, vec3(1.0), 0.30) * population *

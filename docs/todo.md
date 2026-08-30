@@ -2329,7 +2329,7 @@ and tapping the `num` chip on each persists the *new* session value to
 lint` both clean.
 
 ### 32. The lattice hears the tune but not the beat
-`status: ready` · added 2026-08-29
+`status: done` · added 2026-08-29 · shipped at build 137
 
 **Do** — give `uTransient` a term that reaches the whole structure, and deepen
 the two couplings that carry loudness and recent history into the geometry.
@@ -2396,6 +2396,43 @@ this is the only test of whether it feels played. `pnpm probe` must still pass
 — the mapping is untouched, and if its numbers move, something other than this
 shader changed. Also `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+**Build note.** All three changes landed as specified: `nodeR`'s `past`
+coefficient 0.5→1.0, the filament width's `uLevel` term 9→14, and a new
+global transient term added at the node-brightness accumulation site
+(`col += nodeCol * node * (... + 1.5 * uTransient) * ...`), keeping the
+existing ring pulse untouched rather than replacing it. The coefficient on
+the new term (1.5) is **Mine** — the entry named the fix but not an exact
+value, so it was set equal to `energy`'s own weight: comparable to loudness,
+not larger than it.
+
+Found `views-probe.html` broken before it could be used: it still builds
+`VisualiserOptions` with a `mix: 0` field and a `geoColour: 'white'` string,
+both stale since the geo/atm colour and alpha split, and throws immediately
+on `atmMergeMode` being undefined. Fixed it in place (`geoAlpha`/`atmAlpha`,
+per-layer `GeoColour` objects, `atmMergeMode: 'screen'`) since every view
+this harness exists to check was unreachable through it, not only this one
+— confirmed fixed by loading it and calling `window.drive()`/`window.probe()`,
+which now render and read back a non-zero centre pixel for all seven
+atmospheric views.
+
+Verified the actual claims with a second, purpose-built script against
+`scene.ts`/`lattice.frag.glsl` directly: built a lattice-only visualiser
+(`geoAlpha: 0`), drove 30 frames at a steady baseline, then one frame with
+`transient: 1.0`, and read back every pixel rather than one centre sample.
+Mean frame brightness rose from 37.1 to 50.9 (+37%) on that single frame —
+consistent with the whole network lifting, not only the thin ring the old
+code lit. A separate loud-vs-quiet sweep (`level` 0.15 vs 0.95) raised mean
+brightness from 29.9 to 48.8, consistent with the filaments visibly
+thickening. The third synthetic claim — two shells at different depths
+distinguishable by node size — was not independently pixel-verified; the
+`past` coefficient doubling is confirmed in the diff, but isolating one
+shell's node radius from a screenshot needs more than this check bought.
+Not verified at all: real music through the microphone, which this harness
+cannot pass Start's mic gate to reach (same limitation as every other
+audio-live entry this session). `pnpm probe` output is unchanged — the
+mapping itself was never touched, only this one shader. `pnpm build`,
+`pnpm lint` both clean.
 
 ### 33. Touch drops a fading emitter into any geometric view
 `status: ready` · added 2026-08-29

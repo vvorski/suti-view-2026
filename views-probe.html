@@ -44,14 +44,19 @@
     fig.append(cap, canvas)
     document.getElementById('grid').append(fig)
 
+    const white = { r: 1, g: 1, b: 1 }
     const v = createVisualiser(canvas, {
       geometricView: 'circles',
-      geoColour: 'white',
+      geoColour: white,
+      atmColour: white,
+      camColour: white,
       atmosphericView: name,
-      // Pure atmosphere: mix 0 so the geometric layer cannot mask a broken
-      // atmospheric shader with its own output.
       mergeMode: 'normal',
-      mix: 0,
+      atmMergeMode: 'screen',
+      // Pure atmosphere: geoAlpha 0 so the geometric layer cannot mask a
+      // broken atmospheric shader with its own output.
+      geoAlpha: 0,
+      atmAlpha: 1,
     })
     made.push({ name, v, cap })
   }
