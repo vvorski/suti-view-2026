@@ -17,7 +17,7 @@
  */
 
 import type { AudioFrame } from '../src/engine/capture.ts'
-import { colourFor, Director, viewFor, COLOUR_HOLD, VIEW_HOLD } from '../src/director.ts'
+import { colourFor, Director, viewFor, COLOUR_HOLD, VIEW_HOLD, BOUNDARY_RAMP } from '../src/director.ts'
 import { MAPPINGS } from '../src/engine/fast.ts'
 import { BLANK, SlowAnalysis } from '../src/engine/slow.ts'
 import type { AtmosphericViewName } from '../src/views.ts'
@@ -211,7 +211,15 @@ console.log(decisions.length ? decisions.join('\n') : '  (none)')
 // are the claims that would make the tier worthless if they failed.
 const problems: string[] = []
 if (decisions.length === 0) problems.push('director never acted across a whole arrangement')
-if (decisions.length > 6) problems.push(`director acted ${decisions.length} times — too busy`)
+// docs/todo.md entry 89 raised this from 6: intro and build (60s each) sit
+// just past COLOUR_HOLD+BOUNDARY_RAMP (55s), so a colour step too small for
+// the old fixed COLOUR_MIN_STEP now clears the decayed one before either
+// section ends, and "drop" (90s, genuinely static for that whole span) is
+// long enough for the view axis's own stuck-suggestion fallback to fire once
+// near the end. Both are the entry's intended effect, not noise — this bound
+// still exists to catch an oscillating director, not to hold the count at
+// its pre-entry-89 number.
+if (decisions.length > 10) problems.push(`director acted ${decisions.length} times — too busy`)
 console.log()
 console.log(problems.length ? 'CHECK: ' + problems.join('; ') : 'PASS: director acted, and sparingly.')
 
@@ -359,7 +367,7 @@ console.log('\nPer-layer holds (entry 84), over several minutes:\n')
   const PHASES = 8 // 12 simulated minutes
 
   const d = new Director()
-  let current = { geoColour: colourFor(FLAVOUR_A), atmosphericView: viewFor(FLAVOUR_A) }
+  let current = { geoColour: colourFor(FLAVOUR_A), atmosphericView: viewFor(FLAVOUR_A)[0] }
   const colourOffsets: number[] = [] // seconds into each phase that the colour axis fired
   const viewOffsets: number[] = [] // seconds into each phase that the view axis fired
 
@@ -437,7 +445,7 @@ console.log('\nPer-layer holds (entry 84), over several minutes:\n')
   // suspended", not what happens once it lifts.
   {
     const s = new Director()
-    const idle = { geoColour: colourFor(FLAVOUR_A), atmosphericView: viewFor(FLAVOUR_A) }
+    const idle = { geoColour: colourFor(FLAVOUR_A), atmosphericView: viewFor(FLAVOUR_A)[0] }
     s.suspend()
     let fired = false
     for (let i = 0; i < Math.round(25 / DT); i++) {
@@ -447,5 +455,137 @@ console.log('\nPer-layer holds (entry 84), over several minutes:\n')
   }
 
   console.log(failures === 0 ? '\nall per-layer-hold checks passed' : `\n${failures} check(s) failed`)
+  if (failures > 0) process.exitCode = 1
+}
+
+// docs/todo.md entry 89 — a flat input, driven through the real pipeline
+// (SlowAnalysis and MAPPINGS, not a hand-built Character) exactly like the
+// arrangement at the top of this file, except this "arrangement" is one
+// section that never changes for five minutes. This is the case nobody
+// wrote before, because nobody expected the input to be flat — and it is
+// exactly the shape a phone left running against room noise, a fan, or a
+// drive actually is. Before this entry the director's own gates latched
+// shut against it forever; Done-when asks for "rather than never".
+console.log('\nA flat input (entry 89):\n')
+{
+  let failures = 0
+  const check = (name: string, ok: boolean, detail: string): void => {
+    if (!ok) failures++
+    console.log(`${ok ? 'ok  ' : 'FAIL'}  ${name}${ok ? '' : `  — ${detail}`}`)
+  }
+
+  const FLAT_SECTION: Section = {
+    name: 'flat',
+    seconds: 0,
+    slope: 1.8,
+    noise: 0.25,
+    level: 0.35,
+    bpm: 0,
+    hitsPerBeat: 0,
+    shape: [-6, 3, -16],
+  }
+  const flatMapping = MAPPINGS.relative()
+  const flatSlow = new SlowAnalysis()
+  const flatDirector = new Director()
+  // Deliberately not colourFor(this section)'s own answer — an arbitrary
+  // starting colour is what the app actually has on screen the moment this
+  // kind of audio starts, and the whole question is whether the director
+  // ever moves away from it.
+  const flatCurrent: { geoColour: GeoColour; atmosphericView: AtmosphericViewName } = {
+    geoColour: { r: 1, g: 1, b: 1 },
+    atmosphericView: 'field',
+  }
+  const RUN_S = 300 // comfortably past `warm` (120s) + VIEW_HOLD + BOUNDARY_RAMP (75s)
+
+  let colourFireAt: number | null = null
+  let viewFireAt: number | null = null
+
+  let t2 = 0
+  while (t2 < RUN_S) {
+    const params = flatMapping.update(makeFrame(FLAT_SECTION, 0))
+    const c = flatSlow.update({ freq, time, binCount: BINS, sampleRate: SR, dt: DT }, params)
+    const next = flatDirector.update(c, DT, flatCurrent, params.beatPhase, params.beatConfidence)
+    if (next?.geoColour && colourFireAt === null) {
+      colourFireAt = t2
+      flatCurrent.geoColour = next.geoColour
+    }
+    if (next?.atmosphericView && viewFireAt === null) {
+      viewFireAt = t2
+      flatCurrent.atmosphericView = next.atmosphericView
+    }
+    t2 += DT
+  }
+
+  check('a colour change eventually fires against flat audio', colourFireAt !== null, 'never fired across 5 minutes')
+  check('a view change eventually fires against flat audio', viewFireAt !== null, 'never fired across 5 minutes')
+  if (colourFireAt !== null) {
+    check(
+      `the colour change lands well before full warmth (120s) — fired at ${colourFireAt.toFixed(1)}s`,
+      colourFireAt < 120,
+      'colour waited for the long window it does not read',
+    )
+  }
+  if (colourFireAt !== null && viewFireAt !== null) {
+    check(
+      `colour fires before view, per-axis warmth doing its job (colour ${colourFireAt.toFixed(1)}s, view ${viewFireAt.toFixed(1)}s)`,
+      colourFireAt < viewFireAt,
+      'the two axes became live in the wrong order',
+    )
+  }
+
+  console.log(failures === 0 ? '\nall flat-input checks passed' : `\n${failures} check(s) failed`)
+  if (failures > 0) process.exitCode = 1
+}
+
+// docs/todo.md entry 89 — the "due, blocked, then eventually fires"
+// sequence made directly observable. The flat-input run above never shows
+// it: `sinceColour` starts pre-loaded at COLOUR_HOLD and `warmMedium` itself
+// takes about as long to clear as BOUNDARY_RAMP, so by the time the very
+// first check ever runs, the ramp has usually already finished decaying —
+// a real, if slightly surprising, property of a cold start rather than a
+// bug. This section drives Director directly, past that cold start, with a
+// colour step small enough to sit under the old fixed COLOUR_MIN_STEP, to
+// prove the readout genuinely walks through "blocked" before "fired" once
+// the ramp is the thing actually running.
+console.log('\nA due-but-blocked window, driven directly (entry 89):\n')
+{
+  let failures = 0
+  const check = (name: string, ok: boolean, detail: string): void => {
+    if (!ok) failures++
+    console.log(`${ok ? 'ok  ' : 'FAIL'}  ${name}${ok ? '' : `  — ${detail}`}`)
+  }
+
+  const d = new Director()
+  const nearby = { ...BLANK, warm: true, warmMedium: true, bright: 0.65, noisy: 0.8, noveltyMedium: 0.1 }
+  const trueColour = colourFor(nearby)
+  // A known, exact 0.1 distance from `trueColour` — under COLOUR_MIN_STEP
+  // (0.18), so the pre-entry-89 fixed floor would have blocked this forever.
+  const idleCurrent: { geoColour: GeoColour; atmosphericView: AtmosphericViewName } = {
+    geoColour: { ...trueColour, r: trueColour.r - 0.1 },
+    atmosphericView: 'field',
+  }
+
+  let blockedSeen = false
+  let firedAt: number | null = null
+  let t3 = 0
+  const TOTAL = COLOUR_HOLD + BOUNDARY_RAMP + 5
+  while (t3 < TOTAL) {
+    const next = d.update(nearby, DT, idleCurrent, 0, 0)
+    if (next?.geoColour) {
+      firedAt = t3
+      break
+    }
+    if (d.status().blocked !== null) blockedSeen = true
+    t3 += DT
+  }
+
+  check('a small, real colour step is blocked at first', blockedSeen, 'status().blocked never appeared')
+  check(
+    'the same step eventually fires as the floor decays',
+    firedAt !== null,
+    `never fired within ${TOTAL.toFixed(0)}s`,
+  )
+
+  console.log(failures === 0 ? '\nall due-but-blocked checks passed' : `\n${failures} check(s) failed`)
   if (failures > 0) process.exitCode = 1
 }

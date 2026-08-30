@@ -104,6 +104,14 @@ export interface Character {
    *  anything. Everything above is reported before this; only the long-scale
    *  numbers are untrustworthy until it flips. */
   warm: boolean
+  /** docs/todo.md entry 89 — true once the buffer holds enough history for
+   *  the *medium* scale (noveltyMedium) to mean anything, well before `warm`
+   *  itself flips. A consumer that only reads the medium window — director.ts's
+   *  colour axis is the one that exists today — does not need to wait out
+   *  `warm`'s own, much longer, buffer-fill time. `warm` implies this is also
+   *  true (HALF_LONG > HALF_MEDIUM), so a reader that wants "warm enough for
+   *  the medium axes" can check either flag rather than both. */
+  warmMedium: boolean
 }
 
 export const BLANK: Character = {
@@ -118,6 +126,7 @@ export const BLANK: Character = {
   dwell: 0,
   bpm: 0,
   warm: false,
+  warmMedium: false,
 }
 
 /**
@@ -447,6 +456,9 @@ export class SlowAnalysis {
       dwell: this.dwell,
       bpm: this.bpm,
       warm: this.filled >= HALF_LONG * 2,
+      // docs/todo.md entry 89 — same shape as `warm`, against the shorter
+      // window colour actually reads.
+      warmMedium: this.filled >= HALF_MEDIUM * 2,
     }
   }
 }

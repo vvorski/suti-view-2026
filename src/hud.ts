@@ -202,6 +202,11 @@ export interface Hud {
         tillView: number
         candidate: string | null
         candidateHeld: number
+        /** docs/todo.md entry 89 — which gate is closed, e.g. `"colour: step
+         *  0.04 < 0.18"`, when a change is due and not firing. Null while
+         *  nothing is due, something just fired, or the autopilot is
+         *  suspended or holding for a bar. */
+        blocked?: string | null
       }
       /** Whether the long-scale buffer has enough history to act on. */
       warm?: boolean
@@ -1439,16 +1444,23 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
             ]),
         // Why the autopilot has not done anything. Without this the restraint
         // rules in director.ts are indistinguishable from a broken feature.
+        // docs/todo.md entry 89 — `blocked` takes priority over the generic
+        // "auto warming" line: colour can be live and due-but-blocked well
+        // before the view axis's own, much longer, full warmth, and a
+        // change that has been due with `till 0s` and nothing to show for
+        // it is exactly the fault this entry exists to make legible.
         ...(s.director === undefined
           ? []
           : [
               s.director.suspended > 0
                 ? `auto held ${Math.ceil(s.director.suspended)}s (manual)`
-                : !s.warm
-                  ? 'auto warming'
-                  : `auto ${s.director.candidate ?? '—'} ` +
-                    `${Math.floor(s.director.candidateHeld)}s  ` +
-                    `next ${Math.ceil(s.director.tillView)}s`,
+                : s.director.blocked
+                  ? `auto blocked: ${s.director.blocked}`
+                  : !s.warm
+                    ? 'auto warming'
+                    : `auto ${s.director.candidate ?? '—'} ` +
+                      `${Math.floor(s.director.candidateHeld)}s  ` +
+                      `next ${Math.ceil(s.director.tillView)}s`,
             ]),
         // Separates "nothing asked for a buzz" from "asked and refused" from
         // "asked, accepted, and the phone did nothing you could feel".

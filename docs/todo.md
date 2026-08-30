@@ -9663,7 +9663,105 @@ the four**: entry 76 is frozen and entry 70's colour is approved; both consume
 single frame.
 
 ### 89. The director always eventually moves
-`status: building` · added 2026-08-30 · reconfirmed 2026-08-30 · **build before 90–92**
+`status: done` · added 2026-08-30 · reconfirmed 2026-08-30 · build 306
+
+**Build note (Mine as to test design and the one simplification below; the
+fixes themselves follow Decided)** — `requiredStep(sinceDue)` now decays
+`COLOUR_MIN_STEP` to 0 across `BOUNDARY_RAMP`, the same shape as
+`requiredNovelty`, and `update()`'s colour block reads it instead of the
+flat 0.18. One real guard had to go with it: a
+*literal* zero distance (wanted colour already exactly equal to current) is
+never treated as "eventually clearable" — only `step > 0` enters the decay
+path at all. Without that guard the entry-84 per-layer-holds probe broke:
+each of its two 90s-long, genuinely unchanging flavours would eventually hit
+`requiredStep(overdue) === 0`, at which point `distance(wanted, current) >= 0`
+is trivially true for *any* colour including one already on screen, firing a
+no-op "change" partway through nearly every phase and scrambling that
+probe's own offset measurements. Decided's own wording is "distance is ~0"
+for the bug being fixed, not "= 0" — the decay exists for the real residual
+a continuous, slightly-noisy flavour axis leaves behind (this is what the
+real pipeline actually produces — see the flat-input probe below), not to
+manufacture a re-announcement of a colour that never changed at all.
+
+`viewFor` returns `[best, second-best]` rather than one name — the second
+element is the sibling the nearest tie-breaking comparison in the branch
+tree would have picked instead, not a random alternative. `Director` tracks
+it alongside `candidate` (`secondBest`, updated every `track()` call). Once
+a view change has been due for a full `BOUNDARY_RAMP` with the suggestion
+still equal to what is showing, the target becomes `secondBest` instead of
+waiting on a primary answer that can, by construction, never differ from
+reality.
+
+Warmth is per-axis: `Character` gains `warmMedium` (`slow.ts`, `filled >=
+HALF_MEDIUM * 2`, ~30s), alongside the existing `warm` (~120s). The colour
+block now gates on `c.warmMedium || c.warm` rather than `c.warm` alone — the
+`||` is **Mine**, not asked for directly: `warm` mathematically implies
+`warmMedium` (the long buffer cannot be full before the medium one is), so
+this reads "medium-or-better" without requiring every existing synthetic
+`{...BLANK, warm: true}` fixture across `probe-slow.ts`'s other two sections
+(nine call sites, all from entries 81/84, none touched) to also learn about
+a field they have no reason to know exists. The view block keeps requiring
+full `warm`, per Decided.
+
+`status()` gained `blocked: string | null` — `"colour: step 0.04 < 0.18"` or
+`"view: candidate = current (field)"` — null whenever nothing is due,
+something fired, or the autopilot is suspended or holding for a bar.
+`hud.ts`'s readout checks it ahead of the generic "auto warming" line, since
+colour can be live and due-but-blocked well before the view axis's own,
+much longer, warmth clears.
+
+**The third "found on re-reading" bug — `suspend()` clearing `pending` — was
+already fixed.** `director.ts`'s own `suspend()` has carried `this.pending =
+null` since entry 81's original commit (`git log -S`, one hit, entry 81's own
+commit introducing it twice — the other in the normal pending-fire path).
+`probe-slow.ts` already carried the exact assertion Verify asks for
+("a manual change discards a held decision outright", checking
+`d.status().waitingForBar === false` after `suspend()`) from the same
+commit. Nothing needed changing here; this build only confirms it, rather
+than re-doing work already done.
+
+Two probe sections added. **"A flat input"** drives the real pipeline
+(`SlowAnalysis`/`MAPPINGS`, not a hand-built `Character`) with one section
+that never changes for five minutes — the case Verify names. Both axes
+eventually fire, colour (31.9s) well before view (120.2s), confirming
+per-axis warmth lands in the right order. It does **not** demonstrate a
+visible "blocked" window, and that turned out to be a real, if surprising,
+structural fact rather than a gap in the fix: `sinceColour` starts
+pre-loaded at `COLOUR_HOLD`, so `overdue` equals wall-clock time from t=0,
+and `warmMedium` itself clears at almost exactly `BOUNDARY_RAMP` (30s) —
+meaning the ramp is usually *already* fully decayed the first moment the
+colour gate is even checked. The very first decision from a cold start
+skips past "blocked" straight to "fired"; only a second, later decision
+would show the intermediate window. **"A due-but-blocked window, driven
+directly"** demonstrates that window explicitly instead: a `Director` fed a
+colour a known, exact 0.1 distance away (under the old fixed 0.18) shows
+`status().blocked` non-null at first, then fires once the decay clears it —
+proving the mechanism the flat-input run couldn't show.
+
+The pre-existing arrangement check (`decisions.length > 6`, "too busy") went
+to 9 with these fixes in place and needed raising, not fixing: `intro` and
+`build` (60s each) sit just past `COLOUR_HOLD + BOUNDARY_RAMP` (55s), so a
+colour step too small for the old fixed floor now clears the decayed one
+before either section ends, and `drop` (90s, genuinely static for that
+whole span) is long enough for the view axis's own stuck-suggestion
+fallback to fire once near the end. Both are this entry's intended effect on
+a somewhat-artificial arrangement whose individual sections happen to run
+long relative to the hold+ramp windows, not noise — raised the bound to 10
+with a comment explaining why, rather than holding it at a stale
+pre-entry-89 number.
+
+`pnpm build` and `pnpm lint` are clean. `pnpm probe:slow`'s four sections —
+the main arrangement, entry-81's bar-quantisation, entry-84's per-layer
+holds, and the two new entry-89 sections — all pass. Not verified on a real
+phone: the dev server's `?debug` HUD readout was reachable, but `getUserMedia`
+was refused in this headless environment before any audio ever reaches the
+director, same limitation noted on an earlier entry this session — so the
+`blocked` text was verified by direct code reading and the probe, not by
+watching the live readout say it.
+
+**Do** — make the two gates that can hold forever decay like the novelty gate
+already does, so a still phone in front of unchanging sound still changes
+picture.
 
 **Do** — make the two gates that can hold forever decay like the novelty gate
 already does, so a still phone in front of unchanging sound still changes

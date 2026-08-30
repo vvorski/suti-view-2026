@@ -51,8 +51,12 @@ const BOUNDARY = 0.45
  *  "changes only land on a section boundary" into a rule with a bound: on
  *  material with no distinct sections at all, the change still lands, just
  *  without one to land on. A genuinely novel moment inside the ramp still
- *  wins early — the decay only matters once none arrives. */
-const BOUNDARY_RAMP = 30
+ *  wins early — the decay only matters once none arrives.
+ *
+ *  Exported for the same reason COLOUR_HOLD/VIEW_HOLD are (docs/todo.md
+ *  entry 84): docs/todo.md entry 89's own probe cases assert real timings
+ *  against this value directly rather than a hand-copied literal. */
+export const BOUNDARY_RAMP = 30
 
 /**
  * Minimum seconds between changes of each kind — and, since each kind only
@@ -97,7 +101,11 @@ const MAX_BAR_WAIT_S = 2.4
 
 /** Colour only moves if it would move far enough to notice. Below this the
  *  change is invisible and only costs a boundary that could have carried
- *  something worth seeing. */
+ *  something worth seeing. docs/todo.md entry 89 — this is the *starting*
+ *  requirement; `requiredStep` below decays it the same way `requiredNovelty`
+ *  decays `BOUNDARY`, since an un-decaying distance floor was the actual
+ *  cause of a colour that never moves against steady audio (see that
+ *  function's own comment). */
 const COLOUR_MIN_STEP = 0.18
 
 export interface Directives {
@@ -166,14 +174,22 @@ export function colourFor(c: Character): GeoColour {
  *   bright                aurora      the one with a horizon
  *   tonal + dense         fringe      interference needs sustained pitch to read
  *   otherwise             field       the default, and the quietest
+ *
+ * docs/todo.md entry 89 — returns `[best, second-best]` rather than one name,
+ * so a suggestion that is stuck matching what is already on screen has an
+ * honest fallback to offer rather than blocking forever (see director.ts's
+ * own use of the second element). The second element is the leaf the nearest
+ * tie-breaking comparison would have picked instead — the sibling one level
+ * in, not an arbitrary or random alternative — so it stays an answer to the
+ * same music, merely not the first one.
  */
-export function viewFor(c: Character): AtmosphericViewName {
+export function viewFor(c: Character): readonly [AtmosphericViewName, AtmosphericViewName] {
   if (c.rhythmic > 0.5) {
-    if (c.dense > 0.4) return 'lattice'
-    return c.noisy > 0.5 ? 'cells' : 'spectrogram'
+    if (c.dense > 0.4) return ['lattice', c.noisy > 0.5 ? 'cells' : 'spectrogram']
+    return c.noisy > 0.5 ? ['cells', 'spectrogram'] : ['spectrogram', 'cells']
   }
-  if (c.bright > 0.55) return c.noisy > 0.45 ? 'caustics' : 'aurora'
-  return c.dense > 0.45 && c.noisy < 0.4 ? 'fringe' : 'field'
+  if (c.bright > 0.55) return c.noisy > 0.45 ? ['caustics', 'aurora'] : ['aurora', 'caustics']
+  return c.dense > 0.45 && c.noisy < 0.4 ? ['fringe', 'field'] : ['field', 'fringe']
 }
 
 const distance = (a: GeoColour, b: GeoColour): number =>
@@ -195,6 +211,20 @@ function requiredNovelty(sinceDue: number): number {
   return BOUNDARY * Math.max(0, 1 - Math.max(0, sinceDue) / BOUNDARY_RAMP)
 }
 
+/**
+ * docs/todo.md entry 89 — same shape as `requiredNovelty`, decaying
+ * `COLOUR_MIN_STEP` to 0 across `BOUNDARY_RAMP` once a colour change is
+ * otherwise due. Without this, a `wanted` colour equal to what is already
+ * showing — the ordinary state of a steady character, not an edge case —
+ * has a distance of ~0 forever, and no boundary, however novel, can make a
+ * step of 0 clear a fixed floor above 0. The novelty gate already had this
+ * decay (entry 45); the distance gate never did, and that gap is this
+ * entry's actual bug, not a motion problem.
+ */
+function requiredStep(sinceDue: number): number {
+  return COLOUR_MIN_STEP * Math.max(0, 1 - Math.max(0, sinceDue) / BOUNDARY_RAMP)
+}
+
 export class Director {
   private suspended = 0
   private sinceColour = COLOUR_HOLD
@@ -211,6 +241,15 @@ export class Director {
   private beatsIntoBar = 0
   private pending: Directives | null = null
   private pendingWaited = 0
+  // docs/todo.md entry 89 — the view axis's own runner-up for the current
+  // character, tracked alongside `candidate` so it is ready the instant the
+  // primary suggestion turns out to be stuck matching what is on screen.
+  private secondBest: AtmosphericViewName | null = null
+  /** docs/todo.md entry 89 — which specific gate is closed, when something is
+   *  otherwise due and not firing. Null whenever nothing is due, something
+   *  did fire, or the autopilot is suspended/holding for a bar — see
+   *  `status()`'s own comment for why this exists. */
+  private blocked: string | null = null
 
   /** Call whenever the user changes anything by hand. */
   suspend(): void {
@@ -258,6 +297,15 @@ export class Director {
      *  stays distinguishable from "not running" for whoever looks next.
      *  **Mine**. */
     waitingForBar: boolean
+    /** docs/todo.md entry 89 — the gate actually blocking a due change, e.g.
+     *  `"colour: step 0.04 < 0.18"` or `"view: candidate = current (field)"`.
+     *  Null whenever nothing is due, something just fired, or the autopilot
+     *  is suspended or already holding for a bar line. Exists because
+     *  `tillColour`/`tillView` reaching 0 and staying there — the exact
+     *  shape of the latch this entry fixes — was indistinguishable from "not
+     *  running" without it: a diagnostic that goes quiet precisely when the
+     *  fault fires is not a diagnostic. */
+    blocked: string | null
   } {
     return {
       suspended: Math.max(0, this.suspended),
@@ -266,6 +314,7 @@ export class Director {
       candidate: this.candidate,
       candidateHeld: this.candidateHeld,
       waitingForBar: this.pending !== null,
+      blocked: this.blocked,
     }
   }
 
@@ -309,6 +358,7 @@ export class Director {
       // The stability timer keeps running while suspended, so resuming does not
       // start from a standing start — but nothing is emitted.
       this.track(c, dt)
+      this.blocked = null
       return null
     }
 
@@ -323,6 +373,7 @@ export class Director {
     if (this.pending) {
       this.pendingWaited += dt
       const cap = MAX_BAR_WAIT_S * beatConfidence
+      this.blocked = null
       if (barBoundary || this.pendingWaited >= cap) {
         const fired = this.pending
         this.pending = null
@@ -332,35 +383,73 @@ export class Director {
       return null
     }
 
-    // Long-scale history has to exist before any of this means anything. Before
-    // the buffer is warm the flavour axes are still converging from their
-    // initial values, and acting on them is acting on the initial values.
-    if (!c.warm) return null
-
     const out: Directives = {}
+    let blocked: string | null = null
 
-    const wanted = colourFor(c)
-    if (
-      this.sinceColour >= COLOUR_HOLD &&
-      distance(wanted, current.geoColour) >= COLOUR_MIN_STEP &&
-      c.noveltyMedium >= requiredNovelty(this.sinceColour - COLOUR_HOLD)
-    ) {
-      out.geoColour = wanted
-      this.sinceColour = 0
+    // docs/todo.md entry 89 — per-axis warmth, not one flag gating both.
+    // Colour only reads noveltyMedium, so it only needs `warmMedium`; `warm`
+    // (the long window the view axis actually needs) implies it too, since
+    // the long buffer cannot be full before the medium one is — hence the
+    // `||`, which lets every existing "warm: true" fixture elsewhere in this
+    // codebase keep meaning "the director may act" without also having to
+    // name the medium flag explicitly.
+    if (c.warmMedium || c.warm) {
+      const overdue = this.sinceColour - COLOUR_HOLD
+      if (overdue >= 0) {
+        const wanted = colourFor(c)
+        const step = distance(wanted, current.geoColour)
+        // docs/todo.md entry 89 — a literal zero distance is not a small step
+        // that time should eventually forgive; it is nothing to change at
+        // all, wanted being current already rather than merely close to it.
+        // Decided's own wording is "distance is ~0" for the bug this fixes,
+        // not "= 0" — the decay exists for the real residual a continuous,
+        // slightly-noisy flavour axis leaves behind, not to manufacture a
+        // no-op re-announcement of the colour already on screen.
+        if (step > 0) {
+          const neededStep = requiredStep(overdue)
+          const neededNovelty = requiredNovelty(overdue)
+          if (step < neededStep) {
+            blocked = `colour: step ${step.toFixed(2)} < ${neededStep.toFixed(2)}`
+          } else if (c.noveltyMedium < neededNovelty) {
+            blocked = `colour: novelty ${c.noveltyMedium.toFixed(2)} < ${neededNovelty.toFixed(2)}`
+          } else {
+            out.geoColour = wanted
+            this.sinceColour = 0
+          }
+        }
+      }
     }
 
-    if (
-      this.sinceView >= VIEW_HOLD &&
-      this.candidate !== null &&
-      this.candidate !== current.atmosphericView &&
-      this.candidateHeld >= VIEW_STABLE &&
-      c.noveltyMedium >= requiredNovelty(this.sinceView - VIEW_HOLD)
-    ) {
-      out.atmosphericView = this.candidate
-      this.sinceView = 0
+    // The view axis keeps needing full `warm` — Decided is explicit that the
+    // long axes it reads are not the ones entry 89's medium-window relief
+    // applies to.
+    if (c.warm && this.candidate !== null && this.candidateHeld >= VIEW_STABLE) {
+      const overdue = this.sinceView - VIEW_HOLD
+      if (overdue >= 0) {
+        // docs/todo.md entry 89 — once a view change has been due for a full
+        // BOUNDARY_RAMP with the suggestion still matching what is already
+        // showing, the suggestion itself is what is stuck, not the boundary
+        // — so the target becomes the character's own runner-up instead of
+        // waiting on a primary answer that can never differ from reality.
+        const stuck = overdue >= BOUNDARY_RAMP && this.candidate === current.atmosphericView
+        const target = stuck ? this.secondBest : this.candidate
+        const neededNovelty = requiredNovelty(overdue)
+        if (target === null || target === current.atmosphericView) {
+          blocked = blocked ?? `view: candidate = current (${current.atmosphericView})`
+        } else if (c.noveltyMedium < neededNovelty) {
+          blocked = blocked ?? `view: novelty ${c.noveltyMedium.toFixed(2)} < ${neededNovelty.toFixed(2)}`
+        } else {
+          out.atmosphericView = target
+          this.sinceView = 0
+        }
+      }
     }
 
-    if (!out.geoColour && !out.atmosphericView) return null
+    if (!out.geoColour && !out.atmosphericView) {
+      this.blocked = blocked
+      return null
+    }
+    this.blocked = null
 
     // docs/todo.md entry 81 — fire on the spot rather than holding when
     // either the tracker is not confident enough to bother waiting on
@@ -378,7 +467,8 @@ export class Director {
 
   /** Hysteresis on the programme suggestion: a new answer has to persist. */
   private track(c: Character, dt: number): void {
-    const suggestion = viewFor(c)
+    const [suggestion, second] = viewFor(c)
+    this.secondBest = second
     if (suggestion === this.candidate) {
       this.candidateHeld += dt
     } else {
