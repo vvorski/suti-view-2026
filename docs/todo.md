@@ -9747,7 +9747,13 @@ anything is captured) · dependency no — build-time parsing in a config that
 already runs `execSync`, no package added.
 
 ### 94. The name decodes, and a still phone still gets to see it
-`status: ready` · added 2026-08-30
+`status: superseded by 99` · added 2026-08-30
+
+**Superseded 2026-08-30, unbuilt.** Entry 99 absorbs this whole entry — the
+two-phase decode and the non-scrambling reduced variant — and joins it to the
+same fix for the disc, under one principle: the start screen must visibly
+animate on any phone, because the user cannot be expected to know the OS
+setting that silences it. Build 99, not this.
 
 **Do** — give the name flip a second phase that locks character by character
 onto the final name, and give reduced motion a *slower* version of it instead
@@ -10211,3 +10217,91 @@ verified simply by it being iOS.
 **Hard stops** — prefs no (live-sensed, nothing stored) · url no · capture no ·
 dependency **no — a built-in browser sensor, no library; and no network, which
 is the whole reason it was chosen.**
+
+### 99. The start screen animates on every phone, full stop
+`status: ready` · added 2026-08-30 · supersedes 94, strengthens 65
+
+**Do** — make both the play disc and the name visibly animate whether or not
+the phone reports reduced motion, by giving the reduced path cues that are
+plainly visible but carry no motion. Neither may ever be silent or invisible.
+
+**Why** — Victor has asked for the play-button animation at least five times and
+still does not see it, and the name animation the same. The cause is real and it
+is mine: every fix has depended on an OS setting the user has no reason to know
+exists, and when that setting is on, the app answers by going nearly invisible.
+"Animated" and "not animated" currently look identical on a phone in that state,
+which is the phone at a festival.
+
+**Decided**
+- **The root cause is a failed diagnosis loop, not a coding failure.** The
+  animations are coded. Entry 65 shipped a disc pulse at build 220; entry 94
+  specified the name decode. Both are gated on `prefers-reduced-motion`, which
+  Android sets under Battery Saver and Accessibility → Remove animations — and
+  **nobody ever confirmed the phone was in that state, because confirming it
+  needs `?debug`.** Five rounds fixed a cause that was never made visible to the
+  person reporting it. The lesson, written down: **when a fix depends on a
+  device state the user cannot see, surface the state or remove the dependency.
+  Here, remove it.**
+- **Stop depending on the preference being actioned correctly. Make both
+  branches visible.** Full-motion keeps everything it has — the disc's ring and
+  breathe, the name's history-flip. The reduced branch stops being a whisper:
+  it must be as *noticeable* as the full one, differing only in *kind* of
+  change, never in whether a change is perceptible.
+- **This honours reduced-motion properly rather than ignoring it, and the
+  distinction is the whole design.** `prefers-reduced-motion` exists for
+  vestibular triggers — translation, scale, parallax, rotation. **Opacity,
+  glow, colour and a character resolving in place are not motion** and do not
+  trigger it (entry 94 already argued this for text). So the reduced variants
+  use exactly those: they are unmistakable *and* correct. We are not overriding
+  the preference; we are giving it a version that respects it and is still
+  alive.
+- **The disc, reduced (supersedes entry 65's variant):** its current
+  `start-pulse-reduced` shifts `background` between `#9d9bf0` and `#b9b7ff` —
+  two lavenders a phone in sunlight cannot tell apart. Replace it with a
+  **glow pulse**: a `box-shadow`/opacity halo that clearly swells and fades on
+  the same 3.4s period, plus a brightness swing wide enough to read outdoors.
+  No scale, no travelling ring (those are the motion). Visible across a
+  dancefloor; still motionless.
+- **The name, reduced (absorbs entry 94):** builds entry 94 as specified — the
+  history-flip decelerating into a left-to-right character lock — and its
+  reduced variant is the non-scrambling type-in from that entry, **but it must
+  actually run**, not return early. About 3 characters/second resolving in
+  place: plainly visible, no churn, no motion vector.
+- **The name's own reduced fallback of last resort is a fade, never an instant
+  set.** Even if a build somehow reaches the most conservative path, the name
+  *arrives* — fades up over ~400ms — rather than snapping in. Nothing on this
+  screen is ever allowed to simply appear; the start screen's whole job is to
+  invite, and an instant paint invites nothing.
+- **And surface the state, so this loop cannot silently repeat.** The
+  `?debug` readout reports `os motion reduced/full` (entry 65). That is not
+  enough, because the person hitting this never opens `?debug`. Put a **single
+  faint dot or glyph on the gate itself** that differs between full and reduced
+  motion — invisible as information to anyone not looking for it, but the
+  moment "the animation isn't working" comes up again, the answer is one glance
+  at the start screen, not a spelunk through Android settings. **Mine**, and it
+  is the actual fix for "why is it so hard": the diagnosis becomes visible where
+  the problem is reported.
+- **Verify on the reduced path specifically, because that is the failing one.**
+  Every prior verification implicitly ran full-motion (a dev browser rarely
+  reduces motion) and so never exercised the branch that was broken. This
+  entry's verification is the opposite: force reduced motion and confirm both
+  animations are *obvious*.
+
+**Lands in**
+- `index.html:555-560` — `start-pulse-reduced` becomes the glow pulse.
+- `src/version.ts:281-333` — entry 94's two-phase decode and a reduced variant
+  that runs.
+- `index.html` / `src/version.ts` — the gate's faint motion-state glyph.
+- `scripts/probe-*` — the decode timing (pure); the CSS is verified on device.
+
+**Done when** — with reduced motion forced ON in DevTools, the disc visibly
+pulses (glow, not a colour whisper) and the name visibly resolves character by
+character; with it OFF, the full ring/breathe and history-flip play as today;
+on a real phone in daylight both are obvious in either state; and the gate
+carries a one-glance indicator of which motion state it is in.
+**Verify** — DevTools with `prefers-reduced-motion: reduce` emulated is the
+primary test, because it is the branch that has been failing unseen. Then the
+actual phone, in sun, without touching any OS setting — which is the whole
+point: it must work as the phone is.
+**Hard stops** — prefs no · url no · capture no · dependency no — CSS and a
+function that already exists, no animation library (entry 94 settled that).
