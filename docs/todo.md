@@ -8467,3 +8467,77 @@ only increases `r`, which only shrinks `step`. No console errors.
 Not independently verified: the phone-with-a-thumb reachability question the
 entry's own Verify text names as its half of this — outside what a
 browser-only harness can answer.
+
+### 78. Camera mode is a door back to the menu, not a one-way trip
+`status: ready` · added 2026-08-30
+
+**Do** — make the shutter chip stay live in camera mode and return to the open
+menu when tapped, retire the two-finger exit, and show the chip as active while
+the mode is on.
+
+**Why** — you enter camera mode from the menu and there is no way back to it.
+And the gesture that does exist takes an unwanted photo on the way out.
+
+**Decided**
+- **The complaint is exact and the design caused it.** Entry 72 decided the
+  exit goes "to the normal picture rather than opening the panel". So the trip
+  is one-way: enter from a chip, leave to a bare screen, then double-tap to get
+  the menu back. Every other chip in the app leaves you where you were. This
+  one does not, and that asymmetry is the whole of "not connected to the menu".
+  **Overturned: exiting returns to the menu, open, as it was.**
+- **The two-finger exit fires a spurious screenshot, every time.**
+  `nonChipDown` is counted from `touchField.sample(now)` — the *live contact
+  set* — so when the first finger lands it is 1, which falls through to the
+  shutter and saves a frame; only the second finger makes it 2 and exits. Two
+  fingers never land in the same 16ms frame in practice. So **the gesture for
+  leaving camera mode is also the gesture for taking a picture you did not
+  want**, and at a 300ms rate limit it is not swallowed either.
+- **That bug cannot be fixed while both gestures start identically.** The
+  shutter's whole value is firing on `down` with no wait (entry 72), and any
+  scheme that waits to see whether a second finger is coming gives that back.
+  A sequential two-finger tap is one-finger-then-one-finger, and no amount of
+  care distinguishes its first contact from a photo.
+- **So the exit becomes the chip, and the gesture goes away.** `e.onChip`
+  contacts are already excluded before the camera branch is reached, so a chip
+  tap can never fire the shutter — the conflict does not exist for a chip and
+  cannot be introduced. **Mine**, and it fixes the bug by deletion rather than
+  by another timing rule. The chip is also the only exit anyone would find
+  without being told, which the two-finger gesture never was.
+- **Which means the chip must be visible and live in camera mode**, alone —
+  `.hud-scrim:not(.open) .hud-chip { pointer-events: none }` (`hud.ts:408`) is
+  what makes every chip inert with the panel closed, so this one needs an
+  explicit exception rather than the rule quietly not applying. Only the
+  shutter chip; the rest stay inert.
+- **The chip says which state it is in**, like `day` does. `hud.ts:1227` is
+  currently `void shutterChip` — the unused-variable idiom — so nothing ever
+  repaints it and it looks identical whether the mode is on or off. That is
+  also half of why the mode feels disconnected: the menu never shows that it
+  is running.
+- **The centred glyph stays exactly as it is.** It says what a tap does; the
+  chip says how to leave. Two different jobs and neither should take the
+  other's — and entry 76's freeze does not apply here, but the same instinct
+  does: the glyph shipped right and is not what is being complained about.
+- **Check the same fault on the ordinary path.** `main.ts:1354` uses the same
+  `nonChipDown === 2` test for the two-finger *menu* open (entry 67). Its first
+  finger does not save immediately — it starts a pending tap — but that pending
+  tap resolves 400ms later and may still write a frame after the menu opens.
+  Same root, less visible. Confirm and fix in the same change.
+
+**Lands in**
+- `src/main.ts:1331-1347` — the camera branch loses its two-finger case.
+- `src/main.ts:1035-1042` — `exitCameraMode` reopens the panel.
+- `src/main.ts:1354` — the ordinary two-finger path's stray pending tap.
+- `src/hud.ts:408` — the exception that keeps one chip live.
+- `src/hud.ts:1005-1014, 1227` — the chip toggles, and paints its state.
+
+**Done when** — entering from the chip and tapping it again returns to the menu
+exactly as it was; no photo is ever saved by leaving; the chip visibly reads as
+active while the mode is on; every other chip is still inert with the panel
+closed; and a two-finger tap in the ordinary picture opens the menu without
+leaving a frame behind 400ms later.
+**Verify** — the phone, counting files: enter camera mode, take three photos,
+leave, and confirm exactly three arrived. That count is the whole test and it
+is the one nobody ran.
+**Hard stops** — prefs no · url no · capture **yes, and answered**: this
+strictly *reduces* what is written — the accidental frame on exit stops
+happening, and no new path to a capture is added · dependency no.
