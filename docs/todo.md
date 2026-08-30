@@ -9871,3 +9871,128 @@ restored.
 arithmetic entry 34's probe already models, and the numbers above are the
 expected-failure baseline to check against.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 96. The moon works the shapes, as the sun works the colour
+`status: ready` · added 2026-08-30
+
+**Do** — add a lunar cycle, perpendicular to the sky's solar one: it touches
+the emitter and ring *shape* parameters that nothing else modulates, driven by
+the moon's phase, its waxing or waning, and its rough presence in the sky.
+Subtle within a night; different from one night to the next.
+
+**Why** — Victor, and the intent is the point: bring kiyo into contact with the
+natural environment. The sun cycle (entries 47, 53, 71) already makes the
+colour answer the time of day. The moon should make the *form* answer the month
+— a second natural clock, felt in the shapes rather than the palette, so the
+toy is quietly not the same object on a full-moon night that it is on a new one.
+
+**Decided**
+- **Perpendicular, and that word is a constraint, not a mood.** The sun cycle
+  owns colour and only colour — `uDay`, `uSky`, the ink, the warmth. The moon
+  owns shape and only shape — how far a ring reaches, how long it lives, how
+  often one is born, how it grows across its life. **Neither ever touches the
+  other's axis.** A full moon at noon and a full moon at midnight differ in
+  form but not hue; a sunset and a sunrise differ in hue but not form. That
+  clean separation is what makes two natural clocks legible instead of muddy.
+- **Three lunar facts → three shape qualities**, one each, because the moon
+  gives exactly three things a phone can honestly know:
+  - **Illuminated fraction → abundance.** New moon: the shapes are spare, brief,
+    sparse — the toy at its most minimal. Full moon: generous — rings reach
+    further, live longer, come more often. The moon lends the toy its light.
+  - **Waxing vs waning → the growth envelope of a ring.** Waxing: rings *bloom*,
+    accelerating outward, opening. Waning: rings *recede*, easing and drawing
+    in. This is the subtle directional energy — it distinguishes a first-quarter
+    night from a last-quarter one even though both are half-lit, which nothing
+    else could.
+  - **Presence (rough altitude) → strength.** When the moon is below the
+    horizon its whole influence fades to zero and the shapes return to their
+    plain baseline; near its high point the influence is full. The toy only
+    feels the moon when the moon is actually up.
+- **Magnitude is `illuminated × presence`**, so **new moon, or moon down, is
+  exactly today's constants** — the algebraic-identity discipline entries 47,
+  75 and 76 all use. Nothing about the shapes changes until there is a lit moon
+  in the sky, and the waxing/waning envelope is the only signed term.
+- **Honesty about position, because this is where the app's one promise could
+  break.** Illuminated fraction and waxing/waning are **pure date arithmetic —
+  no location needed**, exact from the clock alone (age within the 29.53-day
+  synodic month from a known new-moon epoch; verified against phase). Altitude
+  is the hard part: a true altitude needs latitude, and **asking for it is
+  forbidden** — `sky.ts`'s header already refuses geolocation for exactly this,
+  *"disproportionate for a lighting effect, and the wrong kind of ask here
+  regardless."* So presence is a **stylised, location-free proxy**: the moon
+  transits (sits highest) at a time set by its phase — new near local noon,
+  full near local midnight, quarters near sunset and sunrise — and presence is
+  `cos` of the clock's hour-angle from that transit, clamped at the horizon.
+  It ignores latitude, so it is wrong about *how* high and wrong at extreme
+  latitudes and says nothing about a moon that never rises — the same trade
+  `sky.ts` makes for the sun and states in the same spirit. **This is written
+  loudly so no future session "fixes" it with a location prompt; that would not
+  be an improvement, it would be breaking the promise the gate makes.**
+- **A new pure module, `src/moon.ts`** — `moonFor(date): { illuminated,
+  waxing, presence }`, pure state and a pure function, no DOM, no clock of its
+  own, sampled once a second in `scene.ts` exactly as `skyFor` is (`SKY_SAMPLE_S`
+  is the precedent). Scrubbable through a synodic month in a probe with no
+  browser and no network, like `probe-sky.ts`.
+- **Which parameters, and the "nothing else touches" claim made precise.**
+  Confirmed against `emitter.ts`: `CHARGE_TIME`, `CHARGE_FLOOR`, `LIFE_*` and
+  `SPEED_LEVEL_SCALE` are all touch-derived and **off limits**. The moon takes
+  the ones that are plain constants: **`SPAWN_INTERVAL`** (abundance — cadence),
+  the ripple's **reach** (`maxRadius`) and **lifespan** (abundance — how far and
+  how long a ring lives), and the ring's **expansion curve** (the waxing/waning
+  envelope — `ripples.ts` / the shaders' growth term). Where a quantity the moon
+  wants is *also* touch-shaped — emitter `life` — the moon scales the
+  **baseline** (`LIFE_MIN`/`LIFE_MAX` endpoints) and touch still picks within
+  it, so they **compose** (moon sets the range, the gesture chooses inside it)
+  and never overwrite each other. The build agent must confirm each target is
+  genuinely un-modulated before wiring it, and route anything shared through the
+  baseline the way `life` is.
+- **Affects audio rings and touch rings alike, on purpose.** Ring reach and
+  lifespan are shared by both (`ripples.ts`: `AUDIO_RIPPLES` + touch), so the
+  moon shifts the whole toy's shape-language, not just the finger's. That is
+  more in the spirit than isolating touch — the month is a property of the
+  place, not of who is touching. It must not disturb entry 59's hand-synced
+  `MAX_RIPPLES`/`AUDIO_RIPPLES` *counts* (those are structure); it moves the
+  geometry those slots draw, carried as uniforms.
+- **Subtle within a night, distinct across nights.** The moon moves ~12°/day,
+  so nothing visibly changes in a session — correct. The swings are moderate:
+  roughly **±35% on cadence, ±25% on reach and life** at full influence, and a
+  gentle expansion-curve bias for waxing/waning. Enough that a full-moon night
+  and a new-moon night are recognisably different toys to someone who knows it
+  well; never enough to read as a glitch to someone who does not. **Mine** as to
+  the percentages; the probe and a few real nights settle them.
+- **Report it in the readout.** Phase, illuminated fraction and presence beside
+  the sky line — both because five-plus new state changing the shapes silently
+  is the exact diagnosis trap this project keeps relearning (entries 66, 88),
+  and because it lets Victor see *what night the app thinks it is* without
+  waiting a month to check the math.
+- **Deliberately its own entry, noted so it is not lost: the tide.** The moon
+  moving the powder (entry 46) like a tide — a slow directional pull on the
+  grains, strongest at full and new, that nothing else exerts — is the most
+  literal possible version of "the moon in contact with the material," and it
+  is too large and too good to fold in here. `moon.ts` is written general so
+  that entry can read the same field. **Not built here.**
+
+**Lands in**
+- `src/moon.ts` — new, pure.
+- `src/scene.ts` — sample `moonFor` beside `skyFor`; feed the influence into the
+  ripple/emitter shape uniforms and the `SPAWN_INTERVAL`/life baselines.
+- `src/engine/emitter.ts`, `src/engine/ripples.ts` — read the moon baseline
+  rather than the bare constant, at the seam touch already composes with.
+- `src/hud.ts` — the readout line.
+- `scripts/probe-moon.ts` — new; `scripts/probe-shake.ts`-style scrub.
+
+**Done when** — scrubbing a synodic month shows illuminated fraction and
+waxing/waning tracking the real phase, and presence rising and falling with the
+clock hour in the phase-appropriate window; at new moon **or** moon-down every
+shape parameter equals today's constant to the digit; a full moon high in the
+sky visibly lengthens ring reach, life and cadence within the stated swings; no
+`disturb`, colour, or sun value changes anywhere; and entry 59's ripple counts
+are untouched.
+**Verify** — `probe-moon.ts` for the astronomy and the identity-at-new-moon
+claim, which is the one that protects everything already shipped. Then the
+phone, on two nights far apart in the cycle — the only test of whether "subtle
+but different" is actually both.
+**Hard stops** — prefs no · url no · capture no · dependency **no — the moon is
+a dozen lines of date arithmetic; no ephemeris library, and above all no
+geolocation**, which is the whole reason presence is a proxy rather than a
+computation.
