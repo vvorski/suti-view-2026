@@ -4770,7 +4770,7 @@ asked. `pnpm build`, `pnpm lint`.
 question is a picture decision rather than a new capture · dependency no.
 
 ### 51. The disc says "play with me"
-`status: ready` · added 2026-08-30
+`status: building` · added 2026-08-30 · started 2026-08-30
 
 **Do** — change the Start button's label to "play with me", set in three
 centred lines, and take the shout out of it.
