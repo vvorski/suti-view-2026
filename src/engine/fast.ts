@@ -517,10 +517,215 @@ export function autoNormalisedMapping(): Mapping {
   }
 }
 
+/**
+ * Strategy D — beat-synced. docs/todo.md entry 39.
+ *
+ * The first three mappings all differ only in how loudness is scaled; this
+ * is the first to vary a different axis entirely — time. `level` and the
+ * bands are driven by a phase that runs 0->1 across each beat, estimated
+ * from the inter-onset interval of the existing transient detector, rather
+ * than from instantaneous energy — the picture then moves *with* the music
+ * through a bar where the energy sits flat, not merely at it.
+ *
+ * Degrades honestly: without a stable interval this reads exactly as
+ * `relative` does, rather than free-running at a guessed tempo. A
+ * visualiser pulsing confidently at the wrong tempo is a legible error; one
+ * that has stopped pulsing is not.
+ */
+const BEAT_ONSET_THRESHOLD = 0.5
+/** Bounds on a plausible tempo — 300bpm down to 40bpm. Outside this, a
+ *  "beat" is either the same hit ringing twice or not a beat at all. */
+const BEAT_MIN_INTERVAL = 0.2
+const BEAT_MAX_INTERVAL = 1.5
+/** How close two consecutive onset-to-onset gaps must be, as a fraction of
+ *  the gap, to call the tempo stable. **Mine** — the entry asks for
+ *  honesty about instability but not an exact tolerance. */
+const BEAT_STABILITY = 0.15
+/** How far past the expected next beat before giving up the lock — a
+ *  pattern that has genuinely stopped should fall back quickly, not coast
+ *  on a memorised tempo. */
+const BEAT_LOCK_GRACE = 1.8
+
+function beatMapping(): Mapping {
+  const common = new CommonAnalysis()
+  const levelEnv = new Envelope(0.03, 0.28)
+  const bandEnv = {
+    low: new Envelope(0.03, 0.22),
+    mid: new Envelope(0.03, 0.22),
+    high: new Envelope(0.025, 0.18),
+  }
+  const LO = 0.5
+  const HI = 1.7
+
+  let lastTransient = 0
+  let sinceOnset = 1000
+  let lastGap = 0
+  let interval = 0
+  let locked = false
+  let phase = 0
+
+  return {
+    name: 'beat',
+    update(frame) {
+      const { dt } = frame
+      const c = common.update(frame)
+      sinceOnset += dt
+
+      const crossedUp = c.transient > BEAT_ONSET_THRESHOLD && lastTransient <= BEAT_ONSET_THRESHOLD
+      lastTransient = c.transient
+
+      if (crossedUp && sinceOnset > BEAT_MIN_INTERVAL) {
+        const gap = sinceOnset
+        sinceOnset = 0
+        phase = 0 // every real onset re-locks phase to it, locked or not
+        if (gap < BEAT_MAX_INTERVAL && lastGap > 0) {
+          const ratio = gap / lastGap
+          if (ratio > 1 - BEAT_STABILITY && ratio < 1 + BEAT_STABILITY) {
+            // Smoothed toward the new gap rather than replaced outright, so
+            // one slightly early or late hit does not retune the tempo.
+            interval = interval > 0 ? interval * 0.5 + gap * 0.5 : gap
+            locked = true
+          } else {
+            locked = false
+          }
+        } else {
+          locked = false
+        }
+        lastGap = gap
+      }
+
+      if (locked) {
+        phase = Math.min(1, phase + dt / interval)
+        if (sinceOnset > interval * BEAT_LOCK_GRACE) locked = false
+      }
+
+      const floor = Math.max(c.norm, 0.008)
+      const rel = (v: number) => clamp01((v / floor - LO) / (HI - LO))
+      const fallbackLevel = 0.7 * rel(c.raw.all) + 0.3 * soften(c.raw.all, GAIN)
+      const beatEnv = 1 - phase
+
+      const low = clamp01((c.raw.low / floor) * 0.55)
+      const mid = clamp01((c.raw.mid / floor) * 0.55)
+      const high = clamp01((c.raw.high / floor) * 0.75)
+
+      return {
+        level: levelEnv.push(locked ? beatEnv : fallbackLevel, dt),
+        low: bandEnv.low.push(locked ? low * beatEnv : low, dt),
+        mid: bandEnv.mid.push(locked ? mid * beatEnv : mid, dt),
+        high: bandEnv.high.push(locked ? high * beatEnv : high, dt),
+        transient: c.transient,
+        tilt: c.tilt,
+        breakdown: c.breakdown,
+        surge: c.surge,
+        novelty: c.novelty,
+        roughness: c.roughness,
+      }
+    },
+  }
+}
+
+/**
+ * Strategy E — dynamics-faithful, recalibrated for music. docs/todo.md
+ * entry 39.
+ *
+ * Fixed gain, no normalisation of any kind: quiet reads as quiet and loud
+ * reads as loud across a whole track. The same `soften()`-shaped fixed
+ * gain `speech-band` already uses, calibrated for music at room volume
+ * instead of a voice at a metre.
+ *
+ * No separate ceiling logic for clipping, despite the entry's own framing
+ * of one: `soften()`'s exponential already saturates at 1.0 by
+ * construction and cannot exceed it, which already *is* "prevent
+ * clipping" — a second mechanism on top of an already-bounded curve would
+ * have nothing left to do. **Mine.**
+ */
+const DYNAMICS_GAIN = 10
+
+function dynamicsMapping(): Mapping {
+  const common = new CommonAnalysis()
+  const lowEnv = new Envelope(0.05, 0.6)
+  const midEnv = new Envelope(0.04, 0.5)
+  const highEnv = new Envelope(0.03, 0.4)
+  const levelEnv = new Envelope(0.06, 1.0)
+
+  return {
+    name: 'dynamics',
+    update(frame) {
+      const { dt } = frame
+      const c = common.update(frame)
+
+      return {
+        level: levelEnv.push(soften(c.raw.all, DYNAMICS_GAIN), dt),
+        low: lowEnv.push(soften(c.raw.low, DYNAMICS_GAIN), dt),
+        mid: midEnv.push(soften(c.raw.mid, DYNAMICS_GAIN), dt),
+        high: highEnv.push(soften(c.raw.high, DYNAMICS_GAIN), dt),
+        transient: c.transient,
+        tilt: c.tilt,
+        breakdown: c.breakdown,
+        surge: c.surge,
+        novelty: c.novelty,
+        roughness: c.roughness,
+      }
+    },
+  }
+}
+
+/**
+ * Strategy F — bass-led. docs/todo.md entry 39.
+ *
+ * `level` weighted toward `low` and `transient`; `high` left to do little.
+ * For anything kick-driven this is the honest mapping, and the cheapest of
+ * the three to build: a re-weighting of numbers `relative`'s own machinery
+ * already produces, not a new analysis.
+ */
+function bassLedMapping(): Mapping {
+  const common = new CommonAnalysis()
+  const bandEnv = {
+    low: new Envelope(0.03, 0.22),
+    mid: new Envelope(0.03, 0.22),
+    high: new Envelope(0.025, 0.18),
+  }
+
+  return {
+    name: 'bass-led',
+    update(frame) {
+      const { dt } = frame
+      const c = common.update(frame)
+      const floor = Math.max(c.norm, 0.008)
+
+      const low = bandEnv.low.push(clamp01((c.raw.low / floor) * 0.55), dt)
+      const mid = bandEnv.mid.push(clamp01((c.raw.mid / floor) * 0.55), dt)
+      // High is scaled down rather than dropped — "do little", not nothing.
+      const high = bandEnv.high.push(clamp01((c.raw.high / floor) * 0.75) * 0.3, dt)
+
+      // Built directly from the already-smoothed `low`, with no envelope of
+      // its own on top — a second, separately-timed smoothing on `level`
+      // measurably drifted apart from `low`'s own during a beat's decay,
+      // even with near-identical time constants, which is exactly the kind
+      // of gap "tracking low" is supposed to rule out. **Mine.**
+      return {
+        level: clamp01(low * 0.95 + c.transient * 0.05),
+        low,
+        mid,
+        high,
+        transient: c.transient,
+        tilt: c.tilt,
+        breakdown: c.breakdown,
+        surge: c.surge,
+        novelty: c.novelty,
+        roughness: c.roughness,
+      }
+    },
+  }
+}
+
 export const MAPPINGS = {
   relative: relativeMapping,
   'speech-band': speechBandMapping,
   'auto-normalised': autoNormalisedMapping,
+  beat: beatMapping,
+  dynamics: dynamicsMapping,
+  'bass-led': bassLedMapping,
 } satisfies Record<string, () => Mapping>
 
 export type MappingName = keyof typeof MAPPINGS

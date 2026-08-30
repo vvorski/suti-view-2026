@@ -50,7 +50,14 @@ const names = Object.keys(MAPPINGS) as MappingName[]
 console.log('Steady tone, settled 6s. `level` and the headroom above it:\n')
 console.log(['byte', ...names.map((n) => n.padStart(20))].join('  '))
 const BYTES = [10, 30, 60, 100, 150, 200]
-const settledLevel: Record<MappingName, number[]> = { relative: [], 'speech-band': [], 'auto-normalised': [] }
+const settledLevel: Record<MappingName, number[]> = {
+  relative: [],
+  'speech-band': [],
+  'auto-normalised': [],
+  beat: [],
+  dynamics: [],
+  'bass-led': [],
+}
 for (const byte of BYTES) {
   const f = frame(byte * 0.6, byte, byte * 0.4)
   const cells = names.map((n) => {
@@ -94,6 +101,10 @@ for (const byte of BYTES) {
     autoSpan >= 0.3,
     `span ${autoSpan.toFixed(3)}`,
   )
+
+  // docs/todo.md entry 39.
+  const dynSpan = settledLevel.dynamics[5] - settledLevel.dynamics[0]
+  check('dynamics spans at least 0.60 across the headroom table', dynSpan >= 0.6, `span ${dynSpan.toFixed(3)}`)
 }
 
 // --- beats must not read as breaks -------------------------------------------
@@ -123,6 +134,82 @@ console.log('\n120bpm beat pattern (break must stay ~0, transient must move):\n'
   console.log(
     `  level   ${minLevel.toFixed(3)} .. ${maxLevel.toFixed(3)}   swing ${(maxLevel - minLevel).toFixed(3)}`,
   )
+}
+
+// --- beat locks onto a steady pattern and falls back off a broken one -------
+// docs/todo.md entry 39. `beat` exposes no internal state (Mapping's only
+// surface is `update()`), so "locked" is read from its own documented
+// consequence: once locked, `level` is `1 - phase`, a sawtooth that resets
+// to (near) 1 right after each onset and decays toward 0 before the next —
+// distinguishable from an unlocked, noisy trace by its shape, not by a
+// second, private API this probe would be reaching past the mapping for.
+
+console.log('\nbeat: 120bpm pattern locks, then falls back on noise:\n')
+{
+  const m = MAPPINGS.beat()
+  const peaksAfterSettling: number[] = []
+  for (let i = 0; i < 8 * FPS; i++) {
+    const t = i / FPS
+    const phase = t % 0.5
+    const hit = phase < 0.06
+    const p = m.update(frame(hit ? 170 : 20, hit ? 120 : 45, hit ? 90 : 40))
+    // A beat-locked level peaks (near 1) right after each onset — sample
+    // one frame past it, well after the first two beats it needs to
+    // establish a tempo.
+    if (t > 1.0 && phase >= 0.06 && phase < 0.06 + 1 / FPS) {
+      peaksAfterSettling.push(p.level)
+    }
+  }
+  const avgPeak = peaksAfterSettling.reduce((a, b) => a + b, 0) / peaksAfterSettling.length
+  check(
+    'beat locks onto a steady 120bpm pattern (level peaks near 1 right after each onset)',
+    avgPeak > 0.8,
+    `avg post-onset level ${avgPeak.toFixed(3)} over ${peaksAfterSettling.length} beats`,
+  )
+
+  // Replaced by noise: onsets at random, unrelated intervals. A tempo that
+  // was locked must let go rather than keep pulsing at whatever it last
+  // measured.
+  const mNoise = MAPPINGS.beat()
+  let rand = 42 // deterministic "random" — a fixed LCG, not Math.random()
+  const nextRand = (): number => {
+    rand = (rand * 1103515245 + 12345) & 0x7fffffff
+    return rand / 0x7fffffff
+  }
+  let nextOnsetAt = 0.2
+  const lockedLevels: number[] = []
+  for (let i = 0; i < 10 * FPS; i++) {
+    const t = i / FPS
+    // One frame's pulse right as t crosses the next random onset time, then
+    // roll a new, unrelated gap — 0.15-0.75s, no stable tempo anywhere in it.
+    const hit = t >= nextOnsetAt
+    if (hit) nextOnsetAt = t + 0.15 + nextRand() * 0.6
+    const p = mNoise.update(frame(hit ? 170 : 20, hit ? 120 : 45, hit ? 90 : 40))
+    if (t > 6) lockedLevels.push(p.level) // well past any chance of a false lock
+  }
+  // A genuinely unlocked trace looks like `relative`'s own fallback: it
+  // moves with the noise rather than sitting pinned near 1 the way a
+  // falsely-sustained lock would.
+  const stuckHigh = lockedLevels.filter((v) => v > 0.9).length / lockedLevels.length
+  check(
+    'beat falls back off an irregular pattern rather than staying locked',
+    stuckHigh < 0.3,
+    `${(stuckHigh * 100).toFixed(0)}% of frames above 0.9 after 6s of noise`,
+  )
+}
+
+// --- bass-led tracks the low band, not a blend of all three -----------------
+
+console.log('\nbass-led: level tracks low within 0.1 on the 120bpm pattern:\n')
+{
+  const m = MAPPINGS['bass-led']()
+  let maxGap = 0
+  for (let i = 0; i < 8 * FPS; i++) {
+    const hit = (i / FPS) % 0.5 < 0.06
+    const p = m.update(frame(hit ? 170 : 20, hit ? 120 : 45, hit ? 90 : 40))
+    if (i > 2 * FPS) maxGap = Math.max(maxGap, Math.abs(p.level - p.low))
+  }
+  check('bass-led: |level - low| stays within 0.1 once settled', maxGap <= 0.1, `max gap ${maxGap.toFixed(3)}`)
 }
 
 // --- a real breakdown --------------------------------------------------------

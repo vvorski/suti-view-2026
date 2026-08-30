@@ -3238,6 +3238,53 @@ surface. `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs no (additive union, validated by a membership test that
 already falls back) · url no · capture no · dependency no.
 
+**Build note.** All three landed, plus the confirmed HUD line: `hud.ts`'s
+mapping arc builds its keys from `Object.keys(MAPPINGS)` already, so
+nothing there needed touching for the arc itself, but `MAPPING_LABELS` is
+a `Record<MappingName, string>` and TypeScript correctly refused to compile
+until all six had labels — the "only if needed" case, needed.
+
+`beat` degrades exactly as decided: an edge-triggered onset detector feeds
+a simple stability check (two consecutive inter-onset gaps within 15% of
+each other) rather than a full statistical model, since the entry asks for
+honest degradation, not a beat tracker good enough to trust blind — once
+locked, phase resets to 0 on every onset and counts up at `dt/interval`;
+unlocked, output is bit-identical to `relative`'s own formula, including
+its entry-38 blend, so a steady tone (no onsets at all) reads exactly the
+same on both. `dynamics` reuses `speech-band`'s exact `soften()` shape at
+a recalibrated `GAIN` of 10; no separate clip-prevention ceiling was
+added; `soften()`'s own exponential already saturates at 1.0 by
+construction and a second bound on an already-bounded curve would have
+nothing to do — noted as a deliberate simplification, not an oversight.
+`bass-led` needed one real fix past the first draft: computing `level`
+through its own separate output envelope measurably drifted apart from
+`low`'s own envelope during a beat's decay even with near-identical time
+constants (two independently-timed smoothers of related-but-different
+signals will not stay locked together), failing the ≤0.1 tracking
+requirement by 0.1-0.2 in testing. Fixed by building `level` directly from
+the already-smoothed `low` with no envelope of its own on top.
+
+`scripts/probe-mapping.ts` gained real assertions rather than only
+inheriting the new columns "for free" as the Lands-in put it: `dynamics`'s
+span (measured 0.77 against a 0.60 minimum), a `beat` lock test reading
+the mapping's own documented consequence of locking (`level` peaking near
+1 right after each onset — the only way to check "locked" from outside,
+since `Mapping` exposes no other state) plus a fallback test against
+onsets at genuinely random, unrelated intervals (a fixed LCG, not
+`Math.random()`, so the run is repeatable), and `bass-led`'s
+`|level - low| <= 0.1` check on the same 120bpm pattern used everywhere
+else in this file.
+
+All seven new/changed assertions pass; `pnpm probe`'s pre-existing sections
+(beat pattern, tilt glide, novelty, roughness, frame rate, ripple triggers)
+are unaffected. `probe:shake`, `probe:haptics`, `probe:fullscreen`,
+`probe:emitter`, `probe:composite`, `probe:nudge` all still pass.
+`hud-narrow.html` at 320×568 and 360×640 confirms all six mapping labels
+render on the arc (`Relative`, `Absolute`, `Normalised`, `Beat`,
+`Dynamics`, `Bass-led`) with nothing off-screen. `pnpm build`, `pnpm lint`
+both clean. Not verified: real music on a phone, and `views-probe.html?play`
+watched live with the selector — both need a person.
+
 ### 40. The buzz has never been tested apart from the shake
 `status: blocked` · added 2026-08-30 · abandoned 2026-08-30
 

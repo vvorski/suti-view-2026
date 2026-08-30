@@ -160,6 +160,9 @@ const MAPPING_LABELS: Record<MappingName, string> = {
   relative: 'Relative',
   'speech-band': 'Absolute',
   'auto-normalised': 'Normalised',
+  beat: 'Beat',
+  dynamics: 'Dynamics',
+  'bass-led': 'Bass-led',
 }
 
 export interface Hud {
