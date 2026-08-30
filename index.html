@@ -264,11 +264,25 @@
         text-shadow: 0 1px 12px rgba(5, 6, 10, 0.95);
       }
 
-      /* The only filled shape on the screen, so the action needs no words. */
+      /* The only filled shape on the screen, so the action needs no words —
+         but the words it does carry (docs/todo.md entry 51) are an
+         invitation, not an instruction: lowercase, set as three centred
+         lines rather than one shouted word, because a circle is widest
+         across its middle and "play with me" on one line inside this disc
+         at 320px does not happen at any weight worth reading. The label
+         itself carries the line breaks as literal `\n` characters
+         (`white-space: pre-line` below honours them) rather than `<br>`
+         markup, so `permission-gate.ts`'s error-path relabel
+         (`textContent = 'once\nmore'`) stays a plain string assignment. */
       #start {
         appearance: none;
         cursor: pointer;
         flex: none;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        white-space: pre-line;
         width: min(36vw, min(20vh, 8rem));
         aspect-ratio: 1;
         border-radius: 50%;
@@ -277,10 +291,16 @@
         color: #05060a;
         font-family: 'Chakra Petch', ui-sans-serif, system-ui, sans-serif;
         font-size: clamp(0.95rem, 4vw, 1.15rem);
-        font-weight: 700;
-        letter-spacing: 0.14em;
-        text-indent: 0.14em;
-        text-transform: uppercase;
+        font-weight: 600;
+        line-height: 1.15;
+        /* Narrow rather than gone: entirely untracked lowercase at this
+           weight reads a little cramped across three short stacked words.
+           The old 0.14em was tuned for shouted, evenly-spaced capitals and
+           is a luxury-logotype amount for lowercase — its own
+           `text-indent: 0.14em` compensated for the phantom trailing space
+           that tracking adds after the last glyph, and goes with it rather
+           than being retuned: at 0.02em that phantom space is negligible. */
+        letter-spacing: 0.02em;
         /* Two periods that don't divide into one another (3.4s, 5.9s), so the
            pair returns to the same phase roughly every 200s rather than every
            cycle — what keeps this reading as alive rather than as a metronome. */
@@ -471,7 +491,9 @@
         <div class="gate-name"><span id="release-name"></span></div>
       </header>
 
-      <button id="start" type="button">Start</button>
+      <button id="start" type="button">play
+with
+me</button>
 
       <svg id="qr" class="gate-qr" role="img" aria-label="QR code linking to this page"></svg>
 

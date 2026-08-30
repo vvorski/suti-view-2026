@@ -289,7 +289,12 @@ export function waitForStart(els: GateElements): Promise<Started> {
       } catch (err) {
         els.error.textContent = explain(err)
         els.button.disabled = false
-        els.button.textContent = 'Try again'
+        // "Try again" is the voice of a form that rejected you; a toy that
+        // failed to start should sound like it is still willing —
+        // docs/todo.md entry 51. `\n` rather than a `<br>`, matching the
+        // disc's own literal-newline label so `white-space: pre-line`
+        // (index.html's `#start` rule) renders both the same way.
+        els.button.textContent = 'once\nmore'
       }
     }
 

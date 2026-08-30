@@ -4770,7 +4770,34 @@ asked. `pnpm build`, `pnpm lint`.
 question is a picture decision rather than a new capture · dependency no.
 
 ### 51. The disc says "play with me"
-`status: building` · added 2026-08-30 · started 2026-08-30
+`status: done` · added 2026-08-30 · shipped at build 188
+
+**Build note** — the label carries its own line breaks as literal `\n`
+characters (three in `index.html`'s markup for "play with me", two in
+`permission-gate.ts`'s error-path relabel for "once more"), read by a new
+`white-space: pre-line` on `#start` rather than `<br>` markup — this keeps
+both labels plain-string assignments/literals, so `permission-gate.ts`'s
+existing `textContent = '...'` pattern needed no restructuring, only a
+new string. `#start` also gained `display: flex; flex-direction: column;
+align-items: center; justify-content: center;`, since nothing centred
+multi-line text vertically before (a single line's default button
+rendering was centred enough on its own). `text-indent: 0.14em` is
+removed entirely rather than retuned, per Decided — it existed only to
+cancel wide tracking's trailing phantom space, and at the new 0.02em that
+space is negligible.
+
+Verified via two side-by-side iframes at 320×568 and 360×640: "play with
+me" renders as three centred lowercase lines with even margins, computed
+style confirms `textTransform: none`, `fontWeight: 600`,
+`letterSpacing: 0.304px` (≈0.02em at the 320px-width font size),
+`display: flex`, `whiteSpace: pre-line` — every Decided value landed as
+declared. Forced the disabled/error state by hand (`textContent =
+'once\nmore'; disabled = true`) and confirmed it renders as two centred
+lines, legibly the same dimmed treatment as the primary label. `pnpm
+build`, `pnpm lint`, and `pnpm probe:fullscreen` (named explicitly in
+Verify, since nothing here is keyed on the label) all pass. Not verified:
+the phone-at-arm's-length "does this read as friendly" judgment the
+entry's own Verify text says only a real device can answer.
 
 **Do** — change the Start button's label to "play with me", set in three
 centred lines, and take the shout out of it.
