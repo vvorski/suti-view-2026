@@ -8811,7 +8811,7 @@ code review and by the diff's own shape, not by watching a real tap
 consumed.
 
 ### 81. The director waits for the bar
-`status: ready` · added 2026-08-30
+`status: building` · added 2026-08-30 · started 2026-08-30
 
 **Do** — when the tempo is confident, hold the director's decision until the
 next bar and fire it there. When it is not, fire immediately, exactly as now.
