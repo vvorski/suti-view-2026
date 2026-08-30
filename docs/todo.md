@@ -9663,7 +9663,7 @@ the four**: entry 76 is frozen and entry 70's colour is approved; both consume
 single frame.
 
 ### 89. The director always eventually moves
-`status: ready` · added 2026-08-30 · reconfirmed 2026-08-30 · **build before 90–92**
+`status: building` · added 2026-08-30 · reconfirmed 2026-08-30 · **build before 90–92**
 
 **Do** — make the two gates that can hold forever decay like the novelty gate
 already does, so a still phone in front of unchanging sound still changes
