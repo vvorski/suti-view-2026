@@ -7094,3 +7094,49 @@ measurement; the numbers in the table are the before, and they are reproducible
 by anyone. Then a phone outdoors, which is still the only judge of whether 0.88
 and 0.10 are the right pair.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 69. The name is the dedication, and nothing is added to it
+`status: ready` · added 2026-08-30
+
+**Do** — put the reason for the name beside the name, in `index.html`, and
+close the question entry 63 left open.
+
+**Why** — entry 63 shipped `kiyo · plays` at build 219 and deliberately left
+"whether kiyo appears anywhere else, in a dedication or a byline" undecided.
+Victor has now decided it: **wordless, on the gate, the name carries it.** An
+open question left open is an invitation, and the next person to read that
+entry would answer it by adding a line.
+
+**Decided**
+- **Nothing is added. No "for Kiyo", no byline, no README section, no release
+  name.** Victor's call, made against the alternatives rather than by default:
+  the piece is named after him and that is the whole statement. Anyone who
+  needs to know, knows; a stranger opening the link finds a toy with a name.
+- **So this entry is a comment and a status change**, not a feature. That is
+  the correct size for it. The comment belongs at `index.html:563`, beside the
+  `<h1>`, in the same voice every other decision in this file is recorded in —
+  what it is, and what was decided against. This repo's house rule is that
+  comments carry the reasoning, and there is no reasoning anywhere on screen or
+  in the source for why the piece is called what it is.
+- **Say that it is deliberately wordless**, explicitly, because the failure
+  mode is specific: a future session reading a bare wordmark sees an omission
+  and fixes it. The comment has to say the absence is the decision.
+- Nothing is built for the co-creation either → also Victor's call. The naming
+  is the act; there is no gallery, no kept frames, no seed exchange. Entry 63's
+  own screenshot prefix already carries his name into every picture anyone
+  makes with it, which needed no entry and remains the only place the name
+  travels on its own.
+- Deliberately **not** recorded in the gate's visible text, the README's prose,
+  or a release name — each was offered and each was declined. Listing them here
+  is the point: it is what stops the same three ideas being re-proposed as
+  novel.
+
+**Lands in**
+- `index.html:563` — a comment above the `<h1>`.
+- `docs/todo.md` — entry 63's "Not decided here" note, which this answers.
+
+**Done when** — the source says why the piece is called `kiyo · plays` and that
+nothing further is to be added, and no open question about the name remains in
+this file.
+**Verify** — reading it. There is nothing to run.
+**Hard stops** — prefs no · url no · capture no · dependency no.
