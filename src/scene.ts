@@ -41,10 +41,12 @@ import type { VisualParams } from './engine'
 import {
   createEmitterState,
   createRippleState,
+  createTouchStreamState,
   Envelope,
   MAX_RIPPLES,
   updateEmitter,
   updateRipples,
+  updateTouchStream,
   type EmitterState,
 } from './engine'
 import { MAX_OFFSET, overscanFor, type TumbleState } from './shake'
@@ -158,6 +160,19 @@ export interface Visualiser {
    * afterlife regardless.
    */
   setTouches(touches: ReadonlyArray<{ id: number; x: number; y: number }>): void
+  /**
+   * What the picture as a whole should feel from every finger on it right
+   * now — docs/todo.md entry 48, and independent of `setTouches()` above:
+   * this reaches the seven atmospheric views, which have no notion of a
+   * location, so unlike the emitter there is no per-touch position here,
+   * only the aggregate `main.ts`'s `dispatchTouches()` already computes.
+   * `began` is whether a qualifying contact started this exact frame (the
+   * capture band and any `.hud-chip` contact already excluded by the
+   * caller); `anyDown` and `maxSpeed` are the same exclusion applied to
+   * every touch currently down. Only recorded here; `render()` is what
+   * ticks it into the decay envelope once per frame.
+   */
+  setTouchStream(began: boolean, anyDown: boolean, maxSpeed: number): void
   /** 0-1, the geometric layer's opacity. Formerly setMix. */
   setGeoAlpha(a: number): void
   /** 0-1, the atmospheric layer's opacity. */
@@ -417,6 +432,16 @@ export function createVisualiser(
     state: createEmitterState(),
   }))
   let touches: ReadonlyArray<{ id: number; x: number; y: number }> = []
+  // docs/todo.md entry 48. What main.ts's dispatchTouches() last reported
+  // about the picture as a whole (contact, hold, drag speed), independent of
+  // the positioned per-touch emitters above — the atmospheric views have no
+  // notion of a location, so this is an event rather than a point. Ticked
+  // into `touchStream` once per rendered frame for the same reason the
+  // emitter slots are: wall-clock cadence, not pointer-event rate.
+  const touchStream = createTouchStreamState()
+  let touchBegan = false
+  let touchAnyDown = false
+  let touchMaxSpeed = 0
   let lastNovelty = 0
   let lastAutoReroll = -1000
   // The canvas's own client box, as of the last applySize() — see
@@ -705,18 +730,29 @@ export function createVisualiser(
       }
       lastNovelty = params.novelty
 
+      // docs/todo.md entry 48. `params` itself is left untouched — the
+      // numeric readout in main.ts reads the very same object right after
+      // this call, and it has to keep reporting the mapping's own output,
+      // not what a finger added to it, or every audio entry in the queue
+      // that is debugged against that readout would be reading a lie.
+      // `Math.max`, never addition: a touch can only ever add liveliness on
+      // top of what the music already earned, never push a real transient
+      // past whatever a shader does at saturation.
+      const stream = updateTouchStream(touchStream, dt, touchBegan, touchAnyDown, touchMaxSpeed)
+      touchBegan = false
+
       uniforms.uTime.value = now
       uniforms.uFlow.value = flow
-      uniforms.uLevel.value = params.level
+      uniforms.uLevel.value = Math.max(params.level, stream.level)
       uniforms.uLow.value = params.low
       uniforms.uMid.value = params.mid
       uniforms.uHigh.value = params.high
-      uniforms.uTransient.value = params.transient
+      uniforms.uTransient.value = Math.max(params.transient, stream.transient)
       uniforms.uTilt.value = params.tilt
       uniforms.uBreak.value = params.breakdown
       uniforms.uSurge.value = params.surge
       uniforms.uNovelty.value = params.novelty
-      uniforms.uRoughness.value = params.roughness
+      uniforms.uRoughness.value = Math.max(params.roughness, stream.roughness)
       uniforms.uHistoryHead.value = historyHead / HISTORY_W
 
       // Three passes over the same quad: geometric layer to its target,
@@ -791,6 +827,17 @@ export function createVisualiser(
 
     setTouches(next) {
       touches = next
+    },
+
+    setTouchStream(began, anyDown, maxSpeed) {
+      // OR'd onto whatever this frame already recorded rather than
+      // overwritten, so a `began` reported by one dispatch pass within the
+      // frame is never silently replaced by a later, quieter one — see
+      // render()'s own comment on why this resets to false only once
+      // consumed.
+      touchBegan = touchBegan || began
+      touchAnyDown = anyDown
+      touchMaxSpeed = maxSpeed
     },
 
     setLayerColour(layer, colour) {

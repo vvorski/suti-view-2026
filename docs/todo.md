@@ -4195,7 +4195,72 @@ that rescues the dark one may blow out the bright one. On-screen check at
 rule · url no · capture no · dependency no.
 
 ### 48. Every view answers a touch, through the stream it already listens to
-`status: ready` · added 2026-08-30
+`status: done` · added 2026-08-30 · shipped at build 168
+
+**Build note** — `src/engine/touch.ts` is new (distinct from `touches.ts`,
+entry 49's per-id field): a pure envelope, `updateTouchStream(state, dt,
+began, anyDown, maxSpeed) -> {transient, level, roughness}`, fed by
+main.ts's own filtered read of `touchField.sample()`/`events()` rather than
+reaching into the field itself — this module knows nothing about screen
+zones or `.hud-chip`, same discipline as `touches.ts`. `pnpm probe:touch-
+stream` (new) checks the spike-and-decay, the level floor snapping to 0 the
+instant nothing is down, roughness tracking and saturating speed, and the
+`Math.max` injection arithmetic as a standalone fact, since the real call
+site is scene.ts and out of this module's own reach to test directly.
+
+Three constants had no value named in the entry and are **Mine**, tuned by
+feel rather than measured, same footing as `version.ts`'s gamma/lift in
+entry 47: `TRANSIENT_DECAY_S = 0.25` (the entry says "about 250ms", so this
+one is closer to given than guessed), `LEVEL_FLOOR = 0.35` (below the
+loudest music gets it, so a resting finger reads as *added* liveliness
+rather than as loud as the room), `ROUGHNESS_SPEED_SCALE = 0.3` (a
+full-screen swipe in roughly a third of a second saturates roughness).
+
+The injection sits exactly where Decided says — immediately before
+`scene.ts`'s existing `uniforms.uX.value = params.X` copy, now `uniforms.uX
+.value = Math.max(params.X, stream.X)` for level, transient and roughness
+only (the three the entry names; low/mid/high/tilt/breakdown/surge/novelty
+are untouched, since nothing in the entry asks a touch to fake a spectral
+band or a section boundary). **`params` itself is never written** — only
+read — which is what keeps the numeric readout honest: `main.ts` passes the
+same `params` object to `visualiser.render()` and then to `panel.update()`
+right after, and the entry's own text says the readout has to keep
+reporting the mapping's own output. Confirmed by inspection (no `params.x =`
+assignment appears anywhere in the diff) rather than by a runtime probe,
+since the readout itself needs a live HUD to observe.
+
+Exclusions applied in `main.ts`'s `dispatchTouches()`, not duplicated in
+`engine/touch.ts`: the capture band (a contact's `zone` is fixed at contact
+start, so one that began there stays excluded even if it later drags
+elsewhere — the same fixed-zone semantics entry 49 already gives every
+contact) and any `.hud-chip` contact, both per Decided. **One exclusion
+beyond the entry's own text, and Mine**: also inert while `.hud-scrim.open`.
+A HUD dial's own drag already `stopPropagation()`s before reaching this
+field, but a tap on the scrim itself (closing the panel) would not, and the
+picture is hidden behind the panel at that exact moment regardless — an
+unstated gap I found by tracing what the field would see, not something the
+entry called out, so it gets stated here rather than silently added.
+
+Verified: `pnpm build`, `pnpm lint`, `pnpm probe:touch-stream`, and every
+prior probe (`probe`, `probe:composite` in particular) unchanged and
+passing. Also verified the actual shader-visible effect directly, without
+the Start gate this harness cannot pass: loaded `scene.ts` over Vite's dev
+server, called `createVisualiser()` on an offscreen canvas at pure
+atmosphere (`geoAlpha: 0`, view `field`) — the same construction main.ts
+does before the gate resolves, since nothing about the renderer needs the
+microphone — and rendered the same low-resting `VisualParams` twice: once
+with `setTouchStream(false, false, 0)`, once with `setTouchStream(true,
+true, 5)`. `readPixels()` summed 5,541,338 with no touch and 6,261,361
+with one active — a real, substantial brightness rise from the injected
+level/transient/roughness, on the exact view family (atmospheric) this
+entry exists for. The same run also passed the identical `VisualParams`
+object into `render()` while the stream was active and confirmed every
+field (`transient`, `level`, `roughness`) came back exactly as passed in —
+concrete proof, not just an inspection of the diff, that the numeric
+readout's honesty requirement holds. Not verified: two hands and real
+music together, and the middle/top-third dispatch paths specifically,
+since those need a live pointer through the actual Start-gated app rather
+than a direct call into `scene.ts`.
 
 **Do** — a touch injects an event into the feature stream just before it
 reaches the uniforms: a transient on contact, a sustained level while the

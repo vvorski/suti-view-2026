@@ -882,14 +882,35 @@ async function main(): Promise<void> {
   const dispatchTouches = (now: number): void => {
     const hudOpen = document.querySelector('.hud-scrim.open') !== null
     const active: { id: number; x: number; y: number }[] = []
+    // docs/todo.md entry 48's own exclusion, applied here rather than
+    // re-derived in scene.ts: the capture band and any `.hud-chip` contact
+    // never reach the atmospheric stream, for the same reasons they never
+    // reach the geometric emitter above — a screenshot must not contain the
+    // finger that took it, and a chip's own tap is that chip's gesture, not
+    // one that reaches the picture underneath. Also inert while the HUD is
+    // open — a HUD control's own drag already stopPropagation()s before it
+    // ever reaches this field, but a tap on the scrim itself (closing the
+    // panel) would not, and the picture is hidden behind the panel at that
+    // moment regardless.
+    let streamAnyDown = false
+    let streamMaxSpeed = 0
     for (const t of touchField.sample(now)) {
+      if (!t.onChip && t.zone !== 'capture' && !hudOpen) {
+        streamAnyDown = true
+        streamMaxSpeed = Math.max(streamMaxSpeed, Math.hypot(t.vx, t.vy))
+      }
       if (t.onChip || t.zone !== 'none' || hudOpen) continue
       const dragged = Math.hypot(t.clientX - t.downClientX, t.clientY - t.downClientY)
       if (t.downFor >= HOLD_S || dragged > TAP_SLOP_PX) active.push({ id: t.id, x: t.x, y: t.y })
     }
     visualiser.setTouches(active)
 
+    let streamBegan = false
     for (const e of touchField.events()) {
+      if (e.kind === 'down') {
+        if (!e.onChip && e.zone !== 'capture' && !hudOpen) streamBegan = true
+        continue
+      }
       // A cancelled contact (pointercancel, lostpointercapture) is never a
       // tap — only a clean release can be, exactly as before this entry.
       if (e.kind !== 'up') continue
@@ -916,6 +937,8 @@ async function main(): Promise<void> {
       if (gate && !gate.hidden) continue
       panel.open()
     }
+
+    visualiser.setTouchStream(streamBegan, streamAnyDown, streamMaxSpeed)
   }
 
   // The way back into fullscreen once it has been lost — docs/todo.md entry

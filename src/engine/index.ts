@@ -14,6 +14,10 @@
  *   touches.ts   one owner of every finger on the picture, up to four at
  *                once — docs/todo.md entry 49. Feeds `emitter.ts`, among
  *                others; does not replace it.
+ *   touch.ts     the touch → atmospheric-stream envelope — docs/todo.md
+ *                entry 48. A different shape of "turn a contact into a
+ *                number" from ripples.ts/emitter.ts: no position, since the
+ *                views it feeds have no notion of one.
  *
  * This became a directory when the slow tier arrived. Before that there was one
  * interpretation of the captured audio living behind an interface, which is a
@@ -56,3 +60,6 @@ export type { EmitterState } from './emitter.ts'
 
 export { createTouchField, toShaderUv } from './touches.ts'
 export type { Touch, TouchField, TouchFieldEvent, TouchEventKind } from './touches.ts'
+
+export { createTouchStreamState, updateTouchStream } from './touch.ts'
+export type { TouchStreamState, TouchStream } from './touch.ts'

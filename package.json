@@ -18,6 +18,7 @@
     "probe:composite": "node --experimental-strip-types scripts/probe-composite.ts",
     "probe:nudge": "node --experimental-strip-types scripts/probe-nudge.ts",
     "probe:touches": "node --experimental-strip-types scripts/probe-touches.ts",
+    "probe:touch-stream": "node --experimental-strip-types scripts/probe-touch-stream.ts",
     "format": "prettier --write .",
     "deploy": "./deploy/deploy.sh"
   },
