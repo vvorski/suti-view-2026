@@ -137,6 +137,40 @@ const CSS = `
     animation: none;
   }
 }
+
+/* docs/todo.md entry 56. Only while the HUD panel is open — closed, this
+   stays the faded 0.18 glyph in its usual left corner, unchanged, per
+   version.ts's own "a permanent label in the corner is litter" reasoning
+   two comments up. The right corner is genuinely free once the gate is
+   gone (#share is markup inside #gate), which is what lets this reuse it
+   rather than needing one of its own. */
+#version-hud.panel-open {
+  left: auto;
+  top: calc(1.1rem + env(safe-area-inset-top, 0px));
+  right: calc(1.1rem + env(safe-area-inset-right, 0px));
+}
+/* Restates .gate-chip's own border/background rather than relying on the
+   class alone: #version-hud.running button (id + 1 class + 1 element)
+   still outranks #version-hud .gate-chip (id + 1 class + 0 elements) by
+   the exact specificity mechanics entry 44 already found once — two
+   classes here is what actually wins over .running's own reset. */
+#version-hud.running.panel-open button {
+  opacity: 1;
+  border: 1px solid rgba(44, 41, 71, 0.9);
+  background: rgba(12, 12, 26, 0.7);
+}
+/* The flip's own surface — "a transient line beside the chip, right-
+   aligned, set exactly like .gate-name" (Decided), reusing that class
+   directly rather than a second copy of its declarations. Hidden by
+   default: most clicks on the running glyph never open this corner at
+   all, and an empty flex item here must not reserve space it never uses. */
+#version-hud-name {
+  display: none;
+  margin-right: 0.6rem;
+}
+#version-hud-name.showing {
+  display: inline-block;
+}
 `
 
 /**
@@ -309,6 +343,43 @@ export function versionHudRunning(): void {
   el?.querySelector('button')?.classList.remove('gate-chip')
 }
 
+/** Milliseconds the reload flip runs for — docs/todo.md entry 56. Shorter
+ *  than entry 55's 1.4s on load: this is a confirmation in front of an
+ *  action someone is already waiting on, not an arrival. */
+const RELOAD_FLIP_MS = 600
+
+/**
+ * Flip the corner's transient name through the release history, quickly,
+ * then reload — docs/todo.md entry 56. The same eased, time-based sequence
+ * `mountReleaseName()` runs on load, shorter and writing into a different
+ * element, so a reload that used to look like nothing happening has
+ * something happening in front of it. Reduced motion reloads immediately,
+ * with no flip at all: unlike entries 54 and 55, there is nothing to
+ * soften here — the animation is pure feedback in front of a navigation,
+ * and someone who asked for less motion is better served by the
+ * navigation itself happening sooner.
+ */
+function flipThenReload(nameEl: HTMLElement): void {
+  if (RELEASE_NAMES.length === 0 || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    window.location.reload()
+    return
+  }
+  nameEl.classList.add('showing')
+  const n = RELEASE_NAMES.length
+  const start = performance.now()
+  const step = (now: number): void => {
+    const t = Math.min(1, (now - start) / RELOAD_FLIP_MS)
+    const eased = 1 - (1 - t) * (1 - t)
+    const index = Math.min(n - 1, Math.floor(eased * n))
+    nameEl.textContent = RELEASE_NAMES[index]
+    if (t < 1) requestAnimationFrame(step)
+    else window.location.reload()
+  }
+  // Called once synchronously first, for the same reason entry 55's own
+  // load animation does — see mountReleaseName()'s own comment.
+  step(start)
+}
+
 export function mountVersionHud(): void {
   const style = document.createElement('style')
   style.textContent = CSS
@@ -317,8 +388,19 @@ export function mountVersionHud(): void {
   const el = document.createElement('div')
   el.id = 'version-hud'
 
-  // The release name is written into the gate's own layout rather than drawn
-  // here — see mountReleaseName(). What is left in this corner is the control.
+  // The gate's own release name is written into the gate's own layout
+  // rather than drawn here — see mountReleaseName(). This corner's own
+  // transient name (entry 56) is a different thing: it exists only while
+  // the panel is open, only during a reload's own flip, and is removed the
+  // instant the reload fires — "the same object returning rather than a
+  // new one appearing", reusing .gate-name's own styling directly rather
+  // than a second copy of it.
+  const nameEl = document.createElement('span')
+  nameEl.id = 'version-hud-name'
+  nameEl.className = 'gate-name'
+  nameEl.setAttribute('aria-hidden', 'true')
+  el.appendChild(nameEl)
+
   const button = document.createElement('button')
   button.type = 'button'
   // The gate's own chip — see the CSS's own comment on why this is a class
@@ -327,8 +409,32 @@ export function mountVersionHud(): void {
   button.classList.add('gate-chip')
   button.setAttribute('aria-label', 'Reload')
   button.textContent = '⟳'
-  button.addEventListener('click', () => window.location.reload())
+  button.addEventListener('click', () => {
+    // Only while the panel is open does the flip have anywhere to show
+    // itself — see `#version-hud-name`'s own comment on why that surface
+    // exists only then. Closed, this is exactly the plain immediate
+    // reload it always was.
+    if (document.querySelector('.hud-scrim.open')) flipThenReload(nameEl)
+    else window.location.reload()
+  })
   el.appendChild(button)
+
+  // The panel's own open state, made public by hud.ts rather than reached
+  // for here — docs/todo.md entry 56. `.gate-chip` is re-added on open (it
+  // was removed once running started, in versionHudRunning() below) and
+  // removed again on close, so the button's own appearance follows the
+  // exact same class this file already uses on the gate, rather than a
+  // second, parallel state.
+  document.addEventListener('hud-panel', (e) => {
+    // Only ever fires once the panel exists to open, which is only once
+    // the app is running and versionHudRunning() has already stripped
+    // .gate-chip — so toggling it on `open` alone is exactly right here,
+    // with no need to also account for the pre-Start gate, which this
+    // event is never dispatched during.
+    const open = (e as CustomEvent<{ open: boolean }>).detail.open
+    el.classList.toggle('panel-open', open)
+    button.classList.toggle('gate-chip', open)
+  })
 
   watchForNewBuild(button)
 

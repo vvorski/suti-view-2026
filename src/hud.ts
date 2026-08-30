@@ -1112,6 +1112,12 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
     // build() is what parks the current option back under the notch.
     if (v) build()
     else stats.textContent = ''
+    // `.hud-scrim.open` is already the fact; this is that fact made public
+    // rather than something another module has to reach into this file's
+    // own DOM structure to observe — docs/todo.md entry 56, whose reload
+    // chip needs to know the panel's own open state and lives in a
+    // separate module (version.ts) with no other reason to import this one.
+    document.dispatchEvent(new CustomEvent('hud-panel', { detail: { open: v } }))
   }
 
   // Anything reaching the scrim itself is outside the wedge — the arcs and the

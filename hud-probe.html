@@ -31,6 +31,7 @@
     autopilot: true,
     showStats: false,
     gravity: false,
+    day: false,
   }
   const log = (n) => (...a) => calls.push([n, JSON.stringify(a)])
   const hud = createHud(prefs, {
@@ -40,6 +41,7 @@
     onMergeMode: log('mergeMode'),
     onAlpha: log('alpha'),
     onMapping: log('mapping'),
+    onDayMode: log('dayMode'),
     onManualChange: log('manualChange'),
     // Grants whatever is asked for. The refusal path is the camera probe's
     // job; here the point is only that the ring's commit round-trips through
