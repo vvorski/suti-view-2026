@@ -5219,3 +5219,95 @@ of the six geometric views, because "a line of emitters" means something
 different in Tide and Chorus, which take a position as an influence rather
 than a coordinate. `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 58. Motion reaches the colour, continuously
+`status: ready` · added 2026-08-30
+
+**Do** — wire `disturb` and tilt into the picture's colour as a continuous,
+render-time bias, and add the slow agitation accumulator that gives the app a
+memory of having been handled.
+**Why** — `docs/motion-as-a-continuum.md`, and Victor's answer to the question
+it left open: a still hand should differ from a still table **slightly but
+visibly**. The research is done; this is the entry it asked for and that I
+failed to write at the time.
+
+**Decided**
+- The three tiers, from the note → **posture** (tilt, meaningful while
+  perfectly still), **disturbance** (`disturb`, already computed and decayed
+  with a 0.7s constant), and **agitation** (new: rises with `disturb`, settles
+  over about 30 seconds). The app implements only the middle one today, and
+  only into geometry.
+- **`FLOOR = 1.2` is why posture has to exist** → its comment says a hand
+  holding the phone "reads a few tenths" and 1.2 clears that deliberately, so
+  a held phone reads `disturb` **0.00 by design**. "Slightly but visibly
+  different from a table" therefore cannot come from `disturb` at all; at rest
+  there is nothing there. Tilt is the only signal with anything to say, which
+  is why the note listed it first and why it is not optional here.
+- **A render-time bias, never a write to stored colour** → `geoColour` and
+  `atmColour` are stored preferences that the shuffle, the director and the
+  HUD all write. A motion bias that touched them would persist, fight three
+  other writers, and turn up in a shared URL. It goes in at the **same seam
+  entry 48 established**: just before `scene.ts` copies params into uniforms.
+  **Mine**, and the pattern is now the app's answer to "a transient influence
+  that must not poison stored state or diagnostics" — touch used it first, this
+  is its second user, and that is worth naming so the third does not invent a
+  third way.
+- **Brightness-neutral, and this is the safeguard that matters** → the bias
+  rotates colour between channels rather than scaling it down. Entry 21 exists
+  because two independent floors multiplied into a black screen, and entry 35
+  had to re-apply those floors inside its nudge for the same reason. A
+  continuous bias is a random walk that runs for the whole session, so a
+  bias that can darken *will* darken. It may move hue; it may not reduce total
+  luminance. **Mine.**
+- The magnitudes, all "slight but visible" as answered → **posture up to
+  ±0.06** per channel at a full 90° tilt, **disturbance up to ±0.12** at
+  `disturb` 1.0, **agitation up to ±0.08**, applied on top. The three are
+  additive and clamp together, so the worst case is a visible shift and never a
+  different palette.
+- **What agitation is for**, since it is the only new state → it scales the
+  other two. A phone that has been carried across a room answers a tilt more
+  than one that has been sitting on a table for a minute. That is the
+  difference the note was reaching for between *reactive* and *alive*: the toy
+  has a state your handling changes, and it comes back down on its own. About
+  **30 seconds** to settle, which is long enough to survive a pause and short
+  enough that a phone put down goes quiet within a track.
+- The diagnostics show all three → posture, disturbance and agitation as
+  numbers in the readout. Without them, "is this doing anything" is
+  unanswerable for a feature whose whole design brief is *slight*, and that is
+  the same trap `director.ts:151` had to add `status()` to escape.
+- **Geometry is untouched** → the tumble's caps stay exactly where they are.
+  The note is explicit, and so is entry 32: past those caps "the image reads as
+  broken rather than disturbed", and whole-frame scale is "the one coupling
+  that turns responsive into nauseating". This entry adds response in colour,
+  which is the axis with room in it.
+- Screenshots stop being reproducible, and that is intended → recorded in the
+  note when the question was answered. The tilt at the moment of capture is
+  part of the picture. Nothing downstream should normalise it away, but anyone
+  comparing two builds by eye now has to hold the phone the same way for both.
+
+**Lands in**
+- `src/shake.ts:342-348` — `tilt()`, the uncapped −1..1 pair; `gravity()`
+  rewritten in terms of it rather than the two dividing the same numbers by
+  different constants.
+- `src/engine/motion-bias.ts` — new. The agitation accumulator and the pure
+  function from (tilt, disturb, agitation) to a colour bias.
+- `src/scene.ts`, the params copy — the bias applied at entry 48's seam.
+- `src/hud.ts` — three numbers in the readout.
+
+**Done when** — a phone held still in the hand is visibly, slightly different
+from the same phone on a table; tilting it slowly walks the palette and
+tilting back walks it home; waving it about shifts the colour further than
+tilting does; a phone that has just been carried responds more than one that
+has sat for a minute, and settles back within about thirty seconds. Total
+brightness never falls as a result of any of it — check by leaving it running
+and handled for ten minutes and confirming the picture is no darker than it
+started.
+**Verify** — the phone, held, tilted, waved and put down, which is four states
+no probe reproduces. Then a node probe over the bias function alone, walking it
+200k times from random motion inputs and asserting luminance never trends
+downward — the same method that proved entry 21's floors, and necessary for the
+same reason. `pnpm probe:shake` must be unchanged: this reads the detector and
+must not alter it. `pnpm build`, `pnpm lint`.
+**Hard stops** — prefs **no**, deliberately: nothing is stored, which is what
+keeps it out of the shuffle's and the director's way · url no · capture no ·
+dependency no.
