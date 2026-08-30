@@ -20,6 +20,7 @@
     "probe:touches": "node --experimental-strip-types scripts/probe-touches.ts",
     "probe:touch-stream": "node --experimental-strip-types scripts/probe-touch-stream.ts",
     "probe:ripples": "node --experimental-strip-types scripts/probe-ripples.ts",
+    "probe:motion-bias": "node --experimental-strip-types scripts/probe-motion-bias.ts",
     "format": "prettier --write .",
     "deploy": "./deploy/deploy.sh"
   },

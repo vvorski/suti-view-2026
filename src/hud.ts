@@ -189,6 +189,10 @@ export interface Hud {
       }
       /** Whether the long-scale buffer has enough history to act on. */
       warm?: boolean
+      /** Posture, disturbance and agitation reaching the picture's colour —
+       *  docs/todo.md entry 58. See motion-bias.ts's own file comment for
+       *  what each of the three means. */
+      motion?: { posture: number; disturbance: number; agitation: number }
       /** Why there was or wasn't a buzz. See hapticStatus(). */
       haptics?: {
         supported: boolean
@@ -1102,6 +1106,18 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
         // and say nothing; on a phone it is the only way to see what the shake
         // thresholds are actually being fed.
         ...(s.disturb === undefined ? [] : [`shake ${bar(s.disturb)} ${s.disturb.toFixed(2)}`]),
+        // docs/todo.md entry 58 — posture, disturbance and agitation, the
+        // three tiers feeding the picture's colour bias. Without this, a
+        // feature whose whole design brief is "slight" is indistinguishable
+        // from doing nothing. "bias", not "motion" — that label is already
+        // the accelerometer diagnostic two lines below.
+        ...(s.motion === undefined
+          ? []
+          : [
+              `bias  post ${s.motion.posture.toFixed(2)}  ` +
+                `dist ${s.motion.disturbance.toFixed(2)}  ` +
+                `agit ${s.motion.agitation.toFixed(2)}`,
+            ]),
         // The two numbers that tell a dead sensor apart from a shake that is
         // simply not hard enough.
         ...(s.samples === undefined

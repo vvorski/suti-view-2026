@@ -1135,6 +1135,13 @@ async function main(): Promise<void> {
 
       const tumble = shake.frame(audio.dt)
       visualiser.setTumble(tumble, prefs.gravity ? shake.gravity() : undefined)
+      // docs/todo.md entry 58 — posture and disturbance reaching the
+      // picture's colour. Only the running loop, not the idle preview
+      // above: that draws synthetic params and a preview colour rather
+      // than anything the shuffle/director/HUD have actually stored, and
+      // every Done-when here describes the running app.
+      const tilt = shake.tilt()
+      visualiser.setMotion(tilt.x, tilt.y, tumble.disturb)
       dispatchTouches(performance.now() / 1000)
       // The discrete gesture stands down while the panel is open — a
       // shuffle rewrites the values someone currently has a finger on, the

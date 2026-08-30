@@ -18,6 +18,8 @@
  *                entry 48. A different shape of "turn a contact into a
  *                number" from ripples.ts/emitter.ts: no position, since the
  *                views it feeds have no notion of one.
+ *   motion-bias.ts  the phone's own posture and handling reaching the
+ *                picture's colour, continuously — docs/todo.md entry 58.
  *
  * This became a directory when the slow tier arrived. Before that there was one
  * interpretation of the captured audio living behind an interface, which is a
@@ -63,3 +65,6 @@ export type { Touch, TouchField, TouchFieldEvent, TouchEventKind } from './touch
 
 export { createTouchStreamState, updateTouchStream } from './touch.ts'
 export type { TouchStreamState, TouchStream } from './touch.ts'
+
+export { createMotionBiasState, updateMotionBias } from './motion-bias.ts'
+export type { MotionBiasState, MotionBias } from './motion-bias.ts'

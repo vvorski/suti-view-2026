@@ -40,14 +40,17 @@ import { MERGE_MODES, type MergeModeName } from './merge-modes'
 import type { VisualParams } from './engine'
 import {
   createEmitterState,
+  createMotionBiasState,
   createRippleState,
   createTouchStreamState,
   Envelope,
   MAX_RIPPLES,
   updateEmitter,
+  updateMotionBias,
   updateRipples,
   updateTouchStream,
   type EmitterState,
+  type MotionBias,
 } from './engine'
 import { MAX_OFFSET, overscanFor, type TumbleState } from './shake'
 import compositeFrag from './shaders/composite.frag.glsl?raw'
@@ -137,6 +140,15 @@ export interface Visualiser {
   /** Recolour a layer. Cheap: a uniform, not a recompile. */
   setLayerColour(layer: 'geo' | 'atm' | 'cam', colour: GeoColour): void
   /**
+   * The phone's own orientation and handling — docs/todo.md entry 58.
+   * `tiltX`/`tiltY` are `shake.ts`'s uncapped `tilt()` pair; `disturb` is
+   * `TumbleState.disturb`. Only recorded here; `render()` is what ticks it
+   * into a small continuous bias on `geoColour`/`atmColour` once per frame,
+   * on top of whatever `setLayerColour()` last stored — never written back
+   * into it.
+   */
+  setMotion(tiltX: number, tiltY: number, disturb: number): void
+  /**
    * How far the device has been knocked about. See shake.ts.
    *
    * `gravity`, when given, is a steady offset from how the phone is being
@@ -196,7 +208,14 @@ export interface Visualiser {
   /** Re-roll the seed each view spends on whatever it doesn't get from audio. */
   randomise(): void
   /** Smoothed frame time in ms, and the pixel ratio currently in use. */
-  stats(): { frameMs: number; pixelRatio: number }
+  stats(): {
+    frameMs: number
+    pixelRatio: number
+    /** docs/todo.md entry 58 — posture, disturbance and agitation, for the
+     *  numeric readout. Without these, "is this doing anything" is
+     *  unanswerable for a feature whose whole design brief is slight. */
+    motion: { posture: number; disturbance: number; agitation: number }
+  }
   /**
    * Save the next composited frame as a PNG blob, once. `onReady` runs after
    * the frame after this call renders — capture happens inside the render
@@ -457,6 +476,23 @@ export function createVisualiser(
   let touchBegan = false
   let touchAnyDown = false
   let touchMaxSpeed = 0
+  // docs/todo.md entry 58. What main.ts's frame loop last reported about the
+  // phone's own orientation and handling — tilt (posture) and disturb
+  // (disturbance) — ticked into `motionBias` once per rendered frame for the
+  // same wall-clock-cadence reason the emitter slots and touch stream are.
+  // `baseGeoColour`/`baseAtmColour` are the *stored* colours setLayerColour()
+  // last set; the bias is added on top of them fresh every frame rather than
+  // written back into either, so it never becomes part of what gets saved,
+  // shuffled from, or shared in a URL.
+  const motionBias = createMotionBiasState()
+  let motionTiltX = 0
+  let motionTiltY = 0
+  let motionDisturb = 0
+  let baseGeoColour: GeoColour = options.geoColour
+  let baseAtmColour: GeoColour = options.atmColour
+  // For stats() below, which is called independently of render() — the
+  // numeric readout's own posture/disturbance/agitation line reads this.
+  let lastMotion: MotionBias = { r: 0, g: 0, b: 0, posture: 0, disturbance: 0, agitation: 0 }
   let lastNovelty = 0
   let lastAutoReroll = -1000
   // The canvas's own client box, as of the last applySize() — see
@@ -774,6 +810,26 @@ export function createVisualiser(
       uniforms.uRoughness.value = Math.max(params.roughness, stream.roughness)
       uniforms.uHistoryHead.value = historyHead / HISTORY_W
 
+      // docs/todo.md entry 58. Added to the *stored* colour fresh every
+      // frame, never written back into it — geoColour/atmColour are
+      // preferences the shuffle, the director and the HUD all write, and a
+      // motion bias that persisted into them would fight all three and turn
+      // up in a shared URL. Brightness-neutral by construction (see
+      // motion-bias.ts's own file comment), so this can never be the thing
+      // that darkens the picture the way entry 21's floors once did.
+      const motion = updateMotionBias(motionBias, dt, motionTiltX, motionTiltY, motionDisturb)
+      lastMotion = motion
+      compositeUniforms.uGeoColour.value.set(
+        baseGeoColour.r + motion.r,
+        baseGeoColour.g + motion.g,
+        baseGeoColour.b + motion.b,
+      )
+      compositeUniforms.uAtmColour.value.set(
+        baseAtmColour.r + motion.r,
+        baseAtmColour.g + motion.g,
+        baseAtmColour.b + motion.b,
+      )
+
       // Three passes over the same quad: geometric layer to its target,
       // atmospheric layer to its target, then the composite reads both and
       // paints the canvas. autoClear defaults to true, so each pass starts
@@ -860,15 +916,27 @@ export function createVisualiser(
     },
 
     setLayerColour(layer, colour) {
-      // Three fixed gains, so this is a uniform write on input rather than
-      // anything the render loop has to recompute.
-      const u =
-        layer === 'geo'
-          ? compositeUniforms.uGeoColour
-          : layer === 'atm'
-            ? compositeUniforms.uAtmColour
-            : compositeUniforms.uCamColour
-      u.value.set(colour.r, colour.g, colour.b)
+      // geo/atm are no longer a direct uniform write — docs/todo.md entry
+      // 58 adds a render-time motion bias on top of whatever is stored, so
+      // the *stored* value has to live somewhere JS can re-read it every
+      // frame rather than only inside the uniform, which render() is about
+      // to start overwriting with base-plus-bias. cam is untouched: the
+      // entry names geoColour/atmColour specifically as the stored
+      // preferences in question, and a passthrough tint answering the
+      // phone's own tilt would be a stranger kind of feature than this one.
+      if (layer === 'geo') {
+        baseGeoColour = colour
+      } else if (layer === 'atm') {
+        baseAtmColour = colour
+      } else {
+        compositeUniforms.uCamColour.value.set(colour.r, colour.g, colour.b)
+      }
+    },
+
+    setMotion(tiltX, tiltY, disturb) {
+      motionTiltX = tiltX
+      motionTiltY = tiltY
+      motionDisturb = disturb
     },
 
     setGeoAlpha(a) {
@@ -912,7 +980,11 @@ export function createVisualiser(
       uniforms.uSeed.value.set(Math.random(), Math.random(), Math.random(), Math.random())
     },
 
-    stats: () => ({ frameMs, pixelRatio: RATIO_LADDER[rung] }),
+    stats: () => ({
+      frameMs,
+      pixelRatio: RATIO_LADDER[rung],
+      motion: { posture: lastMotion.posture, disturbance: lastMotion.disturbance, agitation: lastMotion.agitation },
+    }),
 
     dispose() {
       canvas.removeEventListener('webglcontextlost', onContextLost)

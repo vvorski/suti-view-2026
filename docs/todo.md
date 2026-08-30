@@ -5499,7 +5499,93 @@ than a coordinate. `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 58. Motion reaches the colour, continuously
-`status: building` · added 2026-08-30 · started 2026-08-30
+`status: done` · added 2026-08-30 · shipped at build 190
+
+**Build note** — `src/engine/motion-bias.ts` is new and pure, same
+discipline as `ripples.ts`/`emitter.ts`/`touch.ts`: no DOM, no clock. It
+implements the three tiers via one construction, not three: `rotate(ax,
+ay, amount)` is a zero-sum three-way opponent-axis split (an equilateral-
+triangle/Maxwell-triangle basis) that makes `dr + dg + db === 0` an
+algebraic identity for any input, so "brightness-neutral" holds exactly
+rather than approximately. Posture, disturbance and agitation each call
+it with the *same* tilt direction, scaled by their own driving quantity
+(1, `disturb`, and the new `agitation` accumulator respectively) — **Mine**,
+since the entry gives three magnitudes but no channel mapping and no
+statement that the three should point in independent directions; the
+entry's own "carried across a room" imagery reads as disturbance and
+agitation amplifying whichever way the phone already leans, not
+introducing hues posture wouldn't already point toward.
+
+`scene.ts` needed a real change, not just a new uniform write: `geoColour`/
+`atmColour` used to be direct, one-shot uniform writes from
+`setLayerColour()`, and a render-time bias needs the *stored* value kept
+somewhere JS can re-read every frame while the uniform itself gets
+overwritten with base-plus-bias each render. `setLayerColour('geo'/'atm',
+...)` now updates a plain local `baseGeoColour`/`baseAtmColour` instead of
+writing the uniform directly; `render()` recomputes both uniforms from
+base plus the current bias every frame. `cam` is untouched — the entry
+names `geoColour`/`atmColour` specifically as the stored preferences in
+question. `stats()` gained a `motion: {posture, disturbance, agitation}`
+field (the readout's own new "bias post/dist/agit" line — labelled "bias"
+rather than "motion", since that word already names the accelerometer
+sample-count diagnostic two lines above it).
+
+**One number is inferred, not quoted**: agitation's own dynamics ("rises
+with disturb, settles over about 30 seconds") are implemented as the same
+snap-up/exponential-decay envelope `shake.ts`'s own `Tumble` class already
+uses for the identical problem (`this.disturb > this.envelope`) — an
+explicit reuse of an established idiom rather than a new curve shape,
+**Mine**, since the entry names the settle time but not the rise
+behaviour.
+
+**A spec-internal tension, resolved and stated rather than silently
+picked**: Decided's "what agitation is for" bullet describes it as
+something that "scales the other two" (a multiplier), while two bullets
+later it is described as one of "three [that] are additive and clamp
+together" with its own independent peak (an addend). These are different
+mechanisms. Implemented as **additive**, matching the more specific,
+numbered description (posture ±0.06, disturbance ±0.12, agitation ±0.08,
+combined and clamped) — the "scales" framing still holds in effect,
+because agitation's own term is proportional to the agitation value,
+which itself only rises when the phone is actually handled, so its
+contribution is 0 exactly when "not scaling anything" is the correct
+answer (a phone untouched for 30s+).
+
+Clamping is done as a **uniform scale-down of the combined vector**, not a
+per-channel clamp — the only form that cannot break the zero-sum
+guarantee, since clamping each channel independently would let two
+channels clip while the third didn't, moving the sum away from 0 exactly
+when the effect is largest.
+
+`scripts/probe-motion-bias.ts` (new, `pnpm probe:motion-bias`) adapts
+rather than copies the entry's own Verify instruction ("walk it 200k
+times... asserting luminance never trends downward, the same method that
+proved entry 21's floors"): that method exists for a colour that
+*accumulates* across a session (repeated nudges compounding into the same
+stored value), and this bias has no such walk — it is recomputed fresh
+every frame against whatever the stored colour already is, never written
+back into it. So the probe checks the stronger, exact property this
+design's architecture actually guarantees: `|r + g + b| < 1e-9` across
+200,000 random `(tiltX, tiltY, disturb, dt)` draws, plus unit checks for
+each tier's own peak, the zero-tilt/zero-bias case, and agitation's snap-
+up-then-30s-settle shape.
+
+Verified live via `scene.ts` loaded directly over Vite's dev server (the
+same construction main.ts uses before the mic gate resolves): rendering
+one frame at zero tilt and one at full tilt on one axis produced genuinely
+different pixels via `readPixels()`, while the `geoColour` object passed
+to `createVisualiser()` came back with every field exactly as given —
+concrete proof the bias never touches stored colour, not just an
+inspection of the diff. `stats().motion` correctly reported `posture: 1`
+for that same full-tilt call. A separate call confirmed `setLayerColour()`
+still changes the rendered output correctly through the new base-tracked
+indirection. `pnpm build`, `pnpm lint`, `pnpm probe:motion-bias`, and
+`pnpm probe:shake` (named explicitly in Verify, confirming the detector
+itself is untouched) all pass. Not verified: anything requiring a held,
+tilted, or waved phone, which the entry's own Verify text names as
+needing a real device for four of its states, and the 320×568/360×640
+on-screen check the Lands-in text does not actually ask for (this entry
+touches no layout, only colour).
 
 **Do** — wire `disturb` and tilt into the picture's colour as a continuous,
 render-time bias, and add the slow agitation accumulator that gives the app a
