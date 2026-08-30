@@ -7810,3 +7810,89 @@ ballad, and that is acceptable only if it says so rather than guessing.
 **Hard stops** — prefs no (no new mapping, no stored field; the six mapping
 names are unchanged) · url no · capture no · dependency no — autocorrelation
 over a small rolling buffer is a loop, not a library.
+
+### 76. The channels lag behind the phone, and snap back
+`status: ready` · added 2026-08-30
+
+**Do** — move the picture apart into its red, green and blue when the phone
+moves, and let them spring back together when it stops. Its own module, its own
+spring, its own uniform — sharing nothing with the tumble or with entry 58's
+colour bias.
+
+**Why** — asked for, and it fills a real gap: every motion response the app has
+so far is either a rigid-body move (the tumble) or a colour shift (entry 58).
+Nothing has ever come *apart*.
+
+**Decided**
+- **A separate module, as asked.** `src/engine/rgb-slip.ts`, in the same shape
+  as `motion-bias.ts`, `ripples.ts` and `emitter.ts`: pure state, one pure
+  update function, no DOM and no clock of its own, so it is probeable in node.
+  It shares no state with the tumble and no state with the colour bias — the
+  only thing it reads is a number they also read.
+- **It needs no new plumbing at all.** `main.ts` already hands the whole
+  `TumbleState` to `scene.ts` via `setTumble` (`:811`, `:1364`), so the slip is
+  ticked inside `render()` from `disturb` and the tumble offset that are
+  already sitting there. No new sensor path, no change to `shake.ts`, no
+  change to `main.ts`. **Mine**, and it is most of why this is small.
+- **Its own spring, deliberately unlike the tumble's.** The tumble is heavy and
+  slow — ω ≈ 12.6 and 8.9 rad/s at ζ 0.4. The slip is **fast and looser**:
+  ω ≈ 20 rad/s (`STIFF` 400) at **ζ ≈ 0.35**, so it flicks apart and visibly
+  overshoots on the way back rather than easing home. That is what "bounce
+  back" asks for, and making it a *different* frequency from the tumble is what
+  stops the two reading as one effect — the same reasoning `shake.ts` already
+  applies to keeping its own two springs at different frequencies.
+- **Direction comes from the tumble's offset, not from raw acceleration.**
+  That offset is already a spring-driven displacement pointing where the phone
+  was kicked, so the channels separate *along the direction of movement* and
+  the picture reads as lagging rather than as smearing at random. **Mine**, and
+  it reuses existing state instead of adding a second interpretation of the
+  accelerometer — which the motion spike already warns is where two meanings of
+  "tilt" start drifting apart.
+- **Red leads, blue trails, green holds still** — `+offset` on red, `−offset`
+  on blue, green at the true position. Green carries most of the luminance, so
+  leaving it undisplaced keeps the image sharp and the fringing reads as colour
+  rather than as blur. This is what a real lens does and it is the reason the
+  effect is legible at a couple of pixels.
+- **`MAX_SLIP = 0.006` uv**, about two to four pixels on a phone. Small on
+  purpose: this is a texture-sample offset, and past a few pixels line art
+  stops looking dispersed and starts looking broken — the same ceiling
+  argument `shake.ts`'s `MAX_ANGLE` comment makes about the tumble.
+- **Where it happens, and the cost, stated plainly** → in
+  `composite.frag.glsl`, at the point the two layers are sampled. Slipping
+  channels means sampling each texture three times instead of once, so this is
+  **6 samples where there are 2**. It goes behind `if (uSlip > 0.0)` — a
+  *uniform* branch, identical for every fragment in the draw, which is the
+  cheap kind on a mobile GPU — so a still phone pays nothing and the picture is
+  bit-identical to today. That identity-when-off property is the same one
+  entry 47 gave `uDay` and entry 75 gives `uBeatConfidence`.
+- **The room is never slipped.** The sampling happens before the `uCameraMix`
+  block, so passthrough is untouched for free — consistent with entries 72 and
+  73 treating the room as real rather than as material.
+- **It does not mix with anything.** Entry 58 shifts colour *values* and this
+  shifts sample *positions*; they are orthogonal operations at different points
+  in the pipeline and can both be on with no interaction to reason about.
+  Entries 68/74's ink and 70's vibrance all happen later in the tail, on the
+  finished `col`. Stated because "wire it up separately" was the request and
+  this is what makes it true rather than a claim.
+
+**Lands in**
+- `src/engine/rgb-slip.ts` — new.
+- `src/scene.ts:418` — `uSlip` beside `uTumble`; `:1002` — ticked in `render()`
+  from the state `setTumble` already stores.
+- `src/shaders/composite.frag.glsl:126` — the three-offset sampling.
+- `scripts/probe-rgb-slip.ts` — new, modelled on `probe-motion-bias.ts`.
+
+**Done when** — a still phone renders bit-identically to today; a nudge visibly
+separates the channels along the direction of the nudge and they overshoot once
+before settling; a hard shake reaches the cap without the picture reading as
+broken; camera passthrough is unaffected at any mix; and the probe shows the
+spring overshooting and returning to zero from every handling case in
+`probe-shake.ts`'s own table.
+**Verify** — the probe for the spring, the phone for whether 0.006 and ζ 0.35
+are right. Watch it against a *still* hand as well as a moving one: `disturb`
+reads 0.00 for a held phone by design, so this must be genuinely invisible at
+rest rather than faintly jittering, which is the failure a directional effect
+driven by a noisy signal would have.
+**Hard stops** — prefs no (always on, no chip; the arc is scarce and this is
+not a setting) · url no · capture no (it is picture, and lands in a saved frame
+exactly as the tumble does) · dependency no.
