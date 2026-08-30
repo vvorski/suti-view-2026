@@ -9503,7 +9503,7 @@ reached at all," which is worth keeping distinct for whoever debugs this
 gap next.
 
 ### 88. A quiet phone listens harder
-`status: ready` · added 2026-08-30 · build after 85 and 86
+`status: building` · added 2026-08-30 · build after 85 and 86
 
 **Do** — let the shake detector's thresholds follow how much the phone has been
 moving lately: a low bar after stillness, today's bar when it is already being
