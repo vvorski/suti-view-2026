@@ -9483,7 +9483,7 @@ the four**: entry 76 is frozen and entry 70's colour is approved; both consume
 single frame.
 
 ### 89. The director always eventually moves
-`status: ready` · added 2026-08-30
+`status: ready` · added 2026-08-30 · reconfirmed 2026-08-30 · **build before 90–92**
 
 **Do** — make the two gates that can hold forever decay like the novelty gate
 already does, so a still phone in front of unchanging sound still changes
@@ -9492,6 +9492,17 @@ picture.
 **Why** — reported: left alone, such as propped up while driving, it does not
 chain. Correct, and entry 45's promise that it "never waits longer than 30s"
 is not true of the outcome — only of one of the four conditions.
+
+Reported again, harder, at build 289: *"director noormmmm not working at
+all"*. Nothing has changed in `director.ts` to cause a new fault — the two
+commits since (81's bar clock, 84's per-layer drift) leave the gates below
+untouched, and the diagnosis stands exactly as written. What the second
+report adds is that this is not a "sometimes repetitive" complaint. It is
+*nothing ever happens*, and three further mechanisms found on re-reading
+compound it into that. They are folded into this entry rather than split
+off, because they are the same file, the same symptom, and shipping the
+decay alone would still leave the app looking dead for the first two
+minutes.
 
 **Decided**
 - **The cause, precisely.** A colour change needs *three* things:
@@ -9538,15 +9549,55 @@ is not true of the outcome — only of one of the four conditions.
   something is still not asking for the autopilot's opinion, however long the
   silence.
 
+**And three more, found on the second report:**
+
+- **The first two minutes are dead, by construction.** `decide()` returns
+  `null` on `!c.warm`, and `slow.ts:449` sets `warm` at `filled >= HALF_LONG *
+  2` — 240 samples at `SLOW_HZ = 2`, so **120 seconds** before the director is
+  permitted to have an opinion at all. The reasoning (`:334-336`: acting on a
+  cold buffer is acting on its initial values) is sound and stays. What is not
+  sound is that the *whole* director waits on the *longest* window. The colour
+  path reads `noveltyMedium`, whose window is `HALF_MEDIUM = 30` — 15 seconds
+  of history. **Warmth becomes per-axis: a decision waits only for the windows
+  it actually reads.** Colour is then live at ~30s, and the view path, which
+  needs the long axes, keeps its two minutes. **Mine**, because the current
+  flag is one boolean standing in for four different maturity times and the
+  finest of them is being charged the coarsest one's price.
+- **The readout degenerates to `next 0s` and sits there.** `status()` was
+  added (`:240-246`) so that "restrained" stays distinguishable from "not
+  running" — and under exactly the latch condition this entry fixes, it prints
+  `next 0s` forever while nothing happens, which is the one reading that
+  cannot tell those two apart. The readout must name **the gate that is
+  actually closed**, not the timer that already opened: `auto blocked: step
+  0.04 < 0.18` or `auto blocked: candidate = current (field)`. A diagnostic
+  that goes quiet precisely when the fault fires is not a diagnostic. It is
+  also how the second report could have been one line instead of a re-reading.
+- **A held decision survives a suspend and lands on top of the person.** The
+  suspend branch (`:307-313`) returns before the pending-release block
+  (`:322-332`), so a decision already waiting for a bar line is neither fired
+  nor discarded when someone touches the phone — it is frozen, and released up
+  to 30 seconds later, overriding the choice that caused the suspend, on
+  reasoning formed before that choice existed. **`suspend()` clears
+  `pending`.** A decision the person has since overruled is not a decision
+  worth keeping, and this is the exact failure `SUSPEND` exists to prevent.
+
 **Lands in** `src/director.ts:255-273` — both gates; `:143-150` — `viewFor`
-returns a ranking; `scripts/probe-slow.ts` — the case below.
+returns a ranking; `:307-336` — per-axis warmth and the suspend/pending clear;
+`:240-246` and `src/hud.ts:1434-1444` — the blocked-gate readout;
+`src/engine/slow.ts:449` — warmth per window; `scripts/probe-slow.ts` — the
+cases below.
 **Done when** — a synthetic run with a *constant* character produces a colour
 change and then a view change within roughly `HOLD + BOUNDARY_RAMP`, rather
-than never; a run with varied music produces the same changes at the same
-times as today; and `SUSPEND` still silences everything.
+than never; the first colour change is possible inside the first minute rather
+than after two; the HUD names which gate is closed whenever the director is
+due and not firing; a decision pending at the moment of a `suspend()` never
+fires afterwards; a run with varied music produces the same changes at the
+same times as today; and `SUSPEND` still silences everything.
 **Verify** — `probe-slow.ts` with a flat input, which is the case nobody wrote
-because nobody expected the input to be flat. Then a phone left playing to
-room noise for five minutes.
+because nobody expected the input to be flat; a probe asserting the pending
+decision is gone after `suspend()`; and a stopwatch on a cold start against
+the HUD, which should never show `next 0s` with nothing happening. Then a
+phone left playing to room noise for five minutes.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 90. Still, carried, driving, dancing — the phone knows which
