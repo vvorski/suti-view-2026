@@ -9295,3 +9295,133 @@ synthesised. Then a phone actually in a car and actually on a dancefloor, which
 is the only test of whether "driving" and "dancing" mean what the numbers think
 they mean.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 91. The director gets a second engine, for when the room has nothing to say
+`status: ready` · added 2026-08-30 · build after 89 and 90
+
+**Do** — give the director a generative engine alongside its reactive one, and
+let posture and how informative the sound is decide the mix. Driving should be
+the case it is best at, not the case it fails.
+
+**Why** — asked to rethink it for modes and to be interesting while driving.
+Entry 89 stops the director latching shut; it does not give it anything new to
+say. Those are different problems and only the second one makes a car
+interesting.
+
+**Decided**
+- **The director is purely reactive today, and that is the root of it.**
+  `colourFor(character)` and `viewFor(character)` are pure functions of the
+  audio's long-scale character. Steady input, steady answer — so with road
+  noise it is not merely stuck (entry 89), it has genuinely *nothing to
+  propose*. Fixing the gates makes it repeat itself sooner. The missing piece
+  is a source of change that does not come from the microphone.
+- **So: two engines.** **Reactive** is everything that exists — the character
+  axes, `colourFor`, `viewFor`, the novelty boundaries. **Generative** is new
+  and small: a slow constrained walk through colour, and a rotation through the
+  views the current character ranks highest. The director's output is a blend
+  of the two, and every existing dead band, hold and suspend applies to the
+  result unchanged.
+- **The mix is chosen by how informative the sound is, not by posture alone.**
+  A rolling variance of the character axes over a few minutes: high variance
+  (real music, changing) → almost entirely reactive, which is today's
+  behaviour and must stay pixel-identical in that case. Low variance (road
+  noise, a fan, a quiet room) → mostly generative. **Mine**, and it matters
+  that this is measured rather than switched: a car with music playing should
+  behave like music, not like a car.
+- **Posture (entry 90) sets the *pace*, not the source.** driving → slow, wide,
+  continuous — the longest holds and the largest colour excursions, since it is
+  watched sideways for a long time and nothing else will ever change it.
+  dancing → fast and tight, on the bar (entry 81). still → medium. carried →
+  slowest, nobody is looking.
+- **The walk is constrained, not random.** Hue moves on a slow continuous path
+  with bounded rate; saturation and value stay inside the ranges entry 70
+  established. A random-walk over three channels reproduces exactly the
+  grey-clustering that entry 70 diagnosed, so the walk happens in the same
+  hue-first space that entry fixed. **Mine**, and it is the one way this could
+  quietly undo approved work.
+- **Views rotate through the character's own ranking**, which entry 89 already
+  makes available by having `viewFor` return an order. So even the generative
+  engine is still answering the music — it simply stops insisting on the single
+  best answer. Nothing ever picks a view the character rates poorly.
+- **What "interesting while driving" concretely means** → over a twenty-minute
+  drive the picture should never repeat a colour and should pass through
+  several views, with no single change large enough to catch the eye of someone
+  who is supposed to be watching the road. Slow, continuous, wide. That is the
+  design target and the reason driving gets the *widest* excursions and the
+  *longest* holds at the same time.
+- **`SUSPEND` still outranks both engines.** A person who has just chosen
+  something is not asking for either opinion.
+
+**Lands in** `src/director.ts` — the second engine and the mix; `:143-150` —
+the ranking from entry 89; `scripts/probe-slow.ts` — the flat-input case, which
+should now produce *varied* output rather than merely eventual output.
+**Done when** — a twenty-minute synthetic run on flat road-noise-like input
+produces continuous colour movement and several view changes, none abrupt; the
+same run with varied music produces output identical to today; and the
+generative walk never leaves the saturation range entry 70 set.
+**Verify** — `probe-slow.ts` for both runs. Then an actual drive, which is the
+only test of "interesting but not distracting" and is also the only one that
+can say whether the pace is right.
+**Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 92. Values arrive, they do not jump
+`status: ready` · added 2026-08-30
+
+**Do** — ramp what can be ramped and cover what cannot. A colour change should
+travel to its new value; a view change should not be a cut.
+
+**Why** — asked for, and nothing in the app does it today. Every automatic
+change is a hard switch.
+
+**Decided**
+- **Colour snaps, and it is one line.** `scene.ts:1105` is
+  `baseGeoColour = colour` — an assignment. The director, the shuffle, the
+  shake and the HUD all land through it, so **every** colour change in the app
+  is instantaneous. Ramp it: hold a target and a current, and step the current
+  toward it. `Envelope` already exists in this file and already does this for
+  exposure, so there is nothing to invent.
+- **Ramp duration by source, because they mean different things.** A HUD drag
+  is a person's own hand and must stay immediate — a control that lags is a
+  broken control. The director gets **2.0s**, slow enough to read as drift. A
+  shake gets **0.25s**: fast, but not a cut, so the re-roll still lands like an
+  event. **Mine**, and the rule underneath is worth keeping: *a machine's
+  changes ease; a person's changes are instant.*
+- **Views are a hard cut and cannot simply be ramped** —
+  `setAtmosphericView` disposes one `ShaderMaterial` and installs another, so
+  there is no in-between state to interpolate. Two different programmes, no
+  shared parameterisation.
+- **So: dip and swap.** Fade the layer's own alpha to zero over ~0.35s, swap
+  the material at the bottom, fade back. **Mine**, and the reason it works here
+  specifically is that this app has *two* layers: while the atmosphere dips,
+  the geometry is still drawing, so the frame never empties — it thins and
+  refills. On a single-layer app this would be a blink; here it reads as one
+  thing receding and another arriving.
+- **Declined: a true crossfade.** It would need both programmes rendered to
+  separate targets and mixed — an extra full-screen pass and a third render
+  target, on a phone GPU, permanently allocated for something that happens for
+  one second every half-minute. Stated rather than omitted so nobody re-derives
+  it as an oversight. If the dip proves unsatisfying, this is the upgrade and
+  it has a known price.
+- **The dip is on the layer being swapped only.** The geometric and
+  atmospheric layers swap independently and must never dip together, or the
+  picture does blink.
+- **Nothing new is stored.** The ramp is a render-time interpolation toward the
+  stored value — the same seam entries 48, 58, 60 and 72 use. `prefs` holds the
+  destination and holds it the instant the change is decided, so a reload
+  mid-ramp lands on the target rather than somewhere in between.
+- **Interaction with the frozen work, checked** → entry 76's slip and entry
+  70's vibrance both act on the composite's *output*, after colour is applied.
+  Ramping the input changes when they see a value, never what they do with it,
+  and a settled frame is identical to today's. Entry 88's own constraint holds
+  here too.
+
+**Lands in** `src/scene.ts:1095-1110` — targets and ramps; `:1053-1061` — the
+dip-and-swap; `src/main.ts` — the per-source ramp duration.
+**Done when** — a director colour change visibly travels over about two
+seconds; a HUD drag is still immediate; a shake still reads as an event; a view
+change thins and refills rather than cutting; the two layers never dip at the
+same time; and a settled frame is pixel-identical to today's.
+**Verify** — the phone for the dip, since 0.35s is a judgement about feel.
+`probe-composite.ts` can hold the settled-frame-identical claim, which is the
+one that could silently regress the approved colour.
+**Hard stops** — prefs no · url no · capture no · dependency no.
