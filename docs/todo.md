@@ -4057,8 +4057,8 @@ no · dependency no (2D canvas, no library).
 ### 47. Day mode: a tone curve, so the picture survives daylight
 `status: ready` · added 2026-08-30
 
-**Do** — add a day mode that lifts the midtones and the black level of the
-finished picture, on a chip, off by default.
+**Do** — add a day mode that puts the picture on a **light ground** instead of
+a black one, on a chip, off by default.
 **Why** — the picture is hard to read in daylight, which is where a phone
 propped up in a room actually lives.
 
@@ -4071,11 +4071,35 @@ propped up in a room actually lives.
   legibility in sunlight, not a preference for a light theme, and a tone curve
   answers that in one place. If a genuine light theme is wanted later it is a
   different and much larger entry.
-- **Gamma, not gain** → a multiplier brightens the highlights it already has
-  and clips them; what makes a dark picture readable outdoors is raising the
-  *midtones*. So `pow(col, vec3(1.0 / gamma))` with a small black-level lift,
-  starting at **gamma 1.7 and a lift of 0.06**, both settled by eye in
-  daylight rather than by argument here.
+- **Revised 2026-08-30, against nine screenshots: a curve cannot do this.**
+  The original decision here was a gamma lift with a 0.06 black-level lift.
+  Looking at what this app actually draws, that was wrong, and wrong for a
+  reason worth keeping: **these pictures are mostly pure black.** Thin bright
+  rings on an empty field. And `pow(0.0, 1.0/gamma)` is **0.0** — gamma raises
+  midtones, and a frame that is four-fifths true black has almost no midtones
+  to raise. The curve would have brightened the rings slightly and left the
+  field exactly as dark, which is not what "much lighter" means and would have
+  read as the feature not working.
+- So the ground itself has to change → **screen the picture over a light
+  ground**, `1 - (1 - col) * (1 - ground)`, with `ground` rising with
+  `uDay`. Black becomes the ground colour, white stays white, and everything
+  between lifts smoothly with **no clipping possible** — which a gain cannot
+  promise. Starting at a ground of **0.6** at full day. **Mine**, and it costs
+  nothing new: it is `blendWith`'s mode 2, already in this file and already
+  the app's default merge mode.
+- **Not an inversion**, which is the other way to get a light picture →
+  `mix(col, 1.0 - col, uDay)` gives dark ink on white, and paper is
+  undeniably the most legible thing in sunlight. It is rejected because
+  inversion **changes every hue relationship in the app**: a warm orange ring
+  becomes teal, the palette the shuffle rolls stops meaning what it meant, and
+  every screenshot in the roll belongs to a different instrument. Screening
+  over a ground lifts the picture without moving a single hue. **Mine**, and
+  it is the difference between a lighter version of this app and a different
+  app.
+- One of the thirteen already proves it works → among those screenshots, the
+  striped view fills its whole frame with a pale ground and stays perfectly
+  legible. The visual language survives a light field; it has simply never
+  been offered one.
 - **A new uniform, because `uExposure` is already taken** → and this was
   checked: `scene.ts:589` writes `uExposure` every frame from the camera's
   light envelope (`0.85 + envelope * 0.3`) and `:547` resets it to 1 when the
@@ -4096,11 +4120,13 @@ propped up in a room actually lives.
   half of the stored-shape rule, so no Hard Stop. Off by default for the same
   reason `gravity` is: it changes what an untouched picture looks like, and a
   returning visitor should find what they left.
-- **Build entry 34 first.** → two of the six merge modes currently force the
-  frame to black at zero atmospheric opacity, and the shuffle can land on them.
-  Some of "it's all very dark" is that defect rather than the tone curve's
-  absence, and shipping this first would mean tuning a gamma to compensate for
-  a bug — then finding the picture over-bright once the bug is fixed.
+- **Entry 34 has since shipped (build 146), and that matters to this entry's
+  premise** → it was the reason to wait: two merge modes forced the frame to
+  black and the shuffle could land on them. That is fixed, and the picture is
+  *still* "all very dark" in every screenshot. So the darkness left over is the
+  app's own aesthetic rather than a defect, which is what makes this a feature
+  rather than a workaround, and it removes the only ordering constraint that
+  was in front of it.
 - Scope is **the picture only** → not the HUD, not the gate. Both have their
   own contrast decisions already, and entry 28 fixed the gate's specifically
   against a measured 2.33:1. A global brightness that also touched them would
@@ -4113,10 +4139,11 @@ propped up in a room actually lives.
 - `src/prefs.ts` — `day: boolean`, defaulting false.
 - `src/hud.ts` — the chip, beside `gravChip`.
 
-**Done when** — with day mode on, a picture that was previously hard to make
-out indoors is legible on the phone outdoors, with no visible clipping of the
-bright parts and no colour shift. With it off, the frame is pixel-identical to
-today. The frame-time figure is unchanged in both states.
+**Done when** — with day mode on, the black field is visibly a light field and
+the whole frame reads outdoors in sun; the rings and their colours are the same
+colours, only sitting on light instead of dark; nothing clips. With it off, the
+frame is pixel-identical to today. The frame-time figure is unchanged in both
+states.
 **Verify** — outdoors, on the phone, in actual daylight, which is the only
 place the question exists — a desktop monitor cannot answer it and neither can
 a screenshot. Check it over both a bright view and a dark one, since a curve
