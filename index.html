@@ -310,13 +310,12 @@
       }
       .gate-qr[hidden] { display: none; }
 
-      /* Share, as an icon in the top-right corner. Circular and the same size
-         as a HUD chip, because it is the same kind of object — see the
-         no-straight-lines rule in CLAUDE.md. */
-      .gate-share {
-        position: absolute;
-        top: calc(1.1rem + env(safe-area-inset-top, 0px));
-        right: calc(1.1rem + env(safe-area-inset-right, 0px));
+      /* A circular chip on the gate — the same size as a HUD chip, because it
+         is the same kind of object (see the no-straight-lines rule in
+         CLAUDE.md). Shared between the share button and the reload glyph
+         (docs/todo.md entry 44) rather than a second copy of the same nine
+         declarations. */
+      .gate-chip {
         appearance: none;
         cursor: pointer;
         width: 2.9rem;
@@ -331,9 +330,17 @@
         color: #b9bece;
         transition: border-color 160ms ease, color 160ms ease;
       }
-      .gate-share:hover,
-      .gate-share:focus-visible { border-color: #9d9bf0; color: #f0eeff; }
-      .gate-share svg { width: 19px; height: 19px; display: block; }
+      .gate-chip:hover,
+      .gate-chip:focus-visible { border-color: #9d9bf0; color: #f0eeff; }
+      .gate-chip svg { width: 19px; height: 19px; display: block; }
+
+      /* Share, in the top-right corner — everything but its own position and
+         "copied" state now lives in .gate-chip above. */
+      .gate-share {
+        position: absolute;
+        top: calc(1.1rem + env(safe-area-inset-top, 0px));
+        right: calc(1.1rem + env(safe-area-inset-right, 0px));
+      }
       /* Says "copied" without a word, for the desktop fallback path. */
       .gate-share.done { border-color: #5fe3a1; color: #5fe3a1; }
 
@@ -419,7 +426,7 @@
       <!-- Share, top right. An icon rather than a labelled button: the only
            other control on this screen is Start, so there is nothing for a
            word to disambiguate it from. -->
-      <button id="share" type="button" class="gate-share" aria-label="Share this page">
+      <button id="share" type="button" class="gate-chip gate-share" aria-label="Share this page">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M12 15.5V3.4" />

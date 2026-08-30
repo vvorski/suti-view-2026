@@ -32,25 +32,54 @@ const CSS = `
 }
 #version-hud button {
   appearance: none;
-  border: none;
-  background: transparent;
   color: inherit;
   font: inherit;
-  /* em, not rem: this is the green "there is a newer build" indicator, and it
-     has to grow with the name beside it. At a fixed rem it read as a stray
-     speck next to 22px text. */
-  font-size: 1.5rem;
   cursor: pointer;
   padding: 0.35rem;
   line-height: 1;
-  opacity: 0.75;
   transition:
     color 160ms ease,
-    opacity 400ms ease;
+    opacity 400ms ease,
+    border-color 160ms ease;
 }
 #version-hud button:hover,
 #version-hud button:focus-visible {
   color: #f2f4f8;
+}
+/* The gate's own chip appearance (docs/todo.md entry 44) — .gate-chip is the
+   share button's own class in index.html, shared rather than duplicated.
+   Scoped by class toggle (versionHudRunning() below removes it) rather than
+   a CSS running-state selector, so "the chip applies while the gate is up"
+   is a plain fact about which classes the button carries, not something to
+   re-derive from .running on every rule.
+
+   .gate-chip's own border and background need nothing here to win, now that
+   the plain button rule above no longer resets either — they used to, and a
+   bare .gate-chip class (specificity 0,1,0) cannot outrank an ID-scoped
+   #version-hud button rule (1,0,1) regardless of source order, so those
+   resets silently ate the chip's own border and background the first time
+   this was built. The plain, chip-less look for the running state now sets
+   its own border: none and background: transparent explicitly, further
+   down, rather than relying on a base that also has to serve the chip.
+
+   The opacity that used to sit on the plain button moved off entirely: a
+   chip at that resting 0.75 would fade its own background and border along
+   with the glyph, and it would stop matching share, which is fully opaque —
+   a translucent *fill*, not a faded element. Quietness here comes from the
+   glyph colour instead, the same distinction .gate-chip already draws.
+
+   Fixed at share's own 19px rather than the em size the plain glyph used —
+   see the comment that used to justify that: it grew with a release-name
+   pill that stood beside it, which does not live in this corner any more
+   (see mountReleaseName()'s own comment on where that name moved). Nothing
+   beside this glyph needs it to vary in size any longer. */
+#version-hud .gate-chip {
+  font-size: 19px;
+}
+#version-hud .gate-chip:hover,
+#version-hud .gate-chip:focus-visible {
+  border-color: #9d9bf0;
+  color: #f0eeff;
 }
 /* Once the visualiser is running, the chip has said what it had to say. The
    name goes entirely and the button fades back to a hint of itself — this is a
@@ -59,8 +88,16 @@ const CSS = `
 
    It is faded rather than removed because it is still the reload control, and
    still the thing that turns green. Opacity, not display, so .fresh below can
-   bring it back without either rule having to know about the other. */
+   bring it back without either rule having to know about the other.
+
+   border: none and background: transparent live here now, not on the shared
+   base above — by the time .running is added, versionHudRunning() has
+   already removed .gate-chip, so nothing else is contesting either property,
+   but stating them explicitly means this rule does not depend on that
+   ordering to look right. */
 #version-hud.running button {
+  border: none;
+  background: transparent;
   opacity: 0.18;
   transition: opacity 900ms ease;
 }
@@ -80,6 +117,13 @@ const CSS = `
 #version-hud button.fresh {
   color: #5fe3a1;
   animation: version-pulse 2.4s ease-in-out infinite;
+}
+/* On the gate, the ring goes green too — docs/todo.md entry 44 — exactly as
+   .gate-share.done already tints its own border with the same colour. A
+   ring of green is more visible from across a room than a glyph of it,
+   which is the situation this feature exists for. */
+#version-hud .gate-chip.fresh {
+  border-color: #5fe3a1;
 }
 @keyframes version-pulse {
   0%, 100% { opacity: 1; }
@@ -188,7 +232,13 @@ export function mountReleaseName(): void {
 }
 
 export function versionHudRunning(): void {
-  document.getElementById('version-hud')?.classList.add('running')
+  const el = document.getElementById('version-hud')
+  el?.classList.add('running')
+  // The gate's own chip appearance leaves with the gate — docs/todo.md
+  // entry 44 — rather than fading along with everything else: a chip at
+  // running's 0.18 opacity is not a faint glyph, it is a dark disc, which
+  // is exactly the litter the running state exists to avoid.
+  el?.querySelector('button')?.classList.remove('gate-chip')
 }
 
 export function mountVersionHud(): void {
@@ -203,6 +253,10 @@ export function mountVersionHud(): void {
   // here — see mountReleaseName(). What is left in this corner is the control.
   const button = document.createElement('button')
   button.type = 'button'
+  // The gate's own chip — see the CSS's own comment on why this is a class
+  // toggle rather than a `.running`-scoped selector, and versionHudRunning()
+  // below for where it comes off.
+  button.classList.add('gate-chip')
   button.setAttribute('aria-label', 'Reload')
   button.textContent = '⟳'
   button.addEventListener('click', () => window.location.reload())

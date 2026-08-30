@@ -3758,7 +3758,47 @@ frame — both need a person and real hardware, per this entry's own Verify
 line.
 
 ### 44. The reload glyph gets the share button's chip
-`status: ready` · added 2026-08-30
+`status: done` · added 2026-08-30 · shipped at build 165
+
+**Build note** — extracted `.gate-share`'s nine declarations into `.gate-chip`
+in `index.html`, applied to both corner buttons, exactly as Decided. Toggled
+onto the reload button in JS (`mountVersionHud()`) and off it again in
+`versionHudRunning()`, so "the chip applies while the gate is up" is a plain
+class fact rather than a `.running`-scoped CSS selector.
+
+Hit a real bug doing it, not just the planned refactor: the shared
+`#version-hud button` base rule still declared `border: none; background:
+transparent;` at specificity (1,0,1) — an ID selector with zero classes. A
+bare `.gate-chip { border: ...; background: ...; }` sits at (0,1,0), and an ID
+always outranks a class regardless of how many elements either selector
+names, so the base rule's reset kept winning even after the button carried
+`.gate-chip` and even after adding `#version-hud .gate-chip { font-size:
+19px; }` overrides — those overrides only covered the properties I'd written
+under that more-specific selector, not the ones still living on the plain
+`button` rule. Caught it by `getComputedStyle`-ing the live reload button and
+finding `background: rgba(0,0,0,0)` and `border: 0px none` despite the correct
+class, width, height and radius. Fixed by moving `border: none; background:
+transparent;` off the shared base and onto `#version-hud.running button`
+instead, where they belong: that is the only state that still needs a
+chip-less reset, and by the time `.running` is added `versionHudRunning()`
+has already stripped `.gate-chip`, so nothing else is contesting either
+property there either.
+
+Verified: both corner buttons measured identical at 320×568 and 360×640 —
+46.4px diameter, same background, same border, same radius — via two iframes
+loading the live gate side by side (this project's usual workaround for a
+harness that can't reliably resize `window.innerWidth`). The `.fresh` border
+tint (`#version-hud .gate-chip.fresh`) verified green via computed style and
+a matched-rule specificity dump. The running-state fade and the pre-existing
+`.fresh` text-colour tint are CSS-transition/class-toggle-driven and did not
+settle to their target values in this remote-automation tab even after
+waiting past the transition duration — `getAnimations()` showed the correct
+target keyframes (0.18, and the pre-existing green) with no conflicting rule
+in the matched-rule dump, so this reads as the same "dynamic state doesn't
+repaint in this harness" limitation hit repeatedly elsewhere this session,
+not a real defect. Entry 42 had already moved the fullscreen chip to centre,
+so its stale offset comment was already gone — nothing to do there.
+`pnpm build` and `pnpm lint` both clean.
 
 **Do** — give the gate's reload control the same circular chip as the share
 button: one shared class, not a second copy of the same nine declarations.
