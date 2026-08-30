@@ -9425,3 +9425,84 @@ same time; and a settled frame is pixel-identical to today's.
 `probe-composite.ts` can hold the settled-frame-identical claim, which is the
 one that could silently regress the approved colour.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 93. The gate shows the queue it came from
+`status: ready` · added 2026-08-30
+
+**Do** — bake the queue's state into the bundle at build time and show it on
+the start screen: the last two entries shipped, then the next few waiting, then
+how many more there are.
+
+**Why** — asked for. The build number already says *which* build this is;
+nothing says what it contains or what is coming. On a piece that redeploys
+several times an hour, that is the most interesting fact about it.
+
+**Decided**
+- **Baked, not live**, as asked — and the mechanism already exists.
+  `vite.config.ts` computes `__BUILD_NUMBER__` from `git rev-list --count HEAD`
+  at config time and hands it over through `define`. A `__QUEUE__` define,
+  parsed from `docs/todo.md` by the same config, is the same shape with no new
+  dependency and no fetch at runtime. **It needs no CI change either**: the
+  build-number comment warns that history must be unshallowed for
+  `fetch-depth: 0`, but this reads the working-tree file, not the log.
+- **What is emitted must be tiny.** `docs/todo.md` is some 6,600 lines; the
+  payload is at most nine short strings. Parse the `### N. Title` and
+  `` `status:` `` lines, keep number, title truncated to **24 characters**, and
+  the shipped build for done ones. Everything else is discarded at build time,
+  so the bundle carries a few hundred bytes.
+- **Shipped ones are identified by their build number**, taken from the
+  `shipped at build N` the queue already records — so a row reads `259 · camera
+  mode is a door back` and the two newest are provably the two newest, without
+  a date anywhere.
+- **The shape: a ladder, not a list.** A filled dot for shipped, a hollow one
+  for waiting, one row each, a hairline rule between the two groups. **Mine** —
+  it is the same figure the app is made of, it encodes state in form rather
+  than only in colour, and it reads at a glance without being read.
+- **Five waiting, then `… +N more`**, rather than a bare ellipsis. **Mine**:
+  the count is the interesting part — "five things queued" and "five shown,
+  thirty behind them" are very different facts about a project and cost three
+  characters to distinguish.
+- **It can never eat a tap.** `pointer-events: none`, unconditionally. The gate
+  is where Start, the chips and entry 80's fullscreen precedence all compete
+  for touches, and a decorative panel that swallows one would be a bug nobody
+  would look for here. Not tappable, not a link, not a control.
+- **It arrives, staggered, and it degrades honestly.** Rows fade in about 40ms
+  apart, oldest first, so it prints rather than appears. Under
+  `prefers-reduced-motion: reduce` all rows appear at once, **fully visible** —
+  entry 65's lesson written down after the start disc answered that preference
+  by vanishing: the preference asks for less motion, never less information.
+- **Vertical space is the real constraint, and it loses gracefully.** Entry 43
+  made the gate type 20% larger and entry 55 added the name animation; at
+  320×568 there is not much left. So the panel drops rows from the bottom as
+  height shrinks — waiting rows first, then the rule, then the shipped pair —
+  and hides entirely below a threshold rather than overlapping anything. Start
+  and the name always win. `hud-narrow.html` at 320×568 and 360×640 is the
+  check.
+- **Placement: bottom-left**, mirroring `.gate-name`'s right-aligned column on
+  the other side, in the same quiet tone as `.gate-byline`. It is a footnote,
+  not a headline.
+- **The titles become public strings**, which is worth stating once even though
+  it changes nothing: the repository is already public and already serves this
+  file, so nothing is newly exposed — but entry titles occasionally quote
+  Victor, and this puts a handful of them on the start screen of a link he
+  shares. Worth knowing rather than discovering.
+
+**Lands in**
+- `vite.config.ts` — the parse and the `__QUEUE__` define, beside
+  `__BUILD_NUMBER__`.
+- `src/global.d.ts` — the declaration.
+- `index.html` — the panel's markup and rules, inside `#gate`.
+- `src/main.ts` or a small `src/queue-panel.ts` — the render, gate-only.
+
+**Done when** — the start screen shows the last two shipped with their build
+numbers and up to five waiting with a remaining count; the numbers match
+`docs/todo.md` at the commit that built the bundle; nothing on the gate moves
+or clips at 320×568; a tap anywhere over the panel still reaches whatever is
+beneath it; and with reduced motion every row is present and legible.
+**Verify** — `hud-narrow.html` at both widths for the layout, and a build where
+an entry is deliberately marked done to confirm the rows move. The tap claim is
+worth checking on the phone by tapping directly on the panel and watching
+fullscreen still take the gesture.
+**Hard stops** — prefs no · url no · capture no (the gate is gone before
+anything is captured) · dependency no — build-time parsing in a config that
+already runs `execSync`, no package added.
