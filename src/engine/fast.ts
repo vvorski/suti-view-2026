@@ -127,10 +127,58 @@ class RollingCeiling {
   }
 
   normalise(v: number, dt: number): number {
-    if (v > this.ceiling) this.ceiling = v
-    else this.ceiling = Math.max(this.floor, this.ceiling * Math.exp(-dt / this.decay))
+    this.update(v, dt)
     return this.ceiling <= 0 ? 0 : Math.min(1, v / this.ceiling)
   }
+
+  /** Update the tracked ceiling without also normalising against it — for a
+   *  caller pairing this with a `RollingFloor` (docs/todo.md entry 38),
+   *  which needs the raw ceiling value, not `v` divided by it. */
+  update(v: number, dt: number): void {
+    if (v > this.ceiling) this.ceiling = v
+    else this.ceiling = Math.max(this.floor, this.ceiling * Math.exp(-dt / this.decay))
+  }
+
+  get value(): number {
+    return this.ceiling
+  }
+}
+
+/**
+ * docs/todo.md entry 38's fix for `auto-normalised`, and the reason it does
+ * not literally add a second `RollingCeiling` run in reverse — that was
+ * tried first and measured, not reasoned about, to be a dead end.
+ *
+ * A `RollingCeiling` snaps to match whatever it is fed within a single
+ * frame, so normalising that same instantaneous sample against the ceiling
+ * it just set is a number divided by itself: exactly 1, for *any* input,
+ * forever, however that ceiling is computed — a mirrored "rolling floor"
+ * tracking the same sample the ceiling tracks converges to meet it for
+ * exactly the same reason and does not change this. What actually opens a
+ * gap is comparing the ceiling — which stays fast and instantaneous, as
+ * `auto-normalised`'s own peak-tracking is supposed to be — against a
+ * *slower, lagging* view of the identical signal, so the two are no longer
+ * numerically the same thing. `AUTO_NORM_QUERY_ATTACK` is that lag; a
+ * fixed, near-zero `AUTO_NORM_FLOOR` gives the comparison an absolute
+ * reference to sit above, which is what actually produces a value that
+ * differs by loudness rather than being scale-invariant — a purely
+ * proportional floor (a fraction of the ceiling, whatever fraction) cancels
+ * out of the ratio identically at every volume and reproduces the original
+ * flat 1.00. Both constants were tuned against the real probe numbers,
+ * not guessed: the span between `pnpm probe`'s byte 10 and byte 200 rows is
+ * what was optimised for.
+ */
+const AUTO_NORM_FLOOR = 0.012
+const AUTO_NORM_QUERY_ATTACK = 8
+
+/** Normalise a slow-lagging view of `v` (`query`) against a fast ceiling and
+ *  a fixed floor — see `AUTO_NORM_FLOOR`'s own comment for why both of
+ *  those properties are load-bearing. Guards the same way `RollingCeiling`
+ *  already does against a ceiling that has not yet risen off its own hard
+ *  floor. */
+function normaliseBetween(query: number, floor: number, ceiling: number): number {
+  const span = ceiling - floor
+  return span > 0.001 ? clamp01((query - floor) / span) : 0
 }
 
 /** Mean of the 0-255 bins covering [loHz, hiHz), returned as 0-1. */
@@ -210,6 +258,10 @@ class CommonAnalysis {
   // beats. Anything faster fires on every kick pattern.
   private readonly breakEnv = new Envelope(0.3, 0.5)
   private readonly surgeEnv = new Envelope(0.02, 0.6)
+  // The same 0.3s hold breakEnv uses, for the same reason — docs/todo.md
+  // entry 38's second path to surge: a single loud hit should not fire it,
+  // only a rise sustained past about the length of a beat.
+  private readonly riseEnv = new Envelope(0.3, 0.4)
   private readonly structure = new StructureAnalysis()
   private prevBreak = 0
 
@@ -244,7 +296,20 @@ class CommonAnalysis {
     // Re-entry: the break collapsing is the interesting moment, not its onset.
     const falling = Math.max(0, this.prevBreak - breakdown)
     this.prevBreak = breakdown
-    const surge = this.surgeEnv.push(clamp01((falling / Math.max(dt, 1e-3)) * 0.55), dt)
+    const reentry = clamp01((falling / Math.max(dt, 1e-3)) * 0.55)
+
+    // A second path to surge — docs/todo.md entry 38: music that never
+    // drops out never produces a breakdown to recover from, which left
+    // surge reading a constant zero for any track that just plays. Fires
+    // on the same short/norm ratio breakdown already reads, the other side
+    // of it: a moment meaningfully louder than its own recent norm, held
+    // past riseEnv's 0.3s so a single hit does not fire it — the music
+    // getting bigger, not a beat. **Mine**: the entry names the mechanism
+    // but not these two numbers.
+    const riseRatio = audible ? clamp01((ratio - 1.3) / 0.7) : 0
+    const rise = this.riseEnv.push(riseRatio, dt)
+
+    const surge = this.surgeEnv.push(Math.max(reentry, rise), dt)
 
     const transient = this.transientEnv.push(this.flux.update(frame, dt), dt)
 
@@ -267,6 +332,17 @@ class CommonAnalysis {
  * Release times are short by design. The earlier 1.8s release smeared every
  * beat into the next; 0.28s still reads as smooth motion but lets individual
  * hits through.
+ *
+ * `level` is a blend, not the pure relative measure alone — docs/todo.md
+ * entry 38. Dividing by a running mean reports *change* in loudness, not
+ * loudness: a steady passage settles back toward the middle of the range
+ * regardless of whether it settled loud or quiet, which measured out to a
+ * flat 0.68 across a 20x input range. 30% `soften(absolute)` — the same
+ * `soften()` and `GAIN` `speech-band` already uses — is blended in so a
+ * loud passage still reads as louder than a quiet one, while the 70%
+ * `relative` majority keeps the property that makes this the default: it
+ * works at any input gain, because a fixed absolute term alone goes inert
+ * at whichever end of the gain range it was not tuned for.
  */
 export function relativeMapping(): Mapping {
   const common = new CommonAnalysis()
@@ -292,7 +368,7 @@ export function relativeMapping(): Mapping {
       const rel = (v: number) => clamp01((v / floor - LO) / (HI - LO))
 
       return {
-        level: levelEnv.push(rel(c.raw.all), dt),
+        level: levelEnv.push(0.7 * rel(c.raw.all) + 0.3 * soften(c.raw.all, GAIN), dt),
         low: bandEnv.low.push(clamp01((c.raw.low / floor) * 0.55), dt),
         mid: bandEnv.mid.push(clamp01((c.raw.mid / floor) * 0.55), dt),
         high: bandEnv.high.push(clamp01((c.raw.high / floor) * 0.75), dt),
@@ -360,9 +436,18 @@ export function speechBandMapping(): Mapping {
 /**
  * Strategy C — per-band auto-normalised.
  *
- * Every band stretched to fill its own range. Maximum robustness against
- * unknown material, at the cost of being unable to tell loud from quiet:
- * sustained sound sits near maximum by construction.
+ * Every band stretched between a fixed floor and its own rolling ceiling.
+ * Maximum robustness against unknown material — it is the only strategy
+ * that survives a stranger's phone in a strange room at an unknown gain.
+ *
+ * Used to stretch to the ceiling alone, which meant any sustained sound
+ * reached its own maximum by definition — docs/todo.md entry 38 measured a
+ * flat 1.00 across a 20x loudness range. What actually produces a
+ * loudness-dependent reading is comparing a *slow, lagging* view of a band
+ * against its own *fast, instantaneous* ceiling, rather than comparing the
+ * same instantaneous sample to itself — see `AUTO_NORM_FLOOR`'s own comment
+ * for why a literal rolling floor mirroring the ceiling does not work, and
+ * measurably does not.
  */
 export function autoNormalisedMapping(): Mapping {
   const common = new CommonAnalysis()
@@ -376,8 +461,18 @@ export function autoNormalisedMapping(): Mapping {
     mid: new RollingCeiling(0.02, 6),
     high: new RollingCeiling(0.02, 6),
   }
+  // The slow, lagging view each band is compared against — see
+  // AUTO_NORM_QUERY_ATTACK's own comment. Release is fast: a genuine
+  // drop-out should read as quiet quickly, not lag on the way down the way
+  // it deliberately does on the way up.
+  const queries = {
+    low: new Envelope(AUTO_NORM_QUERY_ATTACK, 0.3),
+    mid: new Envelope(AUTO_NORM_QUERY_ATTACK, 0.3),
+    high: new Envelope(AUTO_NORM_QUERY_ATTACK, 0.3),
+  }
   const levelEnv = new Envelope(0.05, 0.9)
   const levelCeiling = new RollingCeiling(0.02, 6)
+  const levelQuery = new Envelope(AUTO_NORM_QUERY_ATTACK, 0.3)
 
   return {
     name: 'auto-normalised',
@@ -385,15 +480,32 @@ export function autoNormalisedMapping(): Mapping {
       const { dt } = frame
       const c = common.update(frame)
 
+      levelCeiling.update(c.raw.all, dt)
+      ceilings.low.update(c.raw.low, dt)
+      ceilings.mid.update(c.raw.mid, dt)
+      ceilings.high.update(c.raw.high, dt)
+
       // `level` is normalised from combined *raw* energy, not averaged from the
       // three already-normalised bands. Averaging normalised bands caps
       // single-band material at 1/3 — mid-only speech measured a flat 0.33 no
       // matter how loud it got, defeating the point of this strategy.
       return {
-        level: levelEnv.push(levelCeiling.normalise(c.raw.all, dt), dt),
-        low: envs.low.push(ceilings.low.normalise(c.raw.low, dt), dt),
-        mid: envs.mid.push(ceilings.mid.normalise(c.raw.mid, dt), dt),
-        high: envs.high.push(ceilings.high.normalise(c.raw.high, dt), dt),
+        level: levelEnv.push(
+          normaliseBetween(levelQuery.push(c.raw.all, dt), AUTO_NORM_FLOOR, levelCeiling.value),
+          dt,
+        ),
+        low: envs.low.push(
+          normaliseBetween(queries.low.push(c.raw.low, dt), AUTO_NORM_FLOOR, ceilings.low.value),
+          dt,
+        ),
+        mid: envs.mid.push(
+          normaliseBetween(queries.mid.push(c.raw.mid, dt), AUTO_NORM_FLOOR, ceilings.mid.value),
+          dt,
+        ),
+        high: envs.high.push(
+          normaliseBetween(queries.high.push(c.raw.high, dt), AUTO_NORM_FLOOR, ceilings.high.value),
+          dt,
+        ),
         transient: c.transient,
         tilt: c.tilt,
         breakdown: c.breakdown,

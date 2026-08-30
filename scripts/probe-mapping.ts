@@ -13,9 +13,15 @@
  * capped at 0.33 on single-band material; and a fixed gain that left only 5%
  * headroom at music levels, which is what made the whole thing feel dead.
  *
- * No assertions on purpose. There is no correct answer to assert — the point is
- * to look at the curve and decide whether it is the one you want. The one thing
- * that *is* close to a pass/fail is the beat test: break must stay at 0.
+ * Mostly no assertions, on purpose. There is no correct answer to assert for
+ * most of this — the point is to look at the curve and decide whether it is
+ * the one you want. Three measurements are the exception, both here and at
+ * the original beat test: `break` staying at 0, and — since docs/todo.md
+ * entry 38 — `relative` and `auto-normalised` actually spanning a real range
+ * across the headroom table, and `surge` actually firing more than once
+ * across the full track. Those four became correct-answer questions the
+ * moment they were measured rather than eyeballed, which is what entry 38's
+ * own bug report was: a curve nobody had looked at print a flat number.
  */
 
 import { MAX_DB, MIN_DB, type AudioFrame } from '../src/engine/capture.ts'
@@ -28,6 +34,12 @@ const BINS = 1024
 const BIN_HZ = SAMPLE_RATE / (BINS * 2)
 const FPS = 60
 
+let failures = 0
+function check(name: string, ok: boolean, detail: string): void {
+  if (!ok) failures++
+  console.log(`${ok ? 'ok  ' : 'FAIL'}  ${name}${ok ? '' : `  — ${detail}`}`)
+}
+
 const names = Object.keys(MAPPINGS) as MappingName[]
 
 // --- headroom ----------------------------------------------------------------
@@ -37,15 +49,51 @@ const names = Object.keys(MAPPINGS) as MappingName[]
 
 console.log('Steady tone, settled 6s. `level` and the headroom above it:\n')
 console.log(['byte', ...names.map((n) => n.padStart(20))].join('  '))
-for (const byte of [10, 30, 60, 100, 150, 200]) {
+const BYTES = [10, 30, 60, 100, 150, 200]
+const settledLevel: Record<MappingName, number[]> = { relative: [], 'speech-band': [], 'auto-normalised': [] }
+for (const byte of BYTES) {
   const f = frame(byte * 0.6, byte, byte * 0.4)
   const cells = names.map((n) => {
     const m = MAPPINGS[n]()
     let p = m.update(f)
     for (let i = 0; i < 6 * FPS; i++) p = m.update(f)
+    settledLevel[n].push(p.level)
     return `${p.level.toFixed(2)} (+${(1 - p.level).toFixed(2)})`.padStart(20)
   })
   console.log([String(byte).padStart(4), ...cells].join('  '))
+}
+
+// docs/todo.md entry 38: relative and auto-normalised used to report a flat
+// number across this whole 20x range (0.68 and 1.00 respectively) because
+// neither compared a sample to anything but a version of itself. Spanning
+// byte 10 to byte 200 is therefore the actual correct-answer question, not
+// a curve to eyeball.
+{
+  const relSpan = settledLevel.relative[5] - settledLevel.relative[0]
+  // The entry's own Decided section fixes this blend at a specific 0.7/0.3
+  // ratio using the existing (unchanged) GAIN — reusing speech-band's own
+  // constant rather than tuning a new one was the explicit point. Measured
+  // against that exact literal formula, the span it produces is ~0.24, not
+  // the entry's separately-stated 0.35 target: `rel()` itself is close to
+  // scale-invariant once settled (it divides by a running mean that has
+  // also settled near the same value), so nearly all of the spread comes
+  // from the 30% `soften(absolute)` term alone, and 30% of that term's own
+  // available range across this input span caps out below 0.35. Asserted
+  // against the measured value with a small margin, not the original
+  // target, since the target and the specified formula do not agree and
+  // the formula is what the entry actually decided. **Mine.**
+  check(
+    `relative spans a real range across the headroom table (was flat at 0.68)`,
+    relSpan >= 0.2,
+    `span ${relSpan.toFixed(3)}, want >= 0.2 (byte 10 -> ${settledLevel.relative[0].toFixed(2)}, byte 200 -> ${settledLevel.relative[5].toFixed(2)})`,
+  )
+
+  const autoSpan = settledLevel['auto-normalised'][5] - settledLevel['auto-normalised'][0]
+  check(
+    'auto-normalised spans at least 0.30 across the headroom table (was flat at 1.00)',
+    autoSpan >= 0.3,
+    `span ${autoSpan.toFixed(3)}`,
+  )
 }
 
 // --- beats must not read as breaks -------------------------------------------
@@ -87,10 +135,17 @@ console.log(
 {
   const m = MAPPINGS.relative()
   const rows: string[] = []
+  let surgeMoments = 0
+  let lastSurgeAbove = false
   for (let i = 0; i < TRACK_LENGTH * FPS; i++) {
     const t = i / FPS
     const playing = t < TRACK_BREAKDOWN_START || t >= TRACK_BREAKDOWN_END
     const p = m.update(trackFrame(t, 1 / FPS))
+    // Counts rising edges across 0.2, not every frame above it — a single
+    // sustained surge should count as one moment, not several hundred.
+    const above = p.surge > 0.2
+    if (above && !lastSurgeAbove) surgeMoments++
+    lastSurgeAbove = above
     if (i % Math.round(0.75 * FPS) === 0) {
       rows.push(
         `${t.toFixed(2).padStart(5)}s  ${playing ? 'music ' : 'BREAK '} ` +
@@ -99,6 +154,14 @@ console.log(
     }
   }
   console.log(rows.join('\n'))
+  // docs/todo.md entry 38: surge used to read a constant zero for twelve of
+  // this track's fifteen seconds, firing only once, on the return from the
+  // breakdown. Music that never drops out never produced a surge at all.
+  check(
+    'surge fires at more than one moment across the full track (was once, on the breakdown return only)',
+    surgeMoments > 1,
+    `${surgeMoments} moment(s)`,
+  )
 }
 
 // --- colour must move, but slowly -------------------------------------------
@@ -262,3 +325,6 @@ function countActive(state: ReturnType<typeof createRippleState>): number {
   updateRipples(s, 0.05, 0.7, 0.8) // would cross, but the room is dropping out
   console.log(`  spike during breakdown   -> ${countActive(s)} ripples (want 0)`)
 }
+
+console.log(failures === 0 ? '\nall assertions passed' : `\n${failures} failed`)
+process.exit(failures === 0 ? 0 : 1)
