@@ -6886,7 +6886,58 @@ browser here cannot answer it. The phone confirms the behaviour once, via entry
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 67. The menu opens on the second touch, and has a way in that cannot be missed
-`status: building` · added 2026-08-30 · started 2026-08-30
+`status: done` · added 2026-08-30 · shipped at build 222
+
+**Build note** — `resolveTap` became `resolveTapDown`, called from the
+`down` branch of `dispatchTouches`'s events loop instead of `up`, with
+`TAP_RESOLVE_MS` raised to 400 and measured from the first tap's own down.
+`PendingTap` gained `pointerId`: since resolution now starts before it is
+knowable whether a contact will end as a clean tap or a drag, the
+`TAP_SLOP_PX` check moved to that same contact's later `up`, where a new
+`cancelPendingTap(pointerId)` removes the entry its own `down` may have
+started rather than letting a save fire for a completed drag. A `cancel`
+event (pointercancel/lostpointercapture) cancels the same way — a real gap
+the old up-triggered model never had, since nothing existed to leave
+dangling before a contact's release was the only thing that mattered. The
+two-finger tap is recognised in the same `down` branch: `nonChipDown`,
+counted once from the existing `touchField.sample(now)` pass, hits exactly
+2 the instant a second finger lands while a first is still down, which
+opens the panel immediately and skips creating a pending single for that
+second contact.
+
+**Deviated from the entry's own "Lands in"**: it names
+`scripts/probe-touch-stream.ts` for the two new checks, but that file tests
+`engine/touch.ts`'s touch→atmosphere envelope — an unrelated pure module
+with no tap-resolution logic in it. **Mine**: added `scripts/probe-tap.ts`
+instead, a fresh file named for what it actually tests, following
+`probe-nudge.ts`'s own established precedent for exactly this situation —
+a plain re-implementation of the state machine "kept in lockstep with
+main.ts by eye" — since `resolveTapDown`'s logic lives inline in `main()`'s
+closure and main.ts cannot be imported into a Node script (it reaches for
+`document` at module load). New `pnpm probe:tap` script in package.json.
+Nine checks: the entry's own human-timing figure (down 0, up 90, down 240
+opens); the bounded negative restated per entry 66's own naming rule ("a
+lone tap does not open the panel *within its window*", checked one
+millisecond before the window closes, then again as it closes and commits);
+a second tap arriving after the window does not retroactively open
+anything; a second tap inside the window but outside the 30px radius stays
+independently pending rather than pairing; and a cancelled contact never
+saves. All nine pass.
+
+`pnpm probe:touches` and `pnpm probe:touch-stream` both rerun clean and
+unchanged — neither this entry nor its fix touches `engine/touches.ts` or
+`engine/touch.ts` themselves, only how `main.ts` reads their output.
+
+Not verified live end-to-end: the actual double tap, drag-cancels-a-pending-
+save, and two-finger-open behaviours all live inside `dispatchTouches`,
+which only runs after `waitForStart()` resolves — gated behind the live
+microphone permission prompt this harness cannot complete, the same limit
+disclosed in entries 60–62's build notes. What was verified instead is the
+extracted state machine (`probe-tap.ts`, against the exact same constants
+and logic shape as the real code) and, by code reading, that the wiring
+into the real event loop matches it: the same guard order (`onChip`,
+`hudOpen`, `gateShowing`) the old up-based dispatch used, moved to gate the
+new down-based one instead.
 
 **Do** — recognise the double on the second tap's *down* rather than its up,
 widen the window to 400ms measured from the first tap's down, and add a

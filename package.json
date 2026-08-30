@@ -22,6 +22,7 @@
     "probe:ripples": "node --experimental-strip-types scripts/probe-ripples.ts",
     "probe:motion-bias": "node --experimental-strip-types scripts/probe-motion-bias.ts",
     "probe:sky": "node --experimental-strip-types scripts/probe-sky.ts",
+    "probe:tap": "node --experimental-strip-types scripts/probe-tap.ts",
     "format": "prettier --write .",
     "deploy": "./deploy/deploy.sh"
   },

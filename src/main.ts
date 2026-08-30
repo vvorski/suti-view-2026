@@ -1053,12 +1053,23 @@ async function main(): Promise<void> {
   // TAP_RESOLVE_MS has elapsed, and close enough to the first, pre-empts
   // the pending single and opens the panel instead; if none arrives, the
   // same timer firing *is* what commits the first tap as a single and
-  // saves. **Mine** — the entry names 280ms for the save delay and 30px
+  // saves. **Mine** — the entry names 400ms for the save delay and 30px
   // for the double's radius, but never a separate "how long may the second
   // tap be late" figure, and there is no natural second number: the delay
   // a single must tolerate and the window a double must arrive inside are
   // the same wait looked at from either end of it.
-  const TAP_RESOLVE_MS = 280
+  //
+  // docs/todo.md entry 67: recognised on the second tap's *down* now, not
+  // its *up*, and the window runs from the first tap's down rather than its
+  // release — down-to-down, the way every platform's own double-tap
+  // detector measures it, and the way a hand actually experiences "how fast
+  // did I tap": a deliberate double with real (non-zero) contact durations
+  // used to lose that time out of a budget measured release-to-release,
+  // which nobody's idea of tapping speed includes. 400ms (up from 280) buys
+  // back the frame-quantisation dispatchTouches' once-per-frame draining
+  // adds on both ends, without reaching the ~500ms where two genuinely
+  // separate taps start pairing by accident.
+  const TAP_RESOLVE_MS = 400
   const DOUBLE_TAP_RADIUS_PX = 30
   // "One save per 700ms, silently dropping the rest" (Decided) — a run of
   // taps should not write a run of near-identical PNGs to the camera roll.
@@ -1066,18 +1077,27 @@ async function main(): Promise<void> {
 
   // A list, not a single slot: "ten taps in five seconds save no more than
   // seven frames" (Done-when) only holds if each tap not close enough to
-  // pair with another gets its *own* independent 280ms timer, rate-limited
-  // only by SAVE_RATE_LIMIT_MS — not silently dropped because a later,
-  // unrelated tap happened to land somewhere else on the screen first.
+  // pair with another gets its *own* independent timer, rate-limited only
+  // by SAVE_RATE_LIMIT_MS — not silently dropped because a later, unrelated
+  // tap happened to land somewhere else on the screen first.
+  //
+  // Keyed by `pointerId` now as well as position: entry 67 starts the timer
+  // on `down`, before it is known whether the contact will end as a clean
+  // tap or a drag — `TAP_SLOP_PX` can no longer be checked at the moment of
+  // resolution, only later, at that same contact's `up`. `pointerId` is
+  // what lets that later `up` find its own pending entry back and cancel
+  // it, since by then the release position may be nowhere near where the
+  // double's own 30px radius match would still find it.
   interface PendingTap {
     x: number
     y: number
+    pointerId: number
     timer: number
   }
   const pendingTaps: PendingTap[] = []
   let lastSaveAt = -Infinity
 
-  const resolveTap = (clientX: number, clientY: number): void => {
+  const resolveTapDown = (pointerId: number, clientX: number, clientY: number): void => {
     const matchIndex = pendingTaps.findIndex(
       (p) => Math.hypot(clientX - p.x, clientY - p.y) <= DOUBLE_TAP_RADIUS_PX,
     )
@@ -1090,7 +1110,7 @@ async function main(): Promise<void> {
       panel.open()
       return
     }
-    const entry: PendingTap = { x: clientX, y: clientY, timer: 0 }
+    const entry: PendingTap = { x: clientX, y: clientY, pointerId, timer: 0 }
     entry.timer = window.setTimeout(() => {
       const i = pendingTaps.indexOf(entry)
       if (i !== -1) pendingTaps.splice(i, 1)
@@ -1100,6 +1120,19 @@ async function main(): Promise<void> {
       }
     }, TAP_RESOLVE_MS)
     pendingTaps.push(entry)
+  }
+
+  /** Called from the matching contact's `up`, once it is known whether that
+   *  contact travelled past `TAP_SLOP_PX` — a drag cancels whatever pending
+   *  single its own `down` may have started, rather than let a save fire
+   *  for a gesture that turned out not to be a tap at all. A no-op if that
+   *  down already resolved as a double (its entry is gone by then) or was
+   *  never a pending tap to begin with (a chip, the HUD, the gate). */
+  const cancelPendingTap = (pointerId: number): void => {
+    const i = pendingTaps.findIndex((p) => p.pointerId === pointerId)
+    if (i === -1) return
+    window.clearTimeout(pendingTaps[i].timer)
+    pendingTaps.splice(i, 1)
   }
 
   /**
@@ -1154,8 +1187,14 @@ async function main(): Promise<void> {
     // until 280ms after the fact, which the render loop cannot wait for.
     let streamAnyDown = false
     let streamMaxSpeed = 0
+    // docs/todo.md entry 67: how many non-chip fingers are down right now,
+    // for the two-finger-tap recogniser below — sampled once here rather
+    // than re-walked, since `sample(now)` already reflects a `down` that
+    // landed this same frame by the time this line runs.
+    let nonChipDown = 0
     for (const t of touchField.sample(now)) {
       const speed = Math.hypot(t.vx, t.vy)
+      if (!t.onChip) nonChipDown++
       if (!t.onChip && !hudOpen) {
         streamAnyDown = true
         streamMaxSpeed = Math.max(streamMaxSpeed, speed)
@@ -1170,32 +1209,55 @@ async function main(): Promise<void> {
     }
     visualiser.setTouches(active)
 
+    // Defensive rather than load-bearing: dispatchTouches only ever runs
+    // after Start (frame() is not scheduled before it), so the gate should
+    // already be gone by the time a tap can reach here — kept in case a
+    // fade is still mid-flight, the same guard the zone dispatch this
+    // replaced already carried.
+    const gate = document.getElementById('gate')
+    const gateShowing = gate != null && !gate.hidden
+
     let streamBegan = false
     for (const e of events) {
       if (e.kind === 'down') {
         if (!e.onChip && !hudOpen) streamBegan = true
+        if (e.onChip || hudOpen || gateShowing) continue
+        // docs/todo.md entry 67: a second way in, since the double tap was
+        // the *only* one — every `.hud-chip` is inert while the panel is
+        // closed. Fires the instant the second finger lands, which is also
+        // what keeps it from being confused with play: a single contact's
+        // own `down` never satisfies `nonChipDown === 2`.
+        if (nonChipDown === 2) {
+          panel.open()
+          continue
+        }
+        // Recognised on this tap's own `down`, not its `up` — see
+        // resolveTapDown's own comment for why. `e.clientX`/`e.clientY`
+        // equal `e.downClientX`/`e.downClientY` for a `down` event; using
+        // the former reads as "where this tap is", which is what it is.
+        resolveTapDown(e.id, e.clientX, e.clientY)
         continue
       }
       // A cancelled contact (pointercancel, lostpointercapture) is never a
-      // tap — only a clean release can be, exactly as before this entry.
-      if (e.kind !== 'up') continue
-      if (e.onChip) continue
-      // Inert while the HUD is open: the panel owns the screen then, and a
-      // tap here is what closes it (the scrim's own listener in hud.ts).
-      if (hudOpen) continue
-      // Defensive rather than load-bearing: dispatchTouches only ever runs
-      // after Start (frame() is not scheduled before it), so the gate
-      // should already be gone by the time a tap can reach here — kept in
-      // case a fade is still mid-flight, the same guard the zone dispatch
-      // this replaces already carried.
-      const gate = document.getElementById('gate')
-      if (gate && !gate.hidden) continue
+      // tap — only a clean release can be, exactly as before this entry —
+      // but its own `down` may already have started a pending single
+      // (docs/todo.md entry 67: resolution now begins at `down`, before it
+      // is knowable whether the contact will end cleanly). Cancel that
+      // pending entry unconditionally rather than let a save fire for a
+      // contact the platform itself gave up on — a no-op for a chip/HUD/gate
+      // contact, which never had one to begin with.
+      if (e.kind === 'cancel') {
+        cancelPendingTap(e.id)
+        continue
+      }
       // The tap-versus-drag distinction entry 50 explicitly names as not
       // loosened: a release far from where the contact began is a
-      // completed drag, not a tap, and must not save or open regardless of
-      // where on screen it ends.
-      if (Math.hypot(e.clientX - e.downClientX, e.clientY - e.downClientY) > TAP_SLOP_PX) continue
-      resolveTap(e.clientX, e.clientY)
+      // completed drag, not a tap. Cancel whatever pending single its own
+      // `down` may have started, rather than let a save fire for a gesture
+      // that turned out not to be a tap at all.
+      if (Math.hypot(e.clientX - e.downClientX, e.clientY - e.downClientY) > TAP_SLOP_PX) {
+        cancelPendingTap(e.id)
+      }
     }
 
     visualiser.setTouchStream(streamBegan, streamAnyDown, streamMaxSpeed)
