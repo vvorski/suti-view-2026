@@ -3235,3 +3235,74 @@ down and up land in different zones does nothing, a drag past
 by arithmetic (`568 × 1/3 = 189.3`) rather than a live measurement, for the
 same reason. `pnpm probe:fullscreen` passes unchanged. `pnpm build`, `pnpm
 lint` both clean.
+
+### 42. The fullscreen chip moves to the centre of the screen
+`status: ready` · added 2026-08-30
+
+**Do** — position `#fullscreen-chip` in the middle of the viewport. Location
+only: nothing about when it appears, what it does, or how it is hidden.
+**Why** — asked for, having seen the built top-left placement on the phone and
+found it reads as off.
+
+**Decided**
+- The mechanics → `left: 50%; top: 50%; transform: translate(-50%, -50%)`,
+  replacing the two `calc()`s at `index.html:316-319`. **The safe-area insets
+  go with them**: they exist to hold the chip clear of a notch and a rounded
+  corner, and a centred element is clear of both by construction. Keeping them
+  would leave two terms that no longer mean anything and that the next reader
+  has to work out are inert.
+- The transform is free, and this was checked rather than assumed →
+  `.hud-chip` at `hud.ts:374-383` sets `position: absolute` and **no
+  `transform`**, and its `transition` lists only `border-color`, `background`
+  and `color`. So a translate on the ID cannot fight an inherited transform or
+  get animated by an existing transition. Scoping to `#fullscreen-chip` also
+  leaves the panel's own chips, which are placed by `chipPosition()`,
+  untouched.
+- **This reverses entry 25, deliberately** → that entry (done, build 115) moved
+  the chip off the arc *to* the top-left because on a portrait phone the arc's
+  last slot "reads as a button dropped on the picture rather than as one of a
+  row". Dead centre is that objection at its strongest, not its weakest.
+  Victor's call, made against the built result rather than against a
+  description of it, which is the evidence entry 25 did not have. Recorded so
+  the next reader finds a decision rather than an apparent mistake — and the
+  comment at `index.html:350-353`, which explains the top-left placement in
+  entry 25's terms, must be rewritten in the same change or it will contradict
+  the CSS directly beneath it.
+- **The one thing that is not cosmetic** → under entry 41's zoning the chip
+  changes which zone it sits in. Top-left is the **top third**, which now does
+  nothing; the centre is the **middle third**, which opens the panel. So after
+  this, a tap on the chip is also a tap on the panel-opening region, where
+  before it was a tap on a dead one.
+- And the existing guard is not sufficient for that → `main.ts:863-869` calls
+  `stopPropagation()` **at the target**, and its own comment says this beats
+  "hud.ts's own bubble-phase tap-to-open listener on `document`". True today.
+  But entry 41 replaces that bubble listener with a single recogniser, and the
+  band it replaces listens in the **capture** phase — which runs *before* the
+  target. A capture-phase recogniser would open the panel and go fullscreen
+  from one tap, and the chip's guard would never get a chance to stop it.
+  **The recogniser must exclude chips by target** — `e.target.closest('.hud-chip')`
+  or equivalent — rather than relying on the target-phase guard. **Mine**, and
+  it is the whole reason this is an entry rather than a two-line CSS edit.
+- Nothing else moves → `updateFullscreenChip()`, the `['exited','refused']`
+  test, `goFullscreen()`, `onFullscreenChange()` and the `[hidden]` rule from
+  entry 24 are all untouched. "Don't touch functionality" is the instruction
+  and it is also the safest reading: the chip's visibility logic was wrong once
+  already and is now correct.
+
+**Lands in**
+- `index.html:316-319` — the rule.
+- `index.html:350-353` — the comment above the button, which currently explains
+  a placement that no longer exists.
+- `src/main.ts`, entry 41's recogniser — the chip exclusion, if 41 has landed
+  by the time this is built. If it has not, leave a comment at the chip's
+  `stopPropagation()` naming the hazard so whoever builds 41 meets it.
+
+**Done when** — with fullscreen exited, the chip sits in the middle of the
+screen at 320×568 and 360×640, visually centred rather than centred-then-nudged
+by an inset. Tapping it returns to fullscreen and does **not** also open the
+panel. It is still absent until fullscreen has actually been lost.
+**Verify** — `pnpm probe:fullscreen`, which covers the chip's state machine and
+must be unchanged by a move; then the phone at both widths, since "looks off"
+is the report being answered and only a phone can confirm it. `pnpm build`,
+`pnpm lint`.
+**Hard stops** — prefs no · url no · capture no · dependency no.
