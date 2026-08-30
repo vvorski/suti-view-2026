@@ -6407,7 +6407,13 @@ url no · capture no (the filename changes, the capture path does not) ·
 dependency no.
 
 ### 64. In daylight the picture is ink, not light
-`status: ready` · added 2026-08-30
+`status: superseded by 68` · added 2026-08-30
+
+**Superseded 2026-08-30**, before being built. Entry 68 keeps this entry's
+model and its density/colour split verbatim and widens the scope: measurement
+of four day-mode frames showed the atmospheric layer is where the damage
+actually is, so the exclusion decided here — geometry only — is the one thing
+68 reverses. Build 68; do not build this.
 
 **Do** — in day mode the geometric layer becomes dark ink on the light ground
 instead of bright light on it. At night it stays exactly as it is.
@@ -6713,3 +6719,81 @@ requires and this must not break.
 that fails today.
 **Hard stops** — prefs no · url no · capture no (when a save fires moves by
 120ms; nothing about what is captured changes) · dependency no.
+
+### 68. Day mode uses the whole range, in colour
+`status: ready` · added 2026-08-30 · supersedes 64
+
+**Do** — replace the screen-onto-a-light-ground with the ink model from entry
+64, applied to the **whole** picture rather than the geometric layer alone, and
+hold it to a measured contrast and saturation floor.
+
+**Why** — day mode is washed out and colourless. Not a little: measurably, on
+frames the app saved itself.
+
+**Decided**
+- **The measurement, so this stops being a matter of taste.** Four day-mode
+  captures, sampled over the middle 74% of the frame:
+
+  | frame | mean L | p5 | p95 | contrast | mean sat |
+  |---|---|---|---|---|---|
+  | 57826de4 | 0.716 | 0.615 | 0.766 | 0.151 | 0.098 |
+  | 5c82d26c | 0.683 | 0.609 | 0.757 | 0.148 | 0.147 |
+  | e1a0829f | 0.726 | 0.639 | 0.770 | 0.131 | 0.103 |
+  | 02dfa387 | 0.690 | 0.606 | 0.763 | 0.157 | 0.095 |
+
+  **The picture occupies 13-16% of the available tonal range and is about 90%
+  desaturated**, and `p5` never drops below 0.606 — nothing in any frame is
+  darker than the ground. "Anaemic" is the correct word and these are its
+  numbers.
+- **Why it is far worse than entry 47 expected, and the diagnosis is precise.**
+  Screen is `a + b − ab`, which lifts *bright* content nearly as much as dark:
+  a mid-bright field at 0.5 screened onto 0.6 lands at 0.80. Entry 47 reasoned
+  from "these pictures are mostly pure black, thin bright rings on an empty
+  field" — and that is an exact description of the **geometric** layer and a
+  wrong one for the **atmospheric** layer, which is a broad mid-bright field
+  with no empty ground at all. A fix derived from one layer's histogram was
+  applied to the composite of both. The screenshots are all atmospheric views,
+  which is why they are the worst case.
+- **Screening toward neutral is also what killed the colour.** Adding roughly
+  0.6 to every channel takes (0.1, 0.2, 0.5) to (0.64, 0.68, 0.80): saturation
+  falls from 0.80 to 0.20. The measured 0.04-0.15 is that, not a palette
+  problem, and no amount of choosing better colours upstream can survive it.
+- **So entry 64's model, whole-frame.** Ink density from the picture's own
+  brightness, ink hue from its own chroma, laid on paper:
+  `mix(paper, chroma * INK, density)`. Entry 64's exclusion of the atmosphere
+  was decided on judgement — "a field made subtractive becomes a duotone print"
+  — and the measurement overturns it: a duotone print is a far better outcome
+  than a 15%-range wash, and it is what the geometric half was already getting.
+  **This is the only thing 68 changes about 64**; everything else there,
+  including the ink leading the paper through dawn, is carried over unchanged.
+- **Paper rises to 0.88 and ink floors at 0.10.** That is a range of 0.78
+  against night's ~1.0, where today's is 0.15. **Mine** — with a subtractive
+  operator the paper can be near-white *because* the ink can reach dark, which
+  is exactly the trade a screen cannot make.
+- **The ground colour has to work harder now.** Entry 53's ±0.06 warmth was
+  set against a ground that was one contributor among many; it is now the
+  dominant surface of the whole frame, and ±6% on the largest area on screen is
+  invisible. Widen it to ±0.10 in the day path. **Mine**, and it is a
+  consequence of this entry rather than a revision of 53's reasoning.
+- **The floors are the acceptance test, not adjectives.** A day frame must
+  reach **at least 70% of the tonal range and 70% of the mean saturation** that
+  the same scene reaches at night. Those two numbers are checkable offline on a
+  rendered frame, they are what "anaemic" means quantitatively, and without
+  them the next tuning pass is another round of looking at it and guessing —
+  which is what produced this.
+
+**Lands in**
+- `src/shaders/composite.frag.glsl:175-187` — the ground line becomes the ink
+  step, for the whole `col` rather than a layer of it.
+- `scripts/probe-composite.ts` — the range-and-saturation floors, at
+  `uDay = 0` and `uDay = 1`, plus entry 64's dawn sweep.
+
+**Done when** — a day-mode frame of an atmospheric view measures contrast
+≥ 0.70 and mean saturation ≥ 0.70 of the same view at night; `p5` sits near the
+ink floor rather than near the paper; `uDay = 0` is bit-identical to today; and
+the four frames above, re-shot, no longer look like fog.
+**Verify** — re-shoot the same four views in day mode and run the same
+measurement; the numbers in the table are the before, and they are reproducible
+by anyone. Then a phone outdoors, which is still the only judge of whether 0.88
+and 0.10 are the right pair.
+**Hard stops** — prefs no · url no · capture no · dependency no.
