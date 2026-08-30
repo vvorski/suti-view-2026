@@ -324,13 +324,13 @@ interface Handlers {
    *  call rather than a value polled every frame. */
   onSkyOverride(state: SkyOverride): void
   /**
-   * Toggle camera mode — docs/todo.md entries 72 and 78. The chip is now the
-   * only way in *or* out (entry 78 retired the two-finger exit, which fired
-   * a spurious screenshot on every use), so this one call has to mean
-   * "whichever direction main.ts's own `cameraMode` isn't currently in"
-   * rather than only ever entering. The panel is already closed by the time
-   * this fires on the way in (the chip's own onTap calls `setOpen(false)`
-   * directly); on the way out, main.ts reopens it itself.
+   * Arm camera mode — docs/todo.md entries 72 and 87. One shot: the next
+   * tap anywhere on the picture takes a photo and leaves the mode on its
+   * own, so this only ever *enters* — main.ts's own `enterCameraMode` is a
+   * no-op while already armed, which is what makes a second tap on this
+   * same chip harmless rather than needing its own case here. The panel is
+   * already closed by the time this fires (the chip's own onTap calls
+   * `setOpen(false)` directly).
    */
   onCameraMode(): void
   /** Fired on every change the user makes by hand, so the autopilot can get
@@ -1026,12 +1026,11 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
     },
     'outer',
   )
-  // docs/todo.md entries 72 and 78. Now a toggle, not a momentary action:
-  // entering closes the panel itself, directly, the same "one tap enters
-  // the mode and closes the panel" gesture entry 72 shipped; exiting is
-  // main.ts's own half (`exitCameraMode` reopens the panel), which is why
-  // this tap unconditionally calls `setOpen(false)` either way — already
-  // closed, on the way out, so it is a harmless no-op there.
+  // docs/todo.md entries 72 and 87. A momentary action again — 87 dropped
+  // 78's toggle, since the mode now ends itself at the next tap on the
+  // picture (or a 10s timeout) rather than persisting until a second tap on
+  // this chip. Closes the panel itself, directly, the same "one tap arms
+  // and closes the panel" gesture entry 72 shipped.
   const shutterChip = mkChip(
     'shutter',
     'Camera mode',
@@ -1042,9 +1041,12 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
     },
     'outer',
   )
-  // docs/todo.md entry 78 — the one chip allowed to stay live while the
-  // panel is closed, but only while camera mode is actually on; see the
-  // `.hud-chip--shutter[aria-pressed='true']` exception above.
+  // docs/todo.md entries 78 and 87 — the one chip allowed to stay live
+  // while the panel is closed, but only while armed; see the
+  // `.hud-chip--shutter[aria-pressed='true']` exception above. Kept from 78
+  // unchanged: a tap here while already armed reaches `handlers.onCameraMode`
+  // same as any other, and `enterCameraMode`'s own no-op-while-armed guard
+  // is what makes that harmless rather than needing a case here too.
   shutterChip.classList.add('hud-chip--shutter')
 
   /**

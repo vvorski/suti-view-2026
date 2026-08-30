@@ -1002,45 +1002,52 @@ async function main(): Promise<void> {
     return mix
   }
 
-  // docs/todo.md entry 72. A render-time override, never a stored write —
-  // the same seam entries 48, 58 and 60 use: applyPassthrough() here never
-  // touches prefs.passthrough or calls panel.adopt(), unlike the HUD band's
-  // own commit path, so entering and leaving this mode cannot appear in
-  // localStorage regardless of how it ends.
+  // docs/todo.md entry 87 — how long armed waits for a tap before quietly
+  // giving up. **Mine**: the entry asks for a timeout but not this figure.
+  const CAMERA_ARM_MS = 10_000
+
+  // docs/todo.md entry 87 corrects entry 72's own misreading: "camera mode"
+  // was taken to mean the passthrough camera, so entering used to call
+  // applyPassthrough(0.75) — directly against the original request's own
+  // "animation not affected". Entering now touches passthrough not at all;
+  // what makes this a mode is the glyph, the instant shutter and the
+  // locked-out menu, nothing visual. `cameraMode` stays a render-time flag
+  // only, never a stored write, matching the seam entries 48, 58 and 60 use
+  // for their own render-time overrides.
   let cameraMode = false
-  // What the band was showing before the mode borrowed it — captured once,
-  // at entry, so leaving gives it back exactly rather than to whatever it
-  // has drifted to since (the director may still be rolling other things
-  // while the mode is on; see maybeRollCamera's own guard below).
-  let preCameraMix = 0
+  // docs/todo.md entry 87 — armed disarms itself after CAMERA_ARM_MS with
+  // no tap, quietly (no menu reopen: the person has stopped looking, and
+  // forcing the menu back open over whatever they moved on to would be its
+  // own surprise). Cleared whenever the mode leaves any other way, so a
+  // photo taken at 9s does not also trigger a disarm one second later.
+  let cameraArmTimeout = 0
 
   function enterCameraMode(): void {
     if (cameraMode) return
     cameraMode = true
     panel.setCameraActive(true)
-    preCameraMix = prefs.passthrough
     const glyph = document.getElementById('shutter-glyph')
     if (glyph) glyph.hidden = false
-    void applyPassthrough(0.75).then((actual) => {
-      // Refused, or no camera at all — nothing to show, so there is nothing
-      // to be "in camera mode" about. Falls back to the ordinary picture
-      // rather than leaving the glyph up over a passthrough that never
-      // opened.
-      if (actual <= 0) {
-        cameraMode = false
-        panel.setCameraActive(false)
-        if (glyph) glyph.hidden = true
-      }
-    })
+    cameraArmTimeout = window.setTimeout(() => {
+      if (!cameraMode) return
+      cameraMode = false
+      panel.setCameraActive(false)
+      if (glyph) glyph.hidden = true
+    }, CAMERA_ARM_MS)
   }
 
+  // docs/todo.md entry 87 — the post-shot return; also reached by a manual
+  // exit (a second tap on the chip while armed, `cameraActive`'s own toggle
+  // in hud.ts is unaffected by this entry). Never the quiet timeout path,
+  // which disarms inline above rather than through this function, precisely
+  // so it does not also reopen the menu.
   function exitCameraMode(): void {
     if (!cameraMode) return
     cameraMode = false
+    window.clearTimeout(cameraArmTimeout)
     panel.setCameraActive(false)
     const glyph = document.getElementById('shutter-glyph')
     if (glyph) glyph.hidden = true
-    void applyPassthrough(preCameraMix)
     // docs/todo.md entry 78 overturns entry 72's "exit goes to the normal
     // picture rather than opening the panel" — every other chip leaves you
     // where you were, and the trip being one-way was the whole complaint.
@@ -1064,10 +1071,12 @@ async function main(): Promise<void> {
       mapping = MAPPINGS[name]()
     },
     onPassthrough: applyPassthrough,
-    // docs/todo.md entry 78: the chip is now a toggle — one call means
-    // "leave if in, enter if not", since the two-finger exit is gone and
-    // the chip is the only way either direction now.
-    onCameraMode: () => (cameraMode ? exitCameraMode() : enterCameraMode()),
+    // docs/todo.md entry 87 drops entry 78's toggle: the chip only arms.
+    // `enterCameraMode`'s own `if (cameraMode) return` already makes a tap
+    // on an already-armed chip a harmless no-op rather than an exit — the
+    // mode ends at the next tap on the picture (or the 10s timeout), never
+    // at a second tap on the chip.
+    onCameraMode: enterCameraMode,
     onManualChange: () => director.suspend(),
   }, new URLSearchParams(window.location.search).has('debug'))
 
@@ -1334,24 +1343,26 @@ async function main(): Promise<void> {
       if (e.kind === 'down') {
         if (!e.onChip && !hudOpen) streamBegan = true
         if (e.onChip || hudOpen || gateShowing) continue
-        // docs/todo.md entry 78 retires the two-finger exit entirely: it
-        // fired a spurious screenshot on every use (the first finger's own
-        // `down` already satisfies the shutter's own uninterrupted fall-
-        // through below, since `nonChipDown` is only 1 until the second
-        // finger lands) and no timing rule can fix that without giving
-        // back the shutter's whole point — firing on `down` with no wait.
-        // The chip is the exit now; see `exitCameraMode`.
+        // docs/todo.md entry 87: one shot, then done. Entry 78's two-finger
+        // exit does not exist to retire a second time — arming ends at the
+        // first qualifying tap regardless, so there is no persisted state
+        // left to need an exit gesture for. The shutter is instant — no
+        // TAP_RESOLVE_MS wait, no drag check, no pending-tap bookkeeping —
+        // because outside this mode that wait exists solely to learn
+        // whether a second tap is coming to open the menu, and in here the
+        // menu cannot open at all. Fires on this tap's own down.
         if (cameraMode) {
-          // The shutter is instant — no TAP_RESOLVE_MS wait, no drag
-          // check, no pending-tap bookkeeping — because outside this mode
-          // that wait exists solely to learn whether a second tap is
-          // coming to open the menu, and in here the menu cannot open at
-          // all. Fires on this tap's own down.
           if (performance.now() - lastSaveAt >= CAMERA_SAVE_RATE_LIMIT_MS) {
             lastSaveAt = performance.now()
             saveCapture(visualiser)
             flashShutter()
           }
+          // Exits unconditionally, even the rare frame where the rate
+          // limit above suppressed the actual save — arming already
+          // consumed this tap, and a stray extra frame stuck in the
+          // dispatch is a worse failure than a shot occasionally lost to a
+          // limit built for the ordinary tap-to-save path, not this one.
+          exitCameraMode()
           continue
         }
         // docs/todo.md entry 67: a second way in, since the double tap was
