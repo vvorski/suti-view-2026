@@ -4105,14 +4105,12 @@ a black one, on a chip, off by default.
 propped up in a room actually lives.
 
 **Decided**
-- **A tone curve, not an inverted palette** → **Mine**, and it is the entry's
-  whole shape. "Day mode" could mean a light ground with dark ink, and that
-  reading is coherent — but all thirteen shaders are built to *add light onto
-  black*: `screen`, `add` and the ripple wakes all assume a dark ground, and
-  inverting it means re-authoring every one of them. The complaint is
-  legibility in sunlight, not a preference for a light theme, and a tone curve
-  answers that in one place. If a genuine light theme is wanted later it is a
-  different and much larger entry.
+- **One change at the composite, not thirteen in the shaders** → all thirteen
+  are built to *add light onto black*: `screen`, `add` and the ripple wakes all
+  assume a dark ground, and re-authoring them is a different project. Whatever
+  day mode is, it happens in `composite.frag.glsl` after everything else has
+  drawn. **Mine**, and it is the constraint the two decisions below are chosen
+  within.
 - **Revised 2026-08-30, against nine screenshots: a curve cannot do this.**
   The original decision here was a gamma lift with a 0.06 black-level lift.
   Looking at what this app actually draws, that was wrong, and wrong for a
@@ -4174,18 +4172,47 @@ propped up in a room actually lives.
   against a measured 2.33:1. A global brightness that also touched them would
   reopen a settled question in a place nobody is complaining about.
 
+- **The ground is neutral grey, `vec3(0.6)`** → not warm, not tinted, and no
+  colour management: the same space everything else in that file is written
+  in. **Mine**, and it is deliberate that it is boring — entry 53 tints this
+  exact value from the hour of day, and a ground that already had an opinion
+  about warmth would fight it. This entry supplies the number; 53 supplies the
+  colour.
+- **The ground scales by `(1.0 - uCameraMix)`** → this is the gap most likely
+  to be missed, because it only shows up with passthrough raised. Screening a
+  0.6 ground under a camera frame washes the room to milk, and the room does
+  not need it: `uExposure` already answers the actual light in it
+  (`scene.ts:589`). The ground exists to stand in for daylight when there is no
+  daylight in frame, so it should retire as the real room arrives. **Mine.**
+- **The toggle fades over 400ms** → `uDay` is 0..1 precisely so it can, and a
+  chip that snaps the whole frame from black to grey reads as a glitch rather
+  than a setting. 400ms is long enough to be a transition and short enough to
+  feel like a button. **Mine**, and entry 53's override crossfade should use
+  this same constant rather than inventing a second one.
+- **The chip is a sun**, id `day`, label "Day" → a filled disc with eight rays,
+  in the same 24×24 `viewBox` with `fill="currentColor"` that every entry in
+  `ICONS` uses, sized by `.hud-icon` at 19px like the rest. **Mine**: the icon
+  set is already a visual vocabulary — three wedges for geo, stacked waves for
+  atm, concentric arcs for the ear — and a sun is the one shape that needs no
+  explaining next to them. Not a moon: the chip is named for what turning it
+  **on** does.
+
 **Lands in**
-- `src/shaders/composite.frag.glsl:65, 153` — the uniform and the curve, after
+- `src/shaders/composite.frag.glsl:65, 153` — the uniform and the screen, after
   the exposure clamp.
 - `src/scene.ts:339` — the uniform's declaration, beside `uExposure`.
 - `src/prefs.ts` — `day: boolean`, defaulting false.
+- `src/hud.ts:274`, `ICONS` — the `day` sun glyph.
 - `src/hud.ts` — the chip, beside `gravChip`.
 
 **Done when** — with day mode on, the black field is visibly a light field and
 the whole frame reads outdoors in sun; the rings and their colours are the same
-colours, only sitting on light instead of dark; nothing clips. With it off, the
-frame is pixel-identical to today. The frame-time figure is unchanged in both
-states.
+colours, only sitting on light instead of dark; nothing clips. Toggling the
+chip takes about 400ms rather than snapping. **With passthrough raised, the
+room looks the same as it does with day mode off** — that is the
+`(1 - uCameraMix)` term working, and it is the one failure this can ship with
+unnoticed. With it off, the frame is pixel-identical to today. The frame-time
+figure is unchanged in every one of those states.
 **Verify** — outdoors, on the phone, in actual daylight, which is the only
 place the question exists — a desktop monitor cannot answer it and neither can
 a screenshot. Check it over both a bright view and a dark one, since a curve
