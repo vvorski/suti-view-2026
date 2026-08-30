@@ -42,7 +42,7 @@ import {
 import { MERGE_MODES, type MergeModeName } from './merge-modes'
 import { MAPPINGS, type MappingName, type VisualParams } from './engine'
 import { type GeoColour } from './geo-colour'
-import { savePrefs, type Prefs } from './prefs'
+import { savePrefs, type Prefs, type SkyOverride } from './prefs'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 const DEG = Math.PI / 180
@@ -288,11 +288,11 @@ interface Handlers {
    * to 0 on a refusal rather than sitting somewhere untrue.
    */
   onPassthrough(a: number): Promise<number>
-  /** Day mode on or off — docs/todo.md entry 47. Unlike `gravity`, which
-   *  main.ts reads from `prefs` itself once per frame, this is a scene.ts
-   *  render setting with its own fade, so it needs an explicit call rather
-   *  than a value polled every frame. */
-  onDayMode(on: boolean): void
+  /** The sky override — docs/todo.md entries 47 and 71. Unlike `gravity`,
+   *  which main.ts reads from `prefs` itself once per frame, this is a
+   *  scene.ts render setting with its own fade, so it needs an explicit
+   *  call rather than a value polled every frame. */
+  onSkyOverride(state: SkyOverride): void
   /** Fired on every change the user makes by hand, so the autopilot can get
    *  out of the way. Not fired for `adopt`. */
   onManualChange(): void
@@ -893,19 +893,21 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
     save()
     paint()
   })
-  // docs/todo.md entries 47 and 53. A boolean gets a chip rather than a
-  // band, same precedent gravity set at entry 30. Unlike gravity, this is a
-  // scene.ts render setting with its own fade rather than something
-  // main.ts polls from prefs each frame, so the toggle also calls
-  // handlers.onDayMode() explicitly. Relabelled from entry 47's "Day" —
-  // the picture's brightness now follows the clock on its own, and this
-  // chip's only job is pinning it bright regardless of the hour, for
-  // reading the screen outdoors. The `id` and the stored `prefs.day`
-  // field are both left as `day`/`'day'`: renaming either would touch the
-  // stored-shape Hard Stop for no reason anyone would see on screen.
-  const dayChip = mkChip('day', 'Outdoor', '#9d9bf0', () => {
-    prefs.day = !prefs.day
-    handlers.onDayMode(prefs.day)
+  // docs/todo.md entries 47, 53 and 71. A three-way cycle on one chip
+  // rather than a band or a second chip, same precedent gravity set at
+  // entry 30 for a single boolean — the circular surface is the
+  // non-negotiable, and a second chip would spend scarce arc on the same
+  // concept. Unlike gravity, this is a scene.ts render setting with its
+  // own fade rather than something main.ts polls from prefs each frame, so
+  // the toggle also calls handlers.onSkyOverride() explicitly. The `id` is
+  // left as `day`: renaming it would touch the stored-shape Hard Stop for
+  // no reason anyone would see on screen, and prefs.day itself is no
+  // longer written here at all — entry 71 supersedes it with
+  // prefs.skyOverride, and leaves the old field exactly where it was found
+  // (see prefs.ts's own comment on why).
+  const dayChip = mkChip('day', 'Sky: auto', '#9d9bf0', () => {
+    prefs.skyOverride = prefs.skyOverride === 'auto' ? 'day' : prefs.skyOverride === 'day' ? 'night' : 'auto'
+    handlers.onSkyOverride(prefs.skyOverride)
     save()
     paint()
   })
@@ -1094,13 +1096,19 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
           : id === 'grav'
             ? prefs.gravity
             : id === 'day'
-              ? prefs.day
+              ? prefs.skyOverride !== 'auto'
               : group === id
       chip.setAttribute('aria-pressed', String(on))
     }
+    // docs/todo.md entry 71: the day chip says which of its three states it
+    // is currently in, since "pressed or not" can no longer distinguish
+    // pinned-day from pinned-night — both are simply "pressed".
+    dayChip.setAttribute(
+      'aria-label',
+      prefs.skyOverride === 'day' ? 'Outdoor' : prefs.skyOverride === 'night' ? 'Night' : 'Sky: auto',
+    )
     void statsChip
     void gravChip
-    void dayChip
   }
 
   build()
@@ -1183,7 +1191,16 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
           : [
               `sky   day ${s.sky.daylight.toFixed(2)}  ` +
                 `warm ${s.sky.warmth >= 0 ? '+' : ''}${s.sky.warmth.toFixed(2)}` +
-                (s.sky.override > 0 ? `  outdoor ${Math.round(s.sky.override * 100)}%` : ''),
+                // docs/todo.md entry 71: override now swings both ways —
+                // positive is the outdoor-reading pin toward day, negative
+                // is the new pin toward night, and only one direction can
+                // ever be active (setSkyOverride sets one target, never
+                // both), so a single line still says which.
+                (s.sky.override > 0
+                  ? `  outdoor ${Math.round(s.sky.override * 100)}%`
+                  : s.sky.override < 0
+                    ? `  night ${Math.round(-s.sky.override * 100)}%`
+                    : ''),
             ]),
         // The two numbers that tell a dead sensor apart from a shake that is
         // simply not hard enough.

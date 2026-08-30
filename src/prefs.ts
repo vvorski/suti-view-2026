@@ -101,8 +101,30 @@ export interface Prefs {
    * docs/todo.md entry 47. Defaults off, same reason `gravity` does: it
    * changes what an untouched picture looks like, and a returning visitor
    * should find what they left.
+   *
+   * Superseded by `skyOverride` below (entry 71) and no longer written —
+   * left in place, unread except for one migration, exactly the shape
+   * `mix` followed when `geoAlpha`/`atmAlpha` split off it. A `day: true`
+   * from before this entry still means what it always meant.
    */
   day: boolean
+  /**
+   * 'auto' follows the local clock (see `sky.ts`); 'day'/'night' pin the
+   * picture toward full daylight or full night regardless of the hour —
+   * docs/todo.md entry 71, replacing `day`'s one-way "pin bright" with a
+   * cycle that can also pin dark, for a phone in a dark room at 2pm just as
+   * much as a phone outdoors at 2am. Defaults to `'auto'`; a stored
+   * `day: true` from before this field existed is read once, in
+   * `loadPrefs`, as `'auto'`'s replacement value `'day'` — never the other
+   * way around, and never rewriting `day` itself.
+   */
+  skyOverride: SkyOverride
+}
+
+export type SkyOverride = 'auto' | 'day' | 'night'
+
+function isSkyOverride(v: string | null): v is SkyOverride {
+  return v === 'auto' || v === 'day' || v === 'night'
 }
 
 /** `valid` narrows `raw ?? null` rather than `raw` itself, so the ternary needs
@@ -173,6 +195,15 @@ export function loadPrefs(fallback: Prefs): Prefs {
       gravity:
         typeof parsed.gravity === 'boolean' ? parsed.gravity : fallback.gravity,
       day: typeof parsed.day === 'boolean' ? parsed.day : fallback.day,
+      // docs/todo.md entry 71: a valid stored skyOverride always wins, since
+      // it is the field anything written after this entry actually updates.
+      // Only absent that does a stored day: true migrate in as 'day' — never
+      // the reverse, and day itself is never rewritten by this.
+      skyOverride: pick(
+        parsed.skyOverride,
+        isSkyOverride,
+        parsed.day === true ? 'day' : fallback.skyOverride,
+      ),
     }
   } catch {
     // Private mode, blocked site data, corrupt JSON — all the same to us.

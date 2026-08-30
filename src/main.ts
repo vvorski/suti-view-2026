@@ -88,6 +88,7 @@ function resolvePrefs(): Prefs {
     showStats: false,
     gravity: false,
     day: false,
+    skyOverride: 'auto',
   })
 
   // A URL parameter is an explicit instruction for this load and overrides what
@@ -149,6 +150,8 @@ function resolvePrefs(): Prefs {
     // shared link is about what to show, not what the room looks like on
     // the far end. Reached from the HUD chip.
     day: stored.day,
+    // Also no URL parameter, for the same reason. docs/todo.md entry 71.
+    skyOverride: stored.skyOverride,
   }
 }
 
@@ -660,7 +663,7 @@ async function main(): Promise<void> {
     atmMergeMode: gateLook?.atmMergeMode ?? prefs.atmMergeMode,
     geoAlpha: prefs.geoAlpha,
     atmAlpha: prefs.atmAlpha,
-    day: prefs.day,
+    skyOverride: prefs.skyOverride,
   })
 
   // Flipped by the real loop taking over, which is what stops the idle frames.
@@ -982,7 +985,7 @@ async function main(): Promise<void> {
   const panel = createHud(prefs, {
     onGeometricView: (name: GeometricViewName) => visualiser.setGeometricView(name),
     onColour: (layer, colour) => visualiser.setLayerColour(layer, colour),
-    onDayMode: (on) => visualiser.setDayMode(on),
+    onSkyOverride: (state) => visualiser.setSkyOverride(state),
     onAtmosphericView: (name: AtmosphericViewName) => visualiser.setAtmosphericView(name),
     onMergeMode: (layer, mode: MergeModeName) => visualiser.setMergeMode(layer, mode),
     onAlpha: (layer, a) => {

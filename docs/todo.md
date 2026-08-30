@@ -7396,7 +7396,88 @@ table above is the before. The camera claim is the one to check by hand, since
 sampler and a render-time stage move) · url no · capture no · dependency no.
 
 ### 71. The sky gets a noon and a night, and the override swings both ways
-`status: building` · added 2026-08-30 · started 2026-08-30 · build with or after 68
+`status: done` · added 2026-08-30 · shipped at build 238 · build with or after 68
+
+**Build note** — `sky.ts`'s single four-anchor table split into two:
+`DAYLIGHT_ANCHORS` (six: 04:00/0.0, 06:30/0.35, 10:30/1.0, 15:30/1.0,
+19:30/0.4, 23:00/0.0 — two pairs at equal value holding the night floor and
+day plateau flat, the two original dawn/dusk anchors unmoved carrying the
+transitions) and `WARMTH_ANCHORS` (the original four, untouched). Both
+interpolated by one shared `interpolate()` generic over an anchor list,
+rather than two copies of the wrap-and-segment-search logic.
+
+**Honest finding, not silently corrected**: the entry's own Decided text
+estimates the resulting mid-band at "~2.5 hours at each end of the day"
+(~5 total). Measured directly (`probe:sky`, reproducible with the one-line
+scrub the entry's own Verify credits): each transition is 4.6-5.3 hours,
+~9.95 total — roughly double the estimate. The anchor *hours and values*
+are the entry's own explicit "Mine as to the hours" choice and are exactly
+what is implemented; the "~5" reads as an eyeballed guess at what those
+anchors would produce, not re-derived from them. Implemented the anchors
+as specified and recorded the true measured number in the probe and here,
+rather than either quietly shipping a wrong comment or re-tuning anchor
+hours the entry itself claimed as a deliberate choice. The qualitative
+point — day and night are states held for hours, not instants touched
+once — holds regardless: 9.95 hours of transition against 14.05 held is
+still a real fix for a curve that spent 16 of 24 hours in between.
+
+`scene.ts`: `overrideTarget`/`overrideCurrent` now range -1..1 (was 0..1);
+the existing min/max chase logic needed no change, since it already moves
+toward a target from either side. `uDay` splits into two branches at the
+sign of `overrideCurrent` — `skyDaylight + (1-skyDaylight)*overrideCurrent`
+for day-ward (unchanged from before), `skyDaylight*(1+overrideCurrent)`
+for night-ward — both collapsing to plain `skyDaylight` at 0. New
+`skyDaylightSample`/`skyDaylight` split: the sample updates once a second
+as before, but `skyDaylight` (what `uDay` actually reads) chases it at
+`SKY_CHASE_RATE = 1/3` (full-scale over ~3s) every frame, so a DST jump or
+a tab resumed hours later fades rather than snapping. Warmth is not
+chased — a secondary tint, and the entry's own finding was specifically
+about `uDay`.
+
+`prefs.ts` gained `skyOverride: 'auto'|'day'|'night'`, exported as
+`SkyOverride`. `day: boolean` stays exactly as it was — read, written,
+untouched in shape or meaning — with a new one-way migration: a valid
+stored `skyOverride` always wins; absent that, a stored `day: true`
+migrates in as `'day'`; `day` itself is never rewritten by this. Verified
+live (not just by reading the code) against the real `loadPrefs()`: an
+old-shaped stored value (`day: true`, no `skyOverride`) reads back as
+`skyOverride: 'day'` with `day` still `true`; a modern stored value
+(`skyOverride: 'night'`, `day: true`) reads back `'night'` — the newer
+field wins over the older one exactly as specified, not merely by absence
+of a bug in the one case that was easy to picture.
+
+`hud.ts`'s day chip cycles `auto → day → night → auto` on tap, relabelling
+itself each time (`'Sky: auto'`/`'Outdoor'`/`'Night'`) since `aria-pressed`
+alone can no longer distinguish pinned-day from pinned-night. `prefs.day`
+is no longer written by this chip at all — entry 71 supersedes it with
+`prefs.skyOverride`, matching the entry's own "the old field is left in
+place" for entry 69's process-lapse lesson applied deliberately this time,
+not by oversight. Verified live: three taps against the real, mounted
+`createHud()` (via `hud-probe.html`, not a stub) produced exactly
+`onSkyOverride` calls `['day'], ['night'], ['auto']` in order, with the
+chip's own `aria-label`/`aria-pressed` matching at every step.
+
+`scripts/probe-sky.ts` rewritten for the two-table split: anchors checked
+separately, new plateau/floor checks (sampled throughout each window, not
+only at its labelled edge), the mid-band check restated with the true
+measured ceiling (see the honest finding above) rather than the entry's
+own estimate, and the steepest-transition-point check recomputed for the
+new 06:30-10:30 dawn segment (~08:30, not the old curve's ~09:45). All
+twenty checks pass.
+
+Not verified live: the override fade's and the chase's own real-time
+dynamics (the ~1.2s and ~3s durations) — `render()` computes its own `dt`
+internally from wall-clock time with no way to inject a controlled value
+from outside, and this harness's timers are independently unpredictable
+(established in earlier entries this session). What was verified instead:
+override *seeding* at construction (`stats().sky.override` reads exactly
+0/1/-1 for `'auto'`/`'day'`/`'night'`, checked against a real, freshly
+constructed `Visualiser` via direct module import — not a stub), and the
+chase/fade formulas by code review, since both are simple, previously-
+shipped patterns this entry only widens rather than replaces. The
+`~10:30/15:30/23:00/04:00`-are-the-right-hours question is, per the
+entry's own Verify line, only ever answerable on a phone across an actual
+evening — not attempted here.
 
 **Do** — reshape the sky's anchors so the day has a plateau and the night has a
 floor, make the chip cycle auto → day → night instead of only pinning day, and
