@@ -7018,7 +7018,7 @@ that fails today.
 120ms; nothing about what is captured changes) · dependency no.
 
 ### 68. Day mode uses the whole range, in colour
-`status: ready` · added 2026-08-30 · supersedes 64
+`status: building` · added 2026-08-30 · started 2026-08-30 · supersedes 64
 
 **Do** — replace the screen-onto-a-light-ground with the ink model from entry
 64, applied to the **whole** picture rather than the geometric layer alone, and
