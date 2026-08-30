@@ -7140,3 +7140,94 @@ nothing further is to be added, and no open question about the name remains in
 this file.
 **Verify** — reading it. There is nothing to run.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 70. Colour is chosen as a hue, and survives the composite
+`status: ready` · added 2026-08-30 · build after 68
+
+**Do** — roll colour as a hue at high saturation instead of three independent
+channel gains, drop the floor that makes a pure channel impossible, and add a
+vibrance stage before the camera mix.
+
+**Why** — the picture is grey-ish in every view, in day *and* night, with the
+camera up and down. Entry 68 fixes the daylight wash; this is the separate
+reason colour is thin underneath it.
+
+**Decided**
+- **The measurement, four fresh frames** (middle 82%):
+
+  | frame | mean L | contrast | mean sat | p95 sat | mean RGB |
+  |---|---|---|---|---|---|
+  | b7d4df77 | 0.578 | 0.273 | 0.096 | 0.151 | (0.56, 0.58, 0.56) |
+  | 44dfb7bf | 0.455 | 0.157 | 0.122 | 0.230 | (0.46, 0.46, 0.41) |
+  | 696e0c20 | 0.368 | 0.138 | 0.253 | 0.364 | (0.33, 0.39, 0.29) |
+  | 3bdfa551 | 0.368 | 0.138 | 0.249 | 0.360 | (0.33, 0.39, 0.29) |
+
+  Mean RGB is near-neutral in all four — the channels sit within 0.06 of each
+  other. **Even the most colourful pixels (p95) only reach 0.15-0.36
+  saturation.** These are *not* the pale frames from entry 68: mean luminance
+  is 0.37-0.58, so this is thin colour, not a light ground, and it is a second
+  cause that entry 68 does not touch.
+- **Three things compound, and the first is the one nobody would guess.**
+  `main.ts:336` is `const channel = () => 0.2 + Math.random() * 0.8`, drawn
+  independently per channel. **Sampling r, g and b independently clusters
+  around the grey diagonal** — the three values land near each other far more
+  often than far apart, and near each other *is* grey. A colour picked this way
+  is a random point in a cube, and most of a cube is not colourful.
+- **The 0.2 floor makes a pure hue unreachable by construction.** With the
+  smallest channel never below 0.2 and the largest at most 1, saturation is
+  capped at 0.8 and averages about 0.5 — before any blending. `geo-colour.ts`'s
+  own docstring names "a channel at zero is a genuine channel kill" as a
+  *feature* of this model; the sampler is what never uses it.
+- **Screen desaturates, and the composite screens twice.** `screen` is the
+  default for geo-over-atmosphere *and* atmosphere-over-camera
+  (`merge-modes.ts:26,36`), and `a + b − ab` pulls toward white, which pulls
+  toward grey. So a colour that starts at 0.5 saturation arrives well under it,
+  which is the gap between the 0.5 the sampler can manage and the 0.15-0.36
+  measured.
+- **So roll a hue, not three gains.** Pick a hue uniformly on the circle and a
+  saturation in **0.55-1.0**, convert to the same three gains, keep the largest
+  channel at 1 so brightness does not fall as saturation rises. **Mine.** This
+  is the whole fix for cause one and two, and note what it does *not* change:
+  `GeoColour` is still three numbers with the same meaning, `rgb=100,30,40`
+  still says exactly what it said, and every stored pref and shared link is
+  untouched. Only what the shuffle *chooses* changes.
+- **Brightness and saturation are coupled in this model, which is the deeper
+  point.** Gains can only ever remove light, so a saturated red must be
+  `(1, 0, 0)` — a third of white's luminance. Keeping the max channel pinned at
+  1 is what stops "more colourful" from meaning "darker", and it is why this
+  cannot be fixed by picking nicer numbers by hand.
+- **A vibrance stage, applied to the picture and not the room** → after the two
+  layers combine and **before** the camera composite, so the visualiser gains
+  colour and a real photograph of grass does not. Vibrance rather than flat
+  saturation: scale by how unsaturated a pixel already is, so thin colour lifts
+  and anything already vivid is left alone. **Mine**, and the seam matters —
+  after the camera mix it would repaint the room.
+- **`DEFAULT_GEO_COLOUR` stays white.** Deliberate, per `geo-colour.ts`: the
+  geometry is kept out of the atmosphere's hue range so the layers do not fight.
+  With the director always on (entry 45) the rolled colour is what anyone
+  actually sees, so fixing the sampler fixes the experience without disturbing
+  a decision that was made for a reason.
+- **Not taken: renormalising the stored gains** so `(0.5, 0.1, 0.1)` reads as
+  bright red rather than dim red. It is the tidier model and it is a **Hard
+  Stop** — it changes the meaning of every stored pref and every shared `rgb=`
+  link, silently. Raised here so it is on the record as considered and
+  declined, not overlooked. If it is ever wanted it needs Victor's call and a
+  migration, not a quiet reinterpretation.
+
+**Lands in**
+- `src/main.ts:335-370` — `channel()`/`colour()`/`nudgeChannel()` become a
+  hue-and-saturation roll; the 0.2 clamp goes with them.
+- `src/shaders/composite.frag.glsl` — the vibrance step, before the
+  `uCameraMix` block.
+- `scripts/probe-composite.ts` — the saturation floor.
+
+**Done when** — a rolled colour has saturation ≥ 0.55 before blending; a
+rendered night frame measures **mean saturation ≥ 0.30 and p95 ≥ 0.60**,
+against the 0.10-0.25 and 0.15-0.36 above; the camera passthrough is
+unchanged pixel-for-pixel at the same `uCameraMix`; and no stored pref or
+`rgb=` link renders differently than it does today.
+**Verify** — re-shoot these same four views and re-run the measurement; the
+table above is the before. The camera claim is the one to check by hand, since
+"the room is untouched" is the thing a vibrance stage most easily breaks.
+**Hard stops** — prefs no (the shape *and* the meaning are unchanged; only the
+sampler and a render-time stage move) · url no · capture no · dependency no.
