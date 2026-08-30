@@ -3746,3 +3746,92 @@ re-spaced arc. `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs **no**, and deliberately so: the field is retained
 rather than removed, per the `mix` precedent · url **no**: `?auto=0` keeps its
 meaning · capture no · dependency no.
+
+### 46. Three taps on the gate open the powder
+`status: ready` · added 2026-08-30
+
+**Do** — three rapid taps on the start screen, away from its controls, swap the
+gate for a black field. Tapping it throws down white powder; dragging pushes
+the grains into lines. Three taps again and the gate comes back.
+**Why** — asked for. It is the one part of this app that is allowed to be a
+secret.
+
+**Decided**
+- The trigger → **three taps, each within 600ms of the one before, landing on
+  the gate's background.** Not on Start, and **also not on share, reload or the
+  QR** — Victor said "outside the start button", and every other control on
+  that screen has the same claim to its own taps. **Mine** on extending it, and
+  the test is a `closest()` against the controls rather than a coordinate box,
+  so it cannot drift when entries 43 and 44 move things around.
+- Getting out → **the same three taps.** **Mine.** One gesture in and out is
+  one thing to remember, and an easter egg with a visible close button has
+  stopped being one. It also means the way out is discoverable by anyone who
+  found the way in, which is not true of any other exit.
+- Nothing is stored → no `Prefs` field, no URL parameter, no survival across a
+  reload. **Mine**, and it is worth stating as a decision rather than an
+  omission: an easter egg you cannot lose is not an easter egg, and a mode
+  someone cannot escape by reloading is a trap. It also means this entry trips
+  neither the stored-shape nor the URL Hard Stop by construction rather than by
+  argument.
+- **A separate 2D canvas, not the WebGL pipeline** → the mode is *all black*,
+  which means the visualiser is not on screen at all. Putting powder through
+  the shader stack would mean teaching six geometric shaders about a mode that
+  shows none of them, and widening the ripple buffer a second time. A 2D canvas
+  layered over the hidden one is a few dozen lines and touches nothing else.
+  **Mine**, and it is also what keeps the frame cost of the whole feature
+  inside the feature.
+- The physics → **grains carry a position and a velocity.** A tap sprays a
+  small burst at the finger; a drag lays grains along the path *and gives them
+  the finger's velocity*, which is what makes a line rather than a smudge —
+  the line is a shared direction, not a stroke that was drawn. **And tilt
+  accelerates them**, so the powder slides when the phone leans.
+- Tilt is available here, and that was checked rather than hoped → `main.ts:573`
+  starts the sensor as `startShake(true)` whenever `hasMotionPermissionGate()`
+  is false, and that gate exists only on iOS. So on Android the accelerometer
+  is already live while the gate is up, which is exactly where this mode lives.
+  On iOS it will be the stub, and the powder simply lies still. **No permission
+  prompt is added** — an easter egg must never be the thing that asks for the
+  accelerometer, and one that did would be a worse feature than no feature.
+- Why tilt at all, when it was not asked for → because it is the difference
+  between a drawing toy and a material. Victor spent the day asking to be
+  "constantly aware of motion and physicality", and a granular substance is the
+  one place in this app where that can be literal rather than a colour bias.
+  **Mine**, and the smallest thing to cut if the build runs long: the powder
+  works without it.
+- `shake.ts` gains a `tilt()` → returning the uncapped −1..1 pair.
+  `gravity()` already computes exactly that and then multiplies by
+  `MAX_OFFSET * GRAVITY_FRACTION`, a cap that means something to the tumble and
+  nothing to a grain of powder. Dividing it back out at the call site is how
+  two meanings of "tilt" start drifting apart, so `gravity()` is expressed in
+  terms of `tilt()` instead. **Mine**, and it is the repo's export-rather-than-
+  duplicate rule applied to a number instead of a function.
+- The grain cap → **3000, oldest fading first.** The number is a frame-time
+  question rather than a design one, so it is a starting point and the numeric
+  readout is what settles it; what matters is that the cap fades rather than
+  refuses, because a canvas that silently stops accepting powder reads as
+  broken while one that slowly forgets reads as powder.
+- Leaving must be exact → on exit the gate returns as it was, idle preview
+  still running, Start still armed. The easter egg hides the gate rather than
+  tearing it down, so there is nothing to rebuild and nothing to get wrong.
+
+**Lands in**
+- `src/powder.ts` — new. Grains, the tap and drag handlers, the 2D loop.
+- `index.html` — a second canvas and the black layer above `#canvas`, below
+  `#gate`, hidden by default.
+- `src/main.ts`, the gate's setup — the three-tap recogniser and the swap.
+- `src/shake.ts:342-348` — `tilt()`, with `gravity()` rewritten to use it.
+
+**Done when** — three quick taps on empty gate turn the screen black; tapping
+throws white powder that stays where it lands; dragging draws a line of it that
+keeps the direction of the drag; tilting the phone makes the powder slide
+downhill on Android; three more taps restore the gate with the preview still
+running and Start still working. Tapping Start, share, reload or the QR never
+counts toward the three, however fast. A reload always returns the ordinary
+gate.
+**Verify** — the phone, for all of it: the tap rhythm, the drag, and the tilt
+are three things a mouse cannot answer. Watch the frame time with the canvas
+full of grains, at 320×568 and 360×640. Confirm on a desktop browser that the
+powder still works with no accelerometer at all, which is the iOS path.
+`pnpm build`, `pnpm lint`.
+**Hard stops** — prefs no (nothing is stored) · url no (no parameter) · capture
+no · dependency no (2D canvas, no library).
