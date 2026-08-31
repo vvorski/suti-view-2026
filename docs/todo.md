@@ -11389,7 +11389,7 @@ point: it must work as the phone is.
 function that already exists, no animation library (entry 94 settled that).
 
 ### 100. The sun says how often, the moon says how far
-`status: ready` · added 2026-08-30 · build after 89, 90 and 96
+`status: building` · added 2026-08-30 · build after 89, 90 and 96
 
 **Do** — put the director's own energy on the two natural clocks. The solar
 cycle sets how *often* it moves; the lunar cycle sets how *far* a move goes and
