@@ -12,7 +12,8 @@
  *   node --experimental-strip-types scripts/probe-moon.ts
  */
 
-import { moonFor } from '../src/moon.ts'
+import { moonFor, moonForLocation, moonAltitudeDeg } from '../src/moon.ts'
+import { solarAltitudeDeg } from '../src/sky.ts'
 
 let failures = 0
 function check(name: string, ok: boolean, detail: string): void {
@@ -207,6 +208,81 @@ const atHour = (base: Date, hour: number): Date => {
   check('full moon high: reach multiplier reaches close to the stated +25%', reachOf(aFull) > 1.2, String(reachOf(aFull)))
   check('full moon high: life multiplier reaches close to the stated +25%', lifeOf(aFull) > 1.2, String(lifeOf(aFull)))
   check('full moon high: cadence multiplier drops close to the stated -35% (rings come more often)', cadenceOf(aFull) < 0.7, String(cadenceOf(aFull)))
+}
+
+// 6. `moonForLocation` — docs/todo.md entry 97's real-position addition.
+//    No live almanac was reachable to check an exact moonrise minute
+//    against, so this checks the same kind of thing section 5 of
+//    probe-sky.ts does for the sun: identities that must hold regardless of
+//    ephemeris precision, using this file's own `KNOWN_NEW_MOON_MS` — which
+//    moon.ts's own header already asserts is a real new moon, not merely a
+//    convenient number — as the one calibration point available.
+{
+  // At a genuine new moon, the moon sits very close to the sun in the sky
+  // — near enough in elongation that its altitude, from anywhere on Earth,
+  // should read close to the sun's own altitude at that same instant. This
+  // needed no assumed lunar almanac to check: both altitudes come from this
+  // codebase's own two independent position algorithms, and "the moon is
+  // near the sun at new moon" is true regardless of either algorithm's
+  // precision.
+  const t = new Date(KNOWN_NEW_MOON_MS)
+  for (const [name, latitude, longitude] of [
+    ['New York', 40.7, -74.0],
+    ['Greenwich', 51.5, 0],
+    ['equator/prime meridian', 0, 0],
+    ['Sydney', -33.9, 151.2],
+  ] as [string, number, number][]) {
+    const sunAlt = solarAltitudeDeg(t, { latitude, longitude })
+    const moonAlt = moonAltitudeDeg(t, { latitude, longitude })
+    check(`at the reference new moon, ${name}: moon altitude close to the sun's`, near(moonAlt, sunAlt, 3), `sun ${sunAlt.toFixed(2)}, moon ${moonAlt.toFixed(2)}`)
+  }
+
+  // Illuminated fraction from the real elongation should land near the
+  // same landmarks section 1 already proved for the synodic-clock proxy —
+  // two independently-modelled paths agreeing on the same real phases.
+  const newMoonReal = moonForLocation(t, { latitude: 51.5, longitude: 0 })
+  check('moonForLocation at the reference new moon: illuminated close to 0', near(newMoonReal.illuminated, 0, 0.02), String(newMoonReal.illuminated))
+
+  const fullMoonReal = moonForLocation(new Date(KNOWN_NEW_MOON_MS + (SYNODIC_MONTH_DAYS / 2) * 86_400_000), {
+    latitude: 51.5,
+    longitude: 0,
+  })
+  check('moonForLocation half a synodic month later: illuminated close to 1', fullMoonReal.illuminated > 0.9, String(fullMoonReal.illuminated))
+
+  const firstQuarterReal = moonForLocation(new Date(KNOWN_NEW_MOON_MS + (SYNODIC_MONTH_DAYS / 4) * 86_400_000), {
+    latitude: 51.5,
+    longitude: 0,
+  })
+  check('moonForLocation a quarter month later: illuminated close to 0.5', near(firstQuarterReal.illuminated, 0.5, 0.05), String(firstQuarterReal.illuminated))
+  check('moonForLocation a quarter month later: waxing (growing toward full)', firstQuarterReal.waxing > 0.9, String(firstQuarterReal.waxing))
+
+  // Presence is bounded and finite across a scattered lat/lon/time sweep —
+  // the same basic sanity probe-sky.ts's own sweep checks for the sun.
+  let minPresence = Infinity
+  let maxPresence = -Infinity
+  let anyNaN = false
+  for (let i = 0; i < 200; i++) {
+    const lat = -80 + ((i * 37) % 160)
+    const lon = -170 + ((i * 53) % 340)
+    const date = new Date(KNOWN_NEW_MOON_MS + i * 86_400_000 * 1.3)
+    const m = moonForLocation(date, { latitude: lat, longitude: lon })
+    if (Number.isNaN(m.presence) || Number.isNaN(m.illuminated) || Number.isNaN(m.waxing)) anyNaN = true
+    minPresence = Math.min(minPresence, m.presence)
+    maxPresence = Math.max(maxPresence, m.presence)
+  }
+  check('no NaN across a scattered moonForLocation sweep', !anyNaN, 'a NaN field was produced')
+  check('presence stays within [0, 1] across the sweep', minPresence >= 0 && maxPresence <= 1, `${minPresence} .. ${maxPresence}`)
+}
+
+// 7. `moonFor` itself is untouched by entry 97 — the same regression guard
+//    probe-sky.ts's own section 9 runs for `skyFor`, and for the same
+//    reason: sections 1-5 above were written for entry 96 and would not by
+//    themselves prove entry 97 left this function alone.
+{
+  const newMoonProxy = moonFor(atQuarters(0))
+  check('moonFor still reads new moon at age 0 after entry 97\'s edit', near(newMoonProxy.illuminated, 0, 1e-6), String(newMoonProxy.illuminated))
+  const fullMoonProxy = moonFor(atQuarters(2))
+  check('moonFor still reads full moon at age 2 quarters after entry 97\'s edit', near(fullMoonProxy.illuminated, 1, 1e-6), String(fullMoonProxy.illuminated))
 }
 
 console.log(failures === 0 ? '\nall moon checks passed' : `\n${failures} check(s) failed`)

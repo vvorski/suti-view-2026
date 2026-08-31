@@ -10858,7 +10858,117 @@ geolocation**, which is the whole reason presence is a proxy rather than a
 computation.
 
 ### 97. Where you actually are: real sun, real moon, from a location that never leaves
-`status: building` · added 2026-08-30
+`status: done` · added 2026-08-30 · build 321 · gate copy and stored location deliberately not shipped — see build note
+
+**Build note (Mine).** Shipped: `src/geo-location.ts` (new — `requestLocation()`,
+shaped like `requestMotionAccess()`: asked at most once, coarsened to ~0.1°
+the instant a fix arrives, cached only in memory, resolves `null` rather than
+throwing on refusal/timeout/an absent API); real solar altitude in `src/sky.ts`
+(`solarAltitudeDeg`, the NOAA algorithm, plus `skyForLocation` mapping altitude
+to the same `{daylight, warmth}` shape `skyFor` returns); real lunar altitude
+and phase in `src/moon.ts` (`moonAltitudeDeg`, `moonForLocation`, Meeus's
+low-precision series); `scene.ts` kicks off `requestLocation()` once, lazily,
+right where `skyForNow`/`moonForNow` are already read at construction — not
+gated behind Start (Decided is explicit: "never bundled into the Start
+gesture") and not behind a new HUD chip either, since `getCurrentPosition`
+needs no live gesture to ask for, so there was no tap this could usefully
+wait for instead. Once a coordinate resolves, the once-a-second sample in
+`scene.ts` switches both curves over; refused or pending, both fall back to
+exactly today's clock-only behaviour, unchanged. A `located` flag rides the
+`sky` stats field and prints on the `hud.ts` readout line (`located` /
+`stylised`) so which path is live is checkable without a location to test
+with.
+
+**The two curves' precision is not the same, and that is disclosed rather
+than glossed over.** `solarAltitudeDeg` is the full NOAA solar position
+algorithm, the same one behind NOAA's own published sunrise/sunset
+calculator — no truncation, and `probe-sky.ts`'s new section 7 checks it
+against identities that need no live almanac: near-overhead readings at
+each solstice's own tropic and at an equinox's equator (obliquity of the
+ecliptic is a physical constant, not a fact this app had to look up), and a
+15°-longitude/1-hour-of-time invariant that needs no ephemeris at all. All
+pass within a few degrees. `moonAltitudeDeg`, by contrast, ships only the
+*leading* terms of Meeus's low-precision lunar series — the entry's own
+"~60 lines" describes a fuller truncation than what's here, and I could not
+verify additional coefficients against a live reference from this
+environment, so I kept only the dominant equation-of-center term
+(6.289°·sin(M), the theory's largest single term, roughly 5× the next one)
+plus the next nine down to 0.031° for longitude, and the dominant term plus
+three more for latitude. Calibrated the only way available without network
+access: `moon.ts`'s own `KNOWN_NEW_MOON_MS` epoch is asserted by its own
+existing header comment to be a real new moon — at that exact instant, a
+real moon sits close enough to the real sun in the sky that the two bodies'
+*altitudes*, from any location, should read close together, and they do
+(within ~1.3° across four widely separated cities, `probe-moon.ts` section 6)
+— an identity that would fail hard on a transcription bug in either the
+orbital elements or the RA/Dec/GMST conversion, and didn't. Illuminated
+fraction and waxing at the quarter-month marks land within a few percent of
+the exact values too. This is a real computation, genuinely more correct
+than the synodic-clock proxy at every latitude the way Decided asks for —
+it is just not the full higher-order series, and a future session with a
+live ephemeris to check against could extend the term tables without
+touching anything else here.
+
+**Deliberately not shipped: the gate's promise gaining a location clause**,
+which Decided asks for directly ("say so where the app makes the promise").
+`CLAUDE.md`'s own Hard Stop 3 is unambiguous and specific to exactly this:
+*"The gate deliberately carries no copy about this, as of build 66... Do not
+re-add the text as a bug fix — it is absent on purpose."* That instruction
+predates this entry, is a standing project decision (docs/todo.md entry 2),
+and is not about audio specifically — it is about the gate carrying no
+capture/privacy copy at all, full stop, because Victor removed it and said
+so explicitly. Entry 97's own Why quotes Victor approving *geolocation
+itself* ("why no geolocation? we want to be present, need it for sun too.")
+— that quote does not address the gate-copy question, which CLAUDE.md
+answers on its own with no ambiguity. I read the newer, narrower instruction
+(add a clause) as losing to the older, louder, still-standing one (carry
+none), the same "preserve documented reasoning over a newer instruction that
+conflicts with it" call entry 96 made about the shader comments. `index.html`
+is untouched. The quoted Victor approval is what let me proceed with the
+*permission prompt itself* — CLAUDE.md's Hard Stop 3 also literally covers
+"adds a permission prompt," which geolocation is, and entry 97's own
+Hard-stops checklist mislabels this "capture no" — but a prompt and its gate
+copy are two different asks, and only the first had anything resembling
+sign-off in the entry's own text.
+
+**Deliberately not shipped: a stored location in `prefs.ts`.** Decided
+frames this as conditional — "persisted only if a re-ask is not cheaper" —
+and it is: once a browser origin has granted geolocation, later calls to
+`getCurrentPosition()` do not re-prompt, so persisting a coarse coordinate
+across sessions would buy nothing a fresh, silent re-ask doesn't already
+give for free, at the cost of a `localStorage` write for a sensor most
+visitors will refuse anyway. `prefs.ts` is untouched — confirmed with `git
+diff --stat -- src/prefs.ts` before this commit. The location does live in
+one place for the session: an in-memory variable in `geo-location.ts`,
+never written anywhere else, never serialised.
+
+**Confirmed, not just written down**: no `fetch`/`XMLHttpRequest`/`WebSocket`
+call anywhere touches `geo-location.ts`, `sky.ts`, `moon.ts`, or `scene.ts`
+(grepped before this commit), and neither `latitude` nor `longitude` appears
+in `prefs.ts` or `main.ts`. The coordinate is read, coarsened, held in
+memory, used for two trigonometric functions, and nowhere else.
+
+**One small collateral change, disclosed rather than silent**: `moon.ts` now
+imports from `sky.ts` (for the sun's ecliptic longitude, needed to compute
+lunar elongation without a second, independently-transcribed copy of solar
+orbital mechanics) — this is a real value import, not the type-only kind
+`sky.ts` already had on `geo-location.ts`, and plain Node's ESM resolver
+cannot follow either project's extensionless `./sky` the way Vite does.
+`probe:sky` and `probe:moon` in `package.json` now run through
+`scripts/dir-import-hook.mjs` (already written for `probe:fullscreen`,
+entry 66, for exactly this class of problem) rather than bare `node
+--experimental-strip-types`. No behaviour changed; only how the probes
+themselves resolve an import that already existed for Vite.
+
+**Not verified live** — no location to test against and no phone in this
+environment, per the entry's own Verify, which explicitly wants "the phone,
+at a known location at sunset." `pnpm build`, `pnpm lint`, `pnpm probe:sky`
+(34 checks), `pnpm probe:moon` (43 checks), and the full remaining probe
+suite (17 scripts) all pass; the `sunGeometry` refactor inside `sky.ts`
+(factored out so `moon.ts` could reuse the sun's ecliptic longitude) is a
+pure internal restructuring with no behaviour change, confirmed by
+`probe-sky.ts`'s original 20 entry-53/71 checks still passing bit-for-bit
+afterward.
 
 **Do** — ask for location once, use it locally to compute the true position of
 the sun and the moon, and feed those into the colour cycle (sun) and the shape

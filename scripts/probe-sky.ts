@@ -12,7 +12,7 @@
  *   node --experimental-strip-types scripts/probe-sky.ts
  */
 
-import { skyFor } from '../src/sky.ts'
+import { skyFor, skyForLocation, solarAltitudeDeg } from '../src/sky.ts'
 
 let failures = 0
 function check(name: string, ok: boolean, detail: string): void {
@@ -176,6 +176,122 @@ const near = (a: number, b: number, eps = 1e-6): boolean => Math.abs(a - b) < ep
   const nearAnchor = Math.abs(skyFor(dateAt(10, 31)).daylight - skyFor(dateAt(10, 30)).daylight)
   const midSegment = Math.abs(skyFor(dateAt(8, 31)).daylight - skyFor(dateAt(8, 30)).daylight) // ~midpoint of 6:30-10:30
   check('the rate of change eases near an anchor rather than staying constant', nearAnchor < midSegment, `${nearAnchor} vs ${midSegment}`)
+}
+
+// 7. `solarAltitudeDeg` — docs/todo.md entry 97's real-position addition,
+//    unlike everything above with no live almanac to check an exact minute
+//    against. Checked instead against identities that hold regardless of
+//    ephemeris precision: axial tilt itself (obliquity ~23.44°, which does
+//    not depend on which exact instant "the solstice" is), and the
+//    algorithm's own internal consistency between longitude and time —
+//    neither needs an external reference to be verifiable.
+{
+  // Near the June solstice, the sub-solar point sits at the Tropic of
+  // Cancer: local noon there should read close to straight up. "Close",
+  // not exact — the sampled instant is a fixed clock time, not the
+  // solstice's own exact moment (which drifts a few hours year to year),
+  // and 12:00 UTC at longitude 0 is only within the equation of time's own
+  // few minutes of true local solar noon. Both slack sources are small
+  // near a solstice, where declination changes slowest of the whole year.
+  const juneNoonAtTropic = solarAltitudeDeg(new Date('2026-06-21T12:00:00Z'), { latitude: 23.4367, longitude: 0 })
+  check('June solstice, noon, Tropic of Cancer: sun close to overhead', near(juneNoonAtTropic, 90, 3), String(juneNoonAtTropic))
+
+  // Same instant, at the equator instead: altitude should be ~(90 -
+  // obliquity) — the sun sits obliquity degrees off overhead in latitude.
+  const juneNoonAtEquator = solarAltitudeDeg(new Date('2026-06-21T12:00:00Z'), { latitude: 0, longitude: 0 })
+  check(
+    'June solstice, noon, equator: altitude close to 90 - 23.44',
+    near(juneNoonAtEquator, 90 - 23.4367, 3),
+    String(juneNoonAtEquator),
+  )
+
+  // December solstice flips the hemisphere: same near-overhead reading, now
+  // at the Tropic of Capricorn.
+  const decNoonAtTropic = solarAltitudeDeg(new Date('2026-12-21T12:00:00Z'), { latitude: -23.4367, longitude: 0 })
+  check('December solstice, noon, Tropic of Capricorn: sun close to overhead', near(decNoonAtTropic, 90, 3), String(decNoonAtTropic))
+
+  // Near an equinox, the sub-solar point sits on the equator: noon there
+  // should also read close to overhead. Slacker tolerance than the
+  // solstice checks — declination moves at its fastest through the year
+  // right at an equinox, so a fixed clock time is less forgiving here.
+  const marchNoonAtEquator = solarAltitudeDeg(new Date('2026-03-20T12:00:00Z'), { latitude: 0, longitude: 0 })
+  check('March equinox, noon, equator: sun close to overhead', near(marchNoonAtEquator, 90, 5), String(marchNoonAtEquator))
+
+  // An identity that needs no ephemeris at all: 15° of longitude is exactly
+  // one hour of true solar time, and going *east* moves local solar noon
+  // *earlier* in UTC — so the same latitude one UTC hour earlier at a
+  // location 15° further east sees (to a first approximation — declination
+  // itself creeps a little in an hour, which is what the tolerance covers)
+  // the same sun height as the origin.
+  const base = solarAltitudeDeg(new Date('2026-05-01T12:00:00Z'), { latitude: 45, longitude: 0 })
+  const shifted = solarAltitudeDeg(new Date('2026-05-01T11:00:00Z'), { latitude: 45, longitude: 15 })
+  check('15° east, 1 hour earlier UTC, reads the same sun height as the origin', near(base, shifted, 0.1), `${base} vs ${shifted}`)
+
+  // Bounded and finite across a scattered sweep of lat/lon/time — the basic
+  // sanity a spherical-trig formula can silently fail (a sign flip putting
+  // the sun below the horizon at local noon on the equator, a NaN from an
+  // out-of-domain asin) without any single check above catching it.
+  let minAlt = Infinity
+  let maxAlt = -Infinity
+  let anyNaN = false
+  for (let i = 0; i < 200; i++) {
+    const lat = -80 + ((i * 37) % 160)
+    const lon = -170 + ((i * 53) % 340)
+    const date = new Date(Date.UTC(2026, i % 12, 1 + (i % 27), i % 24, (i * 7) % 60))
+    const alt = solarAltitudeDeg(date, { latitude: lat, longitude: lon })
+    if (Number.isNaN(alt)) anyNaN = true
+    minAlt = Math.min(minAlt, alt)
+    maxAlt = Math.max(maxAlt, alt)
+  }
+  check('no NaN across a scattered lat/lon/time sweep', !anyNaN, 'a NaN altitude was produced')
+  check('altitude stays within [-90, 90] across the sweep', minAlt >= -90 && maxAlt <= 90, `${minAlt} .. ${maxAlt}`)
+}
+
+// 8. `skyForLocation` — the same `Sky` shape `skyFor` returns, so this only
+//    needs to check its own mapping from altitude, not re-derive daylight
+//    or warmth from scratch. The near-overhead instants from section 7 are
+//    reused as "definitely full daylight, definitely near the midday
+//    warmth anchor" fixtures, and a definite night instant for the other end.
+{
+  const overhead = skyForLocation(new Date('2026-06-21T12:00:00Z'), { latitude: 23.4367, longitude: 0 })
+  check('sun near overhead: daylight is fully 1', near(overhead.daylight, 1, 1e-6), String(overhead.daylight))
+  check('sun near overhead: warmth sits at the clamped midday value', near(overhead.warmth, -0.1, 0.02), String(overhead.warmth))
+
+  // Local midnight at the same place: the sun is on the far side of the
+  // Earth, altitude deep below the -6° civil-twilight floor.
+  const midnight = skyForLocation(new Date('2026-06-22T00:00:00Z'), { latitude: 23.4367, longitude: 0 })
+  check('local midnight: daylight is fully 0', near(midnight.daylight, 0, 1e-6), String(midnight.daylight))
+  check('local midnight: warmth sits at the clamped night floor', near(midnight.warmth, -0.35, 0.02), String(midnight.warmth))
+
+  // Bounds hold across the same sweep section 7 used for solarAltitudeDeg.
+  let minDay = Infinity
+  let maxDay = -Infinity
+  let minWarm = Infinity
+  let maxWarm = -Infinity
+  for (let i = 0; i < 200; i++) {
+    const lat = -80 + ((i * 37) % 160)
+    const lon = -170 + ((i * 53) % 340)
+    const date = new Date(Date.UTC(2026, i % 12, 1 + (i % 27), i % 24, (i * 7) % 60))
+    const sky = skyForLocation(date, { latitude: lat, longitude: lon })
+    minDay = Math.min(minDay, sky.daylight)
+    maxDay = Math.max(maxDay, sky.daylight)
+    minWarm = Math.min(minWarm, sky.warmth)
+    maxWarm = Math.max(maxWarm, sky.warmth)
+  }
+  check('daylight stays within [0, 1] across the sweep', minDay >= 0 && maxDay <= 1, `${minDay} .. ${maxDay}`)
+  check('warmth stays within the anchor table\'s own [-0.35, 0.55] across the sweep', minWarm >= -0.35 - 1e-9 && maxWarm <= 0.55 + 1e-9, `${minWarm} .. ${maxWarm}`)
+}
+
+// 9. `skyFor` itself is untouched by any of the above — same anchors, same
+//    values, re-checked here as a regression guard specifically against
+//    entry 97's edit rather than relying on sections 1-6 having already
+//    covered it (they were written for entry 71 and would not by
+//    themselves prove entry 97 left this function alone).
+{
+  const noon = skyFor(dateAt(12, 0))
+  check('skyFor still reports the day plateau at noon after entry 97\'s edit', near(noon.daylight, 1, 1e-6), String(noon.daylight))
+  const midnightClock = skyFor(dateAt(0, 30))
+  check('skyFor still reports the night floor after entry 97\'s edit', near(midnightClock.daylight, 0, 1e-6), String(midnightClock.daylight))
 }
 
 console.log(failures === 0 ? `\nall checks passed` : `\n${failures} check(s) failed`)

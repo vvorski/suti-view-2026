@@ -55,8 +55,9 @@ import {
   type MotionBias,
 } from './engine'
 import { MAX_OFFSET, overscanFor, type TumbleState } from './shake'
-import { skyFor } from './sky'
-import { moonFor, type Moon } from './moon'
+import { skyFor, skyForLocation } from './sky'
+import { moonFor, moonForLocation, type Moon } from './moon'
+import { requestLocation, type GeoLocation } from './geo-location'
 import type { SkyOverride } from './prefs'
 import compositeFrag from './shaders/composite.frag.glsl?raw'
 import vertexShader from './shaders/fullscreen.vert.glsl?raw'
@@ -423,8 +424,11 @@ export interface Visualiser {
     /** docs/todo.md entry 53 — the clock's own current pair, and whether
      *  the outdoor-reading override is currently pinning it. Testable
      *  without waiting for dusk: the readout prints what the clock says
-     *  right now, over the pair `sky.ts` is a pure function of. */
-    sky: { daylight: number; warmth: number; override: number }
+     *  right now, over the pair `sky.ts` is a pure function of.
+     *  `located` — docs/todo.md entry 97 — is whether that pair came from
+     *  a real granted coordinate (`skyForLocation`) or the clock-only
+     *  fallback (`skyFor`), so the readout can say which one is live. */
+    sky: { daylight: number; warmth: number; override: number; located: boolean }
     /** docs/todo.md entry 96 — the moon's own current fields, over the
      *  same "testable without waiting" reasoning as sky above: what night
      *  the app thinks it is, without waiting a month to check the math. */
@@ -586,6 +590,18 @@ export function createVisualiser(
   // actually loaded at rather than defaulting to night — docs/todo.md
   // entry 53.
   const skyForNow = skyFor(new Date())
+
+  // docs/todo.md entry 97 — asked once, lazily, right here rather than
+  // gated behind a HUD control: `getCurrentPosition` needs no live user
+  // gesture (unlike `getUserMedia` above), so there is no tap this can ride
+  // instead of just asking. Every sample before this resolves, and every
+  // sample forever after if it resolves to `null`, uses `skyFor`'s clock-only
+  // fallback — that path was already the whole feature before this entry
+  // existed, so refusal costs the visitor nothing they didn't already have.
+  let geoLocation: GeoLocation | null = null
+  void requestLocation().then((location) => {
+    geoLocation = location
+  })
 
   const compositeUniforms = {
     uAtmosphere: { value: atmosphereTarget.texture },
@@ -1173,12 +1189,18 @@ export function createVisualiser(
       if (sinceSkySample >= SKY_SAMPLE_S) {
         sinceSkySample = 0
         const sampledAt = new Date()
-        const sky = skyFor(sampledAt)
+        // docs/todo.md entry 97 — real position once granted, the same
+        // clock-only curve as always otherwise. `geoLocation` only ever
+        // moves from null to a coordinate, once, so this check is the
+        // entire integration: no separate "did it just arrive" branch.
+        const sky = geoLocation ? skyForLocation(sampledAt, geoLocation) : skyFor(sampledAt)
         skyDaylightSample = sky.daylight
         skyWarmth = sky.warmth
         // docs/todo.md entry 96 — same instant, same cadence as the sky
         // above; see moonState's own comment for why this isn't chased.
-        moonState = moonFor(sampledAt)
+        // Entry 97: same geoLocation check as the sky sample just above —
+        // one coordinate feeds both real-position paths.
+        moonState = geoLocation ? moonForLocation(sampledAt, geoLocation) : moonFor(sampledAt)
         const moonAbundance = moonAbundanceFor(moonState)
         uniforms.uMoonReach.value = 1 + MOON_REACH_SWING * moonAbundance
         uniforms.uMoonLife.value = 1 + MOON_LIFE_SWING * moonAbundance
@@ -1410,7 +1432,7 @@ export function createVisualiser(
       frameMs,
       pixelRatio: RATIO_LADDER[rung],
       motion: { posture: lastMotion.posture, disturbance: lastMotion.disturbance, agitation: lastMotion.agitation },
-      sky: { daylight: skyDaylight, warmth: skyWarmth, override: overrideCurrent },
+      sky: { daylight: skyDaylight, warmth: skyWarmth, override: overrideCurrent, located: geoLocation !== null },
       moon: { illuminated: moonState.illuminated, waxing: moonState.waxing, presence: moonState.presence },
     }),
 

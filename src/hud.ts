@@ -226,8 +226,9 @@ export interface Hud {
         periodicStrength: number
       }
       /** The clock's own current pair, and the outdoor-reading override's
-       *  own fade position — docs/todo.md entry 53. */
-      sky?: { daylight: number; warmth: number; override: number }
+       *  own fade position — docs/todo.md entry 53. `located` — entry 97 —
+       *  is whether that pair is coming from a real granted coordinate. */
+      sky?: { daylight: number; warmth: number; override: number; located: boolean }
       /** The moon's own current fields — docs/todo.md entry 96, "report it
        *  in the readout" — so what night the app thinks it is is checkable
        *  without waiting a month. */
@@ -1452,7 +1453,11 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
                   ? `  outdoor ${Math.round(s.sky.override * 100)}%`
                   : s.sky.override < 0
                     ? `  night ${Math.round(-s.sky.override * 100)}%`
-                    : ''),
+                    : '') +
+                // docs/todo.md entry 97 — which of the two curves fed the
+                // pair above, since they can print near-identical numbers
+                // near the equinox and the difference is otherwise invisible.
+                (s.sky.located ? '  located' : '  stylised'),
             ]),
         // docs/todo.md entry 96 — Decided's own "report it in the readout":
         // phase (waxing/waning, from the signed term), illuminated fraction
