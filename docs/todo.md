@@ -12067,7 +12067,7 @@ arming gesture, so the change moves capture in the conservative direction only �
 dependency no.
 
 ### 104. The slip needs a direction of its own
-`status: ready` · added 2026-08-30 · fixes 76 without touching what 76 froze
+`status: building` · added 2026-08-30 · fixes 76 without touching what 76 froze
 
 **Do** — give the RGB slip its own held direction vector instead of borrowing
 the tumble offset's instantaneous one. The magnitude spring, its two constants
