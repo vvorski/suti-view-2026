@@ -57,14 +57,16 @@ uniform vec4 uTumble;
 // before this entry.
 uniform float uAtmTumbleScale;
 
-// docs/todo.md entry 76 — the RGB channels' own uv-space separation, along
-// the same direction uTumble.yz already points (no second uniform for
-// direction; it is already here). Already scaled to its cap in rgb-slip.ts,
-// so this is a distance in the same uv units as uTumble.yz, ready to add or
-// subtract directly. 0 at rest — see the uniform branch below, the same
-// bit-identical-when-off property entries 47 and 75 gave uDay and
-// uBeatConfidence.
-uniform float uSlip;
+// docs/todo.md entry 76, given its own held direction by entry 104 — the RGB
+// channels' own uv-space offset, direction and magnitude both, already
+// carried by rgb-slip.ts's own held state rather than borrowed from
+// uTumble.yz. uTumble.yz is a spring and oscillates through zero; a
+// direction taken from it (entry 76's own first attempt) inherited that
+// oscillation and flipped end for end several times a second instead of
+// holding steady while a shake decayed. vec2(0,0) at rest — see the uniform
+// branch below, the same bit-identical-when-off property entries 47 and 75
+// gave uDay and uBeatConfidence.
+uniform vec2 uSlip;
 
 // Passthrough AR: the room, under everything. See camera.ts.
 //
@@ -175,18 +177,18 @@ void main() {
   pAtm = vec2(cAtm * pAtm.x - sAtm * pAtm.y, sAtm * pAtm.x + cAtm * pAtm.y) / (1.0 + uTumble.w);
   vec2 uvAtm = clamp(pAtm + uTumble.yz * uAtmTumbleScale + 0.5, 0.0, 1.0);
 
-  // docs/todo.md entry 76 — red leads, blue trails, green holds still, along
-  // the same direction the tumble's own offset already points. A uniform
+  // docs/todo.md entry 76, given its own held direction by entry 104 — red
+  // leads, blue trails, green holds still, along rgb-slip.ts's own held
+  // direction rather than the tumble's own (oscillating) offset. A uniform
   // branch, identical for every fragment in this draw, so a still phone
-  // (uSlip == 0) samples each texture once, exactly as before this entry —
-  // not merely close to it, since the `else` here is those original two
-  // lines unchanged. Each layer slips around its own uv (uv for geometry,
-  // uvAtm for atmosphere — entry 82), not a shared one.
+  // (uSlip == vec2(0,0)) samples each texture once, exactly as before entry
+  // 76 — not merely close to it, since the `else` here is those original
+  // two lines unchanged. Each layer slips around its own uv (uv for
+  // geometry, uvAtm for atmosphere — entry 82), not a shared one.
   vec3 atm;
   vec3 geo;
-  if (uSlip > 0.0) {
-    vec2 slipDir = length(uTumble.yz) > 1e-5 ? normalize(uTumble.yz) : vec2(0.0);
-    vec2 off = slipDir * uSlip;
+  if (uSlip.x != 0.0 || uSlip.y != 0.0) {
+    vec2 off = uSlip;
     vec2 uvR = clamp(uv + off, 0.0, 1.0);
     vec2 uvB = clamp(uv - off, 0.0, 1.0);
     vec2 uvAtmR = clamp(uvAtm + off, 0.0, 1.0);

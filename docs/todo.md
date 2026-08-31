@@ -12067,7 +12067,72 @@ arming gesture, so the change moves capture in the conservative direction only �
 dependency no.
 
 ### 104. The slip needs a direction of its own
-`status: building` · added 2026-08-30 · fixes 76 without touching what 76 froze
+`status: done` · added 2026-08-30 · fixes 76 without touching what 76 froze · build 337
+
+**Build note (Mine except STIFF/DAMP/MAX_SLIP, frozen at build 249, and
+BOUNCE-unrelated — nothing here touches them).** Shipped where Lands-in
+says: `rgb-slip.ts` gains a held direction (`dirX`/`dirY`, plus a
+`peakMag` the gate below reads); `composite.frag.glsl:uSlip` becomes a
+`vec2`, and `off` is read straight from it instead of
+`normalize(uTumble.yz)`; `scene.ts`'s `uSlip` uniform and the `updateRgbSlip`
+call site follow. One addition Lands-in doesn't name: `shake.ts`'s
+`TumbleState` gains `accelX`/`accelY` — the raw, gravity-subtracted,
+pre-spring in-plane acceleration `Tumble.sample()` already computes as a
+local (`ax`/`ay`) every sample. This is the actual "in-plane acceleration
+the tumble is built from" Decided points to; it did not previously escape
+the class as a field anyone else could read, and rgb-slip.ts's direction
+needs exactly this, not the spring built from it. `setTumble` already
+receives the whole `TumbleState`, so no new plumbing reaches main.ts at
+all — the two new fields are recorded in `scene.ts`'s own `setTumble` into
+two closure variables, read back one line later in `render()`'s existing
+`updateRgbSlip` call, the same "reads a sensor, never written back" shape
+this file already uses for `motionTiltX/Y` and `emitterGravityX/Y`.
+
+**A second, real bug, found only because the acceptance test is a number
+and not a description.** The obvious first design — ease the held
+direction toward the raw sample's own unit bearing whenever its magnitude
+clears a small fixed deadzone (0.05 m/s², an order below `shake.ts`'s own
+`FLOOR`) — passed at the 30 m/s² knock `scripts/probe-rgb-slip.ts`'s own
+handling table already uses, and failed at 60 m/s² and above. The cause is
+not in this entry's own new code: `shake.ts`'s gravity DC estimate
+(`GRAVITY_TAU`, 0.5s) is a first-order high-pass, and any first-order
+high-pass rings a real, opposite-signed "droop" after a one-sided pulse —
+measured directly, the rebound after a 30 m/s² knock exceeds 1 m/s² for
+over half a second and takes nearly two seconds to fall under 0.1 m/s²,
+scaling roughly with the kick that caused it. A fixed absolute deadzone can
+only ever be tuned against one kick size; at 30 m/s² it happened to sit
+above the rebound, at 60 it did not. The actual fix, `PEAK_RATIO`: the
+direction updates only while a sample's own magnitude is within half of
+this gesture's own recent peak (a peak-hold with `PEAK_TAU`, the identical
+shape `shake.ts`'s own `envelope` already uses) — a rebound is by
+definition smaller than the peak it followed, so a *ratio* rejects it at
+any amplitude where an absolute number can only ever reject one. Verified
+in `probe-rgb-slip.ts` up to 120 m/s² (2.7× the handling table's own most
+violent case), and against a genuine second, oppositely-aimed hit (the
+existing "knock + rebound" scenario), which correctly still registers as
+one real reversal rather than being swallowed by the same gate.
+
+**The stale comment, found while in there per Decided's own instruction.**
+`MAX_SLIP`'s comment claimed "about two to four pixels on a phone."
+Measured: the compositor's own `uv` spans 0-1 across the *full* frame width
+(not the aspect-normalised uv the geometric shaders use internally), so on
+Decided's own worked example — a 1080px-wide phone — 0.006 uv is 6.48px per
+channel, ~13px of total R-to-B separation at the cap. The comment was
+wrong, not the geometry; fixed the comment, left `MAX_SLIP` itself
+untouched, exactly as Decided requires. `probe-rgb-slip.ts` now asserts
+this figure directly.
+
+**Not independently verified: the phone, moved briskly once** (Verify's own
+second sentence). The probe is Verify's own first-listed method and is the
+one built to be exhaustive here — 12 checks including the exact reversal
+count and pixel measurement Decided's own acceptance criterion asks for,
+plus the regression guard against the exact bug found while building this.
+Left for Victor, the same pattern entries 102 and 103 already used this
+window for the live half of Verify.
+
+`pnpm build`, `pnpm lint`, and the full `pnpm probe:*` suite (19 scripts)
+all pass with no regressions.
+
 
 **Do** — give the RGB slip its own held direction vector instead of borrowing
 the tumble offset's instantaneous one. The magnitude spring, its two constants

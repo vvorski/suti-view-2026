@@ -34,6 +34,18 @@ export interface TumbleState {
   offsetY: number
   /** Overscan that keeps the rotated, drifted frame from showing its edges. */
   zoom: number
+  /**
+   * docs/todo.md entry 104 — the raw in-plane acceleration (m/s², gravity
+   * already subtracted, screen x/y axes) behind the most recent sample, held
+   * at that value between samples rather than decayed or zeroed. This is the
+   * same `ax`/`ay` the offset spring's own kicks are built from, exposed
+   * before it becomes a spring: `offsetX`/`offsetY` above oscillate through
+   * zero as that spring rings, which is exactly what a direction taken from
+   * them cannot survive (see rgb-slip.ts). A raw sample has no such
+   * oscillation — it is only ever as noisy as the sensor itself.
+   */
+  accelX: number
+  accelY: number
 }
 
 /** One accelerometer reading. Units are m/s², as DeviceMotionEvent reports. */
@@ -359,6 +371,10 @@ export class Tumble {
   private seeded = false
 
   private disturb = 0
+  /** docs/todo.md entry 104 — the raw in-plane acceleration behind the most
+   *  recent sample. See TumbleState's own `accelX`/`accelY` comment. */
+  private accelX = 0
+  private accelY = 0
   /** Kicks accumulated since the last frame, applied on advance. */
   private pendingSpin = 0
   private pendingX = 0
@@ -551,6 +567,11 @@ export class Tumble {
     const ay = s.y - this.gravY
     const az = s.z - this.gravZ
     const mag = Math.sqrt(ax * ax + ay * ay + az * az)
+    // docs/todo.md entry 104 — held at this sample's own value until the
+    // next one arrives, never decayed here: decay is rgb-slip.ts's own
+    // magnitude spring's job, this is only ever a raw reading.
+    this.accelX = ax
+    this.accelY = ay
 
     this.samples++
     if (mag > this.peak) this.peak = mag
@@ -750,6 +771,8 @@ export class Tumble {
       offsetX: this.offX,
       offsetY: this.offY,
       zoom,
+      accelX: this.accelX,
+      accelY: this.accelY,
     }
   }
 
@@ -794,6 +817,8 @@ export const STILL: TumbleState = {
   offsetX: 0,
   offsetY: 0,
   zoom: 0,
+  accelX: 0,
+  accelY: 0,
 }
 
 /** docs/todo.md entry 86 — the refused/unavailable `ShakeSensor`'s own

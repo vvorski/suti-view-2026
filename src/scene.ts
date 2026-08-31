@@ -666,12 +666,13 @@ export function createVisualiser(
     // is the only new knob. 0.55 is Victor's call, not derived: the
     // atmosphere is a field and reads as behind the geometry's line work.
     uAtmTumbleScale: { value: 0.55 },
-    // docs/todo.md entry 76 — the RGB channels' own uv-space separation,
-    // already scaled to its cap. Direction comes from uTumble.yz above, not
-    // from a second uniform of its own; see composite.frag.glsl. 0 at rest,
-    // and read as a plain uniform branch there, so a still phone pays for
-    // nothing beyond this one float.
-    uSlip: { value: 0 },
+    // docs/todo.md entry 76, given its own held direction by entry 104 — the
+    // RGB channels' own uv-space separation, already scaled to its cap and
+    // pointed in its own held direction, rather than borrowing uTumble.yz's
+    // own (oscillating) offset — see composite.frag.glsl and rgb-slip.ts.
+    // vec2(0,0) at rest, and read as a plain uniform branch there, so a
+    // still phone pays for nothing beyond this one vec2.
+    uSlip: { value: new Vector2(0, 0) },
     // Passthrough AR. Null until a camera is actually attached: Three binds a
     // default 1x1 white texture for a null sampler, which is never sampled
     // because the shader guards on uCameraMix > 0.
@@ -820,6 +821,13 @@ export function createVisualiser(
   // already recorded here every frame by `setMotion` for the colour bias.
   // No new setter: this is the "no new plumbing at all" the entry asks for.
   const rgbSlip = createRgbSlipState()
+  // docs/todo.md entry 104 — the raw in-plane acceleration behind the slip's
+  // own held direction. Recorded here by setTumble, which already receives
+  // the whole TumbleState `t` these come from — no new setter or plumbing
+  // from main.ts needed, the same "no new plumbing at all" shape entry 76
+  // itself already established for this file.
+  let slipAccelX = 0
+  let slipAccelY = 0
   // docs/todo.md entry 92 — "the stored value" above is now a ramp target,
   // not the value itself: `baseGeoColour`/`baseAtmColour`/`baseCamColour`
   // are what render() actually paints with each frame, and they chase
@@ -1247,11 +1255,12 @@ export function createVisualiser(
       const motion = updateMotionBias(motionBias, dt, motionTiltX, motionTiltY, motionDisturb)
       lastMotion = motion
 
-      // docs/todo.md entry 76. Direction is read from uTumble's own offset
-      // (already uploaded by setTumble, whichever frame called it last),
-      // not stored or recomputed here — this module contributes only the
-      // magnitude, springing toward motionDisturb as a moving target.
-      compositeUniforms.uSlip.value = updateRgbSlip(rgbSlip, dt, motionDisturb)
+      // docs/todo.md entry 76, given its own held direction by entry 104.
+      // `slipAccelX`/`slipAccelY` are the raw sample setTumble recorded,
+      // whichever frame called it last — this module owns the direction's
+      // own held state entirely; nothing here is read back from uTumble.
+      const slip = updateRgbSlip(rgbSlip, dt, motionDisturb, slipAccelX, slipAccelY)
+      compositeUniforms.uSlip.value.set(slip.x, slip.y)
 
       // docs/todo.md entries 47, 53 and 71. The clock is sampled once a
       // second (SKY_SAMPLE_S) rather than every frame — "over a minute the
@@ -1413,6 +1422,12 @@ export function createVisualiser(
       // did, and the overscan has to cover whatever is actually on screen.
       const zoom = Math.max(t.zoom, overscanFor(t.angle, offsetX, offsetY))
       compositeUniforms.uTumble.value.set(t.angle, offsetX, offsetY, zoom)
+      // docs/todo.md entry 104 — recorded here, read by the rgb-slip call in
+      // render() below. `t` is the whole TumbleState already; these two
+      // fields are the raw sample the slip's own held direction eases
+      // toward, kept separate from uTumble's own (oscillating) offset above.
+      slipAccelX = t.accelX
+      slipAccelY = t.accelY
     },
 
     setTouches(next) {
