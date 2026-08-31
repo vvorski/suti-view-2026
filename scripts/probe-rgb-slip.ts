@@ -244,14 +244,80 @@ function countReversals(amp: number, hz = 5.5, knockSeconds = 0.09, seconds = 3)
     check(`a ${amp} m/s² knock also produces zero reversals`, r.reversals === 0, `reversals=${r.reversals}, peak=${r.peakLen}`)
   }
 
-  // And the reverse case: two genuine, oppositely-aimed hits (the existing
-  // "knock + rebound" scenario in the handling table above, at 0.18s — a
-  // full cycle, i.e. one real swing there and one back) must still read as
-  // one real reversal, not be swallowed by the same gate that rejects the
-  // gravity estimate's own artifact.
+  // The gap this section originally had, found by /ccc reviewing entry 104
+  // after it shipped: every case above is a *single half-cycle* knock, which
+  // by construction never reverses its own raw sample. Entry 104's Done-when
+  // says "a synthetic shake", and a shake is an oscillation — measured on the
+  // shipped build, two seconds of sustained shaking gave 19 reversals at 5Hz,
+  // 11 at 3Hz and 7 at a 2Hz wave. The probe passed throughout, because it
+  // never drove more than one half-cycle. These are the cases it was missing.
+  for (const [label, amp, hz] of [
+    ['a 5 Hz shake', 30, 5],
+    ['a 3 Hz shake', 20, 3],
+    ['a 2 Hz wave', 16, 2],
+  ] as const) {
+    const r = countReversals(amp, hz, 2.0, 2.0)
+    check(
+      `${label} sustained for two seconds produces zero direction reversals`,
+      r.reversals === 0,
+      `reversals=${r.reversals}`,
+    )
+  }
+
+  // And the reverse case, restated. This was originally "a genuine second,
+  // oppositely-aimed hit still counts as one reversal" — a guard that the
+  // peak-ratio gate is not so aggressive it swallows real input, checked by
+  // asserting the held direction flips. The guard is still wanted; the
+  // assertion is no longer meaningful, because the held direction is now an
+  // *axis* rather than an arrow. A hit aimed 180° away is the same line, the
+  // shader draws it identically with red and blue swapped, and treating it as
+  // opposing evidence is exactly the fault above. So the gate is checked the
+  // way it can still be checked: a second hit aimed *across* the first must
+  // move the axis, while one aimed back along it must not disturb it.
+  {
+    const dt = 1 / 60
+    const tumble = new Tumble()
+    const slip = createRgbSlipState()
+    for (let i = 0; i < 30; i++) tumble.sample(still(), dt)
+    // 0.09s along x, 1s of quiet, then 0.09s along y.
+    let acrossMoved = false
+    let firstAxis = { x: 0, y: 0 }
+    let t = 0
+    while (t < 2.0) {
+      const along = t < 0.09
+      const across = t >= 1.0 && t < 1.09
+      const a = along || across ? Math.sin((t - (across ? 1.0 : 0)) * 5.5 * Math.PI * 2) * 30 : 0
+      tumble.sample(
+        along ? { x: a, y: -G, z: 0, spin: a * 0.1 }
+          : across ? { x: 0, y: -G + a, z: 0, spin: a * 0.1 }
+            : still(),
+        dt,
+      )
+      const st = tumble.advance(dt)
+      const off = updateRgbSlip(slip, dt, st.disturb, st.accelX, st.accelY)
+      // Sampled while the first knock is still live. By 0.9s `disturb` has
+      // decayed to zero and `updateRgbSlip` returns an exact (0,0) — the held
+      // axis survives (deliberately; it is never reset), but the *offset* it
+      // scales does not, so a later sample point reads nothing at all.
+      if (Math.abs(t - 0.05) < dt / 2) firstAxis = { x: off.x, y: off.y }
+      if (t > 1.02 && len(off) > 1e-7 && len(firstAxis) > 1e-7) {
+        const cos = Math.abs(
+          (off.x * firstAxis.x + off.y * firstAxis.y) / (len(off) * len(firstAxis)),
+        )
+        if (cos < 0.9) acrossMoved = true
+      }
+      t += dt
+    }
+    check('a second hit aimed across the first re-aims the axis', acrossMoved, '')
+  }
+
   {
     const r = countReversals(30, 5.5, 0.18)
-    check('a genuine second, opposite-direction hit still counts as one reversal', r.reversals === 1, `reversals=${r.reversals}`)
+    check(
+      'a second hit aimed back along the first is the same axis, not a reversal',
+      r.reversals === 0,
+      `reversals=${r.reversals}`,
+    )
   }
 
   // docs/todo.md entry 104's other check: MAX_SLIP's own comment claims

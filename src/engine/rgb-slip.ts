@@ -186,13 +186,36 @@ export function updateRgbSlip(
   if (accelMag > state.peakMag) state.peakMag = accelMag
 
   if (accelMag > DIRECTION_DEADZONE && accelMag >= state.peakMag * PEAK_RATIO) {
+    // A dispersion is a *line*, not an arrow. Which end red leads at is
+    // arbitrary — the shader lays red at +off and blue at −off, so flipping
+    // the held direction end for end produces the identical picture with the
+    // two channels swapped, and no eye tracks that at a phone's frame rate.
+    // What the eye does track is the axis wandering.
+    //
+    // That matters because a shake is an *oscillation*: acceleration reverses
+    // twice per cycle, and both halves clear the peak-ratio gate above, since
+    // |a| exceeds half its own peak for most of each half-cycle. Easing the
+    // raw signed vector therefore drags the direction back and forth across
+    // the axis rather than settling on it — measured at 19 reversals through
+    // two seconds of a 5 Hz shake, 11 at 3 Hz, 7 at a 2 Hz wave. Only the
+    // single-knock case the probe covered came out clean, because one
+    // half-cycle never reverses.
+    //
+    // So fold each sample onto the axis already held before easing it in.
+    // A sample pointing the other way down the same line is the *same*
+    // evidence about that line, and counting it as opposing evidence is what
+    // entry 104 set out to stop — this is the same fault as the tumble
+    // offset's zero crossings, one layer further in.
+    const k = 1 - Math.exp(-dt / DIRECTION_TAU)
+    const opposed = state.dirX * accelX + state.dirY * accelY < 0
+    const sampleX = opposed ? -accelX : accelX
+    const sampleY = opposed ? -accelY : accelY
     // Eased toward the raw (unnormalised) reading, not its unit direction —
     // a sample this close to the gesture's own peak is already trustworthy
     // enough that normalising it first would only throw away how dominant
     // it was relative to whatever is smoothing it in.
-    const k = 1 - Math.exp(-dt / DIRECTION_TAU)
-    state.dirX += (accelX - state.dirX) * k
-    state.dirY += (accelY - state.dirY) * k
+    state.dirX += (sampleX - state.dirX) * k
+    state.dirY += (sampleY - state.dirY) * k
   }
 
   const magnitude = state.amount * MAX_SLIP
