@@ -11214,7 +11214,94 @@ dependency **no — a built-in browser sensor, no library; and no network, which
 is the whole reason it was chosen.**
 
 ### 99. The start screen animates on every phone, full stop
-`status: building` · added 2026-08-30 · supersedes 94, strengthens 65
+`status: done` · added 2026-08-30 · supersedes 94, strengthens 65 · build 325
+
+**Build note (Mine).** Shipped: the disc's reduced-motion pulse
+(`start-pulse-reduced` in `index.html`) replaced entirely — it used to shift
+`background` between two lavenders a phone in sunlight cannot tell apart;
+now a `box-shadow` blur/spread plus a `filter: brightness()` swing pulse in
+place on the same 3.4s period, swelling and fading with no scale and no
+outward-travelling ring (those are the actual motion `prefers-reduced-motion`
+exists for). The release name's `mountReleaseName()` in `version.ts` gained
+entry 94's own two-phase decode absorbed whole: phase one is the existing
+history flip, shortened (`NAME_FLIP_MS` 1400ms → 850ms) so it hands over
+rather than running to completion; phase two locks the real name on left to
+right, about every 55ms, with unresolved positions cycling through
+`SCRAMBLE_ALPHABET` — built from the actual characters in `RELEASE_NAMES`,
+not a borrowed alphabet, so a future name can never contain a character the
+scramble has never seen. Reduced motion no longer returns the final name
+immediately (the bug entry 94 diagnosed and this entry fixes for real): it
+now types the name in at about 3 characters a second, unscrambled, which is
+Decided's own distinction between "less motion" and "less information".
+`#motion-glyph` — a single faint dot beside the byline, filled for full
+motion, hollow for reduced, reusing the queue panel's own filled/hollow
+vocabulary — is the one-glance diagnosis the entry exists to add: the actual
+root cause of five failed fix attempts was never a coding failure, it was
+that nobody could confirm the phone was in the state that was silencing the
+animation, and confirming it needed opening `?debug`. The genuinely
+unreachable last-resort path (`RELEASE_NAMES` somehow empty) now fades the
+name up over `index.html`'s new `transition: opacity 400ms ease` on
+`#release-name` via a small `fadeInName()` helper, rather than snapping it
+in — Decided's own explicit rule for that path, even though it cannot
+currently be reached in practice.
+
+**A second instance of the same house-style miss entry 98 already found and
+fixed once.** Writing `scripts/probe-name-decode.ts` to test the new pure
+timing helpers (`lockedCountAt`, `reducedLockedCountAt`, `renderLockFrame`,
+all exported from `version.ts` for exactly this) needed to import
+`version.ts` directly, and hit the identical extensionless-import failure
+entry 98's own build note describes for `moon.ts` → `sky.ts` — except this
+time in `version.ts`'s own pre-existing `import ... from './release-name'`,
+which predates this session entirely and had simply never been exercised by
+a probe before now. Fixed the same way, per CLAUDE.md's own documented
+convention: `from './release-name.ts'`, with the reasoning noted inline the
+same way `haptics.ts` already does it.
+
+**Verified without literal OS-level `prefers-reduced-motion` emulation**,
+which this environment's browser tools have no way to trigger (no DevTools
+Rendering-panel automation available, and `resize_window` did not actually
+change the page's own viewport dimensions when tried, so a true 320/360px
+narrow check is also not confirmed pixel-for-pixel). What was verified
+directly, in a live browser against the dev server: forcing `#start`'s
+animation to `start-pulse-reduced` and comparing the 0%/50% keyframe values
+side by side shows a clearly visible glow swell, not a subtle shift;
+setting `#release-name`'s `textContent` to successive prefixes and to a
+locked-prefix-plus-scrambled-tail string (mirroring exactly what
+`renderLockFrame` produces) confirms both the type-in and the decode render
+correctly inside the reserved 18ch box with no reflow; and toggling
+`#motion-glyph`'s `.full` class confirms the filled/hollow states are both
+visibly distinct. This exercises the same CSS and the same rendering logic
+the real media-query path would trigger, just invoked directly rather than
+through the OS preference itself — a reasonable substitute, not equivalent
+to the entry's own Verify, which the honest answer is: not fully performed
+here. The motion glyph's own risk of a narrow-width layout bug is low
+regardless — it is a 4px dot appended inline into existing text flow, not
+an absolutely-positioned element competing for space the way entry 93's
+queue panel was, which is why that entry needed the narrow-width check this
+one does not lean on as hard.
+
+**A bug in the probe itself, caught by the release name it was testing
+against.** `probe-name-decode.ts`'s first draft hardcoded 3000ms as "long
+enough for the reduced type-in to finish any name" — true for the 9-character
+name this entry started against, false the moment `real room` (9 characters)
+was appended and this build's own `still moves` (11) became current: at 3
+characters/second, 11 characters need ~3.67s, and the check failed honestly
+against its own wrong assumption. Fixed to derive the expected time from the
+target's own length rather than a guessed constant, so the check stays
+correct regardless of which name is live — the actual property being tested
+(reduced motion eventually reaches the real name) was never wrong; the test's
+own timing budget was.
+
+**A process note, disclosed rather than quietly corrected**: this entry's
+implementation was written and locally verified before its `status:
+building` claim was committed and pushed, out of sequence with this
+project's own stated protocol (claim first, then implement). Checked before
+committing the claim: `origin/main` still showed entry 99 as `ready`, so no
+collision actually occurred — but the sequence itself was wrong, and is
+recorded here rather than silently fixed by pretending the order was
+correct.
+
+**Do** — make both the play disc and the name visibly animate whether or not
 
 **Do** — make both the play disc and the name visibly animate whether or not
 the phone reports reduced motion, by giving the reduced path cues that are

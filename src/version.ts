@@ -11,7 +11,11 @@
  * reloading would help.
  */
 
-import { RELEASE_NAME, RELEASE_NAMES } from './release-name'
+// .ts extension kept explicit: docs/todo.md entry 99's own probe script
+// needs to import this file directly under `node --experimental-strip-
+// types`, which requires it for any value import inside src/ — see
+// CLAUDE.md.
+import { RELEASE_NAME, RELEASE_NAMES } from './release-name.ts'
 
 const CSS = `
 #version-hud {
@@ -245,15 +249,95 @@ function watchForNewBuild(button: HTMLButtonElement): void {
  * watch the gate element to find it out, which is a worse dependency than a
  * one-line call.
  */
-/** Milliseconds the flip runs for, start to settle — docs/todo.md entry 55.
- *  "About 1.4 seconds": fast through the early history, decelerating into
- *  the last few names, on a screen with a button people want to press, so
- *  it stays well short of the ~30s a readable pace through 74 names would
- *  actually take. */
-const NAME_FLIP_MS = 1400
+/** Milliseconds phase one (the history flip) runs for, start to handover —
+ *  docs/todo.md entries 55 and 99. Shortened from entry 55's original 1.4s
+ *  now that a second phase follows it: "fast through the early history,
+ *  decelerating" is still phase one's whole job, but it no longer has to
+ *  carry the flip all the way to the real name — phase two (below) does
+ *  that — so it hands over sooner, into the phase that has to fit after it. */
+const NAME_FLIP_MS = 850
+
+/** Milliseconds phase two's own per-character lock advances at — docs/
+ *  todo.md entry 99's own "about 55ms apart". At the longest name on
+ *  record (16 characters) this phase alone runs ~880ms; combined with
+ *  phase one above, a typical name lands close to entry 99's own "total
+ *  around 1.6s", and the longest lands a little past it — "around", not a
+ *  hard ceiling this is tuned against. */
+const NAME_LOCK_STEP_MS = 55
+
+/** The characters phase two's unresolved positions may show while
+ *  cycling — docs/todo.md entry 99's own "drawn from the letters that
+ *  actually appear in `RELEASE_NAMES`... katakana would be a costume
+ *  borrowed from another work." Built from the full history rather than
+ *  hardcoded, so a future name using a character no prior name has used
+ *  still decodes correctly instead of the scramble simply never landing on
+ *  it — `RELEASE_NAME` is always one of `RELEASE_NAMES`, so its own
+ *  characters are guaranteed present by construction. `Set` dedupes;
+ *  `Array.from` is what makes a `Set` iterable in one pass without a
+ *  library. Computed once, at module load — `RELEASE_NAMES` never changes
+ *  at runtime. */
+const SCRAMBLE_ALPHABET = Array.from(new Set(RELEASE_NAMES.join('').split(''))).join('')
+
+function scrambleChar(): string {
+  return SCRAMBLE_ALPHABET[Math.floor(Math.random() * SCRAMBLE_ALPHABET.length)]
+}
 
 /**
- * Write the release name into the gate — docs/todo.md entries 43 and 55.
+ * One frame of phase two: `target`'s own characters for every position
+ * already locked, a freshly re-rolled scramble character for every
+ * position still ahead of the lock — recomputed fresh each call, which is
+ * what makes the unresolved tail visibly cycle frame to frame rather than
+ * sit on one wrong guess. Exported so `scripts/probe-name-decode.ts` can
+ * check the one property that actually matters headlessly: the locked
+ * prefix is always exactly right and the rest is always drawn from the
+ * declared alphabet, regardless of how the random draws land.
+ */
+export function renderLockFrame(target: string, locked: number): string {
+  let out = ''
+  for (let i = 0; i < target.length; i++) {
+    out += i < locked ? target[i] : scrambleChar()
+  }
+  return out
+}
+
+/** How many characters are locked at a given elapsed time into phase two —
+ *  pure, so the timing itself (not just the per-frame render above) is
+ *  probeable without a `requestAnimationFrame` loop or a DOM. */
+export function lockedCountAt(elapsedSincePhaseTwoMs: number, targetLength: number): number {
+  return Math.min(targetLength, Math.max(0, Math.floor(elapsedSincePhaseTwoMs / NAME_LOCK_STEP_MS)))
+}
+
+/** docs/todo.md entry 99 (absorbing entry 94)'s reduced-motion rate — "about
+ *  3 characters resolving per second". Exported for the same reason
+ *  `lockedCountAt` is. */
+export function reducedLockedCountAt(elapsedMs: number, targetLength: number): number {
+  const stepMs = 1000 / 3
+  return Math.min(targetLength, Math.max(0, Math.floor(elapsedMs / stepMs)))
+}
+
+/**
+ * The fallback of last resort — docs/todo.md entry 99's own "even if a
+ * build somehow reaches the most conservative path, the name arrives —
+ * fades up over ~400ms — rather than snapping in." Reached only when there
+ * is no release history to flip or type through at all (`RELEASE_NAMES`
+ * empty), which cannot happen in practice — the array always holds at
+ * least the current name — but the entry names this path explicitly rather
+ * than leaving it as dead-code-shaped code that nobody decided the
+ * behaviour of. `#release-name`'s own `transition: opacity 400ms ease`
+ * (index.html) does the actual fade; this only sets the two opacity values
+ * either side of it.
+ */
+function fadeInName(el: HTMLElement, text: string): void {
+  el.style.opacity = '0'
+  el.textContent = text
+  requestAnimationFrame(() => {
+    el.style.opacity = '1'
+  })
+}
+
+/**
+ * Write the release name into the gate — docs/todo.md entries 43, 55 and 99
+ * (absorbing 94).
  *
  * It used to be a large pill floating at the top-left, which made a build
  * marker the loudest thing on the start screen and sat it across the title.
@@ -262,24 +346,51 @@ const NAME_FLIP_MS = 1400
  * pasted over it. `#release-name` is a span the gate lays out; if it is
  * missing, nothing here breaks.
  *
- * On load, runs the chip through every name this app has ever had, first
- * to last, settling on the real one — entry 55. A plain `textContent` swap
- * once per frame, not a per-character scramble: `.gate-name`'s own
- * monospace font is what makes that read as a clean flip rather than a
- * jitter, since every character position keeps the same width regardless
- * of which name is showing. Eased so the early history passes quickly and
- * the last few names land slowly enough to actually read, the same
- * "arrival rather than a stop" `.gate-name`'s own reserved width exists to
- * support.
+ * Two phases, on a normal phone. Phase one runs the chip through every name
+ * this app has ever had, first to last, fast through the early history and
+ * decelerating — entry 55, shortened (`NAME_FLIP_MS`'s own comment) now that
+ * it hands over rather than carrying all the way to the real name. Phase two
+ * — entry 94, absorbed by 99 — takes over from wherever phase one left off
+ * and locks the real name on, left to right, about every `NAME_LOCK_STEP_MS`:
+ * positions already locked show the target's own characters, positions still
+ * ahead cycle through `SCRAMBLE_ALPHABET`, re-rolled every frame, so the tail
+ * visibly decodes rather than merely appearing. The handover is deliberately
+ * a straight cut from one phase's own rendering to the other's rather than a
+ * cross-fade: both phases show a monospace string of the same general shape
+ * (lowercase letters and spaces, changing every frame), so the cut itself
+ * reads as the flip slowing into the lock rather than as two unrelated
+ * effects meeting.
+ *
+ * `prefers-reduced-motion` gets a *slower* decode, not none — entry 99's own
+ * central finding, absorbing 94's argument: a character resolving in place
+ * has no motion vector, so the honest reduced-motion answer is "do not
+ * flicker", not "show nothing". About three characters a second, left to
+ * right, with no scramble on the positions still to come (`.slice`, not
+ * `renderLockFrame` — an unresolved character here is simply not there yet,
+ * which reads as typing rather than decoding, and rapid churn on a
+ * screen already asked for less of exactly that is closer to flashing
+ * content than to an animation). Previously this branch returned the final
+ * name immediately, which was invisible on any phone in the very state it
+ * was meant to handle — Battery Saver and Accessibility → Remove animations
+ * both set this preference on Android, and nobody confirmed the phone was
+ * in it, because confirming it needed `?debug`. `#motion-glyph` below is
+ * this file's answer to that: a one-glance confirmation on the gate itself,
+ * so "is the animation actually running" never again depends on knowing an
+ * OS setting exists.
+ *
+ * A plain `textContent` swap, not a canvas or an SVG effect: `.gate-name`'s
+ * own monospace font is what makes every phase read as clean characters
+ * rather than a jitter, since every position keeps the same width
+ * regardless of what is currently showing.
  *
  * Never delays Start: this only ever writes to `#release-name`'s own text,
  * on a `requestAnimationFrame` loop that does not block or gate anything
- * else — the disc is live and pressable from the very first frame, exactly
- * as it was before this entry, and pressing it mid-flip is not a special
- * case, it just leaves.
+ * else — the disc is live and pressable from the very first frame, and
+ * pressing it mid-decode is not a special case, it just leaves.
  */
 export function mountReleaseName(): void {
   const el = document.getElementById('release-name')
+  const glyph = document.getElementById('motion-glyph')
   if (!el) return
   // __BUILD_NUMBER__ stays in the bundle — it is what the deploy checks grep
   // for, and a tooltip is the right amount of prominence for a number nobody
@@ -294,33 +405,60 @@ export function mountReleaseName(): void {
   el.setAttribute('aria-hidden', 'true')
   el.parentElement?.setAttribute('aria-label', RELEASE_NAME)
 
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  // docs/todo.md entry 99 — the one-glance diagnosis. Filled means motion is
+  // playing in full; the hollow default (no class) is what a script-
+  // disabled page already renders, so an unreadable glyph never implies the
+  // wrong state by accident.
+  if (!reduced) glyph?.classList.add('full')
+
   const n = RELEASE_NAMES.length
-  // Reduced motion shows the final name immediately — unlike entry 54's
-  // shake confirmation, removing this animation costs nothing at all: the
-  // end state *is* the content, and `prefers-reduced-motion` is a live
-  // possibility on the phone this is built for, not a hypothetical.
-  if (n === 0 || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    el.textContent = RELEASE_NAME
+  if (n === 0) {
+    fadeInName(el, RELEASE_NAME)
     return
   }
 
+  const target = RELEASE_NAME
   const start = performance.now()
-  const step = (now: number): void => {
-    const t = Math.min(1, (now - start) / NAME_FLIP_MS)
-    // Ease-out: steep early (many names pass per frame's worth of time),
-    // flattening toward 1 (the last few names each hold for longer) —
-    // "fast through the early history, decelerating into the last few
-    // names so the real one lands as an arrival rather than a stop."
-    const eased = 1 - (1 - t) * (1 - t)
-    const index = Math.min(n - 1, Math.floor(eased * n))
-    el.textContent = RELEASE_NAMES[index]
-    if (t < 1) {
-      requestAnimationFrame(step)
-    } else {
-      // Exact, rather than trusting the last frame's rounding to have
-      // already landed on it.
-      el.textContent = RELEASE_NAME
+
+  if (reduced) {
+    const step = (now: number): void => {
+      const locked = reducedLockedCountAt(now - start, target.length)
+      el.textContent = target.slice(0, locked)
+      if (locked < target.length) {
+        requestAnimationFrame(step)
+      } else {
+        el.textContent = target
+      }
     }
+    // Called once synchronously — see the full-motion path's own comment
+    // on why an unstarted decode must never leave the span empty.
+    step(start)
+    return
+  }
+
+  const step = (now: number): void => {
+    const elapsed = now - start
+    if (elapsed < NAME_FLIP_MS) {
+      // Phase one — entry 55's own ease-out: steep early, flattening
+      // toward the handover.
+      const t = elapsed / NAME_FLIP_MS
+      const eased = 1 - (1 - t) * (1 - t)
+      const index = Math.min(n - 1, Math.floor(eased * n))
+      el.textContent = RELEASE_NAMES[index]
+      requestAnimationFrame(step)
+      return
+    }
+    // Phase two — entry 94's own lock, absorbed by 99.
+    const locked = lockedCountAt(elapsed - NAME_FLIP_MS, target.length)
+    if (locked >= target.length) {
+      // Exact, rather than trusting the last scrambled frame's rounding to
+      // have already landed on it.
+      el.textContent = target
+      return
+    }
+    el.textContent = renderLockFrame(target, locked)
+    requestAnimationFrame(step)
   }
   // Called once synchronously rather than only scheduled — a chip mounted
   // into a tab that is backgrounded or not yet visible can have its first

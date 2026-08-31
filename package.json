@@ -27,6 +27,7 @@
     "probe:rgb-slip": "node --experimental-strip-types scripts/probe-rgb-slip.ts",
     "probe:posture": "node --experimental-strip-types scripts/probe-posture.ts",
     "probe:ambient-light": "node --experimental-strip-types scripts/probe-ambient-light.ts",
+    "probe:name-decode": "node --experimental-strip-types scripts/probe-name-decode.ts",
     "format": "prettier --write .",
     "deploy": "./deploy/deploy.sh"
   },

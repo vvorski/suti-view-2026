@@ -364,6 +364,30 @@
           text-shadow: 0 1px 12px rgba(5, 6, 10, 0.95), 0 0 8px rgba(141, 136, 184, 0.3);
         }
       }
+      /* docs/todo.md entry 99 — the diagnosis, made visible where the
+         problem is reported. Five rounds of "the animation still isn't
+         showing" each fixed a real cause without anyone confirming the
+         phone was actually in `prefers-reduced-motion: reduce` — that
+         needed `?debug`, and the person hitting this never opens it. This
+         is the one-glance answer instead: a single faint dot beside the
+         byline, filled when motion plays in full, hollow when it is
+         reduced (the same filled/hollow vocabulary `.queue-dot` already
+         uses for shipped vs waiting). `version.ts` toggles `.full`; the
+         hollow, unfilled state is the default so a script-disabled page
+         still renders something coherent rather than a stray filled dot
+         with no meaning behind it. Faint on purpose — this is a diagnostic
+         for whoever goes looking, not a label for everyone else. */
+      .motion-glyph {
+        display: inline-block;
+        width: 4px;
+        height: 4px;
+        margin-left: 0.55em;
+        border-radius: 50%;
+        border: 1px solid currentColor;
+        opacity: 0.4;
+        vertical-align: middle;
+      }
+      .motion-glyph.full { background: currentColor; }
       #gate h1 {
         font-family: 'Chakra Petch', ui-sans-serif, system-ui, sans-serif;
         /* docs/todo.md entry 43: at 320px the middle term becomes 10.8vw,
@@ -408,6 +432,12 @@
         display: inline-block;
         min-width: 18ch;
         text-align: right;
+        /* docs/todo.md entry 99 — the reduced-motion fallback of last
+           resort (no release history to flip through at all) fades the
+           name up rather than snapping it in; see version.ts's own
+           `fadeInName`. Opacity only, so this never competes with the
+           reserved-width rule above about what can and cannot reflow. */
+        transition: opacity 400ms ease;
       }
 
       /* The only filled shape on the screen, so the action needs no words —
@@ -636,21 +666,31 @@
       }
       #error:empty { display: none; }
 
-      /* docs/todo.md entry 65: a swap, not an off switch — matching the
-         principle the shake pulse above already states, "it still goes
-         green; it just stops blinking." A disc whose entire job is to say
-         press me is the last thing that should answer less motion by going
-         still, so it breathes in colour instead: the same 3.4s period as
-         start-pulse, animating background between its resting and :hover
-         colours. No box-shadow spread (that is the travelling ring, which
-         is the movement) and no scale (that is start-breathe, which stays
-         off — it is literally a size change). */
+      /* docs/todo.md entry 65, revised by entry 99: a swap, not an off
+         switch — matching the principle the shake pulse above already
+         states, "it still goes green; it just stops blinking." A disc
+         whose entire job is to say press me is the last thing that should
+         answer less motion by going still. Entry 65's own reduced variant
+         shifted `background` between #9d9bf0 and #b9b7ff — two lavenders a
+         phone in direct sunlight cannot tell apart, which is the reason
+         this was reported as invisible five times over: the failure wasn't
+         that the fix never landed, it was that nobody could see whether it
+         had. Entry 99 replaces it with a glow: a soft halo that visibly
+         swells and fades on the same 3.4s period, plus a brightness swing
+         wide enough to read outdoors. Still no box-shadow *spread outward*
+         (that is start-pulse's travelling ring, which is the actual
+         motion) and no scale (that is start-breathe, which stays off — a
+         size change is exactly what the preference asks not to have) —
+         only a blur radius and a brightness filter pulsing in place, which
+         carry no motion vector at all. **Mine** as to the exact radius and
+         brightness figures; the phone in sunlight is what actually settles
+         whether they read. */
       @media (prefers-reduced-motion: reduce) {
-        #start { animation: start-pulse-reduced 3.4s ease-out infinite; }
+        #start { animation: start-pulse-reduced 3.4s ease-in-out infinite; }
       }
       @keyframes start-pulse-reduced {
-        0%, 100% { background: #9d9bf0; }
-        50% { background: #b9b7ff; }
+        0%, 100% { box-shadow: 0 0 0 0 rgba(197, 195, 255, 0); filter: brightness(1); }
+        50% { box-shadow: 0 0 30px 16px rgba(197, 195, 255, 0.7); filter: brightness(1.4); }
       }
 
       /* Dead centre of the viewport (docs/todo.md entry 42), reversing entry
@@ -752,7 +792,7 @@
       </button>
 
       <header class="gate-head">
-        <p class="gate-byline">by flyflyfly &copy; 2026</p>
+        <p class="gate-byline">by flyflyfly &copy; 2026<span id="motion-glyph" class="motion-glyph" aria-hidden="true"></span></p>
         <!-- docs/todo.md entry 69. The piece is named after a person, and
              that is the whole statement — no "for Kiyo", no dedication, no
              byline, nowhere on screen or in this file. Entry 63 left that
