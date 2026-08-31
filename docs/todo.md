@@ -11595,7 +11595,7 @@ capture no · dependency no (the moon maths is entry 96's, already refused a
 library).
 
 ### 101. Rose — Circles turned ninety degrees, and spinning
-`status: ready` · added 2026-08-30
+`status: building` · added 2026-08-30
 
 **Do** — a seventh geometric view: spokes instead of rings, sweeping in angle
 instead of travelling in radius, several at once and turning against each
