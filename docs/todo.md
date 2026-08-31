@@ -12365,7 +12365,7 @@ older build loading `xor` falls back rather than breaking — same shape as entr
 dependency no.
 
 ### 106. The moon's third quality, on the envelope rather than the growth curve
-`status: ready` · added 2026-08-31 · completes 96 · the build agent's refusal was correct
+`status: building` · added 2026-08-31 · completes 96 · the build agent's refusal was correct
 
 **Do** — wire the waxing/waning bias entry 96 computes but never spends. It
 rides `FADE_FROM`, not the growth curve: waxing rings hold full and go out at
