@@ -12065,3 +12065,86 @@ are still strings and `isMergeModeName` already rejects unknown values, so an
 older build loading `xor` falls back rather than breaking — same shape as entry
 101's) · url no, the existing parameters gain a valid value · capture no ·
 dependency no.
+
+### 106. The moon's third quality, on the envelope rather than the growth curve
+`status: ready` · added 2026-08-31 · completes 96 · the build agent's refusal was correct
+
+**Do** — wire the waxing/waning bias entry 96 computes but never spends. It
+rides `FADE_FROM`, not the growth curve: waxing rings hold full and go out at
+the rim; waning rings begin receding almost as soon as they are born.
+
+**Why** — entry 96 shipped two of its three lunar qualities and said so
+loudly. The missing one is the one Victor named specifically: the thing that
+tells a first-quarter night from a last-quarter one, which nothing else in the
+app can do. Asked directly whether to finish it: yes.
+
+**Decided**
+- **The build agent was right to refuse, and this entry does not overrule it —
+  it takes the refusal as a finding.** Entry 96 asked for the bias on each
+  ring's *growth curve*, and `circles.frag.glsl:277-282` already answers that
+  exact question in the opposite direction, with reasons: *"Linear, as in the
+  source. Ease-out was an embellishment added here and it fights the
+  proportional stroke: easing puts nearly all the growth in the first instant,
+  so the ring arrives already thick and then only fades."* Drift, Grid and
+  Shards each hold their own considered curve. Pushing a shared exponent
+  through four documented decisions is precisely what this project's house
+  style forbids, and declining to do it was better work than doing it would
+  have been. **The entry was wrong about where, not about what.**
+- **So: the opacity envelope instead.** Every ripple-drawing shader carries the
+  same line — `opacity = percent > FADE_FROM ? 1.0 - (percent - FADE_FROM) /
+  (1.0 - FADE_FROM) : 1.0` — with `FADE_FROM = 0.6` and, unlike the growth
+  curve, **no argument attached to it anywhere.** It is the one number in a
+  ring's life that says *when it starts dying*, which is exactly what blooming
+  and receding are.
+- **Which way round, and why it reads.** Waxing raises `FADE_FROM` toward
+  **0.78**: the ring stays at full strength almost to the rim and then goes out
+  quickly — it arrives, it opens, it is spent at the edge. Waning lowers it
+  toward **0.42**: the ring begins fading almost immediately and trails off for
+  most of its travel — still expanding, but visibly *leaving*. Same journey,
+  opposite direction of feeling, and no geometry changed. `BLOOM_SWING = 0.18`,
+  **Mine**, on the same footing as `MOON_REACH_SWING` and `MOON_LIFE_SWING`.
+- **It rides the plumbing entry 96 already built.** `uMoonReach` and
+  `uMoonLife` are already uniforms on all six ripple shaders, set in one place
+  (`scene.ts:1242-1243`) and gated on presence. `uMoonBloom` is a third value
+  on that same path. No new plumbing, no new file, no shader restructured.
+- **The identity is exact and, better, it is exact for a reason.** The bias is
+  `waxing × presence`, and `waxing` is **zero by definition at both the new and
+  the full moon** — those are the turning points. So the neutral case is not a
+  clamp bolted on to satisfy the discipline; it is what the astronomy already
+  says. Moon down, new moon, full moon: `FADE_FROM` is 0.6 and every frame is
+  identical to build 319's.
+- **And the consequence worth the whole entry: the two lunar qualities are in
+  quadrature.** Abundance peaks at full and vanishes at new. The bias vanishes
+  at full *and* at new, and peaks at the quarters. They never peak together, so
+  the month has **four distinct characters** rather than a single bright/dim
+  axis:
+
+  | | abundance | bias | how it reads |
+  |---|---|---|---|
+  | new | 0 | 0 | spare, brief, the plain baseline |
+  | first quarter | ~0.5 | **+1** | middling reach, opening outward |
+  | full | **1** | 0 | furthest and longest-lived, evenly |
+  | last quarter | ~0.5 | **−1** | middling reach, drawing in |
+
+  That is what "the energy of the moon" has to mean if it means anything: a
+  cycle, not a dimmer. It only exists once this third quality is wired.
+- **Not decided here** → whether the bias should also touch the wake ladder's
+  `WAKE_TAU` in Circles, which would make a waning night's memory shorter.
+  Plausible, Circles-only, and a separate entry — this one keeps the same
+  discipline as 96 and applies one lever identically everywhere.
+
+**Lands in** `src/engine/moon.ts` (or wherever 96 put the derivation) — expose
+the signed waxing bias; `src/scene.ts:579-580, 1242-1243` — a third uniform on
+the existing path; the six ripple shaders — `FADE_FROM` becomes
+`FADE_FROM + uMoonBloom` at the two or three places each already uses it;
+`scripts/probe-moon.ts` — extend, do not add a second probe.
+**Done when** — a synthetic first-quarter night and a synthetic last-quarter
+night, identical in every other input, produce visibly different ring
+envelopes and identical ring *radii* over time; new moon, full moon and
+moon-below-horizon each produce frames byte-identical to build 319; and no
+growth curve, stroke ratio or `LIFESPAN` constant appears in the diff.
+**Verify** — `probe-moon.ts` for the four phases and the three identities,
+since a real first-quarter and last-quarter night are two weeks apart and no
+session can hold both. Then, genuinely: two nights, a fortnight apart, which is
+the only test that matters and the one entry 96 correctly said it could not run.
+**Hard stops** — prefs no · url no · capture no · dependency no.
