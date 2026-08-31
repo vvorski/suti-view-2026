@@ -18,7 +18,7 @@ loop. Use those when work will be handed to an agent unattended. Use this when
 the point is to *not stop*: the main loop keeps building, and the idea lands in
 `docs/todo.md` ready for later.
 
-**`/bbb` is the other half of this skill**, and it builds what this one writes.
+**`/bbb` builds what this one writes, and `/ccc` checks what `/bbb` shipped.**
 Read its *How the pair fits together* section once — the seam between them is
 what makes either work. The short form: an entry is the only channel between
 the two, this half never builds and that half never invents, `building`
@@ -39,7 +39,12 @@ Spend a couple of tool calls establishing:
   **Count what you find, never recall it** — entry 106's Lands-in said "the six
   ripple shaders" and there were seven; Rose had arrived after that sentence was
   written and nobody re-counted.
-- **Search `docs/todo.md` for it first.** Twice in one weekend the right action
+- **Search `docs/todo.md` *and* `docs/built.md` for it first** — one `grep` over
+  both, never one file. `built.md` is where verified entries are archived, and
+  it is where the answer usually is: the highest-value finding this skill
+  produces is *"that is already built, here is the line that hides it"*, and
+  searching only the live queue is exactly how that finding gets missed. Twice
+  in one weekend the right action
   was to strengthen an existing entry rather than write a new one (73, then 89).
   A second entry for a fault already diagnosed splits the record and the queue
   builds the weaker half. If it is already captured, *edit that entry* — add the

@@ -66,7 +66,9 @@ few calls on:
   trusting the number in the entry: one said "the six ripple shaders" and there
   were seven, because a view had been added after the sentence was written.
 - **Whether it is already built.** Entries get superseded, and features get
-  built as a side effect of neighbouring ones.
+  built as a side effect of neighbouring ones. Search **both** `docs/todo.md`
+  and `docs/built.md` — the latter is the archive of verified entries and is
+  usually where the answer is.
 - **CLAUDE.md**, whose standing rules outrank any single entry. When one
   contradicts the entry, that is a proposal for the user — never a silent no.
 
@@ -129,6 +131,12 @@ not. This is the record the capture half reads when the next report arrives.
 
 Push. Say in one line what shipped and what it changes for the user. Then go
 back to step 1 — under `/loop bbb`, without asking.
+
+**Leave the entry in `docs/todo.md`.** `done` there means *an agent says this
+shipped*, which is a claim and not yet a fact; `/ccc` is what reads it back
+against the code and archives it to `docs/built.md`. Moving your own work would
+be marking your own homework, and the entries that most needed checking were all
+ones their builder was confident about.
 
 ## Shipping part of an entry
 
