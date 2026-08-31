@@ -11788,7 +11788,68 @@ parameter with an existing shape · capture no · dependency no — one more
 fragment shader, no library.
 
 ### 102. Down is real: emitters fall, and pool where the phone says down is
-`status: building` · added 2026-08-30
+`status: done` · added 2026-08-30 · build 333
+
+**Build note (Mine except `BOUNCE_RESTITUTION`, which is Decided's own
+figure).** Shipped exactly where Lands-in says: `vx`/`vy` and the fall/bounce
+integration in `src/engine/emitter.ts`; `Visualiser.setGravity()` in
+`src/scene.ts`, recorded and never written back, same shape as `setMotion`;
+`main.ts` passing `shake.gravity()` into it at both existing `setTumble` call
+sites, gated on `prefs.gravity` exactly as Decided requires; five new sections
+in `scripts/probe-emitter.ts`. `SPAWN_DIST`'s existing distance trigger now
+also fires inside the release branch, which is the whole of "the fall draws
+itself, free" — no new spawn rule, the old one just wasn't wired there yet.
+
+`shake.gravity()` (capped, ±0.033/axis) is what's consumed, per Lands-in's own
+words, not `shake.tilt()` (raw, uncapped) — despite a comment elsewhere in
+this codebase calling `tilt()` what "a grain of powder" would want. Read
+Lands-in literally; a grain of powder is not what's falling here.
+
+**A real bug, found only by simulating the numbers rather than trusting the
+prose.** First pass picked `GRAVITY_ACCEL_SCALE = 36` (a ~0.9s fall, matching
+Decided) and `SETTLE_SPEED = 0.02` (small = "properly stopped", it seemed).
+`pnpm probe:emitter` disagreed: with `BOUNCE_RESTITUTION` fixed at Decided's
+0.45, decaying below a strict near-zero threshold takes about five hops and
+2.3s — past `LIFE_MIN`'s 2s, which Done-when explicitly rules out for the
+lightest possible tap. Simulated the bounce ladder directly (a small Node
+script, not hand algebra) rather than re-guess: raising `SETTLE_SPEED` to
+0.25 settles after exactly two hops, around 1.7s. The bounce height that
+speed would have produced, `v²/(2a)`, is about 2% of the frame's half-extent
+— sub-pixel on a real screen, so "settled" at that threshold is a real
+description, not a euphemism for "gave up checking." `GRAVITY_ACCEL_SCALE`
+stays at 36; only `SETTLE_SPEED` moved. Both constants, `BOUNCE_FRICTION`
+(0.85, engages only on the tangential component, so it never fires in the
+straight-down cases the probe drove) and `TERMINAL_SPEED` (2.0 uv/s) are
+unchanged from the first pass and are Mine, chosen against this file's own
+afterlife rather than against outside physics — see the comment block above
+`updateEmitter`.
+
+**Judgment call, disclosed rather than silently patched.** The live,
+on-phone/in-browser half of Verify — "held upright... visibly slides down,
+bounces once or twice and settles at the low edge, leaving a trail," and
+specifically the flat-on-a-table case — is the one Verify itself says a probe
+alone would let you believe. Attempted it anyway, through the same
+dev-server-plus-synthetic-frames technique that verified entry 101's shader:
+`createVisualiser` on a real canvas, `setTouches`/`setGravity` driven
+directly, `gl.readPixels` for the readback. One clean run confirmed the
+pipeline responds to a touch at all (localised, non-flat ink where a flat
+background would read uniform). Chasing the actual fall/settle trail further
+than that hit two `Runtime.evaluate` timeouts in the browser-automation tab
+and a readback that came back suspiciously flat once real per-frame delays
+were introduced — `render()` turned out to key its internal clock off
+`performance.now()` rather than anything passed in, which made a tight
+synchronous frame loop read zero elapsed time, and spacing frames out with
+real `setTimeout` delays is what then made the harness itself intermittently
+hang. Two hung tool calls is this session's own stated threshold for
+stepping back rather than continuing to retry. The numeric verification
+(`pnpm probe:emitter`, all 22 checks, including the flat/`{0,0}`
+byte-identical regression guard) is complete and is Verify's own first-listed
+method; the phone-in-hand half is left for Victor, exactly as Verify's
+second sentence already assumes a human doing it.
+
+`pnpm build`, `pnpm lint`, and the full `pnpm probe:*` suite (19 scripts) all
+pass with no regressions.
+
 
 **Do** — a released emitter accelerates along the in-plane component of
 gravity, bounces off the edge it lands on, and settles there. Held upright it

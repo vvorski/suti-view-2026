@@ -1,5 +1,5 @@
 /**
- * The touch-driven emitter — docs/todo.md entries 33, 50 and 57.
+ * The touch-driven emitter — docs/todo.md entries 33, 50, 57 and 102.
  *
  * A tap, hold or drag places an emitter at the finger that spawns rings from
  * that point in whichever geometric view is showing, and dies away over a
@@ -14,6 +14,12 @@
  * alongside charge rather than replacing it, boosting the birth level a
  * fast swipe leaves without taking anything away from a slow, deliberate
  * hold.
+ *
+ * Entry 102 gives the afterlife somewhere to go rather than nowhere: while
+ * the finger is down its position is the finger's, exactly as always, but
+ * once released and falling it accelerates along the phone's own in-plane
+ * gravity, bounces off whichever edge it reaches, and settles there — see
+ * `updateEmitter`'s own `gravity`/`halfExtent` parameters below.
  *
  * Pure state and a pure update function, same discipline as ripples.ts and
  * shake.ts: no DOM, no clock of its own, everything arrives as `now` and
@@ -70,6 +76,52 @@ const SPEED_LEVEL_SCALE = 0.25
 const MOON_CADENCE_SWING = 0.35
 const MOON_LIFE_SWING = 0.25
 
+/**
+ * docs/todo.md entry 102 — a released emitter falls. `gravity` arrives as
+ * `shake.gravity()` (shake.ts), already capped for the tumble's own offset
+ * spring rather than expressed in any physical unit — this file does not
+ * need physical units, only a direction and a magnitude that varies
+ * correctly with tilt, and `GRAVITY_ACCEL_SCALE` below is chosen entirely
+ * against that shape rather than against `EARTH_G`. **Every constant in
+ * this block is Mine**, chosen against `emitter.ts`'s own existing
+ * afterlife (`LIFE_MIN`/`LIFE_MAX` above), not against any outside physics.
+ */
+/** Converts `shake.gravity()`'s own capped range (±MAX_OFFSET *
+ *  GRAVITY_FRACTION per axis, about ±0.033 — see shake.ts) into an
+ *  acceleration, uv units/s², such that a drop from mid-frame (about 0.5 uv
+ *  to the near edge) reaches it in roughly the 0.9s Decided asks for:
+ *  `d = 0.5 * a * t^2` solved for `a` at `d=0.5, t=0.9` gives `a ~= 1.23`;
+ *  `1.23 / 0.033 ~= 36` is where this number comes from. */
+const GRAVITY_ACCEL_SCALE = 36
+/** Velocity retained, normal to the edge, after a bounce — Decided's own
+ *  figure: enough restitution for one or two visible hops before it settles
+ *  well inside a single gesture. */
+const BOUNCE_RESTITUTION = 0.45
+/** Velocity retained, tangential to the edge, after a bounce — "a small
+ *  per-bounce loss" so a fall that lands at a shallow angle does not skid
+ *  along the edge forever, on top of `BOUNCE_RESTITUTION` already bleeding
+ *  the normal component. */
+const BOUNCE_FRICTION = 0.85
+/** uv units/second — bounds a long fall so it cannot outrun `SPAWN_DIST`'s
+ *  own trail (a gap between rings) or a dropped frame's unusually large
+ *  `dt` from flinging the emitter clean off the visible frame in one step. */
+const TERMINAL_SPEED = 2.0
+/** Below this speed, resting against an edge, the remaining velocity is
+ *  zeroed outright rather than left to bounce forever at a shrinking
+ *  amplitude — the settle Decided's own Done-when asks for, not an
+ *  ever-finer Zeno's-paradox tremor nothing on screen would resolve anyway.
+ *
+ *  Sized against the fall itself, not picked small-because-that-sounds-
+ *  settled: with `BOUNCE_RESTITUTION` fixed at 0.45 (Decided) and a ~0.9 s
+ *  fall (also Decided), the geometric bounce decay only crosses a strict
+ *  near-zero threshold (0.02) after five hops, around 2.3 s — past
+ *  `LIFE_MIN`'s 2 s, which Done-when explicitly rules out. A residual speed
+ *  of 0.25 instead lets it settle after exactly two hops, at ~1.7 s: the
+ *  bounce height that speed would have produced is `v^2 / (2*a)`, about 2%
+ *  of the frame's half-extent — sub-pixel on a real screen, i.e. genuinely
+ *  settled, not merely called so. */
+const SETTLE_SPEED = 0.25
+
 export interface EmitterState {
   /** Whether a qualifying contact is currently down. */
   active: boolean
@@ -95,6 +147,11 @@ export interface EmitterState {
   releaseCharge: number
   lastSpawn: number
   lastTick: number
+  /** docs/todo.md entry 102 — uv units/second, zero while `active` (the
+   *  finger's own position wins outright) and while idle, non-zero only
+   *  during a falling afterlife. */
+  vx: number
+  vy: number
 }
 
 export function createEmitterState(): EmitterState {
@@ -110,6 +167,8 @@ export function createEmitterState(): EmitterState {
     releaseCharge: 0,
     lastSpawn: -1000,
     lastTick: 0,
+    vx: 0,
+    vy: 0,
   }
 }
 
@@ -133,6 +192,15 @@ function lifeFor(c: number, moonAbundance: number): number {
  * since the afterlife's position is frozen and has no speed of its own.
  * `moonAbundance` is docs/todo.md entry 96's illuminated x presence, 0..1,
  * 0 at new moon or with the moon down — see this file's own MOON_* comment.
+ * `gravity` and `halfExtent` are docs/todo.md entry 102: `gravity` is
+ * `shake.gravity()` when the `grav` chip is on, `{x:0,y:0}` (its own default,
+ * matching every other reads-a-sensor parameter in this codebase) otherwise
+ * or while the sensor is refused/absent — a released emitter simply never
+ * accelerates, which is what leaves every existing call site, and every
+ * gesture with the chip off, byte-identical to before this entry.
+ * `halfExtent` is the frame's own half-width/half-height in this same uv
+ * space (scene.ts already has both, from the canvas's own client size), so a
+ * fall bounces off the edge actually on screen rather than an assumed one.
  */
 export function updateEmitter(
   state: EmitterState,
@@ -143,6 +211,8 @@ export function updateEmitter(
   y: number,
   speed = 0,
   moonAbundance = 0,
+  gravity: { x: number; y: number } = { x: 0, y: 0 },
+  halfExtent: { x: number; y: number } = { x: 0.5, y: 0.5 },
 ): void {
   const dt = Math.max(0, now - state.lastTick)
   state.lastTick = now
@@ -153,6 +223,10 @@ export function updateEmitter(
       state.contactStart = now
       state.lastSpawnX = x
       state.lastSpawnY = y
+      // A fresh gesture starts still — any velocity left over from a
+      // previous release's own fall has no business surviving into this one.
+      state.vx = 0
+      state.vy = 0
     }
     state.active = true
     state.x = x
@@ -178,9 +252,62 @@ export function updateEmitter(
   state.life = Math.max(0, state.life - dt)
   if (state.life <= 0) return
 
-  if (now - state.lastSpawn >= spawnInterval) {
+  // docs/todo.md entry 102 — down is real. `gravity` is `{0,0}` whenever the
+  // `grav` chip is off or the sensor has nothing to say, which makes every
+  // line below a no-op: velocity stays at 0, position never moves, neither
+  // bounce condition can ever be reached. Held upright, `gravity` points
+  // in-plane and the emitter accelerates toward the low edge; laid flat, the
+  // in-plane projection is ~0 and it stays exactly where it was put — no
+  // branch decides which, the vector itself already does.
+  state.vx += gravity.x * GRAVITY_ACCEL_SCALE * dt
+  state.vy += gravity.y * GRAVITY_ACCEL_SCALE * dt
+  const fallSpeed = Math.hypot(state.vx, state.vy)
+  if (fallSpeed > TERMINAL_SPEED) {
+    const k = TERMINAL_SPEED / fallSpeed
+    state.vx *= k
+    state.vy *= k
+  }
+  state.x += state.vx * dt
+  state.y += state.vy * dt
+
+  // Reflect off whichever edge was actually reached, not the frame's own
+  // bottom — two independent axis tests, so a corner still reflects each
+  // axis correctly on its own.
+  if (state.x > halfExtent.x) {
+    state.x = halfExtent.x
+    state.vx = -state.vx * BOUNCE_RESTITUTION
+    state.vy *= BOUNCE_FRICTION
+  } else if (state.x < -halfExtent.x) {
+    state.x = -halfExtent.x
+    state.vx = -state.vx * BOUNCE_RESTITUTION
+    state.vy *= BOUNCE_FRICTION
+  }
+  if (state.y > halfExtent.y) {
+    state.y = halfExtent.y
+    state.vy = -state.vy * BOUNCE_RESTITUTION
+    state.vx *= BOUNCE_FRICTION
+  } else if (state.y < -halfExtent.y) {
+    state.y = -halfExtent.y
+    state.vy = -state.vy * BOUNCE_RESTITUTION
+    state.vx *= BOUNCE_FRICTION
+  }
+
+  const atEdge =
+    state.x >= halfExtent.x || state.x <= -halfExtent.x || state.y >= halfExtent.y || state.y <= -halfExtent.y
+  if (atEdge && Math.hypot(state.vx, state.vy) < SETTLE_SPEED) {
+    state.vx = 0
+    state.vy = 0
+  }
+
+  // SPAWN_DIST already fires a ring for every 0.05 uv of movement — Decided's
+  // own "the fall draws itself, free" — so the falling trail needs this
+  // exact test wired into the release branch too, not a new rule beside it.
+  const moved = Math.hypot(state.x - state.lastSpawnX, state.y - state.lastSpawnY)
+  if (now - state.lastSpawn >= spawnInterval || moved >= SPAWN_DIST) {
     const fraction = state.totalLife > 0 ? state.life / state.totalLife : 0
     spawnAt(ripples, now, state.releaseCharge * fraction, state.x, state.y)
     state.lastSpawn = now
+    state.lastSpawnX = state.x
+    state.lastSpawnY = state.y
   }
 }

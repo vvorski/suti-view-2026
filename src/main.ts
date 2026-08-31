@@ -837,6 +837,10 @@ async function main(): Promise<void> {
       lastGateShakeAt = now
       latestShake = shake.frame(dt)
       visualiser.setTumble(latestShake.tumble, prefs.gravity ? shake.gravity() : undefined)
+      // docs/todo.md entry 102 — the same chip, the same gate, a second
+      // consumer: a released touch emitter falls exactly when the picture
+      // itself already leans toward down.
+      visualiser.setGravity(prefs.gravity ? shake.gravity() : null)
       visualiser.render(idleParams(t, idleSpectrum), idleSpectrum)
     }
     // isStopped is read after tick(), which is what may have just set it —
@@ -1586,6 +1590,10 @@ async function main(): Promise<void> {
 
       latestShake = shake.frame(audio.dt)
       visualiser.setTumble(latestShake.tumble, prefs.gravity ? shake.gravity() : undefined)
+      // docs/todo.md entry 102 — the same chip, the same gate, a second
+      // consumer: a released touch emitter falls exactly when the picture
+      // itself already leans toward down.
+      visualiser.setGravity(prefs.gravity ? shake.gravity() : null)
       // docs/todo.md entry 58 — posture and disturbance reaching the
       // picture's colour. Only the running loop, not the idle preview
       // above: that draws synthetic params and a preview colour rather

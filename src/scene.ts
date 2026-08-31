@@ -343,6 +343,17 @@ export interface Visualiser {
    */
   setMotion(tiltX: number, tiltY: number, disturb: number): void
   /**
+   * docs/todo.md entry 102 — a released touch emitter's own acceleration.
+   * `g`, when given, is `shake.gravity()` (the same capped, in-plane pair
+   * `setTumble`'s own `gravity` parameter already is); `null` or omitted —
+   * the `grav` chip off, or nothing to report — means every released
+   * emitter simply never accelerates, which is what leaves every gesture
+   * byte-identical to before this entry while the chip is off. Only
+   * recorded here; `render()`'s own emitter loop is what actually spends
+   * it, once per frame, on whichever emitters are currently falling.
+   */
+  setGravity(g: { x: number; y: number } | null): void
+  /**
    * How far the device has been knocked about. See shake.ts.
    *
    * `gravity`, when given, is a steady offset from how the phone is being
@@ -799,6 +810,12 @@ export function createVisualiser(
   let motionTiltX = 0
   let motionTiltY = 0
   let motionDisturb = 0
+  // docs/todo.md entry 102 — recorded here by setGravity, read by the
+  // emitter loop below. `{0,0}` (its own default) means every released
+  // emitter simply never accelerates, the same "reads a sensor, never
+  // written back" shape motionTiltX/Y above already use.
+  let emitterGravityX = 0
+  let emitterGravityY = 0
   // docs/todo.md entry 76 — ticked from the same `motionDisturb` above,
   // already recorded here every frame by `setMotion` for the colour bias.
   // No new setter: this is the "no new plumbing at all" the entry asks for.
@@ -1122,12 +1139,32 @@ export function createVisualiser(
       // recomputed per slot; it only actually changes once a second
       // anyway (see moonState's own comment).
       const moonAbundance = moonAbundanceFor(moonState)
+      // docs/todo.md entry 102 — the frame's own bounds in the emitter's uv
+      // space, from the canvas's own client size applySize() already
+      // tracks, so a fall bounces off the edge actually on screen (a
+      // landscape phone's true bottom) rather than an assumed square one.
+      const emitterGravity = { x: emitterGravityX, y: emitterGravityY }
+      const emitterHalfExtent = {
+        x: lastClientWidth / (2 * Math.min(lastClientWidth, lastClientHeight)),
+        y: lastClientHeight / (2 * Math.min(lastClientWidth, lastClientHeight)),
+      }
       for (const slot of emitterSlots) {
         const live = slot.contactId === null ? undefined : touches.find((t) => t.contactId === slot.contactId)
         if (live) {
-          updateEmitter(slot.state, ripples, now, true, live.x, live.y, live.speed, moonAbundance)
+          updateEmitter(
+            slot.state,
+            ripples,
+            now,
+            true,
+            live.x,
+            live.y,
+            live.speed,
+            moonAbundance,
+            emitterGravity,
+            emitterHalfExtent,
+          )
         } else if (slot.contactId !== null) {
-          updateEmitter(slot.state, ripples, now, false, 0, 0, 0, moonAbundance)
+          updateEmitter(slot.state, ripples, now, false, 0, 0, 0, moonAbundance, emitterGravity, emitterHalfExtent)
           if (slot.state.life <= 0) slot.contactId = null
         }
       }
@@ -1140,7 +1177,7 @@ export function createVisualiser(
           emitterSlots.find((s) => s.contactId === null) ??
           emitterSlots.reduce((a, b) => (a.state.life <= b.state.life ? a : b))
         free.contactId = t.contactId
-        updateEmitter(free.state, ripples, now, true, t.x, t.y, t.speed, moonAbundance)
+        updateEmitter(free.state, ripples, now, true, t.x, t.y, t.speed, moonAbundance, emitterGravity, emitterHalfExtent)
       }
       for (let i = 0; i < MAX_RIPPLES; i++) {
         const o = i * 4 // stride must match ripples.ts's own STRIDE
@@ -1416,6 +1453,11 @@ export function createVisualiser(
       motionTiltX = tiltX
       motionTiltY = tiltY
       motionDisturb = disturb
+    },
+
+    setGravity(g) {
+      emitterGravityX = g?.x ?? 0
+      emitterGravityY = g?.y ?? 0
     },
 
     setGeoAlpha(a) {

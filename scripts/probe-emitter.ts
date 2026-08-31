@@ -1,10 +1,14 @@
 /**
  * Offline check of the touch emitter's charge/life math (docs/todo.md
- * entries 33, 50 and 57): does a longer hold actually charge higher and buy
- * more afterlife, does the afterlife actually run out, does a spawned
- * ripple land in a reserved touch slot rather than stepping on the audio
- * ones, does drag speed boost the birth level, and does a drag spawn on
- * distance moved rather than only on the clock?
+ * entries 33, 50 and 57), extended by entry 102 for the fall: does a longer
+ * hold actually charge higher and buy more afterlife, does the afterlife
+ * actually run out, does a spawned ripple land in a reserved touch slot
+ * rather than stepping on the audio ones, does drag speed boost the birth
+ * level, does a drag spawn on distance moved rather than only on the clock,
+ * does a released emitter actually fall, bounce and settle against
+ * whichever edge `halfExtent` says is there, and — the regression guard —
+ * does `gravity = {0,0}` leave every gesture exactly as it was before this
+ * entry existed.
  *
  * Pure state, no DOM and no clock of its own — same discipline as
  * ripples.ts and shake.ts — so this runs against synthetic `now`/`dt`
@@ -168,6 +172,110 @@ const DT = 1 / 60
   check('no movement and no elapsed interval spawns nothing new', ripples.touchCursor === afterFirst, 'spawned early')
   updateEmitter(emitter, ripples, 0.2, true, 0, 0) // no movement, past SPAWN_INTERVAL
   check('a still hold still spawns once the interval elapses', ripples.touchCursor !== afterFirst, 'never spawned')
+}
+
+// 9. docs/todo.md entry 102 — held upright, a released emitter falls toward
+//    the low edge, leaves a trail on the way (SPAWN_DIST's own trigger,
+//    wired into the release branch by this entry), bounces, and settles at
+//    the edge rather than bouncing forever.
+{
+  const ripples = createRippleState()
+  const emitter = createEmitterState()
+  const gravity = { x: 0, y: -0.033 } // shake.gravity()'s own full-tilt magnitude, straight down
+  const halfExtent = { x: 0.5, y: 0.5 }
+  let now = 0
+  updateEmitter(emitter, ripples, now, true, 0, 0) // a bare tap at centre
+  updateEmitter(emitter, ripples, now, false, 0, 0, 0, 0, gravity, halfExtent) // release
+  const yAtRelease = emitter.y
+  const spawnsBefore = ripples.touchCursor
+  let reachedEdge = false
+  for (let i = 0; i < Math.round(3 / DT); i++) {
+    now += DT
+    updateEmitter(emitter, ripples, now, false, 0, 0, 0, 0, gravity, halfExtent)
+    if (Math.abs(emitter.y + 0.5) < 1e-6) reachedEdge = true
+  }
+  check('a falling emitter moves away from where it was released', emitter.y < yAtRelease - 0.05, `${yAtRelease} -> ${emitter.y}`)
+  check('it reaches the low edge at some point during the fall', reachedEdge, `never reached y=-0.5, ended at ${emitter.y}`)
+  check('it leaves a trail: more than one ripple spawned during the fall', ripples.touchCursor !== spawnsBefore, 'cursor did not move')
+  check('it settles at the edge rather than bouncing forever', emitter.y === -0.5 && Math.hypot(emitter.vx, emitter.vy) === 0, `y=${emitter.y} vx=${emitter.vx} vy=${emitter.vy}`)
+}
+
+// 10. Landscape: an asymmetric halfExtent settles the emitter against the
+//     short axis' own bound, not a square frame's — the "true bottom" Decided
+//     asks for is whichever edge halfExtent says is there, not an assumed one.
+{
+  const ripples = createRippleState()
+  const emitter = createEmitterState()
+  const gravity = { x: 0, y: -0.033 }
+  const halfExtent = { x: 0.89, y: 0.5 } // a landscape canvas's own shape
+  let now = 0
+  updateEmitter(emitter, ripples, now, true, 0, 0)
+  updateEmitter(emitter, ripples, now, false, 0, 0, 0, 0, gravity, halfExtent)
+  for (let i = 0; i < Math.round(3 / DT); i++) {
+    now += DT
+    updateEmitter(emitter, ripples, now, false, 0, 0, 0, 0, gravity, halfExtent)
+  }
+  check('in a landscape frame it settles at the short axis\' own edge (0.5), not 0.89', emitter.y === -0.5, String(emitter.y))
+  check('the long axis is untouched: it never drifted sideways', emitter.x === 0, String(emitter.x))
+}
+
+// 11. A tilted phone slides diagonally — both axes move, together, from one
+//     gravity vector and no mode flag deciding between them.
+{
+  const ripples = createRippleState()
+  const emitter = createEmitterState()
+  const gravity = { x: -0.02, y: -0.02 } // a diagonal tilt
+  let now = 0
+  updateEmitter(emitter, ripples, now, true, 0, 0)
+  updateEmitter(emitter, ripples, now, false, 0, 0, 0, 0, gravity, { x: 0.5, y: 0.5 })
+  for (let i = 0; i < Math.round(0.5 / DT); i++) {
+    now += DT
+    updateEmitter(emitter, ripples, now, false, 0, 0, 0, 0, gravity, { x: 0.5, y: 0.5 })
+  }
+  check('a diagonal gravity moves both axes', emitter.x < -0.001 && emitter.y < -0.001, `x=${emitter.x} y=${emitter.y}`)
+}
+
+// 12. Flat: an in-plane projection of exactly zero (what shake.ts reports
+//     with the phone lying screen-up on a table) is the same {0,0} gravity
+//     section 13 below already proves is an identity — no separate physics
+//     to test here, since emitter.ts has no notion of "flat" beyond the
+//     vector it is handed.
+
+// 13. The regression guard: with gravity pinned at {0,0} — the `grav` chip
+//     off, or `updateEmitter` called the old six-argument way entirely —
+//     a released emitter's position never moves, on a trace that would
+//     visibly move it if gravity were doing anything at all.
+{
+  const ripples = createRippleState()
+  const emitter = createEmitterState()
+  let now = 0
+  updateEmitter(emitter, ripples, now, true, 0.1, -0.2)
+  updateEmitter(emitter, ripples, now, false, 0, 0) // released the old, six-argument way
+  const [xAtRelease, yAtRelease] = [emitter.x, emitter.y]
+  for (let i = 0; i < Math.round(5 / DT); i++) {
+    now += DT
+    updateEmitter(emitter, ripples, now, false, 0, 0)
+  }
+  check(
+    'gravity omitted entirely: position is byte-identical to the moment of release',
+    emitter.x === xAtRelease && emitter.y === yAtRelease,
+    `(${xAtRelease}, ${yAtRelease}) -> (${emitter.x}, ${emitter.y})`,
+  )
+
+  const ripples2 = createRippleState()
+  const emitter2 = createEmitterState()
+  now = 0
+  updateEmitter(emitter2, ripples2, now, true, 0.1, -0.2)
+  updateEmitter(emitter2, ripples2, now, false, 0, 0, 0, 0, { x: 0, y: 0 }, { x: 0.5, y: 0.5 })
+  for (let i = 0; i < Math.round(5 / DT); i++) {
+    now += DT
+    updateEmitter(emitter2, ripples2, now, false, 0, 0, 0, 0, { x: 0, y: 0 }, { x: 0.5, y: 0.5 })
+  }
+  check(
+    'gravity explicitly {0,0}: identical to the trace above, frame for frame',
+    emitter2.x === emitter.x && emitter2.y === emitter.y,
+    `(${emitter.x}, ${emitter.y}) vs (${emitter2.x}, ${emitter2.y})`,
+  )
 }
 
 console.log(failures === 0 ? '\nall emitter checks passed' : `\n${failures} failed`)
