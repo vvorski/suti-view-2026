@@ -75,6 +75,11 @@ uniform float uBreak;
 uniform float uBeat;
 uniform float uBeatConfidence;
 uniform vec4 uSeed;
+// docs/todo.md entry 96 — the moon's own abundance, over ripple reach
+// and lifespan only (colour stays the sun's alone). 1.0 at new moon or
+// moon-down, identical to today; scene.ts is the only writer.
+uniform float uMoonReach;
+uniform float uMoonLife;
 
 // Must match MAX_RIPPLES in ripples.ts — GLSL can't import a JS constant, and
 // a mismatch here means scene.ts uploads an array of the wrong length.
@@ -214,7 +219,14 @@ void main() {
   // instead — which an earlier version did — makes the ring keep growing well
   // after it has left the frame, so the thick band spends its last second
   // invisible and the fade reads as the ring simply going out.
-  float maxRadius = 0.5 * max(uResolution.x, uResolution.y) / min(uResolution.x, uResolution.y);
+  float maxRadius = 0.5 * max(uResolution.x, uResolution.y) / min(uResolution.x, uResolution.y) * uMoonReach;
+  // docs/todo.md entry 96 — the moon's own lifespan, computed once rather
+  // than at each of the two loops' own `LIFESPAN` reads below (also used by
+  // the wake ladder's closed-form `since`, which stays correct under a
+  // scaled reach and lifespan together: both sides of that ratio move by
+  // the same abundance, so a rung crossed early on a generous night is
+  // still crossed at the right moment relative to this ring's own life).
+  float lifespan = LIFESPAN * uMoonLife;
 
   float ink = 0.0;
 
@@ -250,7 +262,7 @@ void main() {
     // relying on underflow rather than on arithmetic. Clamped, the answer is
     // e^-15 ≈ 3e-7 — not zero, but four orders below the 1/255 the display can
     // show, on every path.
-    float since = age - LIFESPAN * rungR / maxRadius;
+    float since = age - lifespan * rungR / maxRadius;
     if (since > 0.0) {
       // max(), not +=. Eight overlapping traces summed pins the ladder solid
       // white through any busy passage — Grid's fronts did exactly this — and
@@ -260,9 +272,9 @@ void main() {
       wake = max(wake, (0.30 + 0.70 * birthLevel) * exp(-min(since, 24.0) / WAKE_TAU));
     }
 
-    if (age > LIFESPAN) continue;
+    if (age > lifespan) continue;
 
-    float percent = age / LIFESPAN;
+    float percent = age / lifespan;
     // Linear, as in the source. Ease-out was an embellishment added here and
     // it fights the proportional stroke: easing puts nearly all the growth in
     // the first instant, so the ring arrives already thick and then only
@@ -308,12 +320,12 @@ void main() {
     float birth = uRipples[i].x;
     float birthLevel = uRipples[i].y;
     float age = uTime - birth;
-    if (age < 0.0 || age > LIFESPAN) continue;
+    if (age < 0.0 || age > lifespan) continue;
 
     vec2 origin = uRipples[i].zw;
     float tDist = length(uv - origin);
 
-    float percent = age / LIFESPAN;
+    float percent = age / lifespan;
     float radius = maxRadius * percent;
 
     float opacity = percent > FADE_FROM ? 1.0 - (percent - FADE_FROM) / (1.0 - FADE_FROM) : 1.0;

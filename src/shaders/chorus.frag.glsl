@@ -29,6 +29,11 @@ uniform float uLevel;
 uniform float uLow;
 uniform float uBreak;
 uniform vec4 uSeed;
+// docs/todo.md entry 96 — the moon's own abundance, over ripple reach
+// and lifespan only (colour stays the sun's alone). 1.0 at new moon or
+// moon-down, identical to today; scene.ts is the only writer.
+uniform float uMoonReach;
+uniform float uMoonLife;
 
 // Must match MAX_RIPPLES in ripples.ts — GLSL can't import a JS constant, and
 // a mismatch here means scene.ts uploads an array of the wrong length.
@@ -72,7 +77,9 @@ void main() {
   vec2 uv = (gl_FragCoord.xy - 0.5 * uResolution) / min(uResolution.x, uResolution.y);
   float px = 1.0 / min(uResolution.x, uResolution.y);
   vec2 halfExtent = 0.5 * uResolution / min(uResolution.x, uResolution.y);
-  float maxRadius = max(halfExtent.x, halfExtent.y);
+  float maxRadius = max(halfExtent.x, halfExtent.y) * uMoonReach;
+  // docs/todo.md entry 96 — same abundance scaling as Circles.
+  float lifespan = LIFESPAN * uMoonLife;
 
   // Node count and the arrangement's rotation are both seed choices, so a
   // re-roll restructures the interference rather than just re-timing it. Three
@@ -90,7 +97,7 @@ void main() {
     float birth = uRipples[i].x;
     float birthLevel = uRipples[i].y;
     float age = uTime - birth;
-    if (age < 0.0 || age > LIFESPAN) continue;
+    if (age < 0.0 || age > lifespan) continue;
 
     // docs/todo.md entry 33: a touch ring fires the nearest of the fixed
     // nodes rather than an arbitrary hashed one — the finger is an
@@ -106,7 +113,7 @@ void main() {
     vec2 origin = NODE_RADIUS * vec2(cos(a), sin(a));
     float dist = length(uv - origin);
 
-    float percent = age / LIFESPAN;
+    float percent = age / lifespan;
     float radius = maxRadius * percent;
 
     float opacity = percent > FADE_FROM ? 1.0 - (percent - FADE_FROM) / (1.0 - FADE_FROM) : 1.0;

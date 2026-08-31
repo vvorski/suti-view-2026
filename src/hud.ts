@@ -228,6 +228,10 @@ export interface Hud {
       /** The clock's own current pair, and the outdoor-reading override's
        *  own fade position — docs/todo.md entry 53. */
       sky?: { daylight: number; warmth: number; override: number }
+      /** The moon's own current fields — docs/todo.md entry 96, "report it
+       *  in the readout" — so what night the app thinks it is is checkable
+       *  without waiting a month. */
+      moon?: { illuminated: number; waxing: number; presence: number }
       /** Why there was or wasn't a buzz. See hapticStatus(). */
       haptics?: {
         supported: boolean
@@ -1449,6 +1453,20 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
                   : s.sky.override < 0
                     ? `  night ${Math.round(-s.sky.override * 100)}%`
                     : ''),
+            ]),
+        // docs/todo.md entry 96 — Decided's own "report it in the readout":
+        // phase (waxing/waning, from the signed term), illuminated fraction
+        // and presence, beside the sky line above. `abundance` is the same
+        // illuminated x presence product scene.ts derives its reach/life/
+        // cadence swings from — printed directly rather than left for
+        // someone to multiply by hand.
+        ...(s.moon === undefined
+          ? []
+          : [
+              `moon  ${s.moon.waxing >= 0 ? 'waxing ' : 'waning '}` +
+                `lit ${s.moon.illuminated.toFixed(2)}  ` +
+                `up ${s.moon.presence.toFixed(2)}  ` +
+                `abundance ${(s.moon.illuminated * s.moon.presence).toFixed(2)}`,
             ]),
         // The numbers that tell a dead sensor apart from a shake that is
         // simply not hard enough — and, docs/todo.md entry 88, from one that

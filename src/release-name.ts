@@ -135,6 +135,7 @@ export const RELEASE_NAMES: readonly string[] = [
   'quiet swap',
   'shown queue',
   'room alone',
+  'second clock',
 ]
 
 /** The current release's name — derived as the list's last element, so

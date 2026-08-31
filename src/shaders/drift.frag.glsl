@@ -34,6 +34,11 @@ uniform float uLevel;
 uniform float uLow;
 uniform float uBreak;
 uniform vec4 uSeed;
+// docs/todo.md entry 96 — the moon's own abundance, over ripple reach
+// and lifespan only (colour stays the sun's alone). 1.0 at new moon or
+// moon-down, identical to today; scene.ts is the only writer.
+uniform float uMoonReach;
+uniform float uMoonLife;
 
 // Must match MAX_RIPPLES in ripples.ts — GLSL can't import a JS constant, and
 // a mismatch here means scene.ts uploads an array of the wrong length.
@@ -111,7 +116,9 @@ void main() {
   // the same size wherever it was born, so an off-centre one leaves the near
   // edge early and dies before it reaches the far side. That is what makes a
   // family read as covering a region of the frame rather than all of it.
-  float maxRadius = max(halfExtent.x, halfExtent.y);
+  float maxRadius = max(halfExtent.x, halfExtent.y) * uMoonReach;
+  // docs/todo.md entry 96 — same abundance scaling as Circles.
+  float lifespan = LIFESPAN * uMoonLife;
 
   float ink = 0.0;
 
@@ -119,7 +126,7 @@ void main() {
     float birth = uRipples[i].x;
     float birthLevel = uRipples[i].y;
     float age = uTime - birth;
-    if (age < 0.0 || age > LIFESPAN) continue;
+    if (age < 0.0 || age > lifespan) continue;
 
     // docs/todo.md entry 33: a touch ring's wander starts at the finger
     // rather than at its seeded phase — the one branch this view needs,
@@ -128,7 +135,7 @@ void main() {
     vec2 origin = i < AUDIO_RIPPLES ? emitterAt(birth, halfExtent) : uRipples[i].zw;
     float dist = length(uv - origin);
 
-    float percent = age / LIFESPAN;
+    float percent = age / lifespan;
     float radius = maxRadius * percent; // linear, as Circles: the band thickens as it travels
 
     float opacity = percent > FADE_FROM ? 1.0 - (percent - FADE_FROM) / (1.0 - FADE_FROM) : 1.0;

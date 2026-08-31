@@ -28,6 +28,11 @@ uniform float uLow;
 uniform float uHigh;
 uniform float uBreak;
 uniform vec4 uSeed;
+// docs/todo.md entry 96 — the moon's own abundance, over ripple reach
+// and lifespan only (colour stays the sun's alone). 1.0 at new moon or
+// moon-down, identical to today; scene.ts is the only writer.
+uniform float uMoonReach;
+uniform float uMoonLife;
 
 // Must match MAX_RIPPLES in ripples.ts — GLSL can't import a JS constant, and
 // a mismatch here means scene.ts uploads an array of the wrong length.
@@ -44,7 +49,9 @@ const float FADE_FROM = 0.45;
 
 void main() {
   vec2 uv = (gl_FragCoord.xy - 0.5 * uResolution) / min(uResolution.x, uResolution.y);
-  float maxRadius = 0.5 * length(uResolution) / min(uResolution.x, uResolution.y);
+  float maxRadius = 0.5 * length(uResolution) / min(uResolution.x, uResolution.y) * uMoonReach;
+  // docs/todo.md entry 96 — same abundance scaling as Circles.
+  float lifespan = LIFESPAN * uMoonLife;
   float px = 1.0 / min(uResolution.x, uResolution.y);
 
   // Symmetry order is a seed choice, so a re-roll genuinely restructures the
@@ -59,7 +66,7 @@ void main() {
     float birth = uRipples[i].x;
     float birthLevel = uRipples[i].y;
     float age = uTime - birth;
-    if (age < 0.0 || age > LIFESPAN) continue;
+    if (age < 0.0 || age > lifespan) continue;
 
     // docs/todo.md entry 33: a touch-born burst throws its fragments outward
     // from the finger rather than from centre. dist/angle move inside the
@@ -70,7 +77,7 @@ void main() {
     float dist = length(rel);
     float angle = atan(rel.y, rel.x);
 
-    float percent = age / LIFESPAN;
+    float percent = age / lifespan;
     // Ease-out, as in Circles: a shatter throws hardest at the instant of the
     // hit and coasts after.
     float eased = 1.0 - (1.0 - percent) * (1.0 - percent);

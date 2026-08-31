@@ -27,6 +27,11 @@ uniform float uLow;
 uniform float uMid;
 uniform float uBreak;
 uniform vec4 uSeed;
+// docs/todo.md entry 96 — the moon's own abundance, over ripple reach
+// and lifespan only (colour stays the sun's alone). 1.0 at new moon or
+// moon-down, identical to today; scene.ts is the only writer.
+uniform float uMoonReach;
+uniform float uMoonLife;
 
 // Must match MAX_RIPPLES in ripples.ts.
 //
@@ -56,7 +61,9 @@ void main() {
   // Position within the cell, -1..1 on each axis, for the inset below.
   vec2 within = (uv - cellCentre) / (cellSize * 0.5);
 
-  float maxRing = 0.5 * length(uResolution) / min(uResolution.x, uResolution.y) / cellSize;
+  float maxRing = 0.5 * length(uResolution) / min(uResolution.x, uResolution.y) / cellSize * uMoonReach;
+  // docs/todo.md entry 96 — same abundance scaling as Circles.
+  float lifespan = LIFESPAN * uMoonLife;
 
   float rand = hash(cell);
 
@@ -66,7 +73,7 @@ void main() {
     float birth = uRipples[i].x;
     float birthLevel = uRipples[i].y;
     float age = uTime - birth;
-    if (age < 0.0 || age > LIFESPAN) continue;
+    if (age < 0.0 || age > lifespan) continue;
 
     // docs/todo.md entry 33: the wavefront starts at the finger's cell.
     // Chebyshev distance in cells — this is what makes the fronts square —
@@ -75,7 +82,7 @@ void main() {
     vec2 originCell = i < AUDIO_RIPPLES ? vec2(0.0) : floor(uRipples[i].zw / cellSize);
     float ring = max(abs(cell.x - originCell.x), abs(cell.y - originCell.y));
 
-    float percent = age / LIFESPAN;
+    float percent = age / lifespan;
     float eased = 1.0 - (1.0 - percent) * (1.0 - percent);
     float front = maxRing * eased;
 

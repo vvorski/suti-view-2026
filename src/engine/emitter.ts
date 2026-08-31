@@ -58,6 +58,18 @@ const SPAWN_DIST = 0.05
  *  full-screen swipe in roughly a third of a second is near this fast. */
 const SPEED_LEVEL_SCALE = 0.25
 
+/** docs/todo.md entry 96 — the moon's own abundance, over cadence and the
+ *  afterlife baseline only. `moonAbundance` (illuminated x presence, 0..1)
+ *  is 0 at new moon or with the moon down, at which point every constant
+ *  below is used exactly as written — the same algebraic-identity
+ *  discipline entries 47, 75 and 76 all use. A full moon makes rings come
+ *  up to 35% more often and lets the afterlife stretch its own baseline up
+ *  to 25% longer; Decided's own figures, **Mine** as to applying them
+ *  here specifically (SPAWN_INTERVAL and LIFE_MIN/LIFE_MAX are the two
+ *  named targets in this file). */
+const MOON_CADENCE_SWING = 0.35
+const MOON_LIFE_SWING = 0.25
+
 export interface EmitterState {
   /** Whether a qualifying contact is currently down. */
   active: boolean
@@ -105,9 +117,10 @@ function charge(contactSeconds: number): number {
   return CHARGE_FLOOR + (1 - CHARGE_FLOOR) * Math.min(1, contactSeconds / CHARGE_TIME)
 }
 
-function lifeFor(c: number): number {
+function lifeFor(c: number, moonAbundance: number): number {
   const t = (c - CHARGE_FLOOR) / (1 - CHARGE_FLOOR) // 0 at the floor, 1 at full charge
-  return LIFE_MIN + (LIFE_MAX - LIFE_MIN) * t
+  const swing = 1 + MOON_LIFE_SWING * moonAbundance
+  return (LIFE_MIN + (LIFE_MAX - LIFE_MIN) * t) * swing
 }
 
 /**
@@ -118,6 +131,8 @@ function lifeFor(c: number): number {
  * the same drag velocity (uv units/second) `engine/touch.ts` reads for the
  * atmospheric views — 0 for a still hold, ignored entirely while releasing,
  * since the afterlife's position is frozen and has no speed of its own.
+ * `moonAbundance` is docs/todo.md entry 96's illuminated x presence, 0..1,
+ * 0 at new moon or with the moon down — see this file's own MOON_* comment.
  */
 export function updateEmitter(
   state: EmitterState,
@@ -127,9 +142,11 @@ export function updateEmitter(
   x: number,
   y: number,
   speed = 0,
+  moonAbundance = 0,
 ): void {
   const dt = Math.max(0, now - state.lastTick)
   state.lastTick = now
+  const spawnInterval = SPAWN_INTERVAL * (1 - MOON_CADENCE_SWING * moonAbundance)
 
   if (active) {
     if (!state.active) {
@@ -141,11 +158,11 @@ export function updateEmitter(
     state.x = x
     state.y = y
     const c = Math.min(1, charge(now - (state.contactStart ?? now)) + speed * SPEED_LEVEL_SCALE)
-    state.life = lifeFor(c)
+    state.life = lifeFor(c, moonAbundance)
     state.totalLife = state.life
     state.releaseCharge = c
     const moved = Math.hypot(x - state.lastSpawnX, y - state.lastSpawnY)
-    if (now - state.lastSpawn >= SPAWN_INTERVAL || moved >= SPAWN_DIST) {
+    if (now - state.lastSpawn >= spawnInterval || moved >= SPAWN_DIST) {
       spawnAt(ripples, now, c, x, y)
       state.lastSpawn = now
       state.lastSpawnX = x
@@ -161,7 +178,7 @@ export function updateEmitter(
   state.life = Math.max(0, state.life - dt)
   if (state.life <= 0) return
 
-  if (now - state.lastSpawn >= SPAWN_INTERVAL) {
+  if (now - state.lastSpawn >= spawnInterval) {
     const fraction = state.totalLife > 0 ? state.life / state.totalLife : 0
     spawnAt(ripples, now, state.releaseCharge * fraction, state.x, state.y)
     state.lastSpawn = now

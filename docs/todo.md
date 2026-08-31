@@ -10664,7 +10664,76 @@ expected-failure baseline to check against.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 96. The moon works the shapes, as the sun works the colour
-`status: building` · added 2026-08-30
+`status: done` · added 2026-08-30 · build 319 · the expansion-curve envelope is deliberately incomplete — see build note
+
+**Build note (Mine).** Shipped: `src/moon.ts` (pure, `moonFor(date)` →
+`{illuminated, waxing, presence}`), sampled once a second in `scene.ts`
+alongside `skyFor` (literally the same `new Date()` call, one clock read
+serving both); abundance (`illuminated × presence`) driving a reach
+multiplier and a lifespan multiplier on every ripple-drawing geometric
+shader (circles, drift, chorus, grid, tide, shards — `field.frag.glsl`
+doesn't draw ripples at all and was correctly left alone); the same
+abundance driving `engine/emitter.ts`'s `SPAWN_INTERVAL` cadence and its
+`LIFE_MIN`/`LIFE_MAX` afterlife baseline; a `moon` line in the numeric
+readout beside the `sky` one, reporting illuminated fraction, presence and
+the derived abundance directly.
+
+**Deliberately not shipped: the waxing/waning expansion-curve bias on ring
+growth shape** — the third of Decided's three "shape qualities". Reading the
+six ripple-drawing shaders before touching any of them turned up an actual
+conflict: `circles.frag.glsl` has an explicit, reasoned comment committing
+to *linear* growth — "Ease-out was an embellishment added here and it
+fights the proportional stroke: easing puts nearly all the growth in the
+first instant, so the ring arrives already thick and then only fades.
+Growing at a constant rate is what lets the band visibly thicken as it
+travels, which is the movement the original has." `drift.frag.glsl` carries
+the identical commitment ("linear, as Circles: the band thickens as it
+travels"). `grid.frag.glsl` and `shards.frag.glsl` already have their own,
+different baked-in ease-out curves for reasons of their own. Biasing an
+exponent on top of any of these would either fight a documented design
+decision this project's own house style says to preserve, not silently
+override, or double-curve an already-curved view unpredictably. CLAUDE.md's
+own words: "Comments carry the reasoning... Preserve them." I chose not to
+force a shared mechanism through four shaders with four different, already-
+considered opinions about their own growth shape, rather than pick winners
+among them without being asked to. `waxing` is still computed, returned and
+reported in the readout — the data layer for this is complete; only the
+shader-side wiring is deferred. Worth its own follow-up entry rather than a
+quiet gap: docs/todo.md now has nowhere else this is written down, so it's
+written here.
+
+Two smaller judgement calls, both **Mine**: reach and life share one swing
+constant each (0.25) rather than being tuned independently — Decided names
+them together throughout ("roughly ±25% on reach and life"), so nothing in
+the entry asked for them to diverge. And `moonAbundanceFor` (the
+`illuminated × presence` product) is computed once per rendered frame from
+the once-a-second sample, not recomputed per emitter slot — it only changes
+on that same one-second cadence regardless.
+
+**Verification.** `pnpm build` and `pnpm lint` clean. `pnpm probe:moon` (new)
+— 30/30 checks: the four named phases land exactly right in both
+illuminated fraction and the signed waxing term; illuminated rises and
+falls monotonically across a full synodic month; presence's one daily peak
+lands within 2 hours of Decided's own new-moon-noon/full-moon-midnight
+claim and returns near the horizon twelve hours later; presence never
+leaves [0,1]; and the identity claim — new moon or moon-down leaves
+reach/life/cadence at (or extremely near) their unmodulated values, while a
+full moon at its own transit pushes all three within the stated swings.
+`pnpm probe:emitter` and `pnpm probe:ripples` both pass unchanged — the new
+`moonAbundance` parameter is trailing and defaults to 0, so every existing
+call site is untouched and every existing assertion about MAX_RIPPLES/
+AUDIO_RIPPLES across all six shaders still holds. `pnpm probe:slow`,
+`probe:posture` and `probe:sky` also unaffected, as expected — this entry
+never touches colour, the director, or the sky. The three CI-required
+probes (`pnpm probe`, `probe:shake`, `probe:fullscreen`) pass unchanged.
+**Not verified live on the phone**: the entry's own Verify line asks for
+"two nights far apart in the cycle", which no single session can produce;
+the astronomy and the identity claim are covered by `probe-moon.ts` instead,
+which is what the entry's own Verify line credits as protecting everything
+already shipped. The readout line itself is also unconfirmed on a running
+build — main.ts only calls `visualiser.stats()` after Start, which needs
+microphone access this environment refuses (the same limitation noted in
+several earlier build notes this session).
 
 **Do** — add a lunar cycle, perpendicular to the sky's solar one: it touches
 the emitter and ring *shape* parameters that nothing else modulates, driven by

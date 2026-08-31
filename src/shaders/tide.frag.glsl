@@ -39,6 +39,11 @@ uniform float uLevel;
 uniform float uLow;
 uniform float uBreak;
 uniform vec4 uSeed;
+// docs/todo.md entry 96 — the moon's own abundance, over ripple reach
+// and lifespan only (colour stays the sun's alone). 1.0 at new moon or
+// moon-down, identical to today; scene.ts is the only writer.
+uniform float uMoonReach;
+uniform float uMoonLife;
 
 // Must match MAX_RIPPLES in ripples.ts — GLSL can't import a JS constant, and
 // a mismatch here means scene.ts uploads an array of the wrong length.
@@ -85,7 +90,9 @@ void main() {
   // the exact per-ripple distance instead would make arcs from the long edges
   // travel at a different speed from arcs off the short ones, and a wave that
   // changes pace depending on where it came from looks like a bug.
-  float travel = 2.0 * length(halfExtent);
+  float travel = 2.0 * length(halfExtent) * uMoonReach;
+  // docs/todo.md entry 96 — same abundance scaling as Circles.
+  float lifespan = LIFESPAN * uMoonLife;
 
   float ink = 0.0;
 
@@ -93,7 +100,7 @@ void main() {
     float birth = uRipples[i].x;
     float birthLevel = uRipples[i].y;
     float age = uTime - birth;
-    if (age < 0.0 || age > LIFESPAN) continue;
+    if (age < 0.0 || age > lifespan) continue;
 
     // A direction, then the point where that ray leaves the frame. Picking a
     // point on a *circle* instead is a line shorter and wrong on a phone: a
@@ -114,7 +121,7 @@ void main() {
 
     float dist = length(uv - origin);
 
-    float percent = age / LIFESPAN;
+    float percent = age / lifespan;
     float radius = travel * percent;
 
     float opacity = percent > FADE_FROM ? 1.0 - (percent - FADE_FROM) / (1.0 - FADE_FROM) : 1.0;

@@ -56,6 +56,7 @@ import {
 } from './engine'
 import { MAX_OFFSET, overscanFor, type TumbleState } from './shake'
 import { skyFor } from './sky'
+import { moonFor, type Moon } from './moon'
 import type { SkyOverride } from './prefs'
 import compositeFrag from './shaders/composite.frag.glsl?raw'
 import vertexShader from './shaders/fullscreen.vert.glsl?raw'
@@ -93,6 +94,26 @@ const SKY_SAMPLE_S = 1
  *  this rate could ever expose) is never limited by it, slow enough that
  *  even the largest possible jump (0 to 1) reads as a fade, not a snap. */
 const SKY_CHASE_RATE = 1 / 3
+
+/**
+ * docs/todo.md entry 96 — how far a full moon, high in the sky, can push
+ * ripple reach and ripple/emitter lifespan away from today's constants.
+ * Both swings share one input, `moonAbundanceFor()` below, rather than
+ * reading `illuminated` and `presence` independently: "the toy only feels
+ * the moon when the moon is actually up" means a brilliantly lit moon
+ * still below the horizon must contribute nothing, and a product is what
+ * makes either factor at 0 zero the whole thing out, the same
+ * algebraic-identity shape entries 47, 75 and 76 all use elsewhere in this
+ * file. Decided's own figures ("roughly ±25% on reach and life"); **Mine**
+ * as to sharing one swing between the two rather than tuning them apart,
+ * since Decided names them together throughout.
+ */
+const MOON_REACH_SWING = 0.25
+const MOON_LIFE_SWING = 0.25
+
+function moonAbundanceFor(moon: Moon): number {
+  return moon.illuminated * moon.presence
+}
 
 /**
  * Rolling spectrogram uploaded to the GPU: one column per time slot, one row
@@ -404,6 +425,10 @@ export interface Visualiser {
      *  without waiting for dusk: the readout prints what the clock says
      *  right now, over the pair `sky.ts` is a pure function of. */
     sky: { daylight: number; warmth: number; override: number }
+    /** docs/todo.md entry 96 — the moon's own current fields, over the
+     *  same "testable without waiting" reasoning as sky above: what night
+     *  the app thinks it is, without waiting a month to check the math. */
+    moon: { illuminated: number; waxing: number; presence: number }
   }
   /**
    * Save the next composited frame as a PNG blob, once. `onReady` runs after
@@ -480,6 +505,12 @@ export function createVisualiser(
   historyTexture.wrapT = ClampToEdgeWrapping
   historyTexture.needsUpdate = true
 
+  // docs/todo.md entry 96 — read once, at construction, for the same
+  // reason skyForNow below is: the first frame should match the moon it
+  // is actually loaded under, not default to new-moon-equivalent for a
+  // second before the first sample corrects it.
+  const moonForNow = moonFor(new Date())
+
   // Shared by both layers: audio state neither cares where it came from, and
   // sharing the object (rather than duplicating it per layer) is what lets a
   // layer swap pick up the current frame's state immediately instead of a
@@ -525,6 +556,13 @@ export function createVisualiser(
     uRipples: {
       value: Array.from({ length: MAX_RIPPLES }, () => new Vector4(-1000, 0, 0, 0)),
     },
+    // docs/todo.md entry 96 — the moon's own abundance, as a reach and a
+    // lifespan multiplier on every ripple-drawing geometric view. Both
+    // default to 1.0 (today's constants, unmoved) and only ever move
+    // together with `moonAbundanceFor()` below, never independently — see
+    // that function's own comment for why the two swings share one input.
+    uMoonReach: { value: 1 + MOON_REACH_SWING * moonAbundanceFor(moonForNow) },
+    uMoonLife: { value: 1 + MOON_LIFE_SWING * moonAbundanceFor(moonForNow) },
   }
 
   let geometryMaterial = new ShaderMaterial({
@@ -769,6 +807,15 @@ export function createVisualiser(
   let skyDaylight = skyForNow.daylight
   let skyWarmth = skyForNow.warmth
   let sinceSkySample = 0
+  // docs/todo.md entry 96 — sampled on the same once-a-second cadence as
+  // the sky above (same `new Date()` call, even — see render()), not
+  // chased the way skyDaylight is: nothing here needs the DST-jump
+  // smoothing that entry 71 added for the sun, since the moon's own swings
+  // are already gentle by construction (Decided's own "roughly ±25%").
+  // Kept as the raw Moon fields, not just the derived abundance, so
+  // stats() can report phase/illuminated/presence individually for the
+  // readout, per Decided's own "report it in the readout".
+  let moonState: Moon = moonForNow
   // For stats() below, which is called independently of render() — the
   // numeric readout's own posture/disturbance/agitation line reads this.
   let lastMotion: MotionBias = { r: 0, g: 0, b: 0, posture: 0, disturbance: 0, agitation: 0 }
@@ -1017,12 +1064,17 @@ export function createVisualiser(
       // pointer-event rate. Slots whose contact is no longer in `touches`
       // still get ticked, inactive, so their afterlife keeps running down;
       // a slot only frees once its own life reaches 0.
+      // docs/todo.md entry 96 — the same abundance the ripple/emitter
+      // shape uniforms above use, read once per frame rather than
+      // recomputed per slot; it only actually changes once a second
+      // anyway (see moonState's own comment).
+      const moonAbundance = moonAbundanceFor(moonState)
       for (const slot of emitterSlots) {
         const live = slot.contactId === null ? undefined : touches.find((t) => t.contactId === slot.contactId)
         if (live) {
-          updateEmitter(slot.state, ripples, now, true, live.x, live.y, live.speed)
+          updateEmitter(slot.state, ripples, now, true, live.x, live.y, live.speed, moonAbundance)
         } else if (slot.contactId !== null) {
-          updateEmitter(slot.state, ripples, now, false, 0, 0)
+          updateEmitter(slot.state, ripples, now, false, 0, 0, 0, moonAbundance)
           if (slot.state.life <= 0) slot.contactId = null
         }
       }
@@ -1035,7 +1087,7 @@ export function createVisualiser(
           emitterSlots.find((s) => s.contactId === null) ??
           emitterSlots.reduce((a, b) => (a.state.life <= b.state.life ? a : b))
         free.contactId = t.contactId
-        updateEmitter(free.state, ripples, now, true, t.x, t.y, t.speed)
+        updateEmitter(free.state, ripples, now, true, t.x, t.y, t.speed, moonAbundance)
       }
       for (let i = 0; i < MAX_RIPPLES; i++) {
         const o = i * 4 // stride must match ripples.ts's own STRIDE
@@ -1120,9 +1172,16 @@ export function createVisualiser(
       sinceSkySample += dt
       if (sinceSkySample >= SKY_SAMPLE_S) {
         sinceSkySample = 0
-        const sky = skyFor(new Date())
+        const sampledAt = new Date()
+        const sky = skyFor(sampledAt)
         skyDaylightSample = sky.daylight
         skyWarmth = sky.warmth
+        // docs/todo.md entry 96 — same instant, same cadence as the sky
+        // above; see moonState's own comment for why this isn't chased.
+        moonState = moonFor(sampledAt)
+        const moonAbundance = moonAbundanceFor(moonState)
+        uniforms.uMoonReach.value = 1 + MOON_REACH_SWING * moonAbundance
+        uniforms.uMoonLife.value = 1 + MOON_LIFE_SWING * moonAbundance
       }
       // Chased at a bounded rate rather than assigned — entry 71's own
       // finding: a DST jump, a timezone change in flight, or a tab resumed
@@ -1352,6 +1411,7 @@ export function createVisualiser(
       pixelRatio: RATIO_LADDER[rung],
       motion: { posture: lastMotion.posture, disturbance: lastMotion.disturbance, agitation: lastMotion.agitation },
       sky: { daylight: skyDaylight, warmth: skyWarmth, override: overrideCurrent },
+      moon: { illuminated: moonState.illuminated, waxing: moonState.waxing, presence: moonState.presence },
     }),
 
     dispose() {
