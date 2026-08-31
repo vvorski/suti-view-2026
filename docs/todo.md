@@ -11952,7 +11952,7 @@ consumer; its type, meaning and default are unchanged) · url no · capture no �
 dependency no.
 
 ### 103. A tap plays. Only the camera takes photos.
-`status: ready` · added 2026-08-30 · fixes what makes 87 invisible
+`status: building` · added 2026-08-30 · fixes what makes 87 invisible
 
 **Do** — stop the single tap from saving a screenshot. Camera mode becomes the
 only path to a photo, which is what makes the mode entry 87 already built
