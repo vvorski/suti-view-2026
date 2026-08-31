@@ -109,6 +109,28 @@ window for the live half of Verify.
 `pnpm build`, `pnpm lint`, and the full `pnpm probe:*` suite (19 scripts)
 all pass with no regressions.
 
+**Verification note — `/ccc` at build 348, and one claim above is now
+false.** Every reversal case in the build note and in the probe drove a
+*single half-cycle* knock (0.09s at 5.5Hz), which by construction never
+crosses the sine's zero and so never reverses its own raw sample. Done-when
+says "a synthetic shake", and a shake is an oscillation. Measured on build
+337 as shipped: two seconds of sustained shaking gave **19 reversals at 5Hz,
+11 at 3Hz, 7 at a 2Hz wave**, with the probe green throughout.
+
+Fixed at build 348 by folding each sample onto the axis already held before
+easing it in — a dispersion is a line, not an arrow, and a sample pointing
+the other way down the same line is the same evidence about that line. The
+frozen constants are untouched.
+
+Consequently the sentence above beginning *"and against a genuine second,
+oppositely-aimed hit … which correctly still registers as one real
+reversal"* **no longer describes the code.** Under an axis model a hit aimed
+180° away is the same line and is deliberately not a reversal. That check's
+underlying guard — that `PEAK_RATIO` is not so aggressive it swallows real
+input — is kept and now reads: a second hit aimed *across* the first re-aims
+the axis; one aimed back along it does not disturb it. Three sustained-shake
+cases were added alongside.
+
 
 **Do** — give the RGB slip its own held direction vector instead of borrowing
 the tumble offset's instantaneous one. The magnitude spring, its two constants
