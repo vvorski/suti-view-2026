@@ -134,17 +134,25 @@ void main() {
     float percent = age / lifespan;
     float radius = travel * percent;
 
+    // docs/todo.md entry 79 — touch rings only (see Circles' own comment on
+    // this same variation for the full reasoning): a deterministic per-slot
+    // hash nudges radius (phase) and stroke width just enough that a drag's
+    // trail of near-simultaneous rings reads as a sequence, while leaving
+    // the audio ring's own appearance untouched.
+    radius *= i < AUDIO_RIPPLES ? 1.0 : 0.98 + 0.04 * hash(float(i) + 31.0);
+    float slotStroke = i < AUDIO_RIPPLES ? 1.0 : 0.88 + 0.24 * hash(float(i) + 11.0);
+
     float opacity = percent > fadeFrom ? 1.0 - (percent - fadeFrom) / (1.0 - fadeFrom) : 1.0;
     opacity *= 0.35 + 0.65 * birthLevel;
 
-    float scale = 0.8 + 0.4 * birthLevel;
+    float scale = (0.8 + 0.4 * birthLevel) * slotStroke;
     float outerHalf = max(radius * OUTER_STROKE * 0.5 * scale, px * 0.5);
     float innerHalf = max(outerHalf * INNER_WIDTH, px * 0.5);
 
     float outer = ring(dist, radius, outerHalf, px);
     float inner = ring(dist, max(radius - INNER_GAP, 0.0), innerHalf, px);
 
-    ink += (outer + inner) * opacity;
+    ink = 1.0 - (1.0 - ink) * (1.0 - (outer + inner) * opacity);
   }
 
   // The shoreline: a hard rule just inside the frame, which is the locus every

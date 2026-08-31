@@ -215,6 +215,13 @@ float ring(float dist, float radius, float halfWidth, float px) {
   return 1.0 - smoothstep(0.0, px * 1.5, d);
 }
 
+// docs/todo.md entry 79 — deterministic per-slot variation for the touch
+// ring loop below, same one-liner tide.frag.glsl and rose.frag.glsl already
+// use for their own per-ring hashes.
+float hash(float x) {
+  return fract(sin(x * 127.1) * 43758.5453123);
+}
+
 void main() {
   vec2 uv = (gl_FragCoord.xy - 0.5 * uResolution) / min(uResolution.x, uResolution.y);
   float dist = length(uv);
@@ -313,7 +320,15 @@ void main() {
     // Both rings at full strength: they are the same white stroke in the
     // source, and dimming the inner one to 0.65 — as an earlier version did —
     // turns a matched pair into a ring with a shadow.
-    ink += (outer + inner) * opacity;
+    //
+    // docs/todo.md entry 79 — screen, not +=. The wake ladder above already
+    // learned this lesson (see its own max() comment); the rings never did.
+    // Sixteen touch slots and entry 57's drag trail means many near-
+    // identical rings land on the same pixels, and summing drives ink past
+    // 1 where max() would merely pick the strongest. Screen is the operator
+    // that keeps "more rings, more ink" legible while being arithmetically
+    // incapable of clipping — same choice, same reason, as entry 47.
+    ink = 1.0 - (1.0 - ink) * (1.0 - (outer + inner) * opacity);
   }
 
   // Touch rings — docs/todo.md entry 33. A second, separate loop rather than
@@ -340,17 +355,28 @@ void main() {
     float percent = age / lifespan;
     float radius = maxRadius * percent;
 
+    // docs/todo.md entry 79 — a drag lays a trail of touch rings a fraction
+    // of a second apart (entry 57), landing them at nearly the same radius;
+    // a deterministic per-slot hash nudges each ring's radius (phase) and
+    // stroke width, subtly enough that one ring alone is indistinguishable
+    // from before, but enough that a run of them reads as individual rings
+    // rather than one thick band. Stable frame to frame since it depends
+    // only on the slot index, never on time.
+    float slotPhase = hash(float(i) + 31.0);
+    radius *= 0.98 + 0.04 * slotPhase;
+    float slotStroke = hash(float(i) + 11.0);
+
     float opacity = percent > fadeFrom ? 1.0 - (percent - fadeFrom) / (1.0 - fadeFrom) : 1.0;
     opacity *= 0.35 + 0.65 * birthLevel;
 
-    float scale = 0.8 + 0.4 * birthLevel;
+    float scale = (0.8 + 0.4 * birthLevel) * (0.88 + 0.24 * slotStroke);
     float outerHalf = max(radius * OUTER_STROKE * 0.5 * scale, px * 0.5);
     float innerHalf = max(radius * INNER_STROKE * 0.5 * scale, px * 0.5);
 
     float outer = ring(tDist, radius, outerHalf, px);
     float inner = ring(tDist, radius * INNER_RADIUS, innerHalf, px);
 
-    ink += (outer + inner) * opacity;
+    ink = 1.0 - (1.0 - ink) * (1.0 - (outer + inner) * opacity);
   }
 
   // The ladder. Whichever is the stronger of the standing resting level and

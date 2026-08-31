@@ -111,6 +111,12 @@ float ring(float dist, float radius, float halfWidth, float px) {
   return 1.0 - smoothstep(0.0, px * 1.5, d);
 }
 
+// docs/todo.md entry 79 — deterministic per-slot variation for touch rings
+// in the loop below, same one-liner tide.frag.glsl and rose.frag.glsl use.
+float hash(float x) {
+  return fract(sin(x * 127.1) * 43758.5453123);
+}
+
 void main() {
   vec2 uv = (gl_FragCoord.xy - 0.5 * uResolution) / min(uResolution.x, uResolution.y);
   float px = 1.0 / min(uResolution.x, uResolution.y);
@@ -148,17 +154,26 @@ void main() {
     float percent = age / lifespan;
     float radius = maxRadius * percent; // linear, as Circles: the band thickens as it travels
 
+    // docs/todo.md entry 79 — touch rings only (see Circles' own comment on
+    // this same variation for the full reasoning): a deterministic per-slot
+    // hash nudges radius (phase) and stroke width just enough that a drag's
+    // trail of near-simultaneous rings reads as a sequence, while leaving
+    // the audio ring's own appearance untouched.
+    float slotPhase = i < AUDIO_RIPPLES ? 1.0 : 0.98 + 0.04 * hash(float(i) + 31.0);
+    radius *= slotPhase;
+    float slotStroke = i < AUDIO_RIPPLES ? 1.0 : 0.88 + 0.24 * hash(float(i) + 11.0);
+
     float opacity = percent > fadeFrom ? 1.0 - (percent - fadeFrom) / (1.0 - fadeFrom) : 1.0;
     opacity *= 0.35 + 0.65 * birthLevel;
 
-    float scale = 0.8 + 0.4 * birthLevel;
+    float scale = (0.8 + 0.4 * birthLevel) * slotStroke;
     float outerHalf = max(radius * OUTER_STROKE * 0.5 * scale, px * 0.5);
     float innerHalf = max(radius * INNER_STROKE * 0.5 * scale, px * 0.5);
 
     float outer = ring(dist, radius, outerHalf, px);
     float inner = ring(dist, radius * INNER_RADIUS, innerHalf, px);
 
-    ink += (outer + inner) * opacity;
+    ink = 1.0 - (1.0 - ink) * (1.0 - (outer + inner) * opacity);
   }
 
   // The emitter itself, marked where it is *now* and breathing with the bass.

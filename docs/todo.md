@@ -8618,7 +8618,55 @@ Verify line — the phone, counting files — is the phone's question, not
 this session's.
 
 ### 79. Rings stop adding up, and a pull reads as a sequence
-`status: building` · added 2026-08-30
+`status: done` · build 343 · added 2026-08-30
+
+**Build note (Mine):** Also disclosing a process gap this entry itself
+surfaced: its header line was missing from the file (the entry's body ran on
+directly from entry 78's, with only a bare `status: ready` marking the seam),
+so every prior queue survey this session ran skipped it silently. Restored
+`### 79.` — the one gap in an otherwise-contiguous 1-107 — in its own commit
+before claiming, disclosed there in full.
+
+Implemented the four sites Decided names: `circles.frag.glsl`'s touch loop
+(the primary cause — sixteen slots, a drag trail landing many near-identical
+rings on the same pixels) and its audio loop, `drift.frag.glsl`, and
+`tide.frag.glsl`, all changed from `ink += (outer + inner) * opacity` to the
+screen operator `ink = 1.0 - (1.0 - ink) * (1.0 - (outer + inner) * opacity)`
+— same choice, same reason, as entry 47's own use of it. `grid`/`shards` use
+a different (`intensity`-based) accumulation and were correctly left alone,
+per Decided's own "field, lattice and cells do not use this pattern."
+
+Per-slot stroke/phase variation ("Mine" in Decided) added to the touch loops
+only, gated by `i < AUDIO_RIPPLES` in the shared drift/tide loops so audio
+rings are untouched: a `hash(float(i) + offset)` nudges each touch ring's
+radius by ±2% and stroke width by ±12%. One judgment call here, disclosed
+rather than guessed silently: Done-when says "a single ring looks exactly as
+it does today," which taken completely literally conflicts with Decided's
+own instruction to vary stroke by slot index unconditionally — any slot hash
+that isn't exactly at its neutral point changes a lone ring's thickness by
+construction. Read "exactly as today" as the ink-combine identity instead
+(`screen(0, c) = c`, so a single ring's brightness is bit-identical to the
+old `+=`, which is the claim a probe can actually check) and kept the
+stroke/phase variation small enough — ±12%/±2% — to be a nuance on one ring
+and a real difference across many. `hash(float x)` was added to
+`circles.frag.glsl` and `drift.frag.glsl` (didn't have one); `tide.frag.glsl`
+already had the identical one-liner `rose`/`chorus` use.
+
+`scripts/probe-ripples.ts` gained the check Verify names directly: sixteen
+overlapping contributions screened together never exceed 1 (1000 random
+trials, plus the degenerate all-full-strength worst case, which lands at
+exactly 1), and `screen(0, c)` equals plain addition for a lone ring —
+Done-when's own identity, made concrete. All three new checks passed; the
+addition-vs-screen identity check itself needed a tolerance rather than
+`===` on the first run, floating point on `1 - (1 - 0.58)` not landing on
+0.42 bit-exact — the same class of thing this queue has hit before with
+GLSL/JS float arithmetic, not a real bug.
+
+`pnpm build`, `pnpm lint`, and all nineteen `pnpm probe:*` scripts pass.
+Live verification — a slow drag and four-finger scribbling on the phone,
+per Verify's own text — is left to Victor; the browser-automation path
+remains unattempted this session, per the "two hung calls" threshold this
+queue has carried since entry 102.
 
 **Do** — combine overlapping rings instead of summing them, and vary each ring
 enough that a dragged trail reads as a run of rings rather than one thick one.

@@ -146,6 +146,7 @@ export const RELEASE_NAMES: readonly string[] = [
   'held bearing',
   'null surface',
   'quiet quarter',
+  'run of rings',
 ]
 
 /** The current release's name — derived as the list's last element, so

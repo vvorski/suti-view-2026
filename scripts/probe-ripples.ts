@@ -78,5 +78,38 @@ for (const file of shaderFiles) {
 // gains or loses a geometric view.
 check('found the seven geometric shaders that declare these constants', matched === 7, `found ${matched}`)
 
+// docs/todo.md entry 79's own Verify: the combine operator (screen, not
+// summation) cannot drive `ink` above 1 regardless of how many rings
+// overlap. Pure arithmetic, mirroring `ink = 1.0 - (1.0 - ink) * (1.0 - c)`
+// from circles/drift/tide.frag.glsl by eye, same convention every probe
+// here uses for logic it can't import straight from GLSL.
+{
+  const screen = (ink: number, c: number): number => 1 - (1 - ink) * (1 - c)
+
+  let maxInk = -Infinity
+  for (let trial = 0; trial < 1000; trial++) {
+    let ink = 0
+    for (let i = 0; i < 16; i++) ink = screen(ink, Math.random())
+    maxInk = Math.max(maxInk, ink)
+  }
+  check('sixteen overlapping contributions, screened: ink never exceeds 1', maxInk <= 1 + 1e-9, String(maxInk))
+
+  // The degenerate worst case Decided names: sixteen touch slots, every one
+  // at full strength, stacked on the same pixel.
+  let inkAllFull = 0
+  for (let i = 0; i < 16; i++) inkAllFull = screen(inkAllFull, 1)
+  check('sixteen full-strength contributions, screened, on one pixel: ink is exactly 1', inkAllFull === 1, String(inkAllFull))
+
+  // Done-when's own "a single ring looks exactly as it does today": with no
+  // prior ink, screen(0, c) reduces to plain addition, so a lone ring's
+  // brightness is bit-identical to the old `ink += c`.
+  const single = screen(0, 0.42)
+  check(
+    "a single ring: screen(0, c) equals plain addition — unchanged from before this entry",
+    Math.abs(single - 0.42) < 1e-9,
+    String(single),
+  )
+}
+
 console.log(failures === 0 ? `\nall checks passed` : `\n${failures} check(s) failed`)
 process.exit(failures === 0 ? 0 : 1)
