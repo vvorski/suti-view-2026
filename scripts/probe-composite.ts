@@ -574,5 +574,69 @@ function vibrance(col: Vec3): Vec3 {
   check('atm ends idle and fully visible', atm.phase === 'idle' && atm.multiplier === 1, JSON.stringify(atm))
 }
 
+// 14. docs/todo.md entry 95 — the same "presence multiplied into the
+//     input" fault entry 34 already fixed one seam up (atm/geo), found
+//     here too, one seam further down (col/camera).
+{
+  function cameraCompositeOld(cam: Vec3, col: Vec3, mode: number, cameraMix: number): Vec3 {
+    return clamp01(mixV(col, blendWith(cam, col, mode), cameraMix))
+  }
+  function cameraComposite(
+    cam: Vec3,
+    col: Vec3,
+    mode: number,
+    geoAlpha: number,
+    atmAlpha: number,
+    cameraMix: number,
+  ): Vec3 {
+    const picture = Math.max(geoAlpha, atmAlpha)
+    const lit = mixV(cam, blendWith(cam, col, mode), picture)
+    return clamp01(mixV(col, lit, cameraMix))
+  }
+
+  const CAM: Vec3 = [0.62, 0.62, 0.62] // the entry's own reproduced value
+  const BLACK: Vec3 = [0, 0, 0] // `col` at both alphas 0
+
+  // (a) Reproduce the entry's own measured regression: the old formula
+  //     wipes the room to black under Normal and Multiply, at both alphas
+  //     0 — the same two of the six modes entry 34 already found broken
+  //     one seam up.
+  for (const mode of [0, 3]) {
+    const old = cameraCompositeOld(CAM, BLACK, mode, 1)
+    check(`old camera formula: ${MODE_NAMES[mode]} at both alphas 0 was black (regression fixture)`, close(old, BLACK), JSON.stringify(old))
+  }
+
+  // (b) The fix: at both alphas 0, the room passes through untouched under
+  //     every mode — Done-when's own "the room is untouched under all six
+  //     modes."
+  for (const mode of MODES) {
+    const result = cameraComposite(CAM, BLACK, mode, 0, 0, 1)
+    check(`camera at both alphas 0 under ${MODE_NAMES[mode]} leaves the room untouched`, close(result, CAM), JSON.stringify(result))
+  }
+
+  // (c) At picture == 1 (either alpha at its old full value), the new line
+  //     is bit-identical to the old one — Done-when's own "the picture
+  //     composites over the room exactly as it does today."
+  for (const mode of MODES) {
+    const col: Vec3 = [0.35, 0.5, 0.28] // some non-trivial composited picture
+    const oldResult = cameraCompositeOld(CAM, col, mode, 1)
+    const newResult = cameraComposite(CAM, col, mode, 1, 0.4, 1)
+    check(
+      `camera ${MODE_NAMES[mode]} at geoAlpha 1 is unchanged from before`,
+      close(oldResult, newResult),
+      `${JSON.stringify(oldResult)} vs ${JSON.stringify(newResult)}`,
+    )
+  }
+
+  // (d) uCameraMix 0 still leaves col untouched regardless of the alphas —
+  //     the existing "costs nothing while down" guarantee this entry must
+  //     not disturb.
+  {
+    const col: Vec3 = [0.35, 0.5, 0.28]
+    const result = cameraComposite(CAM, col, 3, 0, 0, 0)
+    check('camera mix 0 leaves col untouched regardless of the alphas', close(result, col), JSON.stringify(result))
+  }
+}
+
 console.log(failures === 0 ? '\nall composite checks passed' : `\n${failures} failed`)
 process.exit(failures === 0 ? 0 : 1)

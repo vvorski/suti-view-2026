@@ -262,10 +262,24 @@ void main() {
   // `col` is near black, so at the default screen mode the blend leaves the
   // room almost untouched: that is the path to a readable camera, and it did
   // not exist before.
+  //
+  // docs/todo.md entry 95 — the same fault entry 34 already fixed one seam
+  // up, found here too: with both uGeoAlpha and uAtmAlpha at 0, `col` is
+  // black, and blending a black `col` into the camera under Normal or
+  // Multiply wiped the room, even though "both layers off" is supposed to
+  // mean the room is untouched. `picture` reads presence from the alphas
+  // directly, never from `col`'s own luminance — a genuinely black picture
+  // (both layers on, drawing black) and an absent one (both layers off)
+  // produce the same `col`, and only the alphas can tell them apart. `max`,
+  // not a sum or a product: the room should answer to *either* layer being
+  // on, and multiplying would make turning one off dim the other's own
+  // relationship with the room. At picture == 1 (either alpha at its old
+  // full value) this is bit-identical to the line it replaces.
   if (uCameraMix > 0.0) {
     vec2 camUv = (vUv - 0.5) * uCameraFit + 0.5;
     vec3 cam = texture2D(uCamera, camUv).rgb * uCamColour;
-    vec3 lit = blendWith(cam, col, uAtmMode);
+    float picture = max(uGeoAlpha, uAtmAlpha);
+    vec3 lit = mix(cam, blendWith(cam, col, uAtmMode), picture);
     col = mix(col, lit, uCameraMix);
   }
 

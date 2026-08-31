@@ -10559,7 +10559,35 @@ directly: no text-animation library** — forty lines against tens of kilobytes,
 in a project whose only runtime dependency is `three`.
 
 ### 95. A layer at zero opacity leaves the room alone
-`status: building` · added 2026-08-30
+`status: done` · added 2026-08-30 · build 317
+
+**Build note (Mine).** Applied exactly the fix Decided specified —
+`composite.frag.glsl`'s camera-mix block now reads
+`float picture = max(uGeoAlpha, uAtmAlpha)` and mixes across
+`blendWith(cam, col, uAtmMode)`'s result rather than feeding it a `col` that
+could be black-because-absent, the same shape entry 34 already used one seam
+up. No design decisions of my own here beyond the one Decided already made
+(`max`, not a sum or product) — this entry's own numeric table was already
+exact, so the job was transcription plus verification, not invention.
+
+`probe-composite.ts` gained a new section 14, mirroring entry 34's own
+probe shape one seam over: a two-mode regression fixture reproducing the
+old formula wiping Normal and Multiply to black at both alphas 0; a
+six-mode check that the fixed formula leaves the room untouched at both
+alphas 0 under every mode; a six-mode check that `picture == 1` is
+bit-identical to the pre-fix formula, matching Done-when's own "the picture
+composites over the room exactly as it does today"; and one check that
+`uCameraMix == 0` still leaves `col` untouched regardless of the alphas,
+protecting the "costs nothing while down" guarantee the file's own
+surrounding comment already claims.
+
+**Verification.** `pnpm build` and `pnpm lint` clean. `pnpm probe:composite`
+— 44/44 checks pass, 12 new for this entry. The three CI-required probes
+(`pnpm probe`, `probe:shake`, `probe:fullscreen`) pass unchanged, as
+expected — this entry touches neither of the files they exercise. No
+on-screen phone verification: this entry lands entirely in shader
+arithmetic and its own probe, touches no HUD or gate surface, and its own
+Verify line says as much — "the probe carries this entirely."
 
 **Do** — mix the camera blend across its *result* by how much picture there
 actually is, so a picture turned off cannot govern the room through its blend
