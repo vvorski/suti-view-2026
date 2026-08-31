@@ -139,6 +139,13 @@ deleted one. Add one clause to its status line:
 `status: done` · added YYYY-MM-DD · build NNN · verified at build MMM
 ```
 
+Match the status line loosely when you rewrite it. Not every one is a plain
+`` `status: done` `` — entry 76's reads `` `status: done · FROZEN` ``, carrying
+Victor's approval of three constants inside the backticks. A pattern anchored
+on the exact closing backtick after `done` silently matches nothing there, and
+a silent skip during an archival move is an entry that leaves the queue without
+its verification clause. Assert that the substitution actually happened.
+
 Entry numbers are global and permanent. They are never reused, never
 renumbered, and a number in `built.md` still resolves the same way it did in
 `todo.md` — which is what keeps every `supersedes 94` and `build after 88`

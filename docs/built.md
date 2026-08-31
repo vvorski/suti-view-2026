@@ -3878,3 +3878,812 @@ reached at all," which is worth keeping distinct for whoever debugs this
 gap next.
 
 **Verification note — `/ccc` at build 355.** All five clauses hold, including the subtle one: *a tap that restores fullscreen does not consume the shot*. `main.ts`'s dispatch checks `fsBlocking` and `continue`s before the `cameraMode` branch is reached, so entry 80's fullscreen priority and this entry's instant shutter compose correctly rather than racing. Entering touches passthrough not at all, which is what 72's misreading got wrong and this entry exists to correct.
+
+### 75. A tempo every mapping can see, and geometry that lands on the beat
+`status: done` · added 2026-08-30 · started 2026-08-30 · build 247 · verified at build 355
+
+**Do** — promote the beat tracker out of one mapping into `CommonAnalysis`,
+replace its two-gap tempo test with autocorrelation over onset strength, report
+BPM, and give the shaders a beat phase. Add fields; change no existing
+behaviour.
+
+**Why** — asked for. There is already a beat tracker and it is better than
+nothing, but it is private to one of six mappings, it is fragile in three
+known ways, and the number it computes is never shown to anyone or to any
+shader.
+
+**Decided**
+- **What already exists, because none of it should be thrown away.**
+  `beatMapping()` (`fast.ts:549`) tracks inter-onset intervals: an onset when
+  `transient` crosses 0.5, a lock when two consecutive gaps agree within 15%,
+  `interval` smoothed 50/50, phase running 0→1 and reset on every onset, and a
+  1.8× grace before the lock drops. The design instinct in its docstring is
+  exactly right and is kept verbatim: *"a visualiser pulsing confidently at the
+  wrong tempo is a legible error; one that has stopped pulsing is not."*
+- **Fragility 1 — two consecutive gaps is the weakest possible estimator.**
+  One missed onset gives a doubled gap, one extra hit gives a halved one, and
+  either breaks the lock. Syncopation breaks it continuously. The standard
+  answer, and what the literature has settled on, is **autocorrelation of the
+  onset-strength signal** rather than clustering the interval list: it is
+  robust precisely because it does not depend on any single onset being located
+  correctly. Keep the onset detector; accumulate its strength into a rolling
+  buffer and autocorrelate that.
+- **Fragility 2 — octave errors, which are the known failure of every tempo
+  estimator.** Peaks in an autocorrelation are harmonically related, so a
+  140bpm track can lock at 70 or 280 and be internally consistent about it.
+  The standard fix is to take the top few candidate lags and **score each by
+  cross-correlating against an ideal pulse train**, then prefer the metrical
+  level nearest a resting tempo around 120bpm. Without this step the tracker is
+  right about the rhythm and wrong about the beat, which looks worse than not
+  locking.
+- **Fragility 3 — phase snaps to every onset.** `phase = 0` on any qualifying
+  onset means a syncopated hit drags the beat off. Nudge phase toward the
+  onset in proportion to how near it fell to the prediction, rather than
+  snapping — the picture then keeps time *through* an off-beat instead of being
+  pulled by it. A hit far from the prediction should barely move it.
+- **Two smaller ones, both cheap.** The onset threshold is a fixed `0.5`, so a
+  quiet source never crosses it and a loud one crosses constantly — make it a
+  rolling median plus a delta, with 0.5 kept as the floor. And beat onsets
+  should be weighted toward the **low band**, where the kick is, while
+  `transient` keeps its broadband meaning for everything else. Add
+  `beatStrength`; do not redefine `transient`.
+- **Where it lives, and this is the whole "add, don't rip out" answer** → the
+  tracker moves into **`CommonAnalysis`**, which all six mappings already
+  construct and call. Every mapping then gains a tempo for free, **none of
+  them changes what it returns**, and `beatMapping` keeps its exact behaviour
+  while its private copy is deleted in favour of the shared one. Nothing is
+  removed from the app; one thing is promoted.
+- **Three new fields on `VisualParams`** — `beatPhase` (0→1 across a beat),
+  `bpm` (0 when unlocked), `beatConfidence` (0-1, continuous). Purely additive:
+  every existing consumer ignores them, and `beatConfidence` replacing a
+  boolean `locked` is what lets a shader blend between beat-driven and
+  energy-driven rather than switching.
+- **Three new uniforms**, `uBeat`, `uBpm`, `uBeatConfidence`, beside the seven
+  already there. **At `uBeatConfidence == 0` every view must render exactly as
+  it does today** — the same algebraic-identity discipline entry 47 used for
+  `uDay`, and the reason this can ship without re-tuning thirteen shaders.
+- **One view first, then the rest.** Circles takes the beat; the other five
+  geometric views follow in their own entry once it is proven on a phone
+  against real music. **Mine**, and it is the same order entry 33 followed for
+  touch, for the same reason: thirteen shaders re-tuned at once against a
+  brand-new signal is not reviewable.
+- **What "on the beat" should mean for geometry**, so it is not left to taste
+  → an *event*, not a continuous drive. The bands already carry continuous
+  energy and duplicating that on a beat clock gains nothing. A ring spawning on
+  the beat, a rotation stepping a fixed amount, a colour advancing one notch —
+  something that visibly *lands* — is what energy-driven mappings structurally
+  cannot do, and it is the whole reason to have a tempo.
+- **Report the BPM.** The user asked to measure it, and a tempo nobody can see
+  cannot be debugged — the same argument that put `samples`/`peak` in
+  `shake.ts`'s diagnostics and `want`/`armed` in entry 66. The readout gains
+  `bpm` and confidence.
+
+**Lands in**
+- `src/engine/fast.ts:225-320` — `CommonAnalysis` gains the tracker;
+  `:549-620` — `beatMapping` reads it instead of keeping its own.
+- `src/engine/fast.ts:23-62` — the three `VisualParams` fields.
+- `src/scene.ts:343-351, 876-884` — the three uniforms.
+- `src/shaders/circles.frag.glsl` — the first consumer.
+- `scripts/probe-mapping.ts` — the accuracy suite below.
+
+**Done when** — against synthetic onset trains the tracker reports **120 ± 2
+BPM within 4 seconds**, holds through a **missed beat** and through an
+**inserted off-beat hit**, and does **not** report 60 or 240 for a 120 input —
+the octave case being the one that most needs asserting because it fails
+plausibly. All six mappings return byte-identical `level`/`low`/`mid`/`high` to
+today for a given input. Circles is visibly on the beat with real music, and
+identical to today when confidence is 0.
+**Verify** — the probe carries the tracker, since it is arithmetic over a
+synthetic onset signal and needs no audio. The phone carries "does it look like
+it is on the beat", which no probe can answer. Test against something with a
+weak or absent kick as well as a four-on-the-floor track — the honest failure
+mode is that it locks beautifully to dance music and reports nothing for a
+ballad, and that is acceptable only if it says so rather than guessing.
+**Hard stops** — prefs no (no new mapping, no stored field; the six mapping
+names are unchanged) · url no · capture no · dependency no — autocorrelation
+over a small rolling buffer is a loop, not a library.
+
+**Build note** — implemented as decided: `BeatTracker` lives inside
+`CommonAnalysis` (`fast.ts`), fed by a new low-band-scoped `SpectralFlux`
+instance for `beatStrength` (the existing `SpectralFlux.update()` grew
+optional `loHz`/`hiHz` params rather than a new class, defaulting to full
+spectrum so the broadband `transient` call site is untouched). `beatMapping`
+now reads `c.bpm`/`c.beatPhase` and keeps only the `locked ? beatEnv :
+fallbackLevel` shape that made it "beat-synced"; its own two-gap estimator,
+and the five constants that tuned it (`BEAT_ONSET_THRESHOLD`,
+`BEAT_MIN_INTERVAL`, `BEAT_MAX_INTERVAL`, `BEAT_STABILITY`,
+`BEAT_LOCK_GRACE`), are deleted outright. All three `VisualParams` fields
+land on all six mappings via the same trailing pass-through block every
+mapping already shared for `breakdown`/`surge`/`novelty`/`roughness`.
+
+Tracker design: onset strength resampled onto a fixed 50Hz ring buffer
+(bucket = loudest sample seen in its 20ms span, not a time-weighted average —
+onsets are spikes, and averaging blurs one toward invisibility against a
+mostly-silent bucket), autocorrelated over a rolling 3.2s window every 0.5s.
+Each autocorrelation peak is scored by a pulse-train comb search — the best
+of every phase offset at that spacing — which is the octave disambiguator:
+a true fundamental and its harmonics all score well under plain
+autocorrelation, but only by searching every phase can a comb be found that
+lines up with literally every onset rather than merely some of them. Among
+candidates clearing a floor, the one nearest 120bpm wins. Phase runs
+continuously at the estimated tempo (wrapping via modulo, not clamping at 1
+the way the old tracker did — it is a live prediction, not a record of the
+last hit) and a real onset nudges it toward 0 in proportion to how close it
+already sat to a cycle boundary, per the entry's fragility-3 fix.
+
+Three bugs found by testing before this shipped, none of them from a code
+review — each surfaced by running the entry's own synthetic-onset-train
+cases and finding a wrong number:
+1. The confidence envelope was pushed with the frame's own `dt` (~16ms)
+   instead of the ~500ms actually elapsed since the last push, so confidence
+   climbed at roughly 1/30th its intended rate and never crossed the lock
+   threshold inside any reasonable test window. Fixed by pushing with
+   `BEAT_REFRESH_S` instead.
+2. The octave tie-break first used a *relative* tolerance (a candidate had
+   to score within 92% of the best). A single missed onset let a
+   subharmonic's comb dodge the gap at some phase offset and score higher
+   than the true fundamental's — which necessarily samples every onset,
+   including the missing one — so the fundamental was wrongly excluded from
+   the tie-break exactly on the entry's own "holds through a missed beat"
+   case. Fixed by switching to an absolute floor (`BEAT_CANDIDATE_FLOOR`):
+   a lag no longer has to be near the *best* score, only "clearly periodic
+   on its own terms," which lets an imperfect-but-real fundamental compete
+   even when a lucky subharmonic scores higher.
+3. Random-interval (non-periodic) onsets still produced a confident,
+   invented tempo — not one of the entry's own numeric Done-when cases, but
+   squarely against its quoted design instinct ("one that has stopped
+   pulsing is not [a legible error]") and its own Verify text ("acceptable
+   only if it says so rather than guessing"). Root cause: at the slow end of
+   the tempo range a 3.2s window holds as few as two comb positions, and
+   searching every phase offset for the best of only two samples finds a
+   spuriously perfect "period" in outright noise almost every time — a
+   small-N multiple-comparisons problem, not a threshold problem. Fixed by
+   requiring a phase offset to have at least `BEAT_MIN_COMB_SAMPLES` (4)
+   confirming positions before its average counts for anything, which as a
+   side effect means this tracker cannot confidently confirm a genuinely
+   slow tempo (well under 120bpm) inside one 3.2s window — an honest
+   trade-off for the window size the entry's own "within 4 seconds" figure
+   requires at 120bpm, not one I'd claim covers the full 40-300bpm range
+   with equal confidence at every tempo.
+
+All numeric constants in the tracker's own timing/scoring
+(`BEAT_BUCKET_S`, `BEAT_WINDOW_S`, `BEAT_REFRESH_S`, `BEAT_MIN_FILL_S`,
+`BEAT_CANDIDATE_FLOOR`, `BEAT_MIN_COMB_SAMPLES`, `BEAT_MEDIAN_WINDOW`,
+`BEAT_THRESHOLD_DELTA`, `BEAT_MIN_ONSET_GAP`, `BEAT_LOCK_CONFIDENCE`) are
+**Mine** — the entry specifies the mechanisms, not these values. Same for
+the beat-pulse ring's own shape in `circles.frag.glsl` (travels 30% of
+`maxRadius`, fades linearly across that same span) — a restrained, single
+extra `ring()` call reusing the existing primitive, deliberately not a
+second full ripple system, since the entry itself defers exploring the
+geometric language further to a future entry once this is proven on a
+phone.
+
+Verified: `pnpm build`/`pnpm lint` clean. `pnpm probe` — all thirteen checks
+pass, including six new ones written directly against the entry's own
+Done-when: 120±2bpm within 4s (locks by ~2s in practice), holds through one
+missed beat, holds through one inserted off-beat hit, settles on 120 and
+explicitly not 60 or 240, stays at bpm=0 against a flat kickless signal, and
+does not invent a tempo from random-interval onsets (this last one only
+after bug 3 above was found and fixed — it failed loudly before that).
+Byte-identical regression for the five non-beat mappings confirmed by a
+throwaway script diffing this build's output against `git show HEAD:` of the
+pre-entry `fast.ts` across the headroom table, the 120bpm pattern, and the
+full breakdown track — `===` on `level`/`low`/`mid`/`high` on every frame,
+not just close. `beat` itself is not literally byte-identical to before —
+the entry's own fragility-3 fix (nudge, not snap) necessarily changes its
+behaviour on a syncopated hit, which is the point — but both of the
+existing probe's `beat` checks (steady lock, noise fallback) still pass
+unchanged. Live in a real WebGL context (`createVisualiser` via dynamic
+import, same technique entries 71/73 used): rendered `circles` twice at
+`beatConfidence=0` with different `beatPhase` values and got pixel-identical
+readback both times, then rendered again at `beatConfidence=0.9` and got a
+visibly different, phase-dependent result — the algebraic identity holds,
+verified rather than merely reasoned about. `hud-probe.html`'s real,
+mounted HUD confirmed the new readout line renders correctly both locked
+(`beat  ###...  0.85  120 bpm`) and unlocked (`beat  #...  0.12  —`). No
+320×568/360×640 check — nothing here touches a chip or a layout surface,
+only one more line inside the existing stats `<pre>`.
+
+Not verified, and not verifiable in this harness: "Circles is visibly on
+the beat with real music" is the entry's own phone-only Verify line: no
+probe can answer it. Also untested against a real ballad or anything with a
+weak/absent kick — the closest proxy available here is the synthetic flat
+signal, which correctly reports no tempo, but a real recording's spectral
+texture is not that.
+
+### 76. The channels lag behind the phone, and snap back
+`status: done · FROZEN` · added 2026-08-30 · started 2026-08-30 · build 249 · verified at build 355
+
+**Frozen 2026-08-30, by Victor: "colour lags has good colour, freeze that for
+now."** The spring and the cap shipped at build 249 as
+`STIFF = 400`, `DAMP = 14` (ζ 0.35, ω 20 rad/s) and `MAX_SLIP = 0.006`, and
+those four numbers are **not to be retuned** — not to make the effect stronger,
+not to make it subtler, not as a side effect of touching the tumble whose
+springs sit deliberately at different frequencies from these.
+
+The reason it needs saying: this landed first time, which is rare here, and the
+constants look arbitrary enough to invite adjustment. They are not arbitrary —
+ζ 0.35 is what produces the visible overshoot the entry was asked for, and
+0.006 uv is the ceiling past which line art reads as broken rather than
+dispersed. If a future request wants the effect changed, that is a new entry
+with Victor's word in it, not a tweak.
+
+**Do** — move the picture apart into its red, green and blue when the phone
+moves, and let them spring back together when it stops. Its own module, its own
+spring, its own uniform — sharing nothing with the tumble or with entry 58's
+colour bias.
+
+**Why** — asked for, and it fills a real gap: every motion response the app has
+so far is either a rigid-body move (the tumble) or a colour shift (entry 58).
+Nothing has ever come *apart*.
+
+**Decided**
+- **A separate module, as asked.** `src/engine/rgb-slip.ts`, in the same shape
+  as `motion-bias.ts`, `ripples.ts` and `emitter.ts`: pure state, one pure
+  update function, no DOM and no clock of its own, so it is probeable in node.
+  It shares no state with the tumble and no state with the colour bias — the
+  only thing it reads is a number they also read.
+- **It needs no new plumbing at all.** `main.ts` already hands the whole
+  `TumbleState` to `scene.ts` via `setTumble` (`:811`, `:1364`), so the slip is
+  ticked inside `render()` from `disturb` and the tumble offset that are
+  already sitting there. No new sensor path, no change to `shake.ts`, no
+  change to `main.ts`. **Mine**, and it is most of why this is small.
+- **Its own spring, deliberately unlike the tumble's.** The tumble is heavy and
+  slow — ω ≈ 12.6 and 8.9 rad/s at ζ 0.4. The slip is **fast and looser**:
+  ω ≈ 20 rad/s (`STIFF` 400) at **ζ ≈ 0.35**, so it flicks apart and visibly
+  overshoots on the way back rather than easing home. That is what "bounce
+  back" asks for, and making it a *different* frequency from the tumble is what
+  stops the two reading as one effect — the same reasoning `shake.ts` already
+  applies to keeping its own two springs at different frequencies.
+- **Direction comes from the tumble's offset, not from raw acceleration.**
+  That offset is already a spring-driven displacement pointing where the phone
+  was kicked, so the channels separate *along the direction of movement* and
+  the picture reads as lagging rather than as smearing at random. **Mine**, and
+  it reuses existing state instead of adding a second interpretation of the
+  accelerometer — which the motion spike already warns is where two meanings of
+  "tilt" start drifting apart.
+- **Red leads, blue trails, green holds still** — `+offset` on red, `−offset`
+  on blue, green at the true position. Green carries most of the luminance, so
+  leaving it undisplaced keeps the image sharp and the fringing reads as colour
+  rather than as blur. This is what a real lens does and it is the reason the
+  effect is legible at a couple of pixels.
+- **`MAX_SLIP = 0.006` uv**, about two to four pixels on a phone. Small on
+  purpose: this is a texture-sample offset, and past a few pixels line art
+  stops looking dispersed and starts looking broken — the same ceiling
+  argument `shake.ts`'s `MAX_ANGLE` comment makes about the tumble.
+- **Where it happens, and the cost, stated plainly** → in
+  `composite.frag.glsl`, at the point the two layers are sampled. Slipping
+  channels means sampling each texture three times instead of once, so this is
+  **6 samples where there are 2**. It goes behind `if (uSlip > 0.0)` — a
+  *uniform* branch, identical for every fragment in the draw, which is the
+  cheap kind on a mobile GPU — so a still phone pays nothing and the picture is
+  bit-identical to today. That identity-when-off property is the same one
+  entry 47 gave `uDay` and entry 75 gives `uBeatConfidence`.
+- **The room is never slipped.** The sampling happens before the `uCameraMix`
+  block, so passthrough is untouched for free — consistent with entries 72 and
+  73 treating the room as real rather than as material.
+- **It does not mix with anything.** Entry 58 shifts colour *values* and this
+  shifts sample *positions*; they are orthogonal operations at different points
+  in the pipeline and can both be on with no interaction to reason about.
+  Entries 68/74's ink and 70's vibrance all happen later in the tail, on the
+  finished `col`. Stated because "wire it up separately" was the request and
+  this is what makes it true rather than a claim.
+
+**Lands in**
+- `src/engine/rgb-slip.ts` — new.
+- `src/scene.ts:418` — `uSlip` beside `uTumble`; `:1002` — ticked in `render()`
+  from the state `setTumble` already stores.
+- `src/shaders/composite.frag.glsl:126` — the three-offset sampling.
+- `scripts/probe-rgb-slip.ts` — new, modelled on `probe-motion-bias.ts`.
+
+**Done when** — a still phone renders bit-identically to today; a nudge visibly
+separates the channels along the direction of the nudge and they overshoot once
+before settling; a hard shake reaches the cap without the picture reading as
+broken; camera passthrough is unaffected at any mix; and the probe shows the
+spring overshooting and returning to zero from every handling case in
+`probe-shake.ts`'s own table.
+**Verify** — the probe for the spring, the phone for whether 0.006 and ζ 0.35
+are right. Watch it against a *still* hand as well as a moving one: `disturb`
+reads 0.00 for a held phone by design, so this must be genuinely invisible at
+rest rather than faintly jittering, which is the failure a directional effect
+driven by a noisy signal would have.
+**Hard stops** — prefs no (always on, no chip; the arc is scarce and this is
+not a setting) · url no · capture no (it is picture, and lands in a saved frame
+exactly as the tumble does) · dependency no.
+
+**Build note** — implemented as decided. `src/engine/rgb-slip.ts` is a pure
+module in the same shape as `motion-bias.ts`: `createRgbSlipState()` /
+`updateRgbSlip(state, dt, disturb)`, a single 1D underdamped spring
+(`STIFF=400` → ω=20, `DAMP=14` → ζ=0.35, exactly as specified) chasing
+`disturb` as a moving target, clamped to `[0, 1]` and scaled by `MAX_SLIP`
+(0.006) before it is returned — the caller applies no scaling of its own.
+Exported through `engine/index.ts` alongside `motion-bias.ts`, per that
+barrel's own existing precedent.
+
+**One deviation from the literal Lands-in, disclosed rather than silent**:
+the entry names one new uniform, "`uSlip` beside `uTumble`", and a literal
+`if (uSlip > 0.0)` branch — both of which only make sense for a scalar. The
+direction half of "direction comes from the tumble's offset" is therefore
+read directly from `uTumble.yz` inside `composite.frag.glsl` itself
+(`normalize(uTumble.yz)`), rather than a second `uSlipDir` uniform or any
+JS-side vector combination — `uTumble` already carries that offset into the
+shader every frame regardless of this entry, so this is genuinely "no new
+plumbing", not merely close to it. `rgb-slip.ts` itself therefore knows
+nothing about direction at all, which is a stricter reading of "the only
+thing it reads is a number they also read" than a version that also fed it
+`offsetX`/`offsetY` would have been. **Mine**.
+
+Also **Mine**, and disclosed for the same reason: `amount` is floored at 0
+as well as capped at 1, rather than left to swing negative the way an
+unclamped spring naturally would on the way back through its target. An
+unclamped version would let the R/B lead briefly and slightly reverse during
+the ring, which is physically what "overshoots on the way back" describes
+most literally — but the entry's own `if (uSlip > 0.0)` guard only re-enables
+the 6-sample branch for a *positive* value, so a negative excursion would
+silently render as "no slip" at exactly the moments it should be doing the
+most, the opposite of the intended effect. Flooring at 0 is what keeps the
+guard meaningful. Overshoot is still real and still verified (see below) —
+just never as a sign reversal.
+
+Wiring reuses the entry's own named seam exactly: `setMotion`'s existing
+`motionDisturb` closure variable (already recorded every frame for
+`updateMotionBias`, entry 58) is read again for `updateRgbSlip` inside
+`render()`, and the result is written straight to `compositeUniforms.uSlip`.
+No new setter method, no new closure variable for direction. In
+`composite.frag.glsl`, the two original `texture2D(uAtmosphere/uGeometry,
+uv)` lines are now the `else` branch of `if (uSlip > 0.0)`, unchanged
+character-for-character; the `if` branch samples each three times (R at
+`uv+off`, G at `uv`, B at `uv-off`) — 6 samples where there were 2, exactly
+as Decided states, and paid only when `uSlip` is actually nonzero since it
+is a uniform branch (identical for every fragment in the draw).
+
+Verified: `pnpm build`/`pnpm lint` clean. New `scripts/probe-rgb-slip.ts`
+(`pnpm probe:rgb-slip`), modelled on `probe-motion-bias.ts`: a still phone
+never produces any slip; a spring chasing a realistically-decaying disturb
+signal (the same 0.7s time constant `shake.ts`'s own `Tumble.disturb` decays
+at) measurably *overtakes* the target it is chasing before both settle to
+zero — the genuine-overshoot signature available to a floor-clamped
+magnitude, see the deviation note above for why a sign-change count was the
+wrong test for this design; a sustained hard disturbance reaches the cap and
+the returned uv offset never exceeds `MAX_SLIP` under any input tried. The
+handling table reuses `probe-shake.ts`'s own `still()`/`shaking()` driving
+functions (kept in lockstep by eye, `probe-nudge.ts`/`probe-tap.ts`'s
+established precedent) through a real `Tumble` for every *distinct physical
+scenario* in that file's table (still, tremor, walking, nudge, jolt,
+deliberate shake, violent shake, single knock, knock+rebound, sustained low
+agitation) — narrower than the full table on purpose: the omitted rows
+there only vary sensor sample rate against a physical scenario already
+covered, which `updateRgbSlip` cannot see the difference of since it only
+ever reads `disturb`, a number already computed by the time it arrives.
+Every case: never exceeds `MAX_SLIP`, settles back to (near) zero after its
+own settle period. All thirteen checks pass.
+
+Live in a real WebGL context (`createVisualiser` via dynamic import, same
+technique entries 71/73/75 used), with `performance.now()` monkey-patched to
+a fixed instant so the comparison isolates `uSlip`'s own effect from the
+picture's ordinary time-driven motion: two renders of a genuinely still
+phone (`disturb=0`, no tumble offset) at the same frozen instant are
+pixel-identical; the same scene with a real tumble offset and `disturb=1`
+driven for twenty frames (long enough for the spring to actually rise, since
+it is a spring and not an instant assignment) renders visibly differently.
+No console errors. No 320×568/360×640 check — this entry adds no chip, no
+pref, no layout surface; the picture itself is the only thing that changes,
+and that is exactly what the live pixel comparison above already checked.
+
+Not independently verified: whether 0.006 and ζ=0.35 are the right *feel* on
+a real phone — the entry's own Verify text names this as the phone's
+question, not the probe's.
+
+**Verification note — `/ccc` at build 355. The freeze holds.** `STIFF = 400`, `DAMP = 14` and `MAX_SLIP = 0.006` are unchanged from build 249. The still-phone identity also survived entry 104 turning `uSlip` from a `float` into a `vec2`: `updateRgbSlip` returns exactly `{0,0}` at zero magnitude and the shader guards on `uSlip.x != 0.0 || uSlip.y != 0.0`, so the branch is still not taken. What 104 changed was the direction only — and only half cured it there; see 104's own verification note and build 348.
+### 77. Two rings: what the wedge edits, and everything else
+`status: done` · added 2026-08-30 · started 2026-08-30 · build 253 · verified at build 355
+
+**Do** — split the icon arc in two. The four layer selectors stay on the
+current arc beside the control; the four global toggles move to a second,
+wider, smaller ring outside it.
+
+**Why** — there are eight chips on an arc whose own code says it works for six,
+and the two at the far end read as decoration.
+
+**Decided**
+- **Which two are "the top two", computed rather than guessed.** The arc is
+  centred off-screen at the bottom-right corner and sweeps from lower-left to
+  upper-right, so chip order *is* height order. At 412×915 the row lands at
+  y = 673, 642, 613, 587, 563, 541, **523, 508** — the two highest are the last
+  two constructed: **`day` ("Sky: auto") and `shutter` ("Camera mode")**.
+- **Why they read as dead**, and it is not one reason: `day` cycles auto → day
+  → night (entry 71), and one tap from auto at a mid-sky hour lands on a state
+  that looks almost identical to where it started — the control works and its
+  first press is invisible. `shutter` (entry 72) does nothing visible at all if
+  the camera is refused or absent. Both are real behaviours with no feedback,
+  and both sit at the crowded end of the row where they are least likely to be
+  tried twice.
+- **The arc is genuinely over capacity, and the file says so.**
+  `CHIP_ARC_MIN_START`'s comment: *"Centring blindly on `CHIP_ARC_MID` works for
+  up to six chips… A seventh does not append a slot, it re-centres all seven and
+  pushes the leading one off the left edge."* There are now eight. The row has
+  been jammed against that clamp since the seventh, so every chip added since
+  has been stealing margin from the first one.
+- **So the split is not only tidier, it retires the clamp.** Four chips per
+  ring is under the six the clamp was invented for, so both rings centre
+  honestly on `CHIP_ARC_MID` again and `CHIP_ARC_MIN_START` stops being
+  load-bearing. **That is the strongest argument for this change** — it fixes
+  the layout problem rather than redistributing it.
+- **The division is by what a chip *does*, not by importance.** Inner ring:
+  `geo`, `atm`, `cam`, `ear` — these choose what the wedge edits, so they
+  belong against the wedge. Outer ring: `num`, `grav`, `day`, `shutter` — these
+  toggle something about the whole app and never change what the bands mean.
+  That is the same line the file already draws in `GROUPS` versus the loose
+  `mkChip` calls after it; this makes it visible.
+- **Smaller drawn, not smaller to hit.** Outer ring at **R 1.22** and **0.8×**
+  the drawn size, with the **touch target left at full size**. **Mine**, and it
+  follows the idiom already in this file — `GRAB_PX`'s own comment, *"the
+  thumb-safe minimum this file is built around; the drawn tracks are far
+  thinner"*. A 27px tap target on a phone is the kind of thing that makes a
+  control feel broken, and "a little smaller" is about visual weight.
+- **One stale thing to fix while here.** `chipPosition` is exported with a
+  comment explaining that the fullscreen chip needs the same arc — and entry 42
+  moved that chip to the centre of the screen. It now has exactly one caller,
+  in this file. Make it local and delete the justification, rather than leaving
+  a comment that documents a caller that no longer exists.
+- Not decided here → whether `day` and `shutter` should announce what they did.
+  Both would benefit and it is a different question (feedback, not layout); the
+  numeric readout already reports the sky state for anyone with it on.
+
+**Lands in**
+- `src/hud.ts:96-140` — a second radius and size factor; `chipPosition` takes a
+  ring, stops being exported, and loses the stale comment.
+- `src/hud.ts:887-940` — the two groups laid out separately, each with its own
+  `n`.
+- `src/hud.ts:953` — the placement loop.
+
+**Done when** — the four layer icons sit on the current arc against the wedge
+and the four toggles on a visibly wider, smaller arc outside them; every chip
+is still tappable at its old size; nothing is clipped at 320×568 or 360×640,
+which is the pair `hud-narrow.html` already checks; and `CHIP_ARC_MIN_START` is
+no longer reached by either ring.
+**Verify** — `hud-narrow.html` at both widths for clipping, then the phone with
+a thumb, which is the only test of whether the outer ring is still comfortably
+reachable at the top of the sweep — the corner the two dead-seeming chips
+already occupy.
+**Hard stops** — prefs no · url no · capture no · dependency no.
+
+**Build note** — implemented as decided. `chipPosition` takes a fourth
+`ring: 'inner' | 'outer'` argument, chooses `R_CHIPS_INNER` (1.08, unchanged)
+or the new `R_CHIPS_OUTER` (1.22) accordingly, and is no longer exported —
+`placeChips` has been its only caller since entry 42 moved the fullscreen
+chip off this arc, exactly as Decided says. `hud-probe.html`'s own dangling
+`window.chipPosition = chipPosition` (unused even there — nothing in that
+file ever read it back) is deleted along with it, rather than left importing
+a name that no longer exists.
+
+**How "smaller drawn, not smaller to hit" is actually achieved**, since the
+entry names the two numbers (R 1.22, 0.8×) but not the mechanism: `mkChip`
+now wraps its icon in a nested `<span class="hud-chip-face">`, and every
+style that used to live on `.hud-chip` itself — the background, border,
+border-radius, colour — moved onto that nested face. `.hud-chip` (the
+actual `<button>`, and therefore the actual pointer-event target) is now an
+invisible, always-3rem positioning box; `.hud-chip--outer .hud-chip-face`
+alone gets `transform: scale(0.8)`. A CSS transform repaints an element
+smaller without shrinking the box a pointer event hit-tests against — the
+parent `<button>` — so the outer ring draws at 80% while its own tap target
+stays the full 3rem, verified directly (see below) rather than assumed from
+how transforms are generally supposed to work. **Mine**, since the entry
+states the constraint ("touch target left at full size") but not how.
+
+Ring membership is tracked via `chip.dataset.ring`, set once in `mkChip` and
+read by `placeChips` to split the map into two lists before calling
+`chipPosition` once per list — rather than inferring the split from
+insertion order (which would have worked today, since the four inner chips
+happen to be constructed first, but ties correctness to a call order nobody
+would think to preserve on a later edit).
+
+`R_CHIPS_OUTER_SCALE` (0.8) is a single named constant referenced both from
+the CSS template literal (`transform: scale(${R_CHIPS_OUTER_SCALE})`) and
+this build note, rather than a bare `0.8` typed once into the stylesheet
+string — so the one number the entry actually specifies exists in the file
+exactly once.
+
+Verified: `pnpm build`/`pnpm lint` clean; `pnpm probe` unaffected (0
+failures — this entry touches only layout). Live via `hud-narrow.html`'s
+own `window.run()` at both 320×568 and 360×640: `escaped: []` at both — no
+chip crosses its frame's edge. Confirmed the split and the size split
+directly (not just visually): `.hud-chip`'s own `getBoundingClientRect()`
+reads exactly 48×48 for all eight chips regardless of ring — the touch
+target claim, checked, not assumed — while `.hud-chip-face`'s own rect
+reads ~48-50px for the inner four and ~38-40px for the outer four (a
+~0.79-0.8 ratio, matching `R_CHIPS_OUTER_SCALE` within a border pixel).
+`describe().chips` confirms the inner four are exactly `Geometric layer,
+Atmospheric layer, Camera layer, Listening` and the outer four exactly
+`Numeric readout, Gravity, Sky: auto, Camera mode`, per Decided's own
+division. A real tap on an outer-ring chip (`Gravity`, via `w.tap()` at its
+real screen coordinates) correctly toggled `prefs.gravity` — the new nested
+face element does not interfere with the existing `pointerup` listener,
+which stayed on the button as before. `CHIP_ARC_MIN_START` (209°) is not
+reached by either ring at either width — checked by hand against the same
+formula `chipPosition` itself uses: at 320×568 the inner ring's leading chip
+computes to 218.8° and the outer ring's to 220.3°, both comfortably above
+the clamp; both rings have *more* margin at 360×640, since a larger `base`
+only increases `r`, which only shrinks `step`. No console errors.
+
+Not independently verified: the phone-with-a-thumb reachability question the
+entry's own Verify text names as its half of this — outside what a
+browser-only harness can answer.
+
+### 78. Camera mode is a door back to the menu, not a one-way trip
+`status: done` · added 2026-08-30 · started 2026-08-30 · build 260 · verified at build 355
+
+**Do** — make the shutter chip stay live in camera mode and return to the open
+menu when tapped, retire the two-finger exit, and show the chip as active while
+the mode is on.
+
+**Why** — you enter camera mode from the menu and there is no way back to it.
+And the gesture that does exist takes an unwanted photo on the way out.
+
+**Decided**
+- **The complaint is exact and the design caused it.** Entry 72 decided the
+  exit goes "to the normal picture rather than opening the panel". So the trip
+  is one-way: enter from a chip, leave to a bare screen, then double-tap to get
+  the menu back. Every other chip in the app leaves you where you were. This
+  one does not, and that asymmetry is the whole of "not connected to the menu".
+  **Overturned: exiting returns to the menu, open, as it was.**
+- **The two-finger exit fires a spurious screenshot, every time.**
+  `nonChipDown` is counted from `touchField.sample(now)` — the *live contact
+  set* — so when the first finger lands it is 1, which falls through to the
+  shutter and saves a frame; only the second finger makes it 2 and exits. Two
+  fingers never land in the same 16ms frame in practice. So **the gesture for
+  leaving camera mode is also the gesture for taking a picture you did not
+  want**, and at a 300ms rate limit it is not swallowed either.
+- **That bug cannot be fixed while both gestures start identically.** The
+  shutter's whole value is firing on `down` with no wait (entry 72), and any
+  scheme that waits to see whether a second finger is coming gives that back.
+  A sequential two-finger tap is one-finger-then-one-finger, and no amount of
+  care distinguishes its first contact from a photo.
+- **So the exit becomes the chip, and the gesture goes away.** `e.onChip`
+  contacts are already excluded before the camera branch is reached, so a chip
+  tap can never fire the shutter — the conflict does not exist for a chip and
+  cannot be introduced. **Mine**, and it fixes the bug by deletion rather than
+  by another timing rule. The chip is also the only exit anyone would find
+  without being told, which the two-finger gesture never was.
+- **Which means the chip must be visible and live in camera mode**, alone —
+  `.hud-scrim:not(.open) .hud-chip { pointer-events: none }` (`hud.ts:408`) is
+  what makes every chip inert with the panel closed, so this one needs an
+  explicit exception rather than the rule quietly not applying. Only the
+  shutter chip; the rest stay inert.
+- **The chip says which state it is in**, like `day` does. `hud.ts:1227` is
+  currently `void shutterChip` — the unused-variable idiom — so nothing ever
+  repaints it and it looks identical whether the mode is on or off. That is
+  also half of why the mode feels disconnected: the menu never shows that it
+  is running.
+- **The centred glyph stays exactly as it is.** It says what a tap does; the
+  chip says how to leave. Two different jobs and neither should take the
+  other's — and entry 76's freeze does not apply here, but the same instinct
+  does: the glyph shipped right and is not what is being complained about.
+- **Check the same fault on the ordinary path.** `main.ts:1354` uses the same
+  `nonChipDown === 2` test for the two-finger *menu* open (entry 67). Its first
+  finger does not save immediately — it starts a pending tap — but that pending
+  tap resolves 400ms later and may still write a frame after the menu opens.
+  Same root, less visible. Confirm and fix in the same change.
+
+**Lands in**
+- `src/main.ts:1331-1347` — the camera branch loses its two-finger case.
+- `src/main.ts:1035-1042` — `exitCameraMode` reopens the panel.
+- `src/main.ts:1354` — the ordinary two-finger path's stray pending tap.
+- `src/hud.ts:408` — the exception that keeps one chip live.
+- `src/hud.ts:1005-1014, 1227` — the chip toggles, and paints its state.
+
+**Done when** — entering from the chip and tapping it again returns to the menu
+exactly as it was; no photo is ever saved by leaving; the chip visibly reads as
+active while the mode is on; every other chip is still inert with the panel
+closed; and a two-finger tap in the ordinary picture opens the menu without
+leaving a frame behind 400ms later.
+**Verify** — the phone, counting files: enter camera mode, take three photos,
+leave, and confirm exactly three arrived. That count is the whole test and it
+is the one nobody ran.
+**Hard stops** — prefs no · url no · capture **yes, and answered**: this
+strictly *reduces* what is written — the accidental frame on exit stops
+happening, and no new path to a capture is added · dependency no.
+
+**Build note** — implemented as decided, plus one interface addition the
+entry names by consequence but not by shape. `dispatchTouches`'s camera
+branch (`main.ts`) lost its `nonChipDown === 2` case entirely; the shutter
+now fires unconditionally on every non-chip `down` while in the mode
+(`e.onChip` contacts, including a tap on the shutter chip itself, are
+already excluded above this branch, so the chip's own exit tap can never
+also be read as a photo). `exitCameraMode` now calls `panel.open()` after
+restoring the pre-mode passthrough mix. The ordinary two-finger `panel.open()`
+path now cancels every still-pending single-tap before opening
+(`for (const p of [...pendingTaps]) cancelPendingTap(p.pointerId)`) — the
+exact fix the entry's own diagnosis names.
+
+`onCameraMode` becomes a toggle at the call site
+(`() => (cameraMode ? exitCameraMode() : enterCameraMode())`) rather than
+always entering, since the chip is now the only way in *or* out. Threading
+the chip's *displayed* state through needed one addition beyond what
+Lands-in enumerates: a new `Hud.setCameraActive(active: boolean): void`,
+called from both `enterCameraMode` (optimistically true, then false again
+in the existing refusal-revert branch if the camera turns out refused or
+absent) and `exitCameraMode` (false). Hud.ts owns no independent copy of
+`cameraMode` — main.ts's boolean is the only source of truth, including its
+own asynchronous revert, and the chip is only ever told the true value
+after the fact rather than guessing optimistically on its own. Camera mode
+stays render-time-only per the entry's own Hard Stop; this is state for
+painting one chip, not a stored preference. **Mine**, since "the chip
+toggles, and paints its state" describes the requirement, not the
+plumbing it needs.
+
+The live exception is `.hud-scrim:not(.open) .hud-chip--shutter[aria-pressed='true']
+{ pointer-events: auto }` — a new `.hud-chip--shutter` class (added once,
+where the chip is constructed) rather than an id or label selector, gated
+on the same `aria-pressed` attribute the existing per-chip paint loop
+already sets for every other chip, so there is exactly one place "is camera
+mode on" gets decided. `void shutterChip` at the old `hud.ts:1227` is
+unchanged — the variable is still otherwise unused; painting happens
+through the generic `chips` map, not a direct reference to it.
+
+`scripts/probe-tap.ts` (entry 67) gains the reimplementation's own
+`openTwoFinger()`, mirroring the real fix's cancel-all loop, and a sixth
+check: a first finger's pending single is confirmed gone, and no save fires
+400ms later, once a second finger's two-finger open has already fired.
+All twelve checks in that file pass, including the five pre-existing ones,
+confirmed unaffected.
+
+Verified: `pnpm build`/`pnpm lint` clean; `pnpm probe` 0 failures (unrelated
+to this entry); `pnpm probe:tap` all 12 pass, including the new case 6
+above, run first at the arithmetic level before touching a browser at all.
+Live via `hud-probe.html`/`hud-narrow.html` (the touch-dispatch code itself
+is gated behind Start's mic permission, same limitation this session hit
+repeatedly for camera-adjacent code — see below): `setCameraActive(true)`
+correctly flips the shutter chip's `aria-pressed` to `true` and its
+computed `pointer-events` to `auto` while the panel is closed;
+`setCameraActive(false)` reverts both; every *other* chip stays
+`pointer-events: none` while closed regardless of camera state, confirming
+the exception is scoped to the one chip it should be; a real synthesised
+tap on the shutter chip (via `hud-narrow.html`'s own `window.tap()`, at
+320×568) lands on the actual button element and fires `onCameraMode()`
+through it, both with the panel closed and camera mode on; with camera mode
+off and the panel closed, the same tap produces no call at all, confirming
+the exception does not leak into the "haven't entered yet" state.
+`hud-narrow.html`'s own clipping harness still reports 0 escaped elements
+at 320×568 and 360×640 — unaffected, as expected, since this entry adds no
+new chip and touches no layout. No console errors.
+
+Not verified live, gated behind Start exactly as entries 67 and 72 already
+disclosed for this same code region: `dispatchTouches`'s actual two-finger
+and camera-branch dispatch, `enterCameraMode`/`exitCameraMode` themselves,
+and therefore the specific claim "no photo is ever saved by leaving" and "a
+two-finger tap opens the menu without leaving a frame behind" as end-to-end
+behaviour rather than as the arithmetic `probe:tap` now proves. Reviewed
+carefully by hand instead, and the `pendingTaps`/`cancelPendingTap` logic is
+identical in shape to what `probe:tap` already executes. The entry's own
+Verify line — the phone, counting files — is the phone's question, not
+this session's.
+
+**Verification note — `/ccc` at build 355.** Two of its five clauses have since been replaced rather than broken, and both replacements are verified: entry 87 (build 273) made camera mode one shot, so "tapping the chip again returns to the menu" is no longer the exit; entry 103 (build 339) removed tap-to-save entirely, so "without leaving a frame behind 400ms later" is now true because there is no 400ms save at all. What survives from this entry and still holds: the two-finger tap opens the menu, and the chip reads as active while the mode is on.
+### 80. Fullscreen has right of way
+`status: done` · added 2026-08-30 · started 2026-08-30 · build 277 · verified at build 355
+
+**Do** — when fullscreen is wanted and absent, the next touch of the picture
+restores it **and does nothing else**: no emitter, no shutter, no pending
+screenshot, no menu, no camera mode. Everything else waits its turn.
+
+**Why** — a stated priority: fullscreen first and it blocks everything, then
+camera or menu. Today the opposite is true — the tap does its ordinary job
+*and* restores fullscreen, so the one gesture does two things at once.
+
+**Decided**
+- **This overturns a decision made on purpose**, so it is worth quoting what is
+  being reversed. `armFullscreenRetry`'s comment: *"Does not stop propagation or
+  call preventDefault itself, so the same tap still does whatever it normally
+  does — with entries 50 and 52 landed, that same tap is also an emitter and a
+  screenshot."* That was chosen as generosity — nothing is lost, you get both.
+  Victor's ordering says the opposite: a tap that means *give me my screen back*
+  should not also spend itself on something else.
+- **`stopPropagation()` on the retry is not sufficient, and this is the trap.**
+  The retry listens on `pointerup`, but the emitter and the camera shutter both
+  fire on `pointerdown` (entries 50 and 72), and `touches.ts` records contacts
+  through its own listeners rather than through the retry's. By the time the
+  `up` arrives, a ring has already been drawn and a photo may already be
+  written. **The block has to happen at `down`, in the dispatch, not on the
+  listener.**
+- **So the dispatch gets a first question, before every other branch** — *is
+  fullscreen wanted and absent?* If yes, the contact is consumed: no
+  `visualiser.setTouches` entry for it, no pending tap, no shutter, no
+  two-finger case. The request itself still goes out on `up`, where entry 62
+  put it deliberately (*"pointerup is the one every engine agrees on"* for
+  activation), so this entry changes what a contact *does*, not how fullscreen
+  is asked for.
+- **The precedence is written down as one list**, in `main.ts`'s dispatch,
+  because it now has four claimants on the same tap and they have never been
+  ranked anywhere: **1. fullscreen · 2. camera mode · 3. menu · 4. play.**
+  Camera mode above menu because in it the menu cannot open at all (entry 72),
+  and play last because it is the only one that is never the *point* of a tap
+  — entry 50's own generosity is what makes it the right thing to yield.
+- **Entry 50 gets an explicit exception, not a quiet one.** *"A tap plays,
+  everywhere"* is a principle this repo has defended repeatedly, and this is the
+  first place it does not hold. It holds again the moment fullscreen is back —
+  which is one tap. State it in the code beside the check, or the next reader
+  will file it as a bug.
+- **One tap, not a mode.** The block lasts exactly as long as
+  `want && !document.fullscreenElement`, which after entry 66 is derived fresh
+  every `fullscreenchange`. There is no state to get stuck in, and nothing to
+  reset — the same property that made entry 66's rewrite worth doing.
+- **The chip is unaffected.** It is `onChip`, excluded before any of this, and
+  it is the deliberate way in for someone who left fullscreen on purpose and
+  does not want to be dragged back by a tap on the picture.
+
+**Lands in**
+- `src/main.ts:1320-1360` — the precedence check at the top of the `down`
+  branch, reading `fullscreenStatus()` which is already imported (`:25`).
+- `src/permission-gate.ts:189-199` — the comment that documents the old
+  behaviour, which becomes wrong the moment this lands.
+- `scripts/probe-fullscreen.ts` — that a contact while `want && !active` is
+  consumed, alongside the re-arm cycle entry 66 added.
+
+**Done when** — leaving fullscreen and then tapping the picture restores it and
+leaves no ring, no photo, no pending save and no menu; the tap after that
+behaves entirely normally; in camera mode the same holds, so a tap while
+windowed restores fullscreen rather than taking a picture; and the fullscreen
+chip still works without any of this applying.
+**Verify** — the phone, since fullscreen cannot be entered honestly anywhere
+else. Count files again, as entry 78 does: leave fullscreen, tap once, and
+confirm the camera roll is unchanged.
+**Hard stops** — prefs no · url no · capture **yes, and answered**: strictly
+fewer captures — a tap that used to save while windowed no longer does ·
+dependency no.
+
+**Build note** — implemented as decided. `dispatchTouches` computes
+`fsBlocking = fullscreenStatus().want && !document.fullscreenElement` once,
+fresh, at the top of every call — the same two facts entry 66 already
+exposes, no new state. It gates three separate places, all needing the
+same `!onChip` exception so the chip stays the deliberate way in Decided
+names:
+- The contact-sampling loop that feeds `visualiser.setTouches` (the
+  emitter) and the atmospheric stream's `streamAnyDown`/`streamMaxSpeed` —
+  a blocked non-chip contact now skips `nonChipDown++` too, not only the
+  emitter, since "does nothing else" reads as nothing else, not merely "no
+  ring". This was a **judgment call beyond Decided's own itemised list**
+  (which names the emitter, the shutter, the pending save and the menu
+  specifically, not the atmospheric stream or the two-finger counter) —
+  **Mine**, on the reading that the *principle* stated ("everything else
+  waits its turn") is the actual spec and the itemised list is illustrative
+  rather than exhaustive.
+- The `down`-kind event loop's own `streamBegan` flag, checked and skipped
+  before it can be set to true — this is the actual block Decided asks for
+  ("the block has to happen at down, in the dispatch, not on the
+  listener"), placed before the existing `e.onChip || hudOpen || gateShowing`
+  check so it also precedes the camera-mode branch (entry 87's own
+  forward-reference: "a tap while windowed restores fullscreen rather than
+  taking a picture" — confirmed by ordering, `fsBlocking`'s `continue` now
+  sits textually above `if (cameraMode)`).
+- `permission-gate.ts`'s `armFullscreenRetry` doc comment, rewritten: it no
+  longer claims "the same tap still does whatever it normally does", which
+  became false the moment this landed.
+
+Verified: `pnpm build`/`pnpm lint` clean; `pnpm probe` 0 failures and
+`pnpm probe:tap` all pass (both unaffected — this entry touches neither
+file's own logic). `scripts/probe-fullscreen.ts` gained a new section
+(case 7) reimplementing `fsBlocking` itself — kept in lockstep by eye
+against `main.ts`, the same precedent `probe-tap.ts` set for logic that
+lives inline in `main()`'s own closure and cannot be imported — driven
+against the probe's own **real, unmodified `fullscreenStatus()`** output
+across the identical loss/recovery cycle case 6 already exercises: not
+consumed before ever asking, not consumed while active, a non-chip contact
+consumed the instant fullscreen is lost, a chip contact never consumed
+regardless of state, and no longer consumed immediately after the
+consumed contact's own tap recovers it. All 39 checks across the file
+pass, including the 32 pre-existing ones, confirmed unaffected.
+
+Not verified live: this entry's own Verify text names the phone as the
+only honest test ("fullscreen cannot be entered honestly anywhere else"),
+and this session's own attempt to reach real `dispatchTouches` behaviour
+live — documented at length in entry 87's build note just above this one —
+got further than ever before (a real Start, a real running render loop)
+but the synthetic touch dispatch itself did not cooperate for reasons not
+resolved there either. `fsBlocking`'s own boolean logic is now covered
+arithmetically against the real `fullscreenStatus()` signal (see above);
+the three call sites that read it inside `dispatchTouches` are verified by
+code review and by the diff's own shape, not by watching a real tap
+consumed.
+
+**Verification note — `/ccc` at build 355.** The strongest clause is the one about what a fullscreen-restoring tap must *not* do, and both loops in `main.ts` guard it: the live-contact loop skips such a contact before the emitter, the atmospheric stream and the two-finger recogniser, and the event loop skips it before the shutter. `fsBlocking` is sampled once per frame and the request only goes out on the contact's own `up`, so the whole gesture is consumed — a held finger cannot start emitting partway through it.
