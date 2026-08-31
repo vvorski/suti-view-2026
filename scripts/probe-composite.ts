@@ -23,7 +23,7 @@ const mixV = (a: Vec3, b: Vec3, t: number): Vec3 => add(scale(a, 1 - t), scale(b
 const oneMinus = (a: Vec3): Vec3 => [1 - a[0], 1 - a[1], 1 - a[2]]
 
 // MERGE_MODES indices, from merge-modes.ts: 0 normal, 1 add, 2 screen,
-// 3 multiply, 4 overlay, 5 difference.
+// 3 multiply, 4 overlay, 5 difference, 6 xor (docs/todo.md entry 105).
 function overlayBlend(base: Vec3, top: Vec3): Vec3 {
   const lo = scale(mul(base, top), 2)
   const hi = sub([1, 1, 1], scale(mul(oneMinus(base), oneMinus(top)), 2))
@@ -37,6 +37,7 @@ function blendWith(base: Vec3, top: Vec3, mode: number): Vec3 {
   if (mode === 3) return mul(base, top)
   if (mode === 4) return overlayBlend(base, top)
   if (mode === 5) return [Math.abs(base[0] - top[0]), Math.abs(base[1] - top[1]), Math.abs(base[2] - top[2])]
+  if (mode === 6) return add(mul(base, oneMinus(top)), mul(top, oneMinus(base)))
   return top // normal
 }
 
@@ -65,8 +66,8 @@ function check(name: string, ok: boolean, detail: string): void {
 const close = (a: Vec3, b: Vec3, eps = 1e-9): boolean =>
   Math.abs(a[0] - b[0]) < eps && Math.abs(a[1] - b[1]) < eps && Math.abs(a[2] - b[2]) < eps
 
-const MODES = [0, 1, 2, 3, 4, 5]
-const MODE_NAMES = ['normal', 'add', 'screen', 'multiply', 'overlay', 'difference']
+const MODES = [0, 1, 2, 3, 4, 5, 6]
+const MODE_NAMES = ['normal', 'add', 'screen', 'multiply', 'overlay', 'difference', 'xor']
 
 const ATM: Vec3 = [0.42, 0.55, 0.3] // some non-trivial atmosphere colour
 const GEO: Vec3 = [0.6, 0.6, 0.6] // the report's own 0.6 grey geometry
@@ -136,6 +137,91 @@ const GEO: Vec3 = [0.6, 0.6, 0.6] // the report's own 0.6 grey geometry
     }
   }
   check('normal, add and screen match the old formula across the whole alpha range', allMatch, 'a mismatch was found')
+}
+
+// docs/todo.md entry 105 — XOR (mode 6) is not Difference (mode 5), and the
+// entry's own acceptance test is a number, not a description: "the mid-grey
+// null case ... cannot be faked by a nearly-right formula."
+{
+  const difference = (base: Vec3, top: Vec3): Vec3 => [0, 1, 2].map((i) => Math.abs(base[i] - top[i])) as Vec3
+
+  // The null surface itself: under XOR, base = 0.5 has zero slope in the
+  // top (Decided's own f(b) = a + b(1-2a)) — the output stays at 0.5 no
+  // matter what the top does. Difference's null surface is base = top, a
+  // completely different condition: it is *sensitive* to the top at
+  // base = 0.5, tracking |0.5 - top| rather than going blind to it. Two
+  // different top values make the contrast a number, not a description.
+  const grey: Vec3 = [0.5, 0.5, 0.5]
+  const topA: Vec3 = [0.3, 0.3, 0.3]
+  const topB: Vec3 = [0.9, 0.9, 0.9]
+  const xorA = blendWith(grey, topA, 6)
+  const xorB = blendWith(grey, topB, 6)
+  check('XOR at base 0.5 is exactly 0.5 for one top value — the null surface', close(xorA, grey, 1e-9), JSON.stringify(xorA))
+  check('...and stays exactly 0.5 for a completely different top value', close(xorB, grey, 1e-9), JSON.stringify(xorB))
+  check(
+    "Difference at the same base is sensitive to the top — it isn't blind the way XOR's null surface is",
+    !close(difference(grey, topA), difference(grey, topB), 1e-6),
+    `${JSON.stringify(difference(grey, topA))} vs ${JSON.stringify(difference(grey, topB))}`,
+  )
+
+  // Pass-through over black, invert over white — the other two corners
+  // Done-when names, both a direct read of f(b) = a + b(1-2a) at a = 0/1.
+  const stroke: Vec3 = [0.6, 0.6, 0.6]
+  const black: Vec3 = [0, 0, 0]
+  const white: Vec3 = [1, 1, 1]
+  check('a stroke over black passes through unchanged under XOR', close(blendWith(black, stroke, 6), stroke, 1e-9), JSON.stringify(blendWith(black, stroke, 6)))
+  check(
+    'the same stroke over white inverts under XOR',
+    close(blendWith(white, stroke, 6), oneMinus(stroke), 1e-9),
+    JSON.stringify(blendWith(white, stroke, 6)),
+  )
+
+  // XOR and Difference agree at every corner of the unit square and
+  // disagree everywhere else, with a closed-form gap: Decided's own
+  // XOR - Difference = 2*min(a,b)*(1-max(a,b)).
+  const corners: [number, number][] = [
+    [0, 0],
+    [0, 1],
+    [1, 0],
+    [1, 1],
+  ]
+  let cornersAgree = true
+  for (const [a, b] of corners) {
+    const av: Vec3 = [a, a, a]
+    const bv: Vec3 = [b, b, b]
+    if (!close(blendWith(av, bv, 6), difference(av, bv), 1e-9)) cornersAgree = false
+  }
+  check('XOR and Difference agree at all four corners of the unit square', cornersAgree, 'a corner mismatch was found')
+
+  const gapCases: [number, number][] = [
+    [0.5, 0.5],
+    [0.8, 0.6],
+    [0.3, 0.2],
+  ]
+  let gapMatches = true
+  for (const [a, b] of gapCases) {
+    const xorV = blendWith([a, a, a], [b, b, b], 6)[0]
+    const diffV = difference([a, a, a], [b, b, b])[0]
+    const expectedGap = 2 * Math.min(a, b) * (1 - Math.max(a, b))
+    if (Math.abs(xorV - diffV - expectedGap) > 1e-9) gapMatches = false
+  }
+  check(
+    "the gap between XOR and Difference matches Decided's own closed form, 2*min(a,b)*(1-max(a,b))",
+    gapMatches,
+    'a mismatch was found',
+  )
+
+  // No clamp needed: a sum of two non-negative products, each individually
+  // bounded by its own factor in [0,1], can never exceed 1 — swept rather
+  // than argued.
+  let neverExceedsOne = true
+  for (let a = 0; a <= 1.001; a += 0.05) {
+    for (let b = 0; b <= 1.001; b += 0.05) {
+      const v = blendWith([a, a, a], [b, b, b], 6)[0]
+      if (v < -1e-9 || v > 1 + 1e-9) neverExceedsOne = false
+    }
+  }
+  check('XOR never leaves [0,1] across the full input range — no clamp needed', neverExceedsOne, 'an out-of-range value was found')
 }
 
 // docs/todo.md entry 68 (supersedes 64): day mode as ink on paper, applied

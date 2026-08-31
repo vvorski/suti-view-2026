@@ -144,6 +144,7 @@ export const RELEASE_NAMES: readonly string[] = [
   'soft landing',
   'one shutter',
   'held bearing',
+  'null surface',
 ]
 
 /** The current release's name — derived as the list's last element, so

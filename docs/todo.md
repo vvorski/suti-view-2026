@@ -12224,7 +12224,57 @@ briskly once, which is the gesture the report was made about.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 105. XOR, which is not Difference
-`status: building` · added 2026-08-30
+`status: done` · added 2026-08-30 · build 339
+
+**Build note (Mine except the operator itself, which is Decided's own
+derivation).** Shipped exactly where Lands-in says: a seventh
+`MERGE_MODES` row (`xor: { label: 'XOR', index: 6 }`); one `else if` in
+`blendWith` (`composite.frag.glsl`), written in its Porter-Duff form
+`base*(1-top) + top*(1-base)` rather than the fuzzy-logic form `a+b-2ab` —
+same value (Decided's own algebra), but the Porter-Duff form is what makes
+"no clamp needed" legible in the shader itself: a sum of two products each
+individually bounded by their own factor in [0,1]. The mode-count comment
+at the top of the file and `blendWith`'s own header comment both go from
+"six" to "seven". `MergeModeName` gains the member for free — the HUD's
+merge-mode wedge, `?merge=`/atmospheric-equivalent parsing, the random
+shuffle, and `isMergeModeName`'s own fallback are all keyed off
+`Object.keys(MERGE_MODES)`, not a hardcoded list, so nothing else needed
+touching. Checked this by grep, not assumption.
+
+**`scripts/probe-composite.ts` extended**, not left to drift — Lands-in
+doesn't name it, but it already mirrors `blendWith` line-for-line as a
+regression guard for exactly this class of arithmetic bug (entry 34's own
+alpha fault), and Decided's own Verify text — "cannot be faked by a
+nearly-right formula" — is a request for a number, which a probe answers
+better than an eyeball does. Added: the mid-grey null surface itself (XOR
+at base 0.5 returns exactly 0.5 for two different, unrelated top values —
+the "goes blind" property, not a coincidence at one value); the contrasting
+fact that Difference is NOT blind there, tracking `|0.5 - top|` normally;
+pass-through-over-black and invert-over-white (the other two corners
+Done-when names); the four-corner agreement between XOR and Difference;
+Decided's own closed-form gap, `2·min(a,b)·(1-max(a,b))`, checked
+numerically rather than assumed correct from the algebra; and a full sweep
+confirming XOR never leaves [0,1] without a clamp. One test-writing mistake
+caught by the probe itself and fixed before this shipped: an early version
+of the null-surface check compared Difference's output against the *input*
+grey value at a single top of 1.0 (white) — coincidentally equal there,
+since Decided's own gap formula is exactly 0 whenever either input is 1,
+which is a wider agreement region than "the four corners" alone. Rewrote
+it to compare Difference's own output across two different top values
+instead, which is the actual "sensitive vs. blind" property Decided
+describes, not a single point that happened to agree.
+
+`pnpm build`, `pnpm lint`, and the full `pnpm probe:*` suite (19 scripts)
+all pass with no regressions.
+
+**Not independently verified: the two on-screen checks Verify names** — the
+mid-grey field under a white stroke, and the pair side by side over a live
+atmosphere looking for Difference's travelling crease. Both are visual
+judgment calls about a real atmospheric field (not a flat, controllable
+value), which is exactly what a numeric probe cannot stand in for and a
+synthetic canvas can only approximate — left for Victor, the same pattern
+the rest of this window's entries used for the live half of Verify.
+
 
 **Do** — add a seventh merge mode, `XOR`, at index 6: `a + b - 2ab`. One line
 in `blendWith`, one row in `MERGE_MODES`, available to both layers for free.

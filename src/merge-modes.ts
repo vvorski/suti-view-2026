@@ -2,8 +2,8 @@
  * How a layer composites over what is beneath it — the geometric layer over
  * the atmosphere, or the atmosphere over the camera.
  *
- * One shared table for both, because it is the same six-way rule wherever it
- * is applied — see `blendWith` in composite.frag.glsl. `index` is what
+ * One shared table for both, because it is the same seven-way rule wherever
+ * it is applied — see `blendWith` in composite.frag.glsl. `index` is what
  * actually reaches the shader as `uMode` or `uAtmMode` — a plain int uniform
  * is far cheaper to branch on than a string, and the name here is purely for
  * the control panel.
@@ -15,6 +15,12 @@ export const MERGE_MODES = {
   multiply: { label: 'Multiply', index: 3 },
   overlay: { label: 'Overlay', index: 4 },
   difference: { label: 'Difference', index: 5 },
+  // docs/todo.md entry 105 — Porter-Duff's own name for this operator (fuzzy
+  // XOR, a + b - 2ab) is Photoshop's "Exclusion"; labelled XOR anyway
+  // because that is the word that was asked for, is shorter on a wedge, and
+  // MERGE_MODES has no description field for the synonym to live in
+  // instead. Mine.
+  xor: { label: 'XOR', index: 6 },
 } as const
 
 export type MergeModeName = keyof typeof MERGE_MODES

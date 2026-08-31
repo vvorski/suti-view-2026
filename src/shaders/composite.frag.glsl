@@ -23,8 +23,8 @@ uniform sampler2D uAtmosphere;
 uniform sampler2D uGeometry;
 uniform float uGeoAlpha; // 0-1, the geometric layer's own opacity
 uniform float uAtmAlpha; // 0-1, the atmospheric layer's own opacity
-// 0 normal, 1 add, 2 screen, 3 multiply, 4 overlay, 5 difference — see
-// MERGE_MODES in merge-modes.ts, which both of these index into.
+// 0 normal, 1 add, 2 screen, 3 multiply, 4 overlay, 5 difference, 6 xor —
+// see MERGE_MODES in merge-modes.ts, which both of these index into.
 uniform int uMode;    // the geometric layer's own blend, over the atmosphere
 uniform int uAtmMode; // the atmosphere's own blend, over the camera
 // Every layer is drawn in white by its own shader; all of its colour is a gain
@@ -143,15 +143,26 @@ vec3 hsl2rgb(vec3 hsl) {
 
 // The one blend rule, applied wherever a layer needs to combine with what is
 // beneath it. Shared by the geo-over-atm step and the atm-over-camera step
-// below, rather than two copies of the same six-way ladder — the moment this
-// entry's whole point (merge is a per-layer property, not a global setting)
-// would otherwise be undone by the mode logic itself staying singular.
+// below, rather than two copies of the same seven-way ladder — the moment
+// this entry's whole point (merge is a per-layer property, not a global
+// setting) would otherwise be undone by the mode logic itself staying
+// singular.
 vec3 blendWith(vec3 base, vec3 top, int mode) {
   if (mode == 1) return base + top;
   else if (mode == 2) return 1.0 - (1.0 - base) * (1.0 - top);
   else if (mode == 3) return base * top;
   else if (mode == 4) return overlayBlend(base, top);
   else if (mode == 5) return abs(base - top);
+  // docs/todo.md entry 105 — fuzzy XOR (a + b - 2ab), Photoshop's
+  // "Exclusion". Written in its Porter-Duff form, base*(1-top) + top*(1-base)
+  // — "each layer shows where the other is absent" — because that is the
+  // reading that explains why it needs no clamp: a sum of two products of
+  // values already in [0,1], each non-negative and individually bounded by
+  // its own factor, so the sum can never exceed 1. Agrees with Difference
+  // (mode 5) at every corner of the unit square and disagrees everywhere
+  // else — see docs/todo.md's own worked table — most visibly at
+  // base = top = 0.5, where Difference cancels to 0 and this reads 0.5.
+  else if (mode == 6) return base * (1.0 - top) + top * (1.0 - base);
   else return top; // normal
 }
 
