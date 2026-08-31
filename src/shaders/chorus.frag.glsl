@@ -34,6 +34,11 @@ uniform vec4 uSeed;
 // moon-down, identical to today; scene.ts is the only writer.
 uniform float uMoonReach;
 uniform float uMoonLife;
+// docs/todo.md entry 106 -- the moon third quality, over the opacity
+// envelope only (never the growth curve -- see FADE_FROM own comment).
+// 0 at new moon, full moon or moon-down, identical to today; signed,
+// added directly to FADE_FROM at every place this shader reads it.
+uniform float uMoonBloom;
 
 // Must match MAX_RIPPLES in ripples.ts — GLSL can't import a JS constant, and
 // a mismatch here means scene.ts uploads an array of the wrong length.
@@ -80,6 +85,11 @@ void main() {
   float maxRadius = max(halfExtent.x, halfExtent.y) * uMoonReach;
   // docs/todo.md entry 96 — same abundance scaling as Circles.
   float lifespan = LIFESPAN * uMoonLife;
+  // docs/todo.md entry 106 -- computed once for the same reason lifespan
+  // above is: every opacity test below reads it. Waxing raises it (stays
+  // full almost to the rim, then fades quickly); waning lowers it (fades
+  // almost immediately, trailing off for most of the ring travel).
+  float fadeFrom = FADE_FROM + uMoonBloom;
 
   // Node count and the arrangement's rotation are both seed choices, so a
   // re-roll restructures the interference rather than just re-timing it. Three
@@ -116,7 +126,7 @@ void main() {
     float percent = age / lifespan;
     float radius = maxRadius * percent;
 
-    float opacity = percent > FADE_FROM ? 1.0 - (percent - FADE_FROM) / (1.0 - FADE_FROM) : 1.0;
+    float opacity = percent > fadeFrom ? 1.0 - (percent - fadeFrom) / (1.0 - fadeFrom) : 1.0;
     opacity *= 0.35 + 0.65 * birthLevel;
 
     float scale = 0.8 + 0.4 * birthLevel;

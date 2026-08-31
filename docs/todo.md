@@ -12365,7 +12365,58 @@ older build loading `xor` falls back rather than breaking — same shape as entr
 dependency no.
 
 ### 106. The moon's third quality, on the envelope rather than the growth curve
-`status: building` · added 2026-08-31 · completes 96 · the build agent's refusal was correct
+`status: done` · build 341 · added 2026-08-31 · completes 96 · the build agent's refusal was correct
+
+**Build note (Mine):** Implemented exactly as Decided — `moonBloomFor(moon) =
+moon.waxing * moon.presence` in `src/scene.ts`, a new `BLOOM_SWING = 0.18`
+constant beside `MOON_REACH_SWING`/`MOON_LIFE_SWING`, and a third uniform,
+`uMoonBloom`, riding the same init/per-frame-update path as `uMoonReach` and
+`uMoonLife`. No changes were needed in `src/moon.ts` — entry 96 already
+exposes the signed `waxing` bias this entry needed; "expose the signed waxing
+bias" in Lands-in was already done.
+
+One correction to Lands-in, disclosed rather than silently fixed: it says "the
+six ripple shaders." There are seven — `circles`, `shards`, `grid`, `rose`,
+`drift`, `chorus`, `tide` — all confirmed via grep to read `FADE_FROM`. Rose
+was added after entry 96's own note was written (entry 101) and the count
+was never updated. Fixed all seven, not six. Each shader gained the
+`uMoonBloom` uniform and a hoisted `float fadeFrom = FADE_FROM + uMoonBloom;`
+local (mirroring the existing hoisted-`lifespan` pattern entry 96 already
+established), read at every place that shader's opacity formula used to read
+`FADE_FROM` directly — 2 sites in `circles`/`rose` (they each have an
+audio-ripple loop and a touch-ripple loop), 1 site in the other five. Every
+shader's own `const float FADE_FROM = ...;` line is untouched — the bias is
+additive at the read site, never a redefinition of the constant itself.
+
+`scripts/probe-moon.ts` was extended, not duplicated, with a new section 8:
+exact-zero bloom at new and full moon (any presence, any hour — the identity
+holds regardless, since it's `waxing` alone that is 0 at the turning points,
+matching section 1's own tolerance style); near-zero bloom at full-moon-down
+(presence is what zeroes it there, mirroring section 5(b)'s abundance case);
+strongly-signed bloom at first and last quarter, each found at its own
+presence peak by the same day-scan section 3 already uses; and the Done-when
+claim itself — first- and last-quarter nights with matched abundance (so
+every radius-driving input, all of which are functions of abundance alone,
+agree) but opposite-signed, clearly different `FADE_FROM`. All 15 new checks
+passed on the first run; no bug surfaced in this entry the way one did in
+102/104 — the astronomy Decided leaned on (`waxing` being exactly the
+illumination fraction's own derivative, zero at both of its extrema) held
+exactly as claimed.
+
+`pnpm build`, `pnpm lint`, and all nineteen `pnpm probe:*` scripts pass,
+including the extended `probe:moon` and the unrelated `probe:composite`/
+`probe:ripples` (neither exercises `FADE_FROM`, checked to be sure). Diff
+reviewed for Done-when's own "no growth curve, stroke ratio or LIFESPAN
+constant" clause — the only matches are comment prose disclaiming exactly
+that, and unmodified `float lifespan = LIFESPAN * uMoonLife;` lines pulled in
+as diff context, not edits.
+
+Live verification — two real nights a fortnight apart — is left to Victor,
+per Verify's own text; no session can hold both moments at once. The
+browser-automation live-render path remains unattempted this session, per the
+"two hung calls" threshold established at entry 102 and carried through
+103-105; the synthetic probe suite stands in for it per Verify's first-listed
+method.
 
 **Do** — wire the waxing/waning bias entry 96 computes but never spends. It
 rides `FADE_FROM`, not the growth curve: waxing rings hold full and go out at

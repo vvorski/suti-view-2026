@@ -118,6 +118,26 @@ function moonAbundanceFor(moon: Moon): number {
 }
 
 /**
+ * docs/todo.md entry 106 — the moon's third quality, this one riding the
+ * opacity envelope (`FADE_FROM`) rather than the growth curve entry 96's
+ * own refusal already ruled out. `moon.waxing` is signed and, by
+ * construction, exactly 0 at both new and full moon (it is literally the
+ * illumination fraction's own derivative); multiplying by `presence` keeps
+ * the same "not up, contributes nothing" guarantee `moonAbundanceFor` has.
+ * The two are in quadrature — abundance peaks at full and is 0 at new;
+ * bloom is 0 at both new and full and peaks (in opposite signs) at the two
+ * quarters — so they never move together. `BLOOM_SWING = 0.18` takes
+ * `FADE_FROM` (0.6) to 0.78 at full waxing and 0.42 at full waning, per
+ * Decided's own worked figures; Decided marks the constant itself
+ * **Mine**, on the same footing as `MOON_REACH_SWING`/`MOON_LIFE_SWING`.
+ */
+const BLOOM_SWING = 0.18
+
+function moonBloomFor(moon: Moon): number {
+  return moon.waxing * moon.presence
+}
+
+/**
  * Rolling spectrogram uploaded to the GPU: one column per time slot, one row
  * per log-spaced frequency band.
  *
@@ -589,6 +609,11 @@ export function createVisualiser(
     // that function's own comment for why the two swings share one input.
     uMoonReach: { value: 1 + MOON_REACH_SWING * moonAbundanceFor(moonForNow) },
     uMoonLife: { value: 1 + MOON_LIFE_SWING * moonAbundanceFor(moonForNow) },
+    // docs/todo.md entry 106 — the third quality, added directly to
+    // FADE_FROM (not multiplied, since it's a signed bias not a scale).
+    // Defaults to 0 at today's moonForNow if that moment is neutral, exactly
+    // matching every shader's own unmodified FADE_FROM when so.
+    uMoonBloom: { value: BLOOM_SWING * moonBloomFor(moonForNow) },
   }
 
   let geometryMaterial = new ShaderMaterial({
@@ -1287,6 +1312,9 @@ export function createVisualiser(
         const moonAbundance = moonAbundanceFor(moonState)
         uniforms.uMoonReach.value = 1 + MOON_REACH_SWING * moonAbundance
         uniforms.uMoonLife.value = 1 + MOON_LIFE_SWING * moonAbundance
+        // docs/todo.md entry 106 — the third quality, same cadence as reach
+        // and life above, sampled from the same moonState.
+        uniforms.uMoonBloom.value = BLOOM_SWING * moonBloomFor(moonState)
       }
       // Chased at a bounded rate rather than assigned — entry 71's own
       // finding: a DST jump, a timezone change in flight, or a tab resumed

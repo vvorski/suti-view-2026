@@ -4,6 +4,8 @@
  * presence's rise and fall land in the phase-appropriate window, and — the
  * claim that protects everything already shipped — does new moon or a moon
  * below the horizon leave every shape parameter exactly at today's constant.
+ * Section 8 extends this for docs/todo.md entry 106's own third quality, the
+ * `FADE_FROM` bias — same file, same discipline, no second probe.
  *
  * Pure function, no DOM and no clock of its own — `moonFor` takes a `Date`
  * rather than reading one — so this runs under plain Node exactly like
@@ -283,6 +285,86 @@ const atHour = (base: Date, hour: number): Date => {
   check('moonFor still reads new moon at age 0 after entry 97\'s edit', near(newMoonProxy.illuminated, 0, 1e-6), String(newMoonProxy.illuminated))
   const fullMoonProxy = moonFor(atQuarters(2))
   check('moonFor still reads full moon at age 2 quarters after entry 97\'s edit', near(fullMoonProxy.illuminated, 1, 1e-6), String(fullMoonProxy.illuminated))
+}
+
+// 8. docs/todo.md entry 106 — the third quality, `waxing * presence`, in
+//    quadrature with abundance (`illuminated * presence`, section 5's own
+//    definition): the two never peak together. BLOOM_SWING and FADE_FROM's
+//    own baseline (0.6, every ripple shader's own constant) duplicated here
+//    by eye, same convention as section 5's REACH_SWING/LIFE_SWING.
+{
+  const BLOOM_SWING = 0.18
+  const bloomOf = (m: { waxing: number; presence: number }): number => m.waxing * m.presence
+  const fadeFromOf = (bloom: number): number => 0.6 + BLOOM_SWING * bloom
+
+  // (a) New moon, exactly at the turning point (any hour — presence plays
+  //     no part, since waxing itself is 0 here): bloom, and so FADE_FROM,
+  //     is exactly today's constant regardless of how bright or high the
+  //     moon reads at this hour.
+  const newMoonExact = moonFor(atQuarters(0))
+  check('new moon (exact age): bloom is 0 (waxing is the turning point, any presence)', near(bloomOf(newMoonExact), 0, 1e-6), String(bloomOf(newMoonExact)))
+  check('new moon (exact age): FADE_FROM is exactly 0.6', near(fadeFromOf(bloomOf(newMoonExact)), 0.6, 1e-6), String(fadeFromOf(bloomOf(newMoonExact))))
+
+  // (b) Full moon, the other turning point — bloom is 0 here too, even
+  //     though this is precisely where abundance (illuminated * presence)
+  //     is at its own maximum. Abundance high, bloom 0: the quadrature's
+  //     first half.
+  const fullMoonExact = moonFor(atQuarters(2))
+  check('full moon (exact age): bloom is 0 (the other turning point)', near(bloomOf(fullMoonExact), 0, 1e-6), String(bloomOf(fullMoonExact)))
+  check('full moon (exact age): FADE_FROM is exactly 0.6', near(fadeFromOf(bloomOf(fullMoonExact)), 0.6, 1e-6), String(fadeFromOf(bloomOf(fullMoonExact))))
+
+  // (c) Full moon, but below the horizon (twelve hours from its own
+  //     transit, the same search section 5(b) already runs): presence is
+  //     what zeroes bloom out this time, not waxing.
+  const fullDayScan = (() => {
+    const values: number[] = []
+    for (let h = 0; h < 24; h++) values.push(moonFor(atHour(atQuarters(2), h)).presence)
+    return values.indexOf(Math.max(...values))
+  })()
+  const fullMoonDown = moonFor(atHour(atQuarters(2), (fullDayScan + 12) % 24))
+  check('full moon, moon down: bloom is near 0 (presence zeroes it, not waxing)', near(bloomOf(fullMoonDown), 0, 0.02), String(bloomOf(fullMoonDown)))
+
+  // (d) First quarter, at its own presence peak: waxing is 1 here (section
+  //     1's fastest-growth point), and — usefully — a quarter point is
+  //     where sin(theta) itself peaks, so the small age nudge `atHour`
+  //     introduces (see that helper's own comment) barely moves waxing away
+  //     from 1, unlike at new/full where the same nudge moves it away from
+  //     a steep zero-crossing. Abundance here is only ~0.5 — well short of
+  //     full moon's own peak: the quadrature's second half.
+  const scanPeakHour = (quarters: number): number => {
+    const values: number[] = []
+    for (let h = 0; h < 24; h++) values.push(moonFor(atHour(atQuarters(quarters), h)).presence)
+    return values.indexOf(Math.max(...values))
+  }
+  const firstQuarterUp = moonFor(atHour(atQuarters(1), scanPeakHour(1)))
+  const firstQuarterAbundance = firstQuarterUp.illuminated * firstQuarterUp.presence
+  check('first quarter at its own peak: bloom is strongly positive', bloomOf(firstQuarterUp) > 0.85, String(bloomOf(firstQuarterUp)))
+  check("first quarter at its own peak: FADE_FROM rises close to Decided's own 0.78", fadeFromOf(bloomOf(firstQuarterUp)) > 0.75, String(fadeFromOf(bloomOf(firstQuarterUp))))
+  check("first quarter: abundance stays well short of full moon's own peak (quadrature)", firstQuarterAbundance < 0.7, String(firstQuarterAbundance))
+
+  // (e) Last quarter, the mirror image: waxing is -1, bloom strongly
+  //     negative, FADE_FROM falls toward Decided's own 0.42.
+  const lastQuarterUp = moonFor(atHour(atQuarters(3), scanPeakHour(3)))
+  check('last quarter at its own peak: bloom is strongly negative', bloomOf(lastQuarterUp) < -0.85, String(bloomOf(lastQuarterUp)))
+  check("last quarter at its own peak: FADE_FROM falls close to Decided's own 0.42", fadeFromOf(bloomOf(lastQuarterUp)) < 0.45, String(fadeFromOf(bloomOf(lastQuarterUp))))
+
+  // (f) The Done-when claim itself: a first-quarter night and a last-quarter
+  //     night, otherwise matched (same "own peak" construction on each
+  //     side) — equal abundance, meaning every radius-driving input (reach,
+  //     life, cadence — all functions of abundance alone) is the same on
+  //     both nights, while FADE_FROM differs sharply and in opposite
+  //     directions. Different envelope, identical radii.
+  const lastQuarterAbundance = lastQuarterUp.illuminated * lastQuarterUp.presence
+  check(
+    'first/last quarter at their own peaks: matched abundance (same radius-driving input)',
+    near(firstQuarterAbundance, lastQuarterAbundance, 0.05),
+    `first ${firstQuarterAbundance}, last ${lastQuarterAbundance}`,
+  )
+  check(
+    'first/last quarter at their own peaks: opposite-signed, visibly different FADE_FROM',
+    fadeFromOf(bloomOf(firstQuarterUp)) - fadeFromOf(bloomOf(lastQuarterUp)) > 0.3,
+    `first ${fadeFromOf(bloomOf(firstQuarterUp))}, last ${fadeFromOf(bloomOf(lastQuarterUp))}`,
+  )
 }
 
 console.log(failures === 0 ? '\nall moon checks passed' : `\n${failures} check(s) failed`)

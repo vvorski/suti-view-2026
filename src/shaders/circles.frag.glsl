@@ -80,6 +80,11 @@ uniform vec4 uSeed;
 // moon-down, identical to today; scene.ts is the only writer.
 uniform float uMoonReach;
 uniform float uMoonLife;
+// docs/todo.md entry 106 — the moon's third quality, over the opacity
+// envelope only (never the growth curve — see FADE_FROM's own comment).
+// 0 at new moon, full moon or moon-down, identical to today; signed,
+// added directly to FADE_FROM at every place this shader reads it.
+uniform float uMoonBloom;
 
 // Must match MAX_RIPPLES in ripples.ts — GLSL can't import a JS constant, and
 // a mismatch here means scene.ts uploads an array of the wrong length.
@@ -227,6 +232,13 @@ void main() {
   // the same abundance, so a rung crossed early on a generous night is
   // still crossed at the right moment relative to this ring's own life).
   float lifespan = LIFESPAN * uMoonLife;
+  // docs/todo.md entry 106 — computed once for the same reason `lifespan`
+  // above is: both of the two loops below read it at their own `percent >
+  // FADE_FROM` test. Waxing raises it (a ring stays full almost to the rim,
+  // then goes out quickly); waning lowers it (fading begins almost
+  // immediately, trailing off for most of the ring's travel) — same
+  // geometry, same LIFESPAN, only when within it the fade starts.
+  float fadeFrom = FADE_FROM + uMoonBloom;
 
   float ink = 0.0;
 
@@ -282,7 +294,7 @@ void main() {
     // as it travels, which is the movement the original has.
     float radius = maxRadius * percent;
 
-    float opacity = percent > FADE_FROM ? 1.0 - (percent - FADE_FROM) / (1.0 - FADE_FROM) : 1.0;
+    float opacity = percent > fadeFrom ? 1.0 - (percent - fadeFrom) / (1.0 - fadeFrom) : 1.0;
     // A quiet hit still gets a ring, just a fainter one — audible does not
     // mean invisible, but loud should clearly outshine quiet. The source has
     // no idea of loudness at all; this is the one place the ring answers to
@@ -328,7 +340,7 @@ void main() {
     float percent = age / lifespan;
     float radius = maxRadius * percent;
 
-    float opacity = percent > FADE_FROM ? 1.0 - (percent - FADE_FROM) / (1.0 - FADE_FROM) : 1.0;
+    float opacity = percent > fadeFrom ? 1.0 - (percent - fadeFrom) / (1.0 - fadeFrom) : 1.0;
     opacity *= 0.35 + 0.65 * birthLevel;
 
     float scale = 0.8 + 0.4 * birthLevel;

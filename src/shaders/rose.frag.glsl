@@ -50,6 +50,9 @@ uniform vec4 uSeed;
 // lifespan only, same as every other view in this layer.
 uniform float uMoonReach;
 uniform float uMoonLife;
+// docs/todo.md entry 106 — the moon's third quality, over the opacity
+// envelope only. Same shape as circles.frag.glsl's own uMoonBloom.
+uniform float uMoonBloom;
 
 // Must match MAX_RIPPLES in ripples.ts — GLSL can't import a JS constant.
 const int MAX_RIPPLES = 24;
@@ -164,6 +167,9 @@ void main() {
   // unchanged so the two views fill the same disc.
   float maxRadius = 0.5 * max(uResolution.x, uResolution.y) / min(uResolution.x, uResolution.y) * uMoonReach;
   float lifespan = LIFESPAN * uMoonLife;
+  // docs/todo.md entry 106 — same reasoning as circles.frag.glsl's own
+  // hoisted fadeFrom: both loops below read it at their own opacity test.
+  float fadeFrom = FADE_FROM + uMoonBloom;
 
   float dist = length(uv);
   float phi = atan(uv.y, uv.x); // hoisted once, shared by every audio spoke and the ladder below
@@ -231,7 +237,7 @@ void main() {
     if (age > lifespan) continue;
 
     float percent = age / lifespan;
-    float opacity = percent > FADE_FROM ? 1.0 - (percent - FADE_FROM) / (1.0 - FADE_FROM) : 1.0;
+    float opacity = percent > fadeFrom ? 1.0 - (percent - fadeFrom) / (1.0 - fadeFrom) : 1.0;
     opacity *= 0.35 + 0.65 * birthLevel;
     float scale = 0.8 + 0.4 * birthLevel;
 
@@ -295,7 +301,7 @@ void main() {
     float theta = theta0 + omega * age;
 
     float percent = age / lifespan;
-    float opacity = percent > FADE_FROM ? 1.0 - (percent - FADE_FROM) / (1.0 - FADE_FROM) : 1.0;
+    float opacity = percent > fadeFrom ? 1.0 - (percent - fadeFrom) / (1.0 - fadeFrom) : 1.0;
     opacity *= 0.35 + 0.65 * birthLevel;
     float scale = 0.8 + 0.4 * birthLevel;
 
