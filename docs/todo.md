@@ -11065,7 +11065,7 @@ coordinate never enters a URL**; capture no; dependency **no — computed, not
 fetched; no library and no network.**
 
 ### 98. The picture answers the light in the room, camera or no camera
-`status: ready` · added 2026-08-30
+`status: building` · added 2026-08-30
 
 **Do** — read the ambient light sensor where it exists and let the real room
 brightness drive the picture's exposure and contrast, so it stays legible in
