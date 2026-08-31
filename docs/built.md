@@ -4687,3 +4687,679 @@ code review and by the diff's own shape, not by watching a real tap
 consumed.
 
 **Verification note — `/ccc` at build 355.** The strongest clause is the one about what a fullscreen-restoring tap must *not* do, and both loops in `main.ts` guard it: the live-contact loop skips such a contact before the emitter, the atmospheric stream and the two-finger recogniser, and the event loop skips it before the shutter. `fsBlocking` is sampled once per frame and the request only goes out on the contact's own `up`, so the whole gesture is consumed — a held finger cannot start emitting partway through it.
+
+### 68. Day mode uses the whole range, in colour
+`status: done` · added 2026-08-30 · shipped at build 229 · supersedes 64 · verified at build 356
+
+**Build note** — the shipped shader deviates from this entry's own literal
+formula, deliberately, after finding it does not achieve what the entry
+itself asks for. The sequence, honestly:
+
+1. Implemented the entry's literal algebra verbatim: `density = max(col.rgb)`,
+   `mix(paperColour, col * INK, density)`, PAPER=0.88, INK=0.10, warmth ±0.10,
+   the two-schedule ink-leads-paper crossfade carried over from entry 64
+   unchanged. Built `probe-composite.ts`'s day-mode section against it —
+   contrast reached ~76% of night's (clears the 70% floor) but saturation
+   reached only ~16% (badly fails it).
+2. Confirmed this isn't a synthetic-data artifact: loaded the real dev
+   server with `?rgb=100,20,20` (a pinned, fully saturated red, bypassing
+   entry 60's gate-roll) and `atmAlpha:0`/`geoAlpha:1` (the geometric ring
+   fully isolated, no atmosphere blended in at all — the exact bimodal case
+   entry 64's original formula was built for and worked well on). The ring
+   rendered as **plain grey**, not dark red. Screenshot-confirmed, not
+   inferred from the numbers alone.
+3. Diagnosed why: mixing a dark ink colour with a much lighter, near-neutral
+   paper (0.88) lets the paper's absolute brightness dominate the channel
+   *sums* at almost any non-trivial mix weight, even while barely touching
+   the channel *differences* that carry hue — so saturation (which is
+   essentially difference/sum) collapses long before the mix looks
+   "mostly ink" by eye. This is exactly why entry 64's original, geometry-
+   only version worked: line art is bimodal (a pixel is essentially all-ink
+   or all-background, rarely between), so the damaging middle ground barely
+   exists. A smoothly graded field — the atmosphere, i.e. the exact content
+   this entry exists to fix — has no such gap.
+4. Tried two more RGB-space variants before concluding the formula shape
+   itself was the problem: steepening the density mix weight with a power
+   curve, and tinting the paper faintly with the content's own hue. Both
+   only traded contrast against saturation along the same curve — never
+   both floors at once — confirmed by scanning multiple parameter values
+   for each, not a single try.
+5. **Stopped and asked Victor before redesigning**, since fixing this
+   properly meant deviating from the entry's own specified algebra rather
+   than tuning a number it already licensed me to tune. Given the choice of
+   shipping the literal (visibly broken) formula, shipping it with the
+   defect flagged as open, or implementing a fix, Victor chose the fix.
+6. Implemented in HSL rather than RGB: `rgb2hsl`/`hsl2rgb` added to
+   `composite.frag.glsl`. Hue is read once and carried through untouched;
+   *lightness* crossfades toward 0.10 (ink) or 0.88 (paper) by density, on
+   the same two-schedule (`inkAmt` via smoothstep, `paperAmt` linear)
+   carried over from entry 64; *saturation* only fades toward
+   `hsl.s * density` (the paper's own zero saturation, weighted by how much
+   of this pixel is "empty") as `dayAmt = max(inkAmt, paperAmt)` — how far
+   day mode has progressed overall — actually rises, rather than as an
+   unconditional function of density alone, which is what broke identity at
+   `uDay = 0` in the first version of this fix (caught before shipping: a
+   dim, saturated pixel's saturation was getting scaled by its own density
+   even at night, when nothing should move at all). Warmth is applied as a
+   direct RGB bias on the paper end only, scaled by `paperAmt * (1 - density)`
+   — HSL has no natural small-bias axis for it, and the ground is the one
+   place a warmth tint needs to show, since a fully-inked pixel already
+   carries its own hue.
+7. Re-verified everything after the fix: `probe-composite.ts`'s contrast
+   and saturation checks now both genuinely pass (0.78 and 0.77 of night's,
+   both hard assertions, not diagnostics) against the same synthetic field
+   that failed before; two new checks assert the specific failure found in
+   step 2 directly (an isolated red ring stays saturated and red-dominant
+   when inked); the identity-at-`uDay=0` check (now routed through a full
+   HSL round-trip rather than skipped) passes for arbitrary colour, warmth
+   and camera mix; the ink-leads-paper schedule fact from entry 64 is
+   unchanged and still holds. Re-ran the exact live browser test from step 2
+   — the same pinned red ring now renders as visibly dark red/maroon ink on
+   light paper, not grey.
+
+`pnpm build`, `pnpm lint`, `pnpm probe:composite` all clean; the shader
+itself was confirmed to actually *compile* (not just type-check — GLSL
+embedded in a template string is invisible to `tsc`/`eslint`) via a live
+dev-server load with no console errors.
+
+Judgment calls, all disclosed above and confirmed with Victor before
+shipping: the HSL restructure itself (a deviation from the entry's literal
+formula, not a numeric tune); the exact `dayAmt = max(inkAmt, paperAmt)`
+saturation gate (**Mine**, needed to keep identity at night); and the
+warmth bias staying in RGB space rather than being ported into HSL
+(**Mine**, since it is a small, ground-only effect with no natural HSL
+axis to live on).
+
+Not independently re-verified: the entry's own real-capture measurement
+table (four specific saved frames) — this session has no access to those
+original files, only the numbers already in the entry's own text, and no
+phone to re-shoot the four views on. The entry's own Verify line already
+reserves that as the final word ("a phone outdoors, which is still the
+only judge"); this build note's live checks are the closest available
+substitute, not a replacement for it.
+
+Also worth recording: while this was in flight, the concurrent session
+filed docs/todo.md entry "colour is chosen as a hue, and survives the
+composite", explicitly scoped as *"a second cause, separate from entry
+68"* — a genuine, distinct problem (how `shuffled()` samples stored
+colours in the first place, independent-per-channel, clustering near grey
+before day mode ever touches the result) rather than an overlap with this
+entry's own fix. No collision; left alone for its own build.
+
+**Do** — replace the screen-onto-a-light-ground with the ink model from entry
+64, applied to the **whole** picture rather than the geometric layer alone, and
+hold it to a measured contrast and saturation floor.
+
+**Why** — day mode is washed out and colourless. Not a little: measurably, on
+frames the app saved itself.
+
+**Decided**
+- **The measurement, so this stops being a matter of taste.** Four day-mode
+  captures, sampled over the middle 74% of the frame:
+
+  | frame | mean L | p5 | p95 | contrast | mean sat |
+  |---|---|---|---|---|---|
+  | 57826de4 | 0.716 | 0.615 | 0.766 | 0.151 | 0.098 |
+  | 5c82d26c | 0.683 | 0.609 | 0.757 | 0.148 | 0.147 |
+  | e1a0829f | 0.726 | 0.639 | 0.770 | 0.131 | 0.103 |
+  | 02dfa387 | 0.690 | 0.606 | 0.763 | 0.157 | 0.095 |
+
+  **The picture occupies 13-16% of the available tonal range and is about 90%
+  desaturated**, and `p5` never drops below 0.606 — nothing in any frame is
+  darker than the ground. "Anaemic" is the correct word and these are its
+  numbers.
+- **Why it is far worse than entry 47 expected, and the diagnosis is precise.**
+  Screen is `a + b − ab`, which lifts *bright* content nearly as much as dark:
+  a mid-bright field at 0.5 screened onto 0.6 lands at 0.80. Entry 47 reasoned
+  from "these pictures are mostly pure black, thin bright rings on an empty
+  field" — and that is an exact description of the **geometric** layer and a
+  wrong one for the **atmospheric** layer, which is a broad mid-bright field
+  with no empty ground at all. A fix derived from one layer's histogram was
+  applied to the composite of both. The screenshots are all atmospheric views,
+  which is why they are the worst case.
+- **Screening toward neutral is also what killed the colour.** Adding roughly
+  0.6 to every channel takes (0.1, 0.2, 0.5) to (0.64, 0.68, 0.80): saturation
+  falls from 0.80 to 0.20. The measured 0.04-0.15 is that, not a palette
+  problem, and no amount of choosing better colours upstream can survive it.
+- **So entry 64's model, whole-frame.** Ink density from the picture's own
+  brightness, ink hue from its own chroma, laid on paper:
+  `mix(paper, chroma * INK, density)`. Entry 64's exclusion of the atmosphere
+  was decided on judgement — "a field made subtractive becomes a duotone print"
+  — and the measurement overturns it: a duotone print is a far better outcome
+  than a 15%-range wash, and it is what the geometric half was already getting.
+  **This is the only thing 68 changes about 64**; everything else there,
+  including the ink leading the paper through dawn, is carried over unchanged.
+- **Paper rises to 0.88 and ink floors at 0.10.** That is a range of 0.78
+  against night's ~1.0, where today's is 0.15. **Mine** — with a subtractive
+  operator the paper can be near-white *because* the ink can reach dark, which
+  is exactly the trade a screen cannot make.
+- **The ground colour has to work harder now.** Entry 53's ±0.06 warmth was
+  set against a ground that was one contributor among many; it is now the
+  dominant surface of the whole frame, and ±6% on the largest area on screen is
+  invisible. Widen it to ±0.10 in the day path. **Mine**, and it is a
+  consequence of this entry rather than a revision of 53's reasoning.
+- **The floors are the acceptance test, not adjectives.** A day frame must
+  reach **at least 70% of the tonal range and 70% of the mean saturation** that
+  the same scene reaches at night. Those two numbers are checkable offline on a
+  rendered frame, they are what "anaemic" means quantitatively, and without
+  them the next tuning pass is another round of looking at it and guessing —
+  which is what produced this.
+
+**Lands in**
+- `src/shaders/composite.frag.glsl:175-187` — the ground line becomes the ink
+  step, for the whole `col` rather than a layer of it.
+- `scripts/probe-composite.ts` — the range-and-saturation floors, at
+  `uDay = 0` and `uDay = 1`, plus entry 64's dawn sweep.
+
+**Done when** — a day-mode frame of an atmospheric view measures contrast
+≥ 0.70 and mean saturation ≥ 0.70 of the same view at night; `p5` sits near the
+ink floor rather than near the paper; `uDay = 0` is bit-identical to today; and
+the four frames above, re-shot, no longer look like fog.
+**Verify** — re-shoot the same four views in day mode and run the same
+measurement; the numbers in the table are the before, and they are reproducible
+by anyone. Then a phone outdoors, which is still the only judge of whether 0.88
+and 0.10 are the right pair.
+**Hard stops** — prefs no · url no · capture no · dependency no.
+
+**Verification note — `/ccc` at build 356.** PAPER 0.88, INK 0.10 and the warmth bias at ±0.10 are all present and unchanged, laid in HSL at the lightness channel as Decided requires. These are among the constants Victor froze with *"both ways has good colours, finally, don't break it"*, and nothing since has touched them. The sibling entry 71's own Done-when did **not** hold — see entry 108 — but that concerns how long the day takes to cross over, not what either end looks like, and this entry's claims are independent of it.
+### 69. The name is the dedication, and nothing is added to it
+`status: done` · added 2026-08-30 · shipped at build 231 · verified at build 356
+
+**Build note** — exactly the entry's own size: an HTML comment above the
+`<h1>` in `index.html` stating the name is deliberately wordless and that
+nothing further is to be added, and a one-line answer appended to entry
+63's own "Not decided here" note closing the open question. No visible
+change, no code logic — `pnpm build`/`pnpm lint` clean, and there is
+nothing else to run, per the entry's own Verify line.
+
+**Do** — put the reason for the name beside the name, in `index.html`, and
+close the question entry 63 left open.
+
+**Why** — entry 63 shipped `kiyo · plays` at build 219 and deliberately left
+"whether kiyo appears anywhere else, in a dedication or a byline" undecided.
+Victor has now decided it: **wordless, on the gate, the name carries it.** An
+open question left open is an invitation, and the next person to read that
+entry would answer it by adding a line.
+
+**Decided**
+- **Nothing is added. No "for Kiyo", no byline, no README section, no release
+  name.** Victor's call, made against the alternatives rather than by default:
+  the piece is named after him and that is the whole statement. Anyone who
+  needs to know, knows; a stranger opening the link finds a toy with a name.
+- **So this entry is a comment and a status change**, not a feature. That is
+  the correct size for it. The comment belongs at `index.html:563`, beside the
+  `<h1>`, in the same voice every other decision in this file is recorded in —
+  what it is, and what was decided against. This repo's house rule is that
+  comments carry the reasoning, and there is no reasoning anywhere on screen or
+  in the source for why the piece is called what it is.
+- **Say that it is deliberately wordless**, explicitly, because the failure
+  mode is specific: a future session reading a bare wordmark sees an omission
+  and fixes it. The comment has to say the absence is the decision.
+- Nothing is built for the co-creation either → also Victor's call. The naming
+  is the act; there is no gallery, no kept frames, no seed exchange. Entry 63's
+  own screenshot prefix already carries his name into every picture anyone
+  makes with it, which needed no entry and remains the only place the name
+  travels on its own.
+- Deliberately **not** recorded in the gate's visible text, the README's prose,
+  or a release name — each was offered and each was declined. Listing them here
+  is the point: it is what stops the same three ideas being re-proposed as
+  novel.
+
+**Lands in**
+- `index.html:563` — a comment above the `<h1>`.
+- `docs/todo.md` — entry 63's "Not decided here" note, which this answers.
+
+**Done when** — the source says why the piece is called `kiyo · plays` and that
+nothing further is to be added, and no open question about the name remains in
+this file.
+**Verify** — reading it. There is nothing to run.
+**Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 70. Colour is chosen as a hue, and survives the composite
+`status: done` · added 2026-08-30 · shipped at build 234 · build after 68 · verified at build 356
+
+**Build note** — `main.ts`'s `channel()`/`colour()`/`nudgeChannel()` are gone;
+`hueToColour(h, s)` (HSV with `v` pinned at 1) and its inverse
+`colourToHueSat()` replace them. A fresh roll (`SHUFFLE_RESEED` and above)
+is `hueToColour(random hue, 0.55-1.0 saturation)`; the below-`SHUFFLE_RESEED`
+nudge converts the current colour back to hue/saturation, nudges each
+(`NUDGE_HUE_DEG=20`, `NUDGE_SATURATION=0.08`, both **Mine** — the entry
+names the floors, not a nudge size), clamps saturation to the same
+`[0.55, 1]` a fresh roll lives in, wraps hue mod 360, and converts back.
+`floorDominant`/`SHUFFLE_MIN_DOMINANT_CHANNEL` are deleted outright rather
+than kept as dead code: the new roll guarantees the dominant channel is
+exactly 1 by construction, at every step, so the floor they enforced can
+never fire again — confirmed, not assumed, by `probe:nudge`'s 200k-step
+walks (see below).
+
+The vibrance stage lives in `composite.frag.glsl`, right after `col` is
+computed and before the `uCameraMix` block — entry's own placement,
+verified to matter: after the camera mix would repaint a real photograph
+with borrowed saturation. `boost = 1.0 * (1.0 - sat)` (VIBRANCE=1.0, **Mine**)
+scales the pull away from the pixel's own grey average, so a thin-colour
+pixel lifts hard and an already-vivid one is left close to untouched.
+
+`scripts/probe-nudge.ts` rewritten to match: the two dominant-channel
+checks became "stays exactly 1" (a guarantee, not a floor) and a new
+saturation-floor check; the settling-brightness check's own target moved
+from 0.25 (0.5 alpha × 0.5 old channel floor) to 0.5 (0.5 alpha × the new,
+always-1 dominant channel) — the arithmetic changed along with the model,
+not just the assertion. All ten checks pass, from both a dim and a bright
+seed.
+
+`scripts/probe-composite.ts` gained the saturation floor as a simulation:
+the new sampler feeding the real `composite()` line already in this file
+(screen, the default merge for both geo-over-atmosphere and
+atmosphere-over-camera), across a spread of alphas and per-pixel
+intensities, then vibrance applied. Mean saturation 0.77, p95 1.00 — both
+comfortably clear the entry's 0.30/0.60 floors. Worth recording honestly:
+in this simulation, **the sampler fix alone (vibrance at zero) already
+clears both floors** (asserted directly as its own check) — matching the
+entry's own "this is the whole fix for cause one and two" framing, and
+meaning vibrance is a genuine addition for the residual screen-desaturation
+cause, not the only thing standing between this entry and its acceptance
+test. Also added: an algebraic check that screening a real photograph onto
+black (`col` = 0, the camera-only case) leaves the photograph's own colour
+untouched, which is what the vibrance-before-camera-mix placement actually
+buys.
+
+Verified live against the real dev server: the shader compiles with no
+console errors (embedded GLSL is invisible to `tsc`/`eslint`, same caveat
+as entry 68), and two page loads (a fresh `localStorage`, no `?rgb`, so the
+gate's own entry-60 roll picks the colour) each produced a clearly tinted,
+non-grey picture — a vivid dark red on one load, a muted salmon on the
+next — genuine variety, neither washed toward grey.
+
+Not verified: a re-shoot of the entry's own four measured frames (this
+session has no access to the original files, and this is a synthetic
+simulation standing in for real render statistics, per this file's own
+established docstring on why). The camera-untouched claim is verified
+algebraically (vibrance's function signature never receives `cam`) rather
+than by an actual passthrough session, since this harness cannot grant
+camera permission any more than it can grant the microphone.
+
+**Do** — roll colour as a hue at high saturation instead of three independent
+channel gains, drop the floor that makes a pure channel impossible, and add a
+vibrance stage before the camera mix.
+
+**Why** — the picture is grey-ish in every view, in day *and* night, with the
+camera up and down. Entry 68 fixes the daylight wash; this is the separate
+reason colour is thin underneath it.
+
+**Decided**
+- **The measurement, four fresh frames** (middle 82%):
+
+  | frame | mean L | contrast | mean sat | p95 sat | mean RGB |
+  |---|---|---|---|---|---|
+  | b7d4df77 | 0.578 | 0.273 | 0.096 | 0.151 | (0.56, 0.58, 0.56) |
+  | 44dfb7bf | 0.455 | 0.157 | 0.122 | 0.230 | (0.46, 0.46, 0.41) |
+  | 696e0c20 | 0.368 | 0.138 | 0.253 | 0.364 | (0.33, 0.39, 0.29) |
+  | 3bdfa551 | 0.368 | 0.138 | 0.249 | 0.360 | (0.33, 0.39, 0.29) |
+
+  Mean RGB is near-neutral in all four — the channels sit within 0.06 of each
+  other. **Even the most colourful pixels (p95) only reach 0.15-0.36
+  saturation.** These are *not* the pale frames from entry 68: mean luminance
+  is 0.37-0.58, so this is thin colour, not a light ground, and it is a second
+  cause that entry 68 does not touch.
+- **Three things compound, and the first is the one nobody would guess.**
+  `main.ts:336` is `const channel = () => 0.2 + Math.random() * 0.8`, drawn
+  independently per channel. **Sampling r, g and b independently clusters
+  around the grey diagonal** — the three values land near each other far more
+  often than far apart, and near each other *is* grey. A colour picked this way
+  is a random point in a cube, and most of a cube is not colourful.
+- **The 0.2 floor makes a pure hue unreachable by construction.** With the
+  smallest channel never below 0.2 and the largest at most 1, saturation is
+  capped at 0.8 and averages about 0.5 — before any blending. `geo-colour.ts`'s
+  own docstring names "a channel at zero is a genuine channel kill" as a
+  *feature* of this model; the sampler is what never uses it.
+- **Screen desaturates, and the composite screens twice.** `screen` is the
+  default for geo-over-atmosphere *and* atmosphere-over-camera
+  (`merge-modes.ts:26,36`), and `a + b − ab` pulls toward white, which pulls
+  toward grey. So a colour that starts at 0.5 saturation arrives well under it,
+  which is the gap between the 0.5 the sampler can manage and the 0.15-0.36
+  measured.
+- **So roll a hue, not three gains.** Pick a hue uniformly on the circle and a
+  saturation in **0.55-1.0**, convert to the same three gains, keep the largest
+  channel at 1 so brightness does not fall as saturation rises. **Mine.** This
+  is the whole fix for cause one and two, and note what it does *not* change:
+  `GeoColour` is still three numbers with the same meaning, `rgb=100,30,40`
+  still says exactly what it said, and every stored pref and shared link is
+  untouched. Only what the shuffle *chooses* changes.
+- **Brightness and saturation are coupled in this model, which is the deeper
+  point.** Gains can only ever remove light, so a saturated red must be
+  `(1, 0, 0)` — a third of white's luminance. Keeping the max channel pinned at
+  1 is what stops "more colourful" from meaning "darker", and it is why this
+  cannot be fixed by picking nicer numbers by hand.
+- **A vibrance stage, applied to the picture and not the room** → after the two
+  layers combine and **before** the camera composite, so the visualiser gains
+  colour and a real photograph of grass does not. Vibrance rather than flat
+  saturation: scale by how unsaturated a pixel already is, so thin colour lifts
+  and anything already vivid is left alone. **Mine**, and the seam matters —
+  after the camera mix it would repaint the room.
+- **`DEFAULT_GEO_COLOUR` stays white.** Deliberate, per `geo-colour.ts`: the
+  geometry is kept out of the atmosphere's hue range so the layers do not fight.
+  With the director always on (entry 45) the rolled colour is what anyone
+  actually sees, so fixing the sampler fixes the experience without disturbing
+  a decision that was made for a reason.
+- **Not taken: renormalising the stored gains** so `(0.5, 0.1, 0.1)` reads as
+  bright red rather than dim red. It is the tidier model and it is a **Hard
+  Stop** — it changes the meaning of every stored pref and every shared `rgb=`
+  link, silently. Raised here so it is on the record as considered and
+  declined, not overlooked. If it is ever wanted it needs Victor's call and a
+  migration, not a quiet reinterpretation.
+
+**Lands in**
+- `src/main.ts:335-370` — `channel()`/`colour()`/`nudgeChannel()` become a
+  hue-and-saturation roll; the 0.2 clamp goes with them.
+- `src/shaders/composite.frag.glsl` — the vibrance step, before the
+  `uCameraMix` block.
+- `scripts/probe-composite.ts` — the saturation floor.
+
+**Done when** — a rolled colour has saturation ≥ 0.55 before blending; a
+rendered night frame measures **mean saturation ≥ 0.30 and p95 ≥ 0.60**,
+against the 0.10-0.25 and 0.15-0.36 above; the camera passthrough is
+unchanged pixel-for-pixel at the same `uCameraMix`; and no stored pref or
+`rgb=` link renders differently than it does today.
+**Verify** — re-shoot these same four views and re-run the measurement; the
+table above is the before. The camera claim is the one to check by hand, since
+"the room is untouched" is the thing a vibrance stage most easily breaks.
+**Hard stops** — prefs no (the shape *and* the meaning are unchanged; only the
+sampler and a render-time stage move) · url no · capture no · dependency no.
+
+### 72. Camera mode: the room becomes the picture, and a tap is the shutter
+`status: done` · added 2026-08-30 · shipped at build 242 · verified at build 356
+
+**Build note** — `main.ts` gained `cameraMode`/`preCameraMix` state and
+`enterCameraMode()`/`exitCameraMode()`. Entering captures `prefs.passthrough`
+(what the band was showing) before calling `applyPassthrough(0.75)` directly
+— never through the HUD band's own commit path, so `prefs.passthrough`/
+`panel.adopt()` are never touched, the same render-time-only seam entries
+48/58/60 established. If the camera is refused (`applyPassthrough` resolves
+to 0), `cameraMode` reverts to false and the glyph hides — there is nothing
+to be "in camera mode" about without a camera actually showing. Exiting
+restores `preCameraMix` the same direct way and hides the glyph.
+`maybeRollCamera()` gained one guard line (`if (cameraMode) return`) so the
+director can keep rolling views and colours while the mode is on without
+ever touching the borrowed passthrough level.
+
+`dispatchTouches`'s down-branch gained a `cameraMode` fork ahead of the
+existing double-tap/two-finger dispatch: a qualifying second finger calls
+`exitCameraMode()` instead of `panel.open()`; every other qualifying tap
+fires `saveCapture()` + `flashShutter()` immediately, on `down`, gated only
+by a 300ms rate limit (`CAMERA_SAVE_RATE_LIMIT_MS`, inverted from entry
+52's 700ms per the entry's own reasoning: outside the mode that limit
+guards against accidental taps, inside it every tap is deliberate) — no
+`TAP_RESOLVE_MS` wait, no pending-tap bookkeeping, no drag check, because
+entry 67's whole reason for that wait (learning whether a second tap is
+coming to open the menu) does not exist here.
+
+`hud.ts` gained a `shutter` chip (a shutter-button glyph, deliberately
+distinct from the existing `cam` bracket-and-circle icon, which is a
+different chip for a different thing — the passthrough band's own group)
+and a new `close()` method on the `Hud` interface (`setOpen(false)`
+exposed, alongside the existing `open()`) so the chip's own `onTap` can
+close the panel directly rather than asking main.ts to call back into it —
+"one tap enters the mode and closes the panel" is one gesture. The chip is
+a momentary action, not a toggle: camera mode is not stored and nothing
+tracks being "in" it for a pressed state to paint.
+
+`index.html` gained `#shutter-glyph` (a thin stroked ring, 0.25 resting
+opacity, DOM rather than canvas so `requestCapture`'s canvas read can never
+include it — the same reasoning `#capture-flash` already established) and
+its `shutter-pulse` keyframe (scale 1 → 0.85 at 40% → 1, 180ms, matching
+the entry's own numbers exactly), triggered via the same reflow-restart
+trick `flashShake`'s double-tap path uses, since a keyframe animation
+(unlike `flashCapture`'s transition-based flash) does not restart merely
+from re-adding an already-present class.
+
+Verified live against the real dev server: the shutter chip, tapped
+through the real, mounted `createHud()` (via `hud-probe.html`), correctly
+closed the open panel and called `onCameraMode()` exactly once. The glyph
+exists, hidden by default, at 0.25 opacity; its animation's actual
+keyframes and timing were read via `getAnimations()` and confirmed
+bit-for-bit against the entry's own numbers (180ms, scale 1/0.85/1 at
+0/40%/100%) — not merely assumed from the source. No console errors on
+load, confirming the new markup and CSS parse cleanly.
+
+Not verified live: `enterCameraMode()`/`exitCameraMode()`/the
+`dispatchTouches` camera-mode branch themselves, all of which are closures
+inside `main()` reachable only through the real chip *after* `waitForStart()`
+resolves — gated behind the live microphone permission prompt this harness
+cannot complete, the same limit disclosed in entries 60-71's build notes
+wherever they touched post-Start code. What was verified instead: every
+piece reachable without Start (the HUD wiring, the CSS/animation, the
+constants and guard logic by direct code review), and no probe script,
+since the entry's own Lands-in names only `main.ts`/`hud.ts`/`index.html`
+and the new logic is inline dispatch branching rather than an extractable
+pure function the way entry 67's tap resolver was.
+
+**Do** — make the camera a *mode*, not a dial. One tap of the camera chip
+enters it; after that every tap of the picture takes a photo. A translucent
+shutter glyph sits in the centre saying so, the visualiser keeps running over
+the room, and the menu cannot open until you leave.
+
+**Why** — the camera is currently a mix band buried in the panel, which is a
+setting rather than an act. Nobody holds up a phone to adjust a slider.
+
+**Decided**
+- **The shutter is instant, and that falls out of the mode rather than being
+  bolted on.** Outside camera mode a single tap must wait `TAP_RESOLVE_MS`
+  (entry 67: 400ms) to learn whether a second tap is coming, because a double
+  opens the menu. **In camera mode the menu cannot open, so there is no second
+  meaning to wait for** — the tap fires the shutter on `pointerdown`, with no
+  delay at all. This is the strongest argument for the mode existing: it makes
+  the app's one genuinely laggy interaction disappear exactly where lag is
+  least acceptable.
+- **Entering** → a camera chip on the arc. One tap enters the mode *and*
+  closes the panel, so "first click puts into camera mode" is literally one
+  click and you are already looking at the room. **Mine.**
+- **Leaving is the two-finger tap**, the same gesture entry 67 reserved as the
+  guaranteed way to the menu. **Mine**, and the symmetry is the point: two
+  fingers always means *get me out of what I am in*. In camera mode it exits to
+  the normal picture rather than opening the panel, which keeps "the menu never
+  opens in this mode" literally true while never stranding anyone. A mode with
+  no exit is how the fullscreen and menu bugs both happened; this one gets its
+  exit decided in the same entry that creates it.
+- **The mix is a render-time override, never a stored write** — the seam
+  entries 48, 58 and 60 established. Entering raises passthrough to **0.75**:
+  the room is plainly the subject, the visualiser is plainly still on top of it.
+  Leaving restores whatever the band was set to, so the mode borrows the dial
+  and gives it back. **Mine** as to 0.75.
+- **The glyph, and this is the "cool" part being spent deliberately in one
+  place** → a thin aperture ring, centred, `currentColor` in the same `ICONS`
+  vocabulary as every other glyph, resting at **0.25 opacity** so it reads as a
+  viewfinder mark rather than a button. On a shutter it **contracts to 0.85
+  scale and blooms back over 180ms** — the one mechanical gesture a camera
+  makes — and then the existing `#capture-flash` fires unchanged. No shutter
+  sound, no border flash, no vignette: the restraint is what makes the one
+  movement read.
+- **The glyph is never in the photo, and this needs no work** →
+  `requestCapture` reads the WebGL canvas, and both the glyph and
+  `#capture-flash` are DOM. Worth stating because entries 50 and 52 decided the
+  *opposite* for the touch ring ("it is picture, not UI") and a builder
+  reasoning from those would try to include this one.
+- **The animation is untouched**, as asked: no pause, no freeze-frame preview,
+  no dimming. The photo is of the live composite exactly as seen, which is what
+  every capture in this app has always been.
+- **Rate limit drops to 300ms** in the mode, from entry 52's 700. That limit
+  exists so a flurry of accidental taps does not fill the camera roll; in
+  camera mode every tap is deliberate and the constraint inverts. **Mine.**
+- **The mode does not survive a reload.** **Mine**, and it is a privacy call
+  rather than a convenience one: restoring it on load would open the camera
+  and light the OS indicator without a gesture, which is the start gate's
+  promise broken in the most visible possible way — `applyPassthrough`'s own
+  comment already says exactly this about holding a stream behind a zero.
+- **The director must not fight it** → entry 45 has it always on with a 30s
+  ceiling, and it rolls the camera mix among other things (`CAMERA_ROLL_CHANCE`).
+  While camera mode is on it may keep rolling views and colours — the picture
+  should still be alive — but it must not touch passthrough. **Mine.**
+
+**Lands in**
+- `src/main.ts:908-945` — `applyPassthrough` gains the override/restore pair.
+- `src/main.ts:990-1130` — the tap dispatch branches on the mode: shutter on
+  `down`, no pending-tap bookkeeping, two fingers exit.
+- `src/main.ts:853` — the director's camera roll skips while the mode is on.
+- `src/hud.ts` — the chip; `index.html` — the glyph and its two keyframes.
+
+**Done when** — one tap of the chip shows the room with the picture over it and
+the panel gone; every tap after that saves a frame with no perceptible delay
+and blooms the ring; a double tap saves two frames and does **not** open the
+menu; two fingers return to the normal picture with the passthrough band back
+where it was; the glyph appears in no saved PNG; and a reload comes back with
+the camera off and dark.
+**Verify** — the phone, pointed at something worth photographing. The delay
+claim is the one to feel rather than measure: tap-to-flash should be
+indistinguishable from instant, where today it is 400ms.
+**Hard stops** — prefs no (the mix override is render-time; nothing stored
+changes, and the mode itself is deliberately not stored) · url no · capture
+**yes, and answered**: the frame is the same live composite `requestCapture`
+already reads, the glyph and flash are DOM and cannot enter it, the filename
+shape is unchanged, and nothing leaves the device · dependency no.
+
+**Verification note — `/ccc` at build 356.** Superseded in substance: entry 87 (build 273) replaced the whole mode this entry describes, after Victor reported it was not what he asked for — the capture agent had read "camera mode" as the passthrough camera and specified `applyPassthrough(0.75)` against the request's own "animation not affected". Entry 103 then removed tap-to-save, so "every tap after that saves a frame" is gone too. Two claims survive and both hold: the shutter glyph is DOM rather than canvas so it can never enter a saved PNG, and a reload comes back with the camera off, because `prefs.ts` treats a stored value as not an asking.
+### 73. A frozen camera is reported, and the director never opens one
+`status: done` · added 2026-08-30 · shipped at build 245 · verified at build 356
+
+**Build note** — `camera.ts`'s `CameraSource` gained `isLive(): boolean`,
+tracked continuously rather than checked once: `requestVideoFrameCallback`
+re-registers itself on every real decoded frame (its own cadence is the
+proof) where the browser has it; a `setInterval` comparing `currentTime`
+every 500ms stands in where it does not. `isLive()` is
+`performance.now() - lastFrameAt < 2000`. A `visibilitychange` listener
+calls `video.play()` again whenever the page returns to visible and the
+video is paused — nothing anywhere else in this app knew this camera
+existed (`permission-gate.ts`'s and `version.ts`'s own listeners are about
+fullscreen and a fresh-build dot), so without this a backgrounded tab's
+own browser-level pause was never undone.
+
+`main.ts`: `maybeRollCamera()`'s gate changed from `hasCameraPermission()`
+(granted) to `cameraSource?.isLive()` (already open, already proven live)
+— the actual fix, since a `devicemotion` event never carries the
+activation `getUserMedia`/`play()` need, and every prior report of a
+frozen camera traced to exactly this path reaching `startCamera()` two
+awaits deep with no gesture behind it. `hasCameraPermission()` and
+`cameraEverGranted` are deleted outright rather than kept: once raising
+requires an *already-live* stream, "permission was granted" is strictly
+weaker than what the check now needs, and nothing else in the codebase
+read either. `applyPassthrough()` now closes and forgets a frozen
+`cameraSource` before ever reusing or reporting a mix against it, so a
+stream that stalled between visits does not go on masquerading as showing
+something. The readout gained a `camera` field (`open`/`live`), read fresh
+from `cameraSource?.isLive()` on every tick — `closed`/`frozen`/`live`,
+matching entry 66's `want`/`armed` and `shake.ts`'s own `diagnostics()` in
+spirit: a frozen camera and a working one are identical whenever the room
+itself is still, and now the readout is what tells them apart rather than
+a guess.
+
+**Verified live, genuinely, not just algebraically** — a limitation this
+session hit repeatedly with camera/microphone features (no real device
+access here) was worked around by monkey-patching
+`navigator.mediaDevices.getUserMedia` to hand the real, unmodified
+`startCamera()` a `canvas.captureStream()` feed instead of a real camera —
+matching `camera-probe.html`'s own established technique for exactly this
+reason. Against the real exported function, not a stub: (1) a genuinely
+redrawing canvas opened live, `isLive()` true within 300ms; (2) freezing
+the canvas (stopping its own redraw loop, so `captureStream()` stops
+emitting new frames — the same "advancing player, no new pixels" shape a
+backgrounded real camera produces) correctly flipped `isLive()` to `false`
+after the 2s timeout, while `video.paused` stayed `false` throughout — the
+exact "not erroring, just not moving" case the whole entry is about; (3)
+force-pausing the video element (what a real browser does on
+backgrounding) and dispatching a synthetic `visibilitychange` with
+`visibilityState: 'visible'` correctly resumed it (`paused` true → false).
+`close()` was confirmed not to throw and to actually stop the interval/
+listener it owns. `pnpm build`/`pnpm lint` both clean, and
+`requestVideoFrameCallback` needed no type workaround — already in this
+project's configured DOM lib.
+
+Not verified: the actual `maybeRollCamera()`/`applyPassthrough()`
+integration end-to-end (both live inside `main()`'s closure, reachable only
+after `waitForStart()` resolves — the same Start-gated limit disclosed in
+every entry since 60 that touched post-Start code) and the true behaviour
+on a real phone camera specifically, which the entry's own Verify line
+already reserves as the only real judge ("Neither is reproducible on a
+desktop").
+
+**Confirmed 2026-08-30**, reported as "coming back to browser camera is
+frozen". That is the resume half below, and it is now the *primary* fault
+rather than the second one — it is reproducible on demand (leave the tab or
+lock the phone, come back), it needs no director and no shuffle, and it will
+still be there after the auto-open half is fixed. **Build the
+`visibilitychange` resume first**; the rest of this entry can follow in the
+same change or a later one.
+
+**Do** — stop swallowing the `play()` refusal, verify the video is actually
+advancing, resume it when the page comes back, and forbid the auto-roll from
+opening a camera it has no gesture for.
+
+**Why** — passthrough sometimes shows one still frame forever, and most often
+when the shuffle turned it on. Both halves of that sentence have a cause and
+the code already names one of them.
+
+**Decided**
+- **The cause is written in the source, as an accepted cost.** `camera.ts:76`:
+  `await video.play().catch(() => {})`, whose comment says *"The texture will
+  simply hold the first frame; that is a poor passthrough rather than a failed
+  one, and not worth refusing over."* **The frozen picture is that first
+  frame.** The judgement was defensible when the only way to reach it was
+  tapping a control; it stopped being defensible when the director could reach
+  it too.
+- **Why the auto path always hits it** → `maybeRollCamera` (`main.ts:851`)
+  runs `await hasCameraPermission()` and then `await applyPassthrough(level)`,
+  so `startCamera()` is two awaits deep in an async chain — any user activation
+  has long expired. And the chain begins at a **shake**, which is a
+  `devicemotion` event and was never an activation-triggering gesture in the
+  first place. So on the auto path `play()` is refused essentially always, and
+  the catch hides it. "Especially on auto select" is not a coincidence; it is
+  the only path that reliably reproduces it.
+- **So the director never opens a camera.** It may still turn passthrough
+  *down*, and it may raise it when a stream is **already open and playing** —
+  but a closed camera stays closed. **Mine**, and it is the same conclusion
+  entry 72 reached from the other direction: an autonomous process opening a
+  camera is not a thing this app should be able to do, regardless of whether
+  the permission was granted earlier.
+- **A second, independent freeze that hits even a properly-started camera** →
+  nothing anywhere resumes the video. Browsers pause a video element when the
+  page is hidden; the phone locks, or you switch apps, and on return the
+  texture holds the last frame with no error of any kind. `visibilitychange` is
+  listened for in `permission-gate.ts` and `version.ts` and neither knows the
+  camera exists. Add a resume: on return to visible, `play()` again if
+  `video.paused`. This is the "sometimes" that has nothing to do with the
+  director.
+- **Verify it is running rather than trusting `play()`.** A resolved `play()`
+  is not proof of frames, exactly as entry 62 found a resolved
+  `requestFullscreen` is not proof of fullscreen. Watch `video.currentTime`
+  advance across a short window — or `requestVideoFrameCallback` where it
+  exists, falling back to `currentTime` where it does not — and expose the
+  answer on `CameraSource`.
+- **Report it, because a frozen camera and a working one are identical when
+  the room is still.** The readout gains the camera's state beside the
+  fullscreen and motion fields it already carries. Same argument as
+  `shake.ts`'s `diagnostics()` and entry 66's `want`/`armed`: this app's
+  recurring failure is not that things break, it is that two different breakages
+  present as one sentence.
+- **A frozen stream is closed, not kept.** If the video never advances, release
+  it and report 0 rather than holding a powered sensor and a lit OS indicator
+  to show a still photograph — `applyPassthrough`'s own comment makes exactly
+  this argument about holding a stream behind a zero mix.
+
+**Lands in**
+- `src/camera.ts:76-92` — the refusal stops being swallowed; `CameraSource`
+  gains a liveness flag and a resume.
+- `src/main.ts:851-860` — the auto-roll requires an already-playing stream.
+- `src/main.ts:920-945` — `applyPassthrough` releases a stream that never ran.
+- `src/hud.ts` — the readout field.
+
+**Done when** — a shuffle deep enough to roll the camera never opens one that
+was closed; locking the phone and returning shows live video again, not the
+last frame; a refused `play()` leaves passthrough at 0 with the readout saying
+why, instead of a still image at the requested mix; and the OS camera
+indicator is never lit while the picture is frozen.
+**Verify** — the phone: lock it and come back, and separately shake hard enough
+to trigger a full shuffle with the camera closed. Neither is reproducible on a
+desktop, where `play()` is not refused and the page is rarely hidden.
+**Hard stops** — prefs no · url no · capture **yes, and answered**: this
+strictly *reduces* when the camera opens — the director loses the ability
+entirely — and adds no new path to a stream · dependency no.
+
+**Verification note — `/ccc` at build 356.** Both halves are there: `camera.ts` listens on `visibilitychange` and re-plays, which is what a returning tab needs, and `maybeRollCamera` is documented and coded never to raise the camera over one that has already frozen. The underlying cause this entry names — a `play()` refused because a shake was never an activation gesture — is why the director cannot start one.
