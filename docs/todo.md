@@ -8002,3 +8002,76 @@ goes.
 see at all.
 **Hard stops** — prefs no · url no · capture **yes, and that is the entire
 point of the entry** · dependency no.
+
+### 108. The sky's crossover is twice as long as entry 71 promised
+`status: blocked` · added 2026-08-31 · found by `/ccc` at build 355 · blocks 71's verification
+
+**Do** — nothing yet. A question for Victor, because the fix is a taste call
+about how the picture looks across a day and the colours are approved.
+
+**Why** — entry 71 set out to stop the picture spending most of the day in a
+grey between-state. Its own **Done when** says *"no more than ~5 of 24 hours
+between 0.1 and 0.9"*. Measured on the shipped build, scrubbing `skyFor()`
+minute by minute through a full day: **9.95 hours.** The entry's Done-when is
+not met and never could have been.
+
+**The finding, precisely**
+- **The build is not wrong. The entry is internally inconsistent.** `probe-sky`
+  asserts all six anchors land exactly, and they do: 04:00→0.0, 06:30→0.35,
+  10:30→1.0, 15:30→1.0, 19:30→0.4, 23:00→0.0. Those are the anchors entry 71's
+  own **Decided** section names, hour for hour. The builder implemented
+  precisely what was decided.
+- **Those anchors cannot produce that number.** 04:00→10:30 is six and a half
+  hours of rising and 15:30→23:00 is seven and a half of falling; smoothstepped,
+  the part of that lying strictly between 0.1 and 0.9 is 9.95 hours. Decided
+  and Done-when were written in the same sitting and disagree with each other,
+  and nothing checked one against the other — the probe asserts the *anchors*,
+  which is the easier claim and the one that passes.
+- **It is still a large improvement, which is why nobody noticed.** Before 71
+  the figure was ~16 hours, and the entry's own recon measured that. 9.95 is a
+  38% reduction and the picture visibly has a noon and a night now. The claim
+  that failed is the *degree*, not the direction.
+
+**The question**
+> The shipped curve spends about ten hours a day in the crossover rather than
+> the five entry 71 asked for. You have since seen it and said *"both ways has
+> good colours, finally, don't break it"*. Is ten hours what you actually want,
+> or was five?
+
+**Costed, so the answer is one choice**
+- **Keep it, and correct the entry.** The curve is approved by inspection,
+  which outranks a number written before anyone saw it. 71's Done-when gets a
+  line saying the figure was wrong and the shipped hours are deliberate.
+  **Nothing changes in the picture.** This is the safe answer and, given "don't
+  break it", the likely one.
+- **Take it to ~4.2 hours** — dawn anchors at 05:30/07:00/08:30, dusk at
+  18:00/19:30/21:00. Night and day both get longer, the crossover becomes a
+  genuine event. This is the shape 71 was actually reaching for. It also moves
+  when the picture changes, which on a phone left running is the most visible
+  edit in this list.
+- **Take it to ~5.6 hours** — dawn 05:00/07:00/09:00, dusk 17:30/19:30/21:30.
+  Meets the original figure with the gentlest move from what is on screen now.
+- Measured, all three, by scrubbing the same minute-by-minute curve; the
+  numbers above are outputs, not estimates.
+
+**Decided in advance**
+- **Whatever the answer, the warmth anchors are untouched.** 71 said that curve
+  was already right and left it alone; nothing here disagrees.
+- **This does not reopen PAPER, INK or the vibrance lift.** Those are frozen
+  (entries 68 and 70, build 234) and the crossover's *length* is independent of
+  what either end looks like. **Mine.**
+- If the answer is "keep it", this closes as `done` with the answer recorded
+  and entry 71 archived alongside it, so the discrepancy cannot be re-found and
+  re-raised a third time.
+
+**Lands in** `src/sky.ts` — `DAYLIGHT_ANCHORS` only, and only if the answer is
+one of the two changes; `scripts/probe-sky.ts` — an assertion on the
+crossover *duration*, which is the check nobody wrote and is what let a
+Done-when go unmet through five months of builds.
+**Done when** — Victor has answered; the answer is recorded here; and
+`probe-sky.ts` asserts the crossover duration against whichever figure is
+chosen, so this class of gap cannot recur silently.
+**Verify** — the probe for the duration. Then, if anything moved, the phone
+across an actual dawn, which is the only test of whether a crossover reads as
+an event.
+**Hard stops** — prefs no · url no · capture no · dependency no.
