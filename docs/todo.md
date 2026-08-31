@@ -8616,7 +8616,9 @@ carefully by hand instead, and the `pendingTaps`/`cancelPendingTap` logic is
 identical in shape to what `probe:tap` already executes. The entry's own
 Verify line — the phone, counting files — is the phone's question, not
 this session's.
-`status: ready` · added 2026-08-30
+
+### 79. Rings stop adding up, and a pull reads as a sequence
+`status: building` · added 2026-08-30
 
 **Do** — combine overlapping rings instead of summing them, and vary each ring
 enough that a dragged trail reads as a run of rings rather than one thick one.
