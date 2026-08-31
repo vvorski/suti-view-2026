@@ -133,6 +133,7 @@ export const RELEASE_NAMES: readonly string[] = [
   'known gait',
   'second engine',
   'quiet swap',
+  'shown queue',
 ]
 
 /** The current release's name — derived as the list's last element, so

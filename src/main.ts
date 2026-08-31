@@ -40,6 +40,7 @@ import { hasMotionPermissionGate, intensity, startShake, STILL_FRAME, type Shake
 import { confirmBuzz, doubleBuzz, hapticStatus } from './haptics'
 import { IdlePreview } from './idle-preview'
 import { mountReleaseName, mountVersionHud, versionHudRunning } from './version'
+import { mountQueuePanel } from './queue-panel'
 import { mountPowder } from './powder'
 import {
   ATMOSPHERIC_VIEWS,
@@ -630,6 +631,7 @@ async function main(): Promise<void> {
   mountVersionHud()
   applyReleaseTone(__BUILD_NUMBER__)
   mountReleaseName()
+  mountQueuePanel()
   mountShare()
   // docs/todo.md entry 62: the fullscreen retry re-requests on the next tap
   // of the picture itself, never `window` — set once, here, well before the

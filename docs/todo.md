@@ -10327,7 +10327,76 @@ one that could silently regress the approved colour.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 93. The gate shows the queue it came from
-`status: building` · added 2026-08-30
+`status: done` · added 2026-08-30 · build 315
+
+**Build note (Mine).** `vite.config.ts`'s `buildQueue()` parses `docs/todo.md`
+at build time: for each `### N. Title` header, it reads the very next line as
+that entry's status line, matching the format the "## Format" section itself
+documents. This came from a real bug found while writing the parser, not a
+theoretical one: a naive whole-file scan for lines matching `` `status:
+... ` `` also finds one inside entry 61's own build note, which quotes the
+claiming protocol's `` `status: building` `` verbatim in wrapped prose — a
+false "entry 61 is building" that a header-then-next-line parser cannot
+produce, since it never looks at any line that isn't immediately below a
+header. Worth writing down since it is exactly the kind of parsing mistake
+that would have passed a build with today's data and broken silently on a
+future build note that happened to quote a different status word.
+
+Two shipped rows (most recent build first into the rule, i.e. older-then-
+newer reading top to bottom into the waiting rows below), then a hairline
+rule, then up to five waiting entries — `ready` or `building` both count as
+waiting, which matters right now: this very entry shows as row "93 · The
+gate shows the queue…" under `waiting` in its own build, since the commit
+that flips it to `done` is this same one, after the build already ran once
+to verify the data. Titles truncate to Decided's 24 characters, with an
+ellipsis on anything cut — the ellipsis itself is **Mine**, Decided named
+only the character cap.
+
+Found by actually looking at it on a real 320×568 layout, not by reading
+Decided: the bottom-left placement collides with the bottom-right QR code
+at phone widths — `.gate-qr`'s own `clamp(9rem, 48vw, 10.5rem)` reaches far
+enough left at 320-360px that a naively-wide queue panel sat its text
+directly behind the QR's light background. Decided frames vertical space as
+"the real constraint" and says nothing about width; this is a real gap in
+that analysis, not something Decided already covered. Fixed by capping the
+panel at `min(36vw, 11rem)`, sized against the QR's own footprint at both
+tested widths with headroom, plus `text-overflow: ellipsis` as a second
+line of defence for whatever still doesn't fit. Confirmed clear of the QR
+at both 320×568 and 360×640 via a temporary two-iframe harness (not
+committed — this project already has `hud-narrow.html` for the HUD panel
+specifically; this entry didn't touch that surface, so no PR-visible probe
+exists for the gate's own layout, only this one-off check).
+
+The three-stage height collapse (waiting rows first, then the rule, then
+the shipped pair, then the whole panel) is implemented as literal `max-
+height` breakpoints (660px / 600px / 520px) — thresholds are **Mine**,
+Decided named the order, not the pixels. At 360×640 this leaves the rule
+visible with no waiting rows under it (640px clears the rule's own 600px
+threshold but not the waiting group's 660px one) — a small, accepted
+oddity: a closing rule under a two-row list reads as "end of list," not as
+broken.
+
+Rows fade in staggered at Decided's own 40ms, oldest first, via a class
+toggle after two nested `requestAnimationFrame` calls (one is not reliably
+enough to guarantee the browser has painted the `opacity: 0` starting frame
+first). `prefers-reduced-motion: reduce` shows every row immediately and
+fully visible — entry 65's own lesson, applied again.
+
+**Verification.** `pnpm build` and `pnpm lint` clean; the baked `__QUEUE__`
+payload checked directly against the built bundle (grepped out of
+`dist/assets/index-*.js`) to confirm it matches `docs/todo.md`'s actual
+state rather than trusting the parser by inspection alone. The three
+CI-required probes (`pnpm probe`, `probe:shake`, `probe:fullscreen`) pass
+unchanged — this entry touches none of the files they exercise, and no new
+probe was warranted: the load-bearing claim here is a build-time parse and
+a CSS layout, not runtime arithmetic. Verified on-screen at 320×568 and
+360×640 (via the temporary harness above, driving a real local dev build in
+an actual Chrome tab, not a description) — the queue panel is legible, the
+correct rows appear at each height, and, critically, nothing overlaps the
+QR code at either width after the fix above. Tap-through was not verified
+by an actual synthesized tap; `pointer-events: none` is unconditional on
+`#queue-panel` and every row inside it, applied at the container with no
+per-child override to undo it, which is what the CSS was read for.
 
 **Do** — bake the queue's state into the bundle at build time and show it on
 the start screen: the last two entries shipped, then the next few waiting, then
