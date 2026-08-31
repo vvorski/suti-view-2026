@@ -11214,7 +11214,7 @@ dependency **no — a built-in browser sensor, no library; and no network, which
 is the whole reason it was chosen.**
 
 ### 99. The start screen animates on every phone, full stop
-`status: ready` · added 2026-08-30 · supersedes 94, strengthens 65
+`status: building` · added 2026-08-30 · supersedes 94, strengthens 65
 
 **Do** — make both the play disc and the name visibly animate whether or not
 the phone reports reduced motion, by giving the reduced path cues that are
