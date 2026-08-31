@@ -133,8 +133,17 @@ void main() {
     float outerHalf = max(radius * OUTER_STROKE * 0.5 * scale, px * 0.5);
     float innerHalf = max(radius * INNER_STROKE * 0.5 * scale, px * 0.5);
 
-    ink += (ring(dist, radius, outerHalf, px) + ring(dist, radius * INNER_RADIUS, innerHalf, px)) *
+    // docs/todo.md entry 79, applied here by /ccc at build 350. 79 named
+    // circles, drift and tide and stopped there; chorus is the fourth ring
+    // family and saturates the same way — more readily, in fact, since its
+    // whole premise is several fronts crossing each other. The node dots
+    // below keep `+=`: they are the standing structure, one contribution
+    // each, and Circles keeps its own ladder and centre added for the same
+    // reason.
+    float stroke =
+      (ring(dist, radius, outerHalf, px) + ring(dist, radius * INNER_RADIUS, innerHalf, px)) *
       opacity;
+    ink = 1.0 - (1.0 - ink) * (1.0 - stroke);
   }
 
   // The nodes themselves, so the arrangement is legible between hits and a

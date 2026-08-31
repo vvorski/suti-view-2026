@@ -274,7 +274,14 @@ void main() {
     float outer = spoke(angDistOuter, dist, outerHalfAng, px) * edgeMask;
     float inner = spoke(angDistInner, dist, innerHalfAng, px) * edgeMask;
 
-    ink += (outer + inner) * opacity;
+    // docs/todo.md entry 79, applied here by /ccc at build 350: screened, not
+    // added. Rose was written after 79 shipped and inherited Circles' stroke
+    // vocabulary without inheriting its finding — sixteen simultaneous touch
+    // rosettes summing linearly pin the frame to white, which is the "one
+    // colour mass" 79 exists to stop, and a rosette is N spokes rather than
+    // one ring so it reaches that ceiling N times faster than Circles did.
+    // Ink laid on ink, the way 79 puts it, rather than light added to light.
+    ink = 1.0 - (1.0 - ink) * (1.0 - (outer + inner) * opacity);
   }
 
   // Touch rosettes — docs/todo.md entry 33's own convention, entry 101's own
@@ -320,7 +327,14 @@ void main() {
     float outer = spoke(angDistOuter, tDist, outerHalfAng, px) * edgeMask;
     float inner = spoke(angDistInner, tDist, innerHalfAng, px) * edgeMask;
 
-    ink += (outer + inner) * opacity;
+    // docs/todo.md entry 79, applied here by /ccc at build 350: screened, not
+    // added. Rose was written after 79 shipped and inherited Circles' stroke
+    // vocabulary without inheriting its finding — sixteen simultaneous touch
+    // rosettes summing linearly pin the frame to white, which is the "one
+    // colour mass" 79 exists to stop, and a rosette is N spokes rather than
+    // one ring so it reaches that ceiling N times faster than Circles did.
+    // Ink laid on ink, the way 79 puts it, rather than light added to light.
+    ink = 1.0 - (1.0 - ink) * (1.0 - (outer + inner) * opacity);
   }
 
   // The ladder itself: whichever rule is nearest this pixel's bearing, lit
