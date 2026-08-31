@@ -10559,7 +10559,7 @@ directly: no text-animation library** — forty lines against tens of kilobytes,
 in a project whose only runtime dependency is `three`.
 
 ### 95. A layer at zero opacity leaves the room alone
-`status: ready` · added 2026-08-30
+`status: building` · added 2026-08-30
 
 **Do** — mix the camera blend across its *result* by how much picture there
 actually is, so a picture turned off cannot govern the room through its blend
