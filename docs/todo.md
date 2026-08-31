@@ -12224,7 +12224,7 @@ briskly once, which is the gesture the report was made about.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 105. XOR, which is not Difference
-`status: ready` · added 2026-08-30
+`status: building` · added 2026-08-30
 
 **Do** — add a seventh merge mode, `XOR`, at index 6: `a + b - 2ab`. One line
 in `blendWith`, one row in `MERGE_MODES`, available to both layers for free.
