@@ -58,6 +58,19 @@ Spend a couple of tool calls establishing:
   right to refuse. Finding that at recon is cheaper than finding it at build,
   and usually the idea is right and only its *where* is wrong (see entry 106,
   which moved the same effect to the one number nobody had argued about).
+- **What this project has already decided about questions of this shape.**
+  `docs/` is not background reading, it is where the defensible defaults live,
+  and skipping it is how a settled argument gets reopened as a fresh taste
+  question. The one that decides the most forks:
+  `docs/the-toy-wants-to-be-played-with.md` — **restraint belongs in what
+  persists, generosity belongs in what responds.** A thing that changes on its
+  own while nobody is touching it should be slow, quiet and hard to trigger; a
+  thing that answers a person should answer immediately and slightly more than
+  expected. That rule settled nine decisions in a day, and later settled *"more
+  active when the phone is left alone"* — which sounds like it contradicts every
+  restraint in the codebase and does not, because a phone alone on a table has
+  no other responding thing. If a fork looks like a taste call, check there
+  before spending one of the user's answers on it.
 - Which of CLAUDE.md's four **Hard Stops** it trips — stored `Prefs` shape, URL
   parameter shape, capture and privacy, new runtime dependency — and the
   **circular control surface** constraint, which is non-negotiable and rules
@@ -157,6 +170,20 @@ Two fields carry the weight:
   `→ chosen, over rejected. **Mine**, because …` for yours. The reason is not
   optional on yours: it is the only thing that makes the call auditable, and
   the only way the user can overturn it later without re-deriving it.
+  **A superlative may only be given once.** Entry 90 said *still → the most
+  willing* and, four lines later, *dancing → shortest holds*. That is not a
+  decision, it is two adjectives, and it shipped as one — the fork survived
+  inside prose that read like a resolution. If two options are both described as
+  the extreme of the same axis, the entry has an unresolved fork in it. The
+  repair is a **ladder with numbers**: every option ranked on one scale, so the
+  ordering is checkable rather than atmospheric.
+
+  **When an entry replaces or corrects another, say so at both ends.** The new
+  one carries `supersedes N` on its `status:` line and names in Decided what it
+  changes and why; the old one gets its status updated so nobody builds it. 94
+  and 99, 72/78 and 87, 96 and 106 all did this, and it is the only reason the
+  queue can be read cold without building something already overturned.
+
 - **Done when** — an observable outcome. Never "it works". A number, a state
   visible on screen, or a thing a probe asserts.
 
