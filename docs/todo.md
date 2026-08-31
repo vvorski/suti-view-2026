@@ -10858,7 +10858,7 @@ geolocation**, which is the whole reason presence is a proxy rather than a
 computation.
 
 ### 97. Where you actually are: real sun, real moon, from a location that never leaves
-`status: ready` · added 2026-08-30
+`status: building` · added 2026-08-30
 
 **Do** — ask for location once, use it locally to compute the true position of
 the sun and the moon, and feed those into the colour cycle (sun) and the shape
