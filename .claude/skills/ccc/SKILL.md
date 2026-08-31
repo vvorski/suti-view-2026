@@ -62,6 +62,18 @@ grep -n 'status: done' docs/todo.md | tail -5    # youngest are last in the file
 Skip anything `ready`, `building` or `blocked` — those belong to `/bbb` or to
 the user. One entry at a time.
 
+**`superseded` is archived, not skipped.** An entry that another one absorbed
+is settled: there is nothing to check, so archive it once its successor has
+been verified, with a line saying which entry replaced it. Leaving it in the
+live queue points at a successor that is no longer beside it, and this skill's
+own stopping condition counts what remains in `todo.md`.
+
+**Check what reads `todo.md` besides you.** Moving entries out changes a file
+other things parse — `vite.config.ts` builds the gate's queue indicator from
+it, and read only that one file until the archive split silently aged its
+"last two built" rows by one entry per archival commit. Grep for the filename
+outside `docs/` and outside the skills before the first move of a session.
+
 ### 2. Re-read the entry before reading any code
 
 Read the whole entry, not the title. What you need from it:
