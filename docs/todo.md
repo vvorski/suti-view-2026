@@ -10664,7 +10664,7 @@ expected-failure baseline to check against.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 96. The moon works the shapes, as the sun works the colour
-`status: ready` · added 2026-08-30
+`status: building` · added 2026-08-30
 
 **Do** — add a lunar cycle, perpendicular to the sky's solar one: it touches
 the emitter and ring *shape* parameters that nothing else modulates, driven by
