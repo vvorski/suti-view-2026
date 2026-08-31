@@ -6209,3 +6209,950 @@ that fails today.
 120ms; nothing about what is captured changes) · dependency no.
 
 **Verification note — `/ccc` at build 356.** The timing clauses hold — the tap probe's twelve checks include a real double at down 0 / up 90 / down 240 opening the panel, which is the down-to-down measurement this entry introduced. Two clauses are gone by design rather than broken: *"a single tap still saves, 400ms later"* and *"ten taps in five seconds still save no more than seven frames"* both describe tap-to-save, which entry 103 removed at build 339 after Victor asked that a touch not take a photograph. The probe's own save assertions went with it, so probe and code agree; only this entry's prose still describes the old world.
+
+### 54. A shake says so, in light
+`status: done` · added 2026-08-30 · shipped at build 200 · verified at build 356
+
+**Build note** — `#shake-pulse` (new, `index.html`), an inward
+`box-shadow` at the frame's edges rather than a full-screen tint, driven
+by a `--pulse-amt` CSS custom property `shakePulse()` sets from
+`intensity(peak)` before adding an `.on`/`.double` class. Both classes
+restart their own animation via the same offsetWidth-reflow trick
+`flashShake`'s double path already used — needed for `.on` too now, since
+an `animation` (unlike `#shake-flash`'s `.on`, which is a plain
+`transition`) does not restart just from re-adding a class that was never
+removed for a frame. `PULSE_MIN`/`PULSE_MAX` (0.15/0.9) are **Mine** — the
+entry says "scale with depth" but names no floor, and 0 would mean the
+gentlest qualifying shake produces no visible confirmation at all, which
+is the exact failure this entry exists to close.
+
+Found and fixed one timing imprecision before it shipped: the double
+keyframes' second peak first landed at 55% of a 410ms animation (≈225ms),
+not the ~190ms Decided actually asks for. Recomputed to land the second
+peak at 46% (188.6ms, confirmed via `getAnimations()`'s own timing
+resolution rather than eyeballing the percentages).
+
+Verified live via `index.html`'s real `#shake-pulse` element (present
+regardless of Start, unlike `shakePulse()`'s own JS which lives inside
+`main.ts`'s Start-gated closure and isn't separately callable) — the
+function's exact logic replicated against the real DOM and real CSS: a
+light shake (peak 8.5, just past `STRONG_UP`) set `--pulse-amt` to 0.1875;
+a hard one (peak 18, at `PEAK_CEILING`) set it to 0.9, confirming the
+scaling. `el.getAnimations()` (not real-time playback, which this
+backgrounded remote-controlled tab throttles into not advancing at all —
+the same harness limitation hit repeatedly this session) confirmed the
+single pulse's declared keyframes (0.9 → 0, 220ms) and the double's
+(0.7 → 0.05 → 0.7 → 0, 410ms, second peak at 188.6ms) match Decided
+exactly. A forced-visible screenshot at 320×568 confirms the effect reads
+as a glow at the frame's edges with the centre of the picture still dark
+— "knocked rather than lit," not a flash — and a second check at 360×640
+confirmed the same computed opacity on that frame too (its own screenshot
+came back visually blank, the same nested-iframe compositing artifact
+found in earlier entries this session, not a real difference — the
+computed style was checked directly rather than trusted from the image
+alone). `pnpm build`, `pnpm lint`, and `pnpm probe:shake` (named
+explicitly in Verify, confirming the detector itself is untouched) all
+pass. Not verified: shaking a real phone once and twice and telling them
+apart by feel, which the entry's own Verify text says only that can
+answer, and the reduced-motion variant's own real-time playback, for the
+same throttling reason.
+
+**Do** — give a detected shake a visible confirmation that scales with how hard
+it was and tells a single from a double, always on, not gated behind the
+numeric readout.
+**Why** — entry 40 abandoned the buzz. The shake is now the one gesture in the
+app with no confirmation at all, which is the exact gap `haptics.ts` was
+written to close.
+
+**Decided**
+- The gap, stated precisely → `haptics.ts` opens by saying the shake "is the
+  one action with no obvious cause-and-effect on screen: the picture was
+  already moving, and it changes to a different picture that is also moving."
+  The buzz was the answer to that sentence, and the buzz is gone. `flashShake`
+  is not a replacement: it is gated on `panel.showingStats()`, which nobody has
+  on. So in ordinary use a shake is unconfirmed.
+- Entry 1 predicted this exact entry → it recorded that on iOS, where vibration
+  is unfixable, "the entry would have become *replace the haptic with something
+  visual*". That turned out to describe Android too. Nothing here is a new
+  idea; it is the branch that was already written down.
+- **Not a white full-screen flash** → `flashShake`'s own comment explains why
+  it stays behind a debug gate: "a flash on every shake once this ships
+  permanently would turn a quiet instrument into a strobe." That reasoning
+  still holds and it rules out reusing it. So: **a brief inward pulse at the
+  frame's edges** — the picture looks knocked rather than lit. **Mine.**
+- Which follows a pattern the file already set → `main.ts:429`, the camera
+  glyph from entry 41, says "Never gated behind `showStats`, unlike
+  flashShake: this is feedback." The codebase already separates *feedback*
+  from *diagnostic*, and this is feedback. `flashShake` stays exactly as it is,
+  for the diagnostic job it does well.
+- **Port the buzz's shape, not its numbers** → `CONFIRM_PATTERN` is
+  `[26, 34, 62]` and `DOUBLE_PATTERN` separates two of those by 130ms, and
+  those numbers are hard-won. They are also useless here: **26ms is a frame and
+  a half at 60fps**, invisible. What transfers is the *shape* — one event for a
+  single, two clearly-separated events for a double — at durations an eye can
+  resolve: about **220ms** for a pulse and about **190ms** between the two of a
+  double. **Mine**, and it is the trap worth naming, because copying the
+  haptic constants across would produce a confirmation nobody can see and it
+  would look like the feature failing rather than the timing being wrong.
+- **Scale with depth, using `intensity()`** → the same 0–1 normaliser the
+  shuffle's ladder already uses. A light shake gets a faint edge, a shake that
+  reaches the top rung gets an unmistakable one. That is what the buzz did
+  (entry 8's intensity scaling) and it is the more useful half of the
+  confirmation: it says *how much changed*, not merely *something happened*.
+  One normaliser, still one, now with a different second consumer.
+- **Reduced motion softens it rather than removing it** → `prefers-reduced-
+  motion` should not delete the only confirmation the gesture has; that
+  reinstates the bug for the people who asked for less movement. Reduce the
+  amplitude and lengthen the fade so it reads as a settle rather than a pulse.
+  **Mine**, and it is the same call `version.ts` already made for the fresh-
+  build dot: "It still goes green; it just stops blinking."
+- **UI, so it stays out of the saved frame** → a DOM overlay beside
+  `#shake-flash` and the camera glyph, not a shader term. Entry 48 fixed the
+  rule and entry 50 confirmed it: the flash is UI and must never be in the
+  picture, the emitter is picture and should be. A shake confirmation is UI.
+  It also means it is visible even if the render path is the broken thing,
+  which is the reason `flashShake` was a DOM overlay in the first place.
+- What it must not become → a second thing that fires on every disturbance. It
+  fires on `takeStrong()`/`takeDouble()` only, the same two calls the buzz
+  used, so it says "a shake was accepted and the picture was re-rolled" and
+  never "the phone moved". The tumble already answers the second question,
+  continuously.
+
+**Lands in**
+- `index.html:58-90` — the overlay and its keyframes, beside `#shake-flash`.
+- `src/main.ts:1021, 1037` — the call sites, ungated, taking the peak so the
+  amplitude can scale.
+- `src/main.ts:405` — `flashShake` unchanged; a comment saying which of the two
+  is feedback and which is diagnostic, since they will now sit next to each
+  other and the difference is not obvious from the names.
+
+**Done when** — with the numeric readout off, a deliberate shake produces a
+visible edge pulse and a double shake produces two that read as two; a light
+shake's pulse is visibly weaker than a hard one's; nothing pulses when the
+phone is merely moved or knocked; and a screenshot taken during one contains
+no pulse. With reduced motion requested, the confirmation is still there and
+is gentler.
+**Verify** — the phone, in the hand, which is the only way to judge whether a
+confirmation confirms; specifically shake once and twice in a row and check
+you can tell which happened without looking for it. `pnpm probe:shake` must
+still pass unchanged — this reads the detector and must not alter it. Also on
+screen at 320×568 and 360×640, since an edge effect is the one kind that
+behaves differently at different aspect ratios. `pnpm build`, `pnpm lint`.
+**Hard stops** — prefs no · url no · capture no (UI, deliberately outside the
+frame) · dependency no.
+
+### 55. The name arrives through its own history, and the byline glows
+`status: done` · added 2026-08-30 · shipped at build 203 · verified at build 356
+
+**Build note** — the entry's own "63 distinct names, from false calm to
+four fingers" was accurate when written but stale by the time this was
+built: ten more names had shipped since (this session's own entries 46
+through 54). Re-extracted from `git log --follow` at build time rather
+than trusting the entry's snapshot — 73 real names, "false calm" through
+"edge glows" — plus this commit's own new name appended, for 74 total.
+The entry's own reasoning ("the seed data is not invented and not lost;
+it is sitting in the history") is exactly why the live extraction was
+the right call over the stale count.
+
+`RELEASE_NAMES` (new export) holds all 74; `RELEASE_NAME` is derived as
+its last element, so every other reader — `version.ts`'s `title`
+attribute, the deploy check that greps for the build number — is
+untouched. `mountReleaseName()` becomes the flip's own entry point: a
+plain `textContent` swap once per animation frame (never a per-character
+scramble — nothing in Decided describes one, and `.gate-name`'s monospace
+font is what the entry credits for making even a whole-word swap read as
+clean rather than jittery), eased so `Math.floor((1-(1-t)²) * n)` lands 14
+names in the first 10% of the 1.4s window and 0 in the last 10% — verified
+directly against the pure time-to-index math, independent of frame timing.
+
+**A real robustness gap found and fixed before it shipped**: the flip was
+originally started with a bare `requestAnimationFrame(step)`, and this
+harness's tab reports `visibilityState: 'hidden'` with `hasFocus: false`
+(the same condition behind several throttling findings this session) —
+under which real `requestAnimationFrame` never fires at all. The span sat
+permanently empty, not merely un-animated. Fixed by calling `step(start)`
+once, synchronously, before rAF ever gets a chance to run — an unstarted
+flip is a worse failure than one that never finishes, and this guarantees
+the oldest name paints immediately regardless of whether the tab ever
+gets a frame. A genuinely focused, visible browser tab would never
+trigger this path, but it costs nothing to not depend on that.
+
+Width reservation (`#release-name { display: inline-block; min-width:
+18ch; text-align: right }`) is sized to `release-name.ts`'s own **stated
+maximum** (18 characters) rather than today's actual longest name (15,
+"already playing") — **Mine**: reserving at the file's documented ceiling
+means a future name within that limit can never reflow this, where
+reserving at today's historical maximum would need revisiting the moment
+someone picks a 16-character name in good faith.
+
+Verified live via `version.ts` loaded directly (mounting a fresh
+`#release-name` span, since the real page load's own instance froze
+empty for the reason above): with a `requestAnimationFrame` override
+(this tab's real one never fires), the flip started at "false calm" (the
+true oldest) and settled on exactly "own history" (the true `RELEASE_NAME`)
+after the window closed. `aria-hidden="true"` on the animating span and
+`aria-label="own history"` on its parent confirmed independent of
+animation state. Reduced motion verified two ways: `matchMedia` mocked
+for the JS-side flip showed "own history" immediately with no
+intermediate names; the CSS-side `@media (prefers-reduced-motion:
+reduce)` rule for `.gate-byline` was read back directly from the live
+stylesheet and confirmed `animation: none` with the glow held at exactly
+0.3 (half the peak 0.6, i.e. mid-strength, not removed). The ordinary
+glow's own `getAnimations()` confirmed 4700ms, infinite iterations, and
+the dark shadow term identical across all three keyframes while only the
+glow term animates 0 → 0.6 → 0. `pnpm build`, `pnpm lint`, and `pnpm
+probe:fullscreen` all pass. Not verified: the phone, and specifically
+reduced motion as a live device setting rather than a mocked API, which
+the entry's own Verify text names as the one to test first.
+
+**Do** — on load, run the release-name chip through every name this app has
+ever had, first to last, character by character, settling on the real one. And
+give the byline a slow glow.
+**Why** — asked for. The gate is two lines of type and a disc, and one of those
+lines can carry the whole history of the thing you are about to open.
+
+**Decided**
+- **The names exist and can be recovered**, which is what makes this buildable
+  → `git log --follow -- src/release-name.ts` yields **63 distinct names**,
+  from **"false calm"** to **"four fingers"**, longest "already playing" at 15
+  characters. The seed data is not invented and not lost; it is sitting in the
+  history and needs extracting once.
+- `RELEASE_NAMES`, an array, with **`RELEASE_NAME` kept as a derived export of
+  its last element** → so `version.ts` and every other reader is untouched.
+  **Mine**, and it is what turns this from an API change into an addition.
+- Which changes the release convention, for the better → the file's docstring
+  says the name is "changed in the same commit as the work it names". It
+  becomes **appended** in that commit instead. One line either way, and an
+  append cannot silently lose the previous name the way an edit does — the
+  drift already visible in the history, where some pushes moved the build
+  number without renaming, becomes visible rather than invisible.
+- **Monospace is what makes a character flip possible**, and it is already
+  there → `.gate-name` is set in `ui-monospace`. A per-character flip in a
+  proportional face jitters every glyph sideways on every frame and reads as a
+  fault. Worth writing down, because someone changing that font later would
+  break this without any obvious connection.
+- Width is reserved, not animated → the chip holds the width of the longest
+  name in the list, so the line never reflows mid-flip. The head is
+  right-aligned, so an unreserved width would make the whole line walk
+  leftward and back. **Mine.**
+- **Not all 63 legibly** → at a readable pace that is half a minute, and this
+  is a load animation on a screen with a button people want to press. About
+  **1.4 seconds**: fast through the early history, decelerating into the last
+  few names so the final ones are readable and the real one lands as an
+  arrival rather than a stop. **Mine** — the effect should feel like riding the
+  history, not like reading a list.
+- **It never delays Start** → the disc is live and pressable from the first
+  frame, and pressing it during the flip is not a special case, it just leaves.
+  A load animation that gates the one action on the screen is a splash screen,
+  which this app does not have and should not acquire.
+- Screen readers get the name, not the flipping → the animating characters are
+  `aria-hidden`, with the real name on an `aria-label`. Otherwise this
+  announces sixty-three names to someone who asked for one.
+- **Reduced motion shows the final name immediately** → and here, unlike entry
+  54's shake confirmation, removing the animation costs nothing at all: the
+  end state *is* the content. Given that `prefers-reduced-motion` may well be
+  reported on the phone this is being built for, that path is not hypothetical
+  and should be the one tested first.
+- The byline's glow → **added alongside entry 28's dark shadow, never
+  replacing it.** That entry put `text-shadow: 0 1px 12px rgba(5,6,10,0.95)`
+  on `.gate-byline` because at `#454b5c` over the moving idle preview it
+  measured **2.33:1**, under the 4.5:1 small text needs. A light glow helps
+  over a dark preview and does nothing over a bright one, which is exactly the
+  case entry 28 fixed. Two shadows, comma-separated, dark one first. **Mine**,
+  and the entry says so explicitly because a glow makes the dark shadow look
+  redundant and it is not.
+- The glow's period → **4.7s**, chosen against the disc's existing 3.4s and
+  5.9s so the three do not fall into step. Entry 16 established that reasoning
+  for the disc's own pair; a third animation on the same small screen makes it
+  matter more, not less. **Mine.**
+- Reduced motion holds the glow **static at mid-strength** rather than removing
+  it → the request was for the name to look alive, and a still glow is still a
+  glow. Same call as entry 54 and as `version.ts`'s fresh-build dot.
+
+**Lands in**
+- `src/release-name.ts` — `RELEASE_NAMES` seeded with the 63, `RELEASE_NAME`
+  derived, and the docstring's "changed" becoming "appended".
+- `src/version.ts:171-183` — `writeReleaseName()`, which currently sets
+  `textContent` once, becomes the animation's entry point.
+- `index.html` — `.gate-name`'s reserved width; `.gate-byline`'s second shadow
+  and its keyframes; both reduced-motion branches.
+
+**Done when** — loading the gate runs the chip through the history in about a
+second and a half and stops on the current name, with no reflow of the line
+above or below it and no delay to the disc; the byline breathes a glow on a
+cycle that never syncs with the disc; with reduced motion requested the name
+is simply correct from the first frame and the glow is present but still. A
+screen reader announces one name.
+**Verify** — the browser for the flip and the reflow, then the phone, and
+**specifically with reduced motion turned on**, since that is a live
+possibility on the target handset rather than an edge case. Check the byline
+over a bright preview, which is the state entry 28's measurement came from.
+`pnpm build`, `pnpm lint`.
+**Hard stops** — prefs no · url no · capture no · dependency no.
+
+**Verification note — `/ccc` at build 356.** Built as specified, and one clause has since been deliberately overturned. This entry says *"with reduced motion requested the name is simply correct from the first frame"* — entry 99 (build 325) reversed exactly that, on the argument that resolving characters is not motion and that the still fallback was why the animation was reported as never landing, five times. The reduced path now decodes at about three characters a second (`reducedLockedCountAt` in `version.ts`). Everything else here — the history run, no reflow, no delay to the disc, one name announced — still holds.
+### 56. With the panel open, reload moves to the top right and names itself
+`status: done` · added 2026-08-30 · shipped at build 208 · verified at build 356
+
+**Build note** — `hud.ts`'s `setOpen()` now dispatches a `hud-panel` custom
+event on `document` (`{detail:{open}}`) right after toggling the scrim, since
+`version.ts` has no other reason to import `hud.ts` and shouldn't gain one for
+one boolean. `version.ts` listens for it and toggles `.panel-open` on
+`#version-hud` and `.gate-chip` on its button. `.panel-open` repositions the
+HUD to the top-right at the same `1.1rem` offsets `.gate-share` uses; a second
+rule, `#version-hud.running.panel-open button` (specificity 1,2,1), restates
+the chip's border/background/opacity, pre-empting the exact fight entry 44
+already found once: `#version-hud.running button` at (1,1,1) still beats a
+bare `.gate-chip` at (1,1,0) on ID-then-class-then-element tiebreak. A new
+`#version-hud-name` span, hidden by default, carries the flip text — reused
+from `.gate-name` styling per the entry's own instruction, so it reads as the
+same object returning. `flipThenReload()` mirrors entry 55's eased
+time-to-index walk through `RELEASE_NAMES` over 600ms (vs. that entry's
+1.4s — a confirmation in front of a click, not an arrival), then calls
+`location.reload()`; reduced motion reloads immediately, no flip. The `.fresh`
+case needed no extra code: the click handler doesn't branch on `.fresh`, so a
+green-pulsing chip flips to the name you're on and reloads into entry 55's own
+load animation, landing on a name never seen — exactly as the entry predicted
+("nothing extra is needed to get this; it falls out").
+
+Found and fixed one gap along the way: `hud-probe.html` was missing
+`day: false` in its `prefs` object and `onDayMode` in its `createHud()`
+handlers — a latent hole from entry 47 that nothing had exercised since no
+probe drives the Outdoor chip. Fixed as a small side-correction.
+
+Verified live against the real dev-server page (not just unit logic):
+`document.dispatchEvent(new CustomEvent('hud-panel', {detail:{open:true/false}}))`
+against the actually-mounted `#version-hud` confirmed the position/class
+toggle both ways via `getComputedStyle`. The click-triggered flip was
+verified through the real DOM path (`button.click()`) by sampling
+`#version-hud-name`'s text at two points inside the 600ms window (40ms in:
+an early name from `RELEASE_NAMES`; 140ms in: `RELEASE_NAME` itself, already
+settled) — short enough that `location.reload()` never fires, so the test
+tab never actually navigates away. `window.location.reload` cannot be stubbed
+in Chrome (`Object.defineProperty` throws `Cannot redefine property: reload`
+— it's non-configurable), which is why the test samples mid-flight rather
+than intercepting the reload call itself. Panel-open positioning and the
+absence of viewport overflow were also confirmed at true 320×568 and 360×640
+viewports — `resize_window` reports success but does not actually shrink this
+harness's window below roughly 614×425 (a `hud-narrow.html` comment already
+on file records the same finding against an earlier tool), so verification
+used the same iframe-based technique that file establishes: an iframe sized
+exactly 320×568 / 360×640 gives a true `window.innerWidth`/`innerHeight`
+inside it. Did not reproduce the numeric-readout-visible case specifically —
+`.hud-stats` only mounts after the real Start gesture, which needs motion
+permission and camera/mic grants this harness can't drive end-to-end — but
+the CSS rule that fixes the collision applies unconditionally on
+`.panel-open`, independent of whether stats are showing, and its effect
+(button background/border/opacity, HUD position) was confirmed directly.
+
+**Do** — while the HUD panel is open, the reload control becomes a full chip in
+the top-right corner. Clicking it runs the name flip quickly and then reloads.
+**Why** — asked for. In the running state the reload is an 18%-opacity glyph in
+a corner that something else is already using, and pressing it produces a
+second of nothing.
+
+**Decided**
+- The right corner is genuinely free, and the code says why → `version.ts:19-24`
+  records that the reload "went to the right when the gate's type was
+  left-justified; the type is right-justified now and **the share icon has
+  taken that corner**, so it comes back to the left." That is true of the
+  **gate**. `#share` is markup *inside* `#gate` (`index.html:429`), so once the
+  gate goes the corner is empty. This does not contradict that comment; it
+  completes it — the sentence "both corners are only ever going to hold one
+  small round thing each" still holds, in both states.
+- **It also fixes a collision nobody has filed** → `.hud-stats` sits at
+  `left: 0.75rem; top: 0.75rem` and `#version-hud` at `0.6rem`/`0.6rem`. With
+  the numeric readout on, the reload glyph is **underneath the first line of
+  it**. Entry 25's comment already worked around this once by stacking the
+  fullscreen chip below rather than beside. Moving reload to the right while
+  the panel is open takes the two apart at exactly the moment both are on
+  screen.
+- **Only while the panel is open** → closed, it stays the faded 0.18 glyph in
+  its corner, unchanged. `version.ts:84-88` is explicit that this is "a piece
+  meant to be left running on a propped-up phone, and a permanent label in the
+  corner of it is litter", and a full chip visible at all times is that litter
+  with a border on it. The panel being open is already the signal that someone
+  is operating the thing rather than watching it. **Mine.**
+- The chip is entry 44's, reused → that entry extracted `.gate-chip` from
+  `.gate-share` for exactly this kind of second user, and it shipped at build
+  165. Nothing new is designed here; the class exists and the reload already
+  wears it on the gate.
+- **What the click does, and why it is not just decoration** → a reload
+  currently looks like nothing happening until the page goes. The flip is
+  feedback occupying that gap, and it names the build you are leaving. **About
+  600ms**, against entry 55's 1.4s on load: this one is a confirmation in front
+  of an action someone is waiting on, not an arrival.
+- Where the name appears, since there isn't one → `version.ts` drops the name
+  entirely in the running state. So the flip needs a surface, and it is a
+  transient line **beside the chip, right-aligned, set exactly like
+  `.gate-name`** — so it reads as the same object returning rather than a new
+  one appearing. It is removed when the reload fires. **Mine.**
+- **Requires entry 55** → the flip, the `RELEASE_NAMES` array and the
+  per-character machinery all come from there. Building this first means
+  writing that animation twice.
+- The `.fresh` case is the best version of this → when a new build is waiting
+  the glyph is already green and pulsing. Clicking it then flips to the name
+  you are *on*, reloads, and entry 55's load animation lands on a name you have
+  never seen. Two animations either side of the reload, and the pair says
+  exactly what happened. Nothing extra is needed to get this; it falls out.
+- Reduced motion reloads immediately → no flip, no delay. Unlike entries 54 and
+  55, there is nothing to soften here: the animation is pure feedback in front
+  of a navigation, and someone who asked for less motion is better served by
+  the navigation happening.
+
+**Lands in**
+- `src/version.ts:17-31` — a panel-open branch on `#version-hud`'s position,
+  and the `.gate-chip` class applied in that state.
+- `src/version.ts:208` — the click handler: flip, then `location.reload()`.
+- `src/hud.ts` — whatever signals "panel is open" to `version.ts`; the
+  `.hud-scrim.open` class is already the fact, it just is not visible outside
+  the HUD today.
+
+**Done when** — opening the panel moves the reload to the top right as a chip
+matching the share button's look, clear of the numeric readout; closing the
+panel returns it to the faint corner glyph; clicking it shows the name for
+about half a second and then reloads; with a new build waiting, the sequence
+ends on the new name. With reduced motion, it reloads at once.
+**Verify** — the phone with the numeric readout **on**, since the collision this
+also fixes is only visible in that state, at 320×568 and 360×640. Force a
+`.fresh` state by hand to see the two-animation sequence. `pnpm build`,
+`pnpm lint`.
+**Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 57. A drag lays a trail, and taps accumulate
+`status: done` · added 2026-08-30 · shipped at build 184 (built together with entry 50) · verified at build 356
+
+**Build note** — `MAX_RIPPLES` 12 → 24 in `ripples.ts` and all six
+geometric shaders (`AUDIO_RIPPLES` unchanged at 8, so `TOUCH_RIPPLES` goes
+4 → 16 automatically), verified across all seven sites by entry 59's
+probe, built and landed just ahead of this one for exactly the reason its
+own Decided text gives. `emitter.ts` gained a distance trigger
+(`SPAWN_DIST = 0.05` uv, **Mine**) alongside the existing time trigger, so
+a spawn fires on *either* — a drag now leaves a continuous-looking line
+rather than rings every 150ms regardless of speed, while a stationary
+hold (no distance to spend) still relies on the clock exactly as before.
+
+**The emitter pool is the harder half, and it required a real
+architectural change, not a parameter bump.** Entry 49 kept four fixed
+scene.ts slots keyed by the touch field's own pointer id — reasonable
+when "one emitter per currently-down finger" was the whole requirement,
+wrong once "a finger that taps, lifts, and taps again should leave two"
+is: a platform's pointer id can be reused across two separate contacts of
+the same finger, and slots keyed by that id would read a second tap as
+"the same emitter continuing," silently dropping the stacking this entry
+and entry 50 both ask for. Fixed with a `contactId` layer: `main.ts` now
+mints a fresh, monotonically increasing id on every qualifying `down`
+(kept in a `Map<pointerId, contactId>`, cleared on `up`/`cancel`) and
+`scene.ts`'s pool — now 8 slots, up from 4 — is keyed by that id instead.
+"Oldest recycled first" is implemented as least-remaining-`life` recycled
+first when the pool is full and no slot has naturally freed: a literal
+spawn-order FIFO would need a second field this pool has no other use
+for, and the least-life emitter is, in every case that matters, the one
+closest to disappearing on its own regardless — recycling it early is the
+least noticeable choice available. **Mine**, stated as an interpretation
+of "oldest" rather than assumed identical to it.
+
+Verified: a synthetic pointer id tapping, lifting, and tapping again
+(via `engine/touches.ts` loaded directly over Vite's dev server, real
+`PointerEvent`s dispatched at `document`, mirroring `main.ts`'s exact
+listener code) mints two distinct contact ids, not one reused — the
+precise bug this entry exists to close. A standalone script against the
+real `emitter.ts`/`ripples.ts` filled all 8 pool slots with 8 fresh
+contacts, released them, and confirmed a 9th contact arriving mid-decay
+recycles a slot rather than being dropped. `scene.ts`'s `setTouches()`
+call (with real `contactId`/`speed` fields) rendered one frame through
+`createVisualiser()` with `MAX_RIPPLES` at 24 and `gl.getError()` returned
+0 — the shader compiles and runs with the new bound. `pnpm probe:ripples`
+(entry 59) confirms all seven sites agree at 24/8; `pnpm probe:emitter`
+(extended with two new checks) confirms the distance trigger and the
+speed boost. `pnpm build`, `pnpm lint` both clean.
+
+Not verified: real frame-time cost of sixteen `length()` calls per
+fragment against four — the entry's own pass/fail condition — since this
+harness has no GPU frame-time measurement and no physical phone. This is
+the one finding that could still reverse the touch-slot count if it
+fails on real hardware; the entry's own fallback (12 touch slots instead
+of 16) is unapplied and would need a one-line revert of `MAX_RIPPLES` to
+20 if that measurement comes back bad.
+
+**Do** — spawn ripples by **distance travelled** as well as elapsed time, raise
+the touch slot count so a trail is longer than four rings, and let a finger
+leave more than one emitter behind it.
+**Why** — asked for. A drag currently drips rather than draws, and a second tap
+takes the place of the first.
+
+**Decided**
+- Why a drag drips → `emitter.ts:38` is `SPAWN_INTERVAL = 0.15`, and
+  `:110` spawns only when that much time has passed. **A ripple every 150ms
+  regardless of how far the finger moved**, so a fast swipe across the whole
+  screen leaves about seven rings spread over its length and a slow one leaves
+  the same seven bunched up. The spawn is metered by the clock when the thing
+  being drawn is a path.
+- The fix → **spawn when *either* the interval has elapsed *or* the finger has
+  moved a set distance since the last spawn.** Distance in shader uv so it is
+  independent of screen size, starting at about **0.05** — roughly twenty rings
+  across the frame. The time term stays: it is what makes a *stationary* hold
+  keep emitting, which is entry 33's behaviour and should not change.
+- **The trail is capped at four rings today, and that is the harder half** →
+  `ripples.ts:24-26`: `MAX_RIPPLES = 12`, `AUDIO_RIPPLES = 8`, leaving
+  **`TOUCH_RIPPLES = 4`**. The touch band is a ring buffer, so the fifth ring
+  of any drag overwrites the first. Spawning more often without more slots
+  makes a *shorter* trail, not a longer one — it would recycle faster.
+- So the slots go up → **`MAX_RIPPLES` 12 → 24, audio unchanged at 8, touch
+  4 → 16.** **Mine**, and the audio band deliberately does not move: it was
+  right before this entry and nothing here is about the music.
+- **The honest cost, and it is a real one** → entry 33 split the shader into
+  two loops precisely because positioned rings cannot share the hoisted
+  `rungR`: each needs its own `length(p - centre)`. So this takes the
+  positioned loop from **4 to 16 `length()` calls per fragment, in six
+  shaders**. That is the largest per-fragment cost increase anything in this
+  queue has asked for. **Frame time is a pass/fail condition below, not an
+  observation** — and if it does not hold, the fallback is 12 touch slots
+  before anything else is touched, because a shorter trail is still a trail
+  and a dropped frame rate is not recoverable by taste.
+- Emitters accumulate, which is the other half of "only starts one" → an
+  emitter should belong to **a contact, not to a pointer**. A finger that taps,
+  lifts, and taps again leaves two, because the first is still dying (entry 33
+  gives it two to four seconds of life after release). A pool of **8**, oldest
+  recycled first. `MAX_TOUCHES` stays at 4 — that is how many fingers may be
+  down *at once*, which is a different number from how many emitters may be
+  alive, and conflating them is why one finger currently yields one emitter.
+- **This absorbs entry 50's "rapid taps stack rather than replace"** → that
+  clause is the same behaviour asked for from the other direction, and 50 is
+  still unbuilt. Build them together, or 50's Done-when ("drumming four times
+  quickly leaves four rings") will be satisfied by this entry and look like a
+  coincidence.
+- What does **not** change → the emitter still follows the finger while it is
+  down, and the ripples it spawns still stay where they were born. That is
+  already true — `spawnAt(state, now, level, x, y)` records the position — and
+  it is the reason this entry is a metering change rather than a new system.
+
+**Lands in**
+- `src/engine/emitter.ts:38, 110-112` — the distance term beside the interval,
+  and the last-spawn position it needs.
+- `src/engine/ripples.ts:24-26` — `MAX_RIPPLES` 24, `TOUCH_RIPPLES` 16, and the
+  comment at `:16` warning that every geometric shader must match.
+- `src/shaders/circles.frag.glsl` and the five other geometric shaders — the
+  `MAX_RIPPLES` constant, which GLSL cannot import.
+- `src/engine/` — the emitter pool, and its ownership moving off the pointer.
+
+**Done when** — dragging a finger across the screen leaves a line of rings
+along the whole path rather than a handful near the end, and dragging slowly
+over the same path leaves a line of similar density; holding still keeps
+emitting exactly as it does today; four quick taps leave four separate places
+that fade independently; and the frame-time figure in the numeric readout with
+sixteen touch ripples live is within a frame of what it is with none, at
+320×568 and 360×640.
+**Verify** — the phone, for the drag and the frame time, since sixteen
+`length()` calls per fragment is a thing only a real GPU under a real
+resolution ladder can answer. `views-probe.html` for the trail's shape in each
+of the six geometric views, because "a line of emitters" means something
+different in Tide and Chorus, which take a position as an influence rather
+than a coordinate. `pnpm build`, `pnpm lint`.
+**Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 58. Motion reaches the colour, continuously
+`status: done` · added 2026-08-30 · shipped at build 190 · verified at build 356
+
+**Build note** — `src/engine/motion-bias.ts` is new and pure, same
+discipline as `ripples.ts`/`emitter.ts`/`touch.ts`: no DOM, no clock. It
+implements the three tiers via one construction, not three: `rotate(ax,
+ay, amount)` is a zero-sum three-way opponent-axis split (an equilateral-
+triangle/Maxwell-triangle basis) that makes `dr + dg + db === 0` an
+algebraic identity for any input, so "brightness-neutral" holds exactly
+rather than approximately. Posture, disturbance and agitation each call
+it with the *same* tilt direction, scaled by their own driving quantity
+(1, `disturb`, and the new `agitation` accumulator respectively) — **Mine**,
+since the entry gives three magnitudes but no channel mapping and no
+statement that the three should point in independent directions; the
+entry's own "carried across a room" imagery reads as disturbance and
+agitation amplifying whichever way the phone already leans, not
+introducing hues posture wouldn't already point toward.
+
+`scene.ts` needed a real change, not just a new uniform write: `geoColour`/
+`atmColour` used to be direct, one-shot uniform writes from
+`setLayerColour()`, and a render-time bias needs the *stored* value kept
+somewhere JS can re-read every frame while the uniform itself gets
+overwritten with base-plus-bias each render. `setLayerColour('geo'/'atm',
+...)` now updates a plain local `baseGeoColour`/`baseAtmColour` instead of
+writing the uniform directly; `render()` recomputes both uniforms from
+base plus the current bias every frame. `cam` is untouched — the entry
+names `geoColour`/`atmColour` specifically as the stored preferences in
+question. `stats()` gained a `motion: {posture, disturbance, agitation}`
+field (the readout's own new "bias post/dist/agit" line — labelled "bias"
+rather than "motion", since that word already names the accelerometer
+sample-count diagnostic two lines above it).
+
+**One number is inferred, not quoted**: agitation's own dynamics ("rises
+with disturb, settles over about 30 seconds") are implemented as the same
+snap-up/exponential-decay envelope `shake.ts`'s own `Tumble` class already
+uses for the identical problem (`this.disturb > this.envelope`) — an
+explicit reuse of an established idiom rather than a new curve shape,
+**Mine**, since the entry names the settle time but not the rise
+behaviour.
+
+**A spec-internal tension, resolved and stated rather than silently
+picked**: Decided's "what agitation is for" bullet describes it as
+something that "scales the other two" (a multiplier), while two bullets
+later it is described as one of "three [that] are additive and clamp
+together" with its own independent peak (an addend). These are different
+mechanisms. Implemented as **additive**, matching the more specific,
+numbered description (posture ±0.06, disturbance ±0.12, agitation ±0.08,
+combined and clamped) — the "scales" framing still holds in effect,
+because agitation's own term is proportional to the agitation value,
+which itself only rises when the phone is actually handled, so its
+contribution is 0 exactly when "not scaling anything" is the correct
+answer (a phone untouched for 30s+).
+
+Clamping is done as a **uniform scale-down of the combined vector**, not a
+per-channel clamp — the only form that cannot break the zero-sum
+guarantee, since clamping each channel independently would let two
+channels clip while the third didn't, moving the sum away from 0 exactly
+when the effect is largest.
+
+`scripts/probe-motion-bias.ts` (new, `pnpm probe:motion-bias`) adapts
+rather than copies the entry's own Verify instruction ("walk it 200k
+times... asserting luminance never trends downward, the same method that
+proved entry 21's floors"): that method exists for a colour that
+*accumulates* across a session (repeated nudges compounding into the same
+stored value), and this bias has no such walk — it is recomputed fresh
+every frame against whatever the stored colour already is, never written
+back into it. So the probe checks the stronger, exact property this
+design's architecture actually guarantees: `|r + g + b| < 1e-9` across
+200,000 random `(tiltX, tiltY, disturb, dt)` draws, plus unit checks for
+each tier's own peak, the zero-tilt/zero-bias case, and agitation's snap-
+up-then-30s-settle shape.
+
+Verified live via `scene.ts` loaded directly over Vite's dev server (the
+same construction main.ts uses before the mic gate resolves): rendering
+one frame at zero tilt and one at full tilt on one axis produced genuinely
+different pixels via `readPixels()`, while the `geoColour` object passed
+to `createVisualiser()` came back with every field exactly as given —
+concrete proof the bias never touches stored colour, not just an
+inspection of the diff. `stats().motion` correctly reported `posture: 1`
+for that same full-tilt call. A separate call confirmed `setLayerColour()`
+still changes the rendered output correctly through the new base-tracked
+indirection. `pnpm build`, `pnpm lint`, `pnpm probe:motion-bias`, and
+`pnpm probe:shake` (named explicitly in Verify, confirming the detector
+itself is untouched) all pass. Not verified: anything requiring a held,
+tilted, or waved phone, which the entry's own Verify text names as
+needing a real device for four of its states, and the 320×568/360×640
+on-screen check the Lands-in text does not actually ask for (this entry
+touches no layout, only colour).
+
+**Do** — wire `disturb` and tilt into the picture's colour as a continuous,
+render-time bias, and add the slow agitation accumulator that gives the app a
+memory of having been handled.
+**Why** — `docs/motion-as-a-continuum.md`, and Victor's answer to the question
+it left open: a still hand should differ from a still table **slightly but
+visibly**. The research is done; this is the entry it asked for and that I
+failed to write at the time.
+
+**Decided**
+- The three tiers, from the note → **posture** (tilt, meaningful while
+  perfectly still), **disturbance** (`disturb`, already computed and decayed
+  with a 0.7s constant), and **agitation** (new: rises with `disturb`, settles
+  over about 30 seconds). The app implements only the middle one today, and
+  only into geometry.
+- **`FLOOR = 1.2` is why posture has to exist** → its comment says a hand
+  holding the phone "reads a few tenths" and 1.2 clears that deliberately, so
+  a held phone reads `disturb` **0.00 by design**. "Slightly but visibly
+  different from a table" therefore cannot come from `disturb` at all; at rest
+  there is nothing there. Tilt is the only signal with anything to say, which
+  is why the note listed it first and why it is not optional here.
+- **A render-time bias, never a write to stored colour** → `geoColour` and
+  `atmColour` are stored preferences that the shuffle, the director and the
+  HUD all write. A motion bias that touched them would persist, fight three
+  other writers, and turn up in a shared URL. It goes in at the **same seam
+  entry 48 established**: just before `scene.ts` copies params into uniforms.
+  **Mine**, and the pattern is now the app's answer to "a transient influence
+  that must not poison stored state or diagnostics" — touch used it first, this
+  is its second user, and that is worth naming so the third does not invent a
+  third way.
+- **Brightness-neutral, and this is the safeguard that matters** → the bias
+  rotates colour between channels rather than scaling it down. Entry 21 exists
+  because two independent floors multiplied into a black screen, and entry 35
+  had to re-apply those floors inside its nudge for the same reason. A
+  continuous bias is a random walk that runs for the whole session, so a
+  bias that can darken *will* darken. It may move hue; it may not reduce total
+  luminance. **Mine.**
+- The magnitudes, all "slight but visible" as answered → **posture up to
+  ±0.06** per channel at a full 90° tilt, **disturbance up to ±0.12** at
+  `disturb` 1.0, **agitation up to ±0.08**, applied on top. The three are
+  additive and clamp together, so the worst case is a visible shift and never a
+  different palette.
+- **What agitation is for**, since it is the only new state → it scales the
+  other two. A phone that has been carried across a room answers a tilt more
+  than one that has been sitting on a table for a minute. That is the
+  difference the note was reaching for between *reactive* and *alive*: the toy
+  has a state your handling changes, and it comes back down on its own. About
+  **30 seconds** to settle, which is long enough to survive a pause and short
+  enough that a phone put down goes quiet within a track.
+- The diagnostics show all three → posture, disturbance and agitation as
+  numbers in the readout. Without them, "is this doing anything" is
+  unanswerable for a feature whose whole design brief is *slight*, and that is
+  the same trap `director.ts:151` had to add `status()` to escape.
+- **Geometry is untouched** → the tumble's caps stay exactly where they are.
+  The note is explicit, and so is entry 32: past those caps "the image reads as
+  broken rather than disturbed", and whole-frame scale is "the one coupling
+  that turns responsive into nauseating". This entry adds response in colour,
+  which is the axis with room in it.
+- Screenshots stop being reproducible, and that is intended → recorded in the
+  note when the question was answered. The tilt at the moment of capture is
+  part of the picture. Nothing downstream should normalise it away, but anyone
+  comparing two builds by eye now has to hold the phone the same way for both.
+
+**Lands in**
+- `src/shake.ts:342-348` — `tilt()`, the uncapped −1..1 pair; `gravity()`
+  rewritten in terms of it rather than the two dividing the same numbers by
+  different constants.
+- `src/engine/motion-bias.ts` — new. The agitation accumulator and the pure
+  function from (tilt, disturb, agitation) to a colour bias.
+- `src/scene.ts`, the params copy — the bias applied at entry 48's seam.
+- `src/hud.ts` — three numbers in the readout.
+
+**Done when** — a phone held still in the hand is visibly, slightly different
+from the same phone on a table; tilting it slowly walks the palette and
+tilting back walks it home; waving it about shifts the colour further than
+tilting does; a phone that has just been carried responds more than one that
+has sat for a minute, and settles back within about thirty seconds. Total
+brightness never falls as a result of any of it — check by leaving it running
+and handled for ten minutes and confirming the picture is no darker than it
+started.
+**Verify** — the phone, held, tilted, waved and put down, which is four states
+no probe reproduces. Then a node probe over the bias function alone, walking it
+200k times from random motion inputs and asserting luminance never trends
+downward — the same method that proved entry 21's floors, and necessary for the
+same reason. `pnpm probe:shake` must be unchanged: this reads the detector and
+must not alter it. `pnpm build`, `pnpm lint`.
+**Hard stops** — prefs **no**, deliberately: nothing is stored, which is what
+keeps it out of the shuffle's and the director's way · url no · capture no ·
+dependency no.
+
+### 59. Assert the ripple constants match, across seven files
+`status: done` · added 2026-08-30 · shipped at build 182 · verified at build 356
+
+**Build note** — `AUDIO_RIPPLES` exported from `ripples.ts`, and
+`scripts/probe-ripples.ts` (new, `pnpm probe:ripples`) reads the six
+geometric shaders as text, matched by regex against `const int
+MAX_RIPPLES = N;`/`const int AUDIO_RIPPLES = N;`, discovered by `readdir`
+over `src/shaders/*.frag.glsl` and filtered to files that declare either
+constant — exactly the grep-not-a-list approach Decided asks for, so a
+future seventh geometric view is covered automatically. Also asserts
+`ripples.ts`'s own pair is internally coherent (`0 < AUDIO_RIPPLES <
+MAX_RIPPLES`) and that exactly six shaders were found, so a future rename
+or a shader moved out of `src/shaders/` can't silently make the check
+vacuous by matching nothing.
+
+Did exactly what the entry's own Verify text asks rather than trusting the
+green run: edited `circles.frag.glsl`'s `MAX_RIPPLES` to 24 by hand, ran
+the probe, watched it fail naming the file and both numbers (`found 24`
+against the expected 12), then reverted and watched it pass again. `git
+diff --stat` confirms the shader file carries no diff after the revert.
+
+`pnpm build`, `pnpm lint`, and `pnpm probe:ripples` all clean on the tree
+as it stands today. Landing this before entry 57 (which is Decided's own
+stated reason to build it now) means the next entry's twelve-of-fourteen
+site migration gets checked by a probe that already existed and already
+proved it can fail, rather than one written alongside the change it is
+meant to catch.
+
+**Do** — a probe that reads the six geometric shaders as text, extracts
+`MAX_RIPPLES` and `AUDIO_RIPPLES` from each, and fails if any disagrees with
+`ripples.ts`.
+**Why** — the same two numbers are declared **fourteen times** and kept in step
+by hand, the comments say so, and entry 57 is about to change both.
+
+**Decided**
+- The count, which is worse than the comments admit → `ripples.ts:24-25`
+  declares `MAX_RIPPLES = 12` and `AUDIO_RIPPLES = 8`, and **each of the six
+  geometric shaders declares both again** (`circles.frag.glsl:81-82` and its
+  five siblings). Fourteen declarations of two facts. The comment at `:72` says
+  "Must match MAX_RIPPLES in ripples.ts — GLSL can't import a JS constant",
+  which is true and is a reason to *check* it, not a reason to trust it.
+- **`AUDIO_RIPPLES` is not even exported** → it is module-private in
+  `ripples.ts`, so nothing outside that file can read the number it is supposed
+  to agree with. Exporting it is part of this entry and is the smaller half.
+- What a mismatch actually does, since "they might drift" is too vague to
+  motivate the work → if `ripples.ts` is **higher**, an array of 12 uploads
+  into a `uniform vec4[8]` and the extra ripples are dropped or rejected
+  depending on the driver. If a shader is **higher**, its loop reads uniforms
+  that were never written — garbage positions, rings appearing where nothing
+  was touched. **Either way it is one view out of six misbehaving**, which is
+  precisely the bug that survives testing: five views look right, the sixth is
+  assumed to be a shader quirk.
+- Why now rather than at leisure → the pair has already survived one change
+  (8 → 12, entry 33) and **entry 57 changes both again** (12 → 24, audio 8,
+  touch 16). Twelve of the fourteen sites move in one commit. This probe is
+  worth more before that lands than after it.
+- **Read the shaders as text, do not compile them** → the numbers are `const
+  int` declarations matched by a regex, and a probe that needs a GL context
+  cannot run in node beside the others. `probe-mapping.ts`, `probe-shake.ts`
+  and the rest all run under `node --experimental-strip-types` and touch no
+  browser; this joins them. **Mine.**
+- It also asserts the *pair* is coherent → `AUDIO_RIPPLES < MAX_RIPPLES`, and
+  the touch band non-empty. `ripples.ts` computes `TOUCH_RIPPLES = MAX_RIPPLES
+  - AUDIO_RIPPLES` while the shader loops `[AUDIO_RIPPLES, MAX_RIPPLES)` —
+  the same split expressed two ways, so a change that broke the relationship
+  would produce a negative band in one encoding and an empty loop in the other.
+- Which shaders are in scope → the six that declare the constants, discovered
+  by grep rather than listed, so a seventh geometric view added later is
+  covered without anyone remembering to add it. **Mine**, and it is the
+  difference between a check and a checklist.
+- Not a build-time codegen → generating the GLSL constants from the TS ones
+  would remove the duplication entirely and is the tidier answer, but it means
+  a shader preprocessing step this project does not have, for two integers.
+  A probe costs twenty lines and catches the same failure. **Mine**, and worth
+  revisiting only if a third constant ever needs sharing.
+
+**Lands in**
+- `scripts/probe-ripples.ts` — new, and a `probe:ripples` script beside the
+  others in `package.json`.
+- `src/engine/ripples.ts:25` — `AUDIO_RIPPLES` exported.
+
+**Done when** — `pnpm probe:ripples` passes on the tree as it stands, and fails
+with a named file and both numbers when either constant is edited in one place
+only. Deliberately test that: change one shader, watch it fail, change it back.
+**Verify** — the probe itself is the verification; the check that matters is
+that it *fails* when it should, since a green check that cannot go red is
+worse than no check. Run it before and after entry 57 moves twelve of the
+fourteen sites. `pnpm build`, `pnpm lint`.
+**Hard stops** — prefs no · url no · capture no · dependency no.
+
+**Verification note — `/ccc` at build 356.** Tested the way this entry explicitly demands rather than by reading it: `MAX_RIPPLES` was edited from 24 to 20 in `tide.frag.glsl` alone, and the probe failed with `FAIL tide.frag.glsl: MAX_RIPPLES matches ripples.ts (24) — found 20` and exit code 1, naming the file and both numbers as Done-when requires. Reverted, and it passes again. Its own anti-vacuity guard has also kept pace: the count was bumped to seven when entry 101 added Rose, so the check did not silently stop covering a new shader — which is the exact failure that let entry 79's fix miss Rose entirely.
+### 60. The start screen rolls its own look, without keeping it
+`status: done` · added 2026-08-30 · shipped at build 213 · verified at build 356
+
+**Build note** — the gate's visualiser is now constructed from
+`shuffled(SHUFFLE_VIEWS, ...)` rather than straight from `prefs`, called
+directly rather than through `panel.adopt()` — `adopt()` writes to `prefs`
+and calls `save()`, which is exactly what must not happen here. At
+`SHUFFLE_VIEWS` (0.7) every field `shuffled()` can produce is at or above
+`SHUFFLE_RESEED` (0.3) and `SHUFFLE_MERGE` (0.45), so colours get a full
+re-roll (not the below-`SHUFFLE_RESEED` nudge) and both merge modes roll too;
+it's below `SHUFFLE_EVERYTHING` (0.9), so alphas, camColour and mapping are
+left alone, matching the entry's "not the alphas and not the mapping". The
+legibility floor (`SHUFFLE_MIN_DOMINANT_CHANNEL`, entry 21) comes along for
+free since it's the same `colour()` helper every other shuffle rung already
+uses — nothing new needed there. The `current` argument passed in is never
+actually read at this depth (the reseed branch ignores it); it's there only
+to satisfy `shuffled()`'s signature.
+
+`?rgb=` skips the roll entirely rather than being carved around as one
+field — **Mine**, per the entry's own framing that "the gate shows your
+stored picture" is the *correct* behaviour for a link naming a specific
+colour, not just a fallback for the one field that would otherwise conflict.
+
+The real bug this entry's Done-when actually catches: the gate and the
+running session share one `visualiser` instance. Nothing before this entry
+ever needed to distinguish "what the gate is showing" from "what Start
+should restore", because they were always the same prefs. Once the gate can
+show something else, an explicit restore is required or Start would hand
+you whatever the gate happened to roll, not your stored picture — so
+`main()` now calls `setGeometricView`/`setAtmosphericView`/`setLayerColour`
+(geo and atm)/`setMergeMode` (geo and atm) against `prefs` right after
+`live = true`, before anything else can read the visualiser's state.
+Unconditional, not gated on whether a roll actually happened, so it stays
+correct if a later change adds another path that could leave the gate's
+visualiser out of sync.
+
+Verified live against the real dev server, with a fixed stored palette
+(`geoColour` pinned to pure red) set directly in `localStorage` so a rolled
+look would be unmistakable against it. Reloading repeatedly produced
+visibly different pictures each time — different view geometry, different
+colour cast — confirmed by screenshot comparison across reloads. `?rgb=`
+held the same requested colour and the same picture shape across two
+consecutive reloads, unlike the unqualified reloads. `localStorage` was read
+back byte-identical to what was written, both after a plain reload and after
+loading the gate inside a 320×568 iframe — the gate never writes to storage.
+Layout at 320×568 and 360×640 (via the same iframe technique `hud-narrow.html`
+already established, since `resize_window` cannot actually shrink this
+harness's window — see entry 56's build note) showed no overflow on the
+title, byline or Start disc, over several different rolled looks.
+
+Not verified: an actual Start click through to a running session. Chrome in
+this harness never resolves (or visibly denies) the live microphone-permission
+prompt `waitForStart()` needs, a limitation already hit and disclosed in
+several earlier entries this session. The restore-on-Start code path itself
+is exercised only by code reading, not a live click; it is a direct,
+unconditional set of calls against `prefs` (the stored values), not
+conditional logic, which is the case most amenable to reasoning about
+correctness from the code alone.
+
+**Do** — give the idle preview behind the gate a fresh random look on every
+load — colours, views, merge modes — and throw it away the moment Start is
+pressed, restoring the stored preferences exactly.
+**Why** — the gate currently shows whatever palette you last left, on every
+load, forever. It reads as frozen because it is.
+
+**Decided**
+- **Not a regression, which is worth saying before anyone goes looking for
+  one** → `main.ts:541-542` passes `geoColour: prefs.geoColour` and
+  `atmColour: prefs.atmColour` into the visualiser built for the gate, and
+  `git log -S` puts that line back at "HUD: merge mode goes back between the
+  layers". The preview has **never** rolled. What changed is not the code but
+  the number of loads: a palette that settled once now greets you every time,
+  and the more the app is opened the more obviously stuck it looks.
+- **The preview is a poster, and it should show what the piece can do** → the
+  gate's own comment says the start screen "can simply be the piece instead,
+  running quietly behind the words", rather than "a poster for something
+  absent". A poster that shows one frozen palette forever undersells the
+  thirteen views and the six merge modes behind it. Rolling the look is the
+  same argument that comment already makes, carried one step further.
+- **It must not touch stored preferences**, and that is the whole engineering
+  content → what Start restores has to be exactly what was stored, or a
+  visitor loses their picture by opening the page. This is the third user of a
+  pattern the app has already settled twice: a transient influence applied
+  where the values reach the renderer, never written back. Entry 48 established
+  it for touch, entry 58 uses it for motion, and this uses it for the gate.
+  **Mine**, and the alternative — rolling into `prefs` and restoring on Start —
+  is one thrown exception away from overwriting somebody's saved picture.
+- What is rolled → **colours, both views, both merge modes.** Not the alphas
+  and not the mapping: `SHUFFLE_MIN_ALPHA` exists because two low alphas
+  multiply toward black (entry 21), and the gate is the one screen where a dim
+  preview also makes the type unreadable — entry 28 measured that at 2.33:1.
+  The alphas stay at their stored values, which are already floored. **Mine.**
+- **Legibility is a constraint on the roll, not a hope** → the gate's type sits
+  over this. Entry 43 added a gradient scrim and entry 28 added shadows, both
+  because a moving picture behind words is hard to read, and both were tuned
+  against the picture as it is. A roll that can land on a bright field must not
+  make the title vanish. So the roll uses the same dominant-channel floor the
+  shuffle uses and nothing brighter, and **the 320×568 check here is about the
+  words, not the picture.**
+- One roll per load, not a cycle → the preview does not keep changing while
+  someone reads the screen. It is a still life that happens to move, and a gate
+  that reshuffles under you while you are deciding to press a button is
+  restless rather than alive. **Mine.**
+- Interaction with entry 55 → that entry animates the release name on load. Two
+  things arriving at once is fine and probably good: the name flips in while
+  the picture is already whatever it is. Neither waits for the other, and
+  neither delays Start.
+- The `?rgb` URL parameter still wins → `main.ts:106` reads a colour from the
+  URL, and a shared link that names a colour must show that colour, on the gate
+  as well as after Start. The roll applies only when nothing was asked for.
+  **Mine**, and it is the one case where "the gate shows your stored picture"
+  is still correct behaviour.
+
+**Lands in**
+- `src/main.ts:530-548` — the visualiser built for the gate takes rolled values
+  rather than stored ones, with the `?rgb` case falling through.
+- `src/main.ts` — the handover at Start, which must apply the stored
+  preferences as they were.
+- `src/main.ts:327-370`, `shuffled()` — the roll should reuse its `colour()`
+  and its floors rather than growing a second palette generator.
+
+**Done when** — loading the gate twice in a row gives two visibly different
+pictures, and the title, byline and release name are readable over both at
+320×568 and 360×640; pressing Start returns exactly the picture and settings
+that were stored, with nothing altered by having looked at the gate; a link
+carrying `?rgb` shows that colour on the gate; and a reload after Start still
+restores the stored picture rather than a rolled one.
+**Verify** — the browser, reloading ten times and reading the type over every
+one of them, which is the failure mode this can actually ship with. Then check
+`localStorage` before and after visiting the gate and confirm it is byte
+identical. `pnpm build`, `pnpm lint`.
+**Hard stops** — prefs **no**, and this entry is mostly about making sure of
+that: nothing is written · url no (`?rgb` keeps its meaning) · capture no ·
+dependency no.
+
+**Verification note — `/ccc` at build 356.** The "nothing altered by having looked at the gate" clause holds structurally, which is the only way it could be trusted: the roll calls `shuffled()` directly and deliberately not through `panel.adopt()`, because adopt writes to `prefs` and saves. A `?rgb` link skips the roll outright rather than carving around one field.
