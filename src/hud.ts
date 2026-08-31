@@ -233,6 +233,11 @@ export interface Hud {
        *  in the readout" — so what night the app thinks it is is checkable
        *  without waiting a month. */
       moon?: { illuminated: number; waxing: number; presence: number }
+      /** The ambient light sensor's own reading — docs/todo.md entry 98,
+       *  "report lux and the derived lift in the readout". `available`
+       *  false is itself the answer on iOS: "why doesn't it respond to
+       *  the room here." */
+      ambient?: { available: boolean; lux: number | null; exposure: number }
       /** Why there was or wasn't a buzz. See hapticStatus(). */
       haptics?: {
         supported: boolean
@@ -1473,6 +1478,19 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
                 `up ${s.moon.presence.toFixed(2)}  ` +
                 `abundance ${(s.moon.illuminated * s.moon.presence).toFixed(2)}`,
             ]),
+        // docs/todo.md entry 98 — beside the sun and moon lines above:
+        // the third environmental sense, and on iOS (or any Android
+        // session that refused or has no sensor) `available` reads false,
+        // which is itself the answer to "why doesn't it respond to the
+        // room here" rather than a silently missing line.
+        ...(s.ambient === undefined
+          ? []
+          : s.ambient.available
+            ? [
+                `light ${s.ambient.lux === null ? 'reading…' : `${Math.round(s.ambient.lux)} lux`}  ` +
+                  `exposure ${s.ambient.exposure.toFixed(2)}`,
+              ]
+            : ['light unavailable (no ambient sensor on this device)']),
         // The numbers that tell a dead sensor apart from a shake that is
         // simply not hard enough — and, docs/todo.md entry 88, from one that
         // wasn't hard enough for the *current* context. `/18` stays fixed

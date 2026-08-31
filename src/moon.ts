@@ -37,7 +37,10 @@
  * `probe-sky.ts` already does for the sun.
  */
 
-import { sunEclipticLongitudeDeg } from './sky'
+// .ts extension kept explicit: a probe script needs to import this file
+// directly (via moon.ts) under `node --experimental-strip-types`, which
+// requires it for any value import inside src/ — see CLAUDE.md.
+import { sunEclipticLongitudeDeg } from './sky.ts'
 import type { GeoLocation } from './geo-location'
 
 export interface Moon {

@@ -58,6 +58,7 @@ import { MAX_OFFSET, overscanFor, type TumbleState } from './shake'
 import { skyFor, skyForLocation } from './sky'
 import { moonFor, moonForLocation, type Moon } from './moon'
 import { requestLocation, type GeoLocation } from './geo-location'
+import { requestAmbientLight, luminanceFromLux, type AmbientLight } from './ambient-light'
 import type { SkyOverride } from './prefs'
 import compositeFrag from './shaders/composite.frag.glsl?raw'
 import vertexShader from './shaders/fullscreen.vert.glsl?raw'
@@ -433,6 +434,16 @@ export interface Visualiser {
      *  same "testable without waiting" reasoning as sky above: what night
      *  the app thinks it is, without waiting a month to check the math. */
     moon: { illuminated: number; waxing: number; presence: number }
+    /** docs/todo.md entry 98 — the ambient light sensor's own reading and
+     *  the exposure it currently produces. `available` is false on every
+     *  iOS session and on any Android session that refused or has no
+     *  sensor (Decided's own "on iOS the ambient line honestly reads
+     *  unavailable"); `lux` is `null` whenever `available` is false, or
+     *  briefly while `available` is true but no reading has arrived yet.
+     *  `exposure` is `uExposure`'s own current value regardless of source
+     *  (camera, sensor, or neither), so the readout always shows what the
+     *  picture is actually doing. */
+    ambient: { available: boolean; lux: number | null; exposure: number }
   }
   /**
    * Save the next composited frame as a PNG blob, once. `onReady` runs after
@@ -601,6 +612,18 @@ export function createVisualiser(
   let geoLocation: GeoLocation | null = null
   void requestLocation().then((location) => {
     geoLocation = location
+  })
+
+  // docs/todo.md entry 98 — same lazy, no-gesture-needed posture as the
+  // location request just above: `AmbientLightSensor`'s own refusal is a
+  // synchronous constructor throw (see ambient-light.ts's own header), not
+  // a dialog waiting on the user, so there is nothing to gate behind a tap
+  // here either. `null` on every iOS session and on any Android session
+  // that refuses or has no sensor — `sampleAmbientLight` below already
+  // treats that exactly like "camera off, no reading yet" does today.
+  let ambientLight: AmbientLight | null = null
+  void requestAmbientLight().then((light) => {
+    ambientLight = light
   })
 
   const compositeUniforms = {
@@ -976,7 +999,21 @@ export function createVisualiser(
    */
   function sampleAmbientLight(dt: number): void {
     if (!compositeUniforms.uCamera.value) {
-      compositeUniforms.uExposure.value = 1
+      // docs/todo.md entry 98 — the sensor's own branch, generalising this
+      // function's camera-only reading to the far more common case of no
+      // camera at all. `lux()` is `null` on every platform without the
+      // sensor (all of iOS, an Android session that never resolved one or
+      // was refused) — identity path, `uExposure` exactly 1, today's
+      // behaviour unchanged. No 30-frame throttle here: reading a stored
+      // float costs nothing like the GPU readback the camera branch below
+      // exists to amortise.
+      const lux = ambientLight?.lux() ?? null
+      if (lux === null) {
+        compositeUniforms.uExposure.value = 1
+        return
+      }
+      exposureEnvelope.push(luminanceFromLux(lux), dt)
+      compositeUniforms.uExposure.value = 0.85 + exposureEnvelope.current * 0.3
       return
     }
 
@@ -1434,6 +1471,11 @@ export function createVisualiser(
       motion: { posture: lastMotion.posture, disturbance: lastMotion.disturbance, agitation: lastMotion.agitation },
       sky: { daylight: skyDaylight, warmth: skyWarmth, override: overrideCurrent, located: geoLocation !== null },
       moon: { illuminated: moonState.illuminated, waxing: moonState.waxing, presence: moonState.presence },
+      ambient: {
+        available: ambientLight !== null,
+        lux: ambientLight?.lux() ?? null,
+        exposure: compositeUniforms.uExposure.value,
+      },
     }),
 
     dispose() {

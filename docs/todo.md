@@ -11065,7 +11065,65 @@ coordinate never enters a URL**; capture no; dependency **no — computed, not
 fetched; no library and no network.**
 
 ### 98. The picture answers the light in the room, camera or no camera
-`status: building` · added 2026-08-30
+`status: done` · added 2026-08-30 · build 323
+
+**Build note (Mine).** Shipped: `src/ambient-light.ts` (new —
+`requestAmbientLight()`, feature-detected and try/catch'd around
+construction and `start()`, since the Generic Sensor API's own refusal is a
+synchronous constructor throw rather than a dialog waiting on the user;
+`luminanceFromLux(lux)`, the pure piecewise-log mapping onto the same 0-1
+scale entry 23's camera-luminance sampling already produces, so both feed
+the identical `exposureEnvelope` and the identical `0.85 + x * 0.3` formula
+in `scene.ts` rather than two independently tuned ones). `scene.ts` kicks
+off the request once, lazily, at construction — no gesture to wait for,
+since the constructor's own throw is the entire refusal path — and
+`sampleAmbientLight`'s existing no-camera branch (which used to just pin
+`uExposure` at 1 and return) now reads the sensor when one resolved,
+falling back to that exact same pin when it didn't. The camera branch is
+untouched, character-for-character. A `light` line joins `sky`/`moon` on
+the `hud.ts` readout, printing lux and the exposure it currently produces
+when a sensor is available, and printing `unavailable` outright when it
+isn't — Decided's own "on iOS the ambient line honestly reads unavailable,
+which is itself the answer."
+
+**The pivot point is the whole design.** `luminanceFromLux` isn't a single
+log curve end to end — it's two log-linear segments meeting at 150 lux (an
+ordinary lit room, **Mine**, from common indoor-lighting figures), because
+the camera-luminance mapping it has to match already treats 0.5 as
+"unchanged," and a single log span from 1 lux to 10,000 lux would not put
+an ordinary room anywhere near that pivot. `probe-ambient-light.ts` (9
+checks) proves the pivot lands exactly on 0.5, that equal *ratios* of lux
+(not equal differences) produce comparable steps — the actual test that
+it's log-shaped rather than merely monotonic — and that it stays bounded at
+both ends of Decided's own named range (moonlight to bright daylight) and
+beyond. Per Decided and Verify both: the mapping is what's probeable here;
+the sensor itself is not, and the probe's own header says so rather than
+mocking a sensor that doesn't exist on the machine running it.
+
+**Not verified live** — no Android device with the sensor in this
+environment, per the entry's own Verify, which wants exactly that: "the
+phone, Android, moving between a sunlit window and a dark corner." `pnpm
+build`, `pnpm lint`, the new `pnpm probe:ambient-light`, and the full
+remaining probe suite (17 other scripts) all pass. Confirmed rather than
+merely asserted: no `fetch`/`XMLHttpRequest`/`WebSocket` in
+`ambient-light.ts` or `scene.ts`, no `lux` anywhere in `prefs.ts` or
+`main.ts`, and an empty `git diff` on `prefs.ts` — grepped before this
+commit, the same discipline entry 97's build note used for the coordinate.
+
+**A correction to entry 97's own work, found while reading this project's
+CLAUDE.md house style for something unrelated.** Entry 97 added a real
+value import from `moon.ts` to `sky.ts` and, finding plain Node's ESM
+resolver couldn't follow the extensionless `./sky` the way Vite does, wired
+`probe:sky` and `probe:moon` through `scripts/dir-import-hook.mjs` (built
+for `probe-fullscreen`, entry 66) to paper over it. This project's own
+house style already has the actual answer, stated plainly and already used
+by `haptics.ts`: *"Value imports inside `src/` that a probe script needs
+must carry the `.ts` extension — `node --experimental-strip-types`
+requires it."* Fixed here rather than left for a future session to trip
+over twice: `moon.ts`'s import is now `from './sky.ts'`, and both
+`package.json` probe scripts are back to bare `node --experimental-strip-
+types`, with the hook workaround removed. No behaviour changed;
+`probe:sky` (34 checks) and `probe:moon` (43 checks) both still pass.
 
 **Do** — read the ambient light sensor where it exists and let the real room
 brightness drive the picture's exposure and contrast, so it stays legible in
