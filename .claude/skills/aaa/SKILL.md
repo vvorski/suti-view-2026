@@ -18,6 +18,12 @@ loop. Use those when work will be handed to an agent unattended. Use this when
 the point is to *not stop*: the main loop keeps building, and the idea lands in
 `docs/todo.md` ready for later.
 
+**`/bbb` is the other half of this skill**, and it builds what this one writes.
+Read its *How the pair fits together* section once — the seam between them is
+what makes either work. The short form: an entry is the only channel between
+the two, this half never builds and that half never invents, `building`
+protects an entry's text but not its idea, and only `/bbb` pushes.
+
 ## The shape of the run
 
 **Recon → decide → write → commit.** Four steps, and the first is what earns
