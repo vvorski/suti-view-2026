@@ -49,6 +49,18 @@ in Decided, and without it the status is `blocked`, not `ready`.
 `status:` is one of `ready`, `building`, `blocked` (needs a decision — say
 which), or `done` (leave it, with the build number that shipped it).
 
+Two things belong on the `status:` line beyond the status itself:
+
+- **Build order**, when an entry only makes sense after another — `build after
+  88`, `build before 90–92`. Entries are claimed in the order somebody reads
+  them, not the order they were written, and a dependency living only in
+  somebody's head gets built backwards.
+- **What was left out**, when an entry ships partially — `the expansion-curve
+  envelope is deliberately incomplete — see build note`. CLAUDE.md's *Shipping
+  part of an entry* requires the follow-up entry to exist before the parent is
+  marked `done`; this clause is what makes the omission visible without reading
+  git.
+
 ## Claiming an entry
 
 **Whoever starts building an entry sets it to `building` first, in its own

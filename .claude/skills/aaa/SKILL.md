@@ -30,8 +30,34 @@ Never ask what you could answer yourself — and, now, never ask what you could
 Spend a couple of tool calls establishing:
 
 - Where the idea would land. Grep for the thing it touches; get `file:line`.
+  **Count what you find, never recall it** — entry 106's Lands-in said "the six
+  ripple shaders" and there were seven; Rose had arrived after that sentence was
+  written and nobody re-counted.
+- **Search `docs/todo.md` for it first.** Twice in one weekend the right action
+  was to strengthen an existing entry rather than write a new one (73, then 89).
+  A second entry for a fault already diagnosed splits the record and the queue
+  builds the weaker half. If it is already captured, *edit that entry* — add the
+  new evidence, sharpen its Decided, mark its build order — and say so in the
+  report. A new number is for a new idea.
 - Whether it already exists, partly. Half of all ideas here turn out to be
   "the thing is there but does not do X", which changes every question.
+- **Which existing pattern it is.** This project has two, and naming which
+  settles most of the design for free: **pure-state modules** (`shake.ts`,
+  `ripples.ts`, `emitter.ts`, `touches.ts`, `motion-bias.ts`, `rgb-slip.ts` —
+  state plus a pure update function, no DOM, no clock of its own, probeable
+  headless) and **render-time influence** (a value modulated where it reaches
+  the renderer, never written back to stored prefs — entries 48, 58, 60, 72,
+  87). An addition that needs no new module, no new uniform and no new
+  dependency is one that fits; needing all three is the signal to stop and ask
+  whether the shape is wrong.
+- **What the landing site already argues.** Read the comments where the change
+  would go, not just the code. In this repo comments carry reasoning and
+  refusals — *"Linear, as in the source. Ease-out was an embellishment…"* — and
+  **a reasoned comment outranks an entry that did not know about it.** Entry 96
+  asked for a change four shaders had already argued against; the builder was
+  right to refuse. Finding that at recon is cheaper than finding it at build,
+  and usually the idea is right and only its *where* is wrong (see entry 106,
+  which moved the same effect to the one number nobody had argued about).
 - Which of CLAUDE.md's four **Hard Stops** it trips — stored `Prefs` shape, URL
   parameter shape, capture and privacy, new runtime dependency — and the
   **circular control surface** constraint, which is non-negotiable and rules
@@ -39,6 +65,38 @@ Spend a couple of tool calls establishing:
 
 Recon is for grounding the decisions, not for designing the thing. Two or three
 calls. If it is taking longer, the idea is a project and wants `spec-to-issue`.
+
+### 1a. If the report is "it's not working" or "it hasn't landed"
+
+**Prove it is absent before writing an entry to build it again.** Three separate
+features were reported missing in one week and every one of them was fully
+built and wired: camera mode (entry 87, build 273), the RGB slip (entry 76,
+build 249), the start-screen animations (entry 65, build 220). Writing a
+build-it entry for any of them would have shipped a second copy of a working
+feature and left the real fault in place.
+
+Establish, in this order, and stop at the first that answers:
+
+1. **Does the code exist and run?** `git log -S` the constant or the function.
+   A feature can be present, correct, and *never observable*.
+2. **What masks it?** This is where all three actually were. Camera mode was
+   invisible because an ordinary tap already saved a photo, so arming changed
+   nothing you could see. The slip cancelled itself because its direction was
+   `normalize()`d off an oscillating spring and flipped three times a second.
+   The animations were gated on `prefers-reduced-motion` with an invisible
+   fallback. **In each case the fix removes the masker; it does not rebuild the
+   feature.**
+3. **Is it behind a default-off switch or a device state?** `prefs.gravity`
+   defaults `false`, and a phone that has already stored `false` keeps it — so
+   flipping a default never reaches an existing install. Say so in the entry and
+   require the verification to be done with the switch *on*.
+4. **Never ask the user to inspect an OS setting.** Five rounds went into a
+   `prefers-reduced-motion` hypothesis the user could not see or confirm; the
+   answer was *"What animation settings what are you talking about"*, and the
+   entry that finally worked (99) **removed the dependency on that state**
+   rather than asking about it again. If a diagnosis needs something only the
+   device knows, put it in the on-screen readout — the app is where the problem
+   is reported, so it is where the diagnosis belongs.
 
 ### 2. Decide by default; ask only when you cannot
 
@@ -102,6 +160,27 @@ Two fields carry the weight:
 - **Done when** — an observable outcome. Never "it works". A number, a state
   visible on screen, or a thing a probe asserts.
 
+  **When the entry answers a "not seeing it" report, Done-when must measure the
+  thing the eye already failed at.** Not "it should look dispersed" — *peak
+  red-to-blue separation in device pixels, and zero direction reversals through
+  one decay*. Whoever ships it next cannot check an impression, and an
+  impression is what let three built features be reported as missing.
+
+Two more this project's entries carry as standing requirements, because every
+effect here is layered onto a picture people have already approved:
+
+- **The identity when off.** Any new modulation must state what it costs when
+  its input is neutral, and the answer must be *exactly nothing* — the same
+  discipline `uDay`, `uBeatConfidence`, `uSlip` and `uMoonBloom` already follow.
+  Prefer an identity that falls out of the maths over one bolted on with a
+  clamp: entry 106's bloom is zero at both new and full moon *because* the
+  waxing term is a sine that vanishes there, which is stronger than a guard and
+  cannot be forgotten.
+- **Build order, stated.** If an entry only makes sense after another, say so on
+  the `status:` line (`build after 88`, `build before 90–92`). Entries are
+  claimed in the order somebody reads them, not in the order you wrote them, and
+  a dependency living only in your head gets built backwards.
+
 **Verify** should name this project's actual gates — `pnpm build`, `pnpm lint`,
 the relevant `pnpm probe:*` — plus the on-screen check at 320×568 and 360×640
 that CLAUDE.md requires for anything touching a shared surface.
@@ -148,3 +227,15 @@ One short paragraph, not a recital of the entry:
 - **the calls you made on their behalf**, in one line. Not all of them, the
   ones they might disagree with. Independence is only tolerable if it is
   visible: a decision made silently is a decision they cannot overturn.
+
+**When recon overturns the premise, lead with that.** The most valuable reports
+this skill has produced were not entries — they were *"this is built, here is
+the line that hides it"*. If the answer to an idea is that the thing already
+exists, or that the fault is somewhere else entirely, say so first and plainly.
+That is worth more than any entry, and burying it under one wastes it.
+
+**Own an error in the entry, not only in the chat.** Entry 72 specified the
+wrong camera because the capture agent misread the request; entry 87 supersedes
+it and says so on the record. The chat scrolls away and the file does not — a
+correction that lives only in conversation will be re-derived by whoever reads
+the entry cold.
