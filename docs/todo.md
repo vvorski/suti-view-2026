@@ -12224,3 +12224,56 @@ since a real first-quarter and last-quarter night are two weeks apart and no
 session can hold both. Then, genuinely: two nights, a fortnight apart, which is
 the only test that matters and the one entry 96 correctly said it could not run.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 107. Does the gate say what kiyo is aware of?
+`status: blocked` · added 2026-08-31 · the remainder of 97, reopened under the new rule
+
+**Do** — nothing yet. This is a question for Victor, raised because entry 97
+shipped without the gate copy it asked for and `CLAUDE.md`'s amended Hard Stop
+3 now says a conflict like that becomes a proposal rather than a silent no.
+
+**Why** — entry 97 (build 321) asked the gate to name that the app uses the
+phone's location for the sun and the moon. It was not built: the standing rule
+said the gate carries no copy about capture or privacy at all, and the build
+agent read that as louder than one entry's narrower ask. **That call was
+right.** What was wrong is that it ended there — disclosed in a commit nobody
+was scheduled to read, with the entry marked `done`.
+
+**The question**
+> The gate currently says nothing about what the app senses. Since entries 96,
+> 97 and 100 it senses the room, the hour, the sky, the moon and — with
+> permission — roughly where it is. Should the gate name any of that, and if
+> so, as what?
+
+**What the answer changes**
+- **Nothing.** The browser's permission prompts are the consent point, the gate
+  stays as clean as build 66 left it, and 97's ask is retired as superseded by
+  the standing rule. This is the status quo and it is defensible — the app is
+  more present for knowing where it is whether or not it announces it.
+- **One line of awareness.** Not a disclaimer — no "your audio never leaves
+  this device", which is the thing build 66 removed and which stays removed.
+  Something in the app's own register, naming a sense rather than a policy:
+  *"listens · knows the hour · follows the moon"*. It reads as the piece
+  describing itself, which is what the amended clause now permits.
+- **Awareness that answers.** The same line, but live: it names only what is
+  actually available on this device right now, so a phone that refused location
+  simply does not claim to know where it is. More honest, more work, and the
+  only version that could be wrong in front of someone.
+
+**Decided in advance, so the answer is a single choice and not a design
+session**
+- Whatever the answer, **no promise-shaped sentence appears on the gate.** The
+  ban on reassurance copy is unchanged by this entry and is not up for review
+  here.
+- If it is a line, it goes in the app's voice and at the gate's existing type
+  scale — no new band, no icon row, no second paragraph. **Mine.**
+- If the answer is "nothing", this entry closes as `done` with the answer
+  recorded, so nobody proposes it a third time.
+
+**Lands in** `index.html` — the gate copy, and nothing else, whichever way it
+goes.
+**Done when** — Victor has answered, and the answer is written here.
+**Verify** — on the phone, at the gate, in daylight, if there is anything to
+see at all.
+**Hard stops** — prefs no · url no · capture **yes, and that is the entire
+point of the entry** · dependency no.

@@ -273,21 +273,70 @@ else on an approved issue is yours to build.
    network request, adds a permission prompt, or persists audio-derived data
    anywhere.
 
-   **The gate deliberately carries no copy about this, as of build 66.** It
-   used to say "the audio never leaves this device" and disclose the optional
-   camera layer; both paragraphs were removed at Victor's instruction and the
+   **The gate carries no *reassurance* copy, as of build 66.** It used to say
+   "the audio never leaves this device" and disclose the optional camera
+   layer; both paragraphs were removed at Victor's instruction and the
    decision to leave them out was confirmed afterwards. The browser's own
-   permission prompt is the consent point. Do not re-add the text as a bug fix
-   — it is absent on purpose. The promise itself still binds the code: nothing
-   here records, uploads, or persists audio or video, and the camera still
+   permission prompt is the consent point. Do not re-add that text as a bug
+   fix — it is absent on purpose. The promise itself still binds the code:
+   nothing here records, uploads, or persists audio or video, and the camera
    stays off until a live gesture asks for it.
 
+   **What that ban is, and what it is not.** It bans *disclaimers* — a
+   paragraph promising what the app will not do, which is litter on a start
+   screen and which the browser says better. It does **not** ban the app
+   saying what it is **aware of**. Since the sun, the moon and the phone's
+   own location arrived (entries 96, 97, 100), what the app senses is part of
+   the work rather than a privacy notice, and an app that quietly knows where
+   it is and never says so is worse on every axis including this one. A line
+   naming a sense — that it is listening, that it knows the hour, that it
+   knows the moon — is **awareness**, is in scope, and is a taste question.
+
+   **So this clause routes to Victor; it does not silence.** A ban written as
+   "do not" got obeyed literally at build 321: entry 97 asked for a location
+   clause on the gate, this paragraph read louder, and the work was dropped
+   with only a build note recording it. The refusal was defensible; the
+   silence was the fault. **Anything touching gate copy is a proposal, not a
+   no** — say what you would add, name this clause, and let him decide.
 4. **A new runtime dependency.** This ships to phones over cellular. Three.js
    is 117 KB gzipped and is the budget. Anything else is a conversation, with
    the measured gzip size in it.
 
 A "no" to all four means implement directly and let `pnpm build` be the gate.
 Any "yes" means the work stops and becomes a proposal.
+
+## Shipping part of an entry
+
+Sometimes the right build is not the whole entry. An entry can ask for
+something that turns out to conflict with a decision already documented in the
+code, or for a verification no session can run. **Building it anyway is the
+worse failure** — entry 96 asked for a lunar bias on each ring's growth curve,
+and four shaders already carry reasoned comments choosing that curve
+deliberately. Declining was better work than complying.
+
+Partial ships are therefore allowed, under three conditions, and the third is
+the one that has already been got wrong:
+
+1. **Ship only the part you are confident in**, and never force a change that
+   would overwrite a documented decision. A comment explaining why something is
+   the way it is outranks an entry that did not know about it.
+
+2. **Disclose twice.** At length in the commit — what was left, why, and what
+   was actually verified in place of what the entry asked for — *and* in one
+   clause on the entry's `status:` line, so it is visible without reading git.
+
+3. **Write the follow-up entry before marking the parent done.** Not after, not
+   when someone notices. The remainder is either a new entry that finishes the
+   job, or — if the omission is a conflict with a standing rule — an entry that
+   puts the conflict to Victor as a question. Either way it exists, numbered,
+   in the queue.
+
+Condition 3 is not bookkeeping. Entry 96's omission and entry 97's were disclosed
+exactly as conditions 1 and 2 require, and both then sat marked `done` with a
+third of the request missing; the gap only surfaced a day later, by accident,
+while counting something else. **A disclosure nobody is scheduled to read is
+indistinguishable from a silent drop.** An entry in the queue is read by
+definition.
 
 ## Capturing an idea without stopping
 
