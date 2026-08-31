@@ -11788,7 +11788,7 @@ parameter with an existing shape · capture no · dependency no — one more
 fragment shader, no library.
 
 ### 102. Down is real: emitters fall, and pool where the phone says down is
-`status: ready` · added 2026-08-30
+`status: building` · added 2026-08-30
 
 **Do** — a released emitter accelerates along the in-plane component of
 gravity, bounces off the edge it lands on, and settles there. Held upright it
