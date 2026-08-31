@@ -28,6 +28,7 @@ import fieldFrag from './shaders/field.frag.glsl?raw'
 import fringeFrag from './shaders/fringe.frag.glsl?raw'
 import gridFrag from './shaders/grid.frag.glsl?raw'
 import latticeFrag from './shaders/lattice.frag.glsl?raw'
+import roseFrag from './shaders/rose.frag.glsl?raw'
 import shardsFrag from './shaders/shards.frag.glsl?raw'
 import spectrogramFrag from './shaders/spectrogram.frag.glsl?raw'
 import tideFrag from './shaders/tide.frag.glsl?raw'
@@ -53,6 +54,16 @@ export const GEOMETRIC_VIEWS = {
     label: 'Grid',
     description: 'Square wavefronts lighting whole cells at a time.',
     fragmentShader: gridFrag,
+  },
+  // docs/todo.md entry 101 — a fourth answer to "what does a hit look like",
+  // not a variation on Circles the way the next three are: Circles' ring is
+  // the locus of constant radius, travelling outward; Rose's spoke is the
+  // locus of constant angle, travelling in angle. Registry order is HUD
+  // order, and this keeps the first-group/variant-group split honest.
+  rose: {
+    label: 'Rose',
+    description: 'Turning N-fold rosettes, sweeping through a standing ladder of bearings.',
+    fragmentShader: roseFrag,
   },
   // Three variations on Circles that keep its ring and move its emitter. They
   // sit after the three originals rather than next to Circles because the

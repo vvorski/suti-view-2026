@@ -1,6 +1,6 @@
 /**
- * Asserts the ripple constants match, across seven files — docs/todo.md
- * entry 59.
+ * Asserts the ripple constants match, across ripples.ts and every geometric
+ * shader — docs/todo.md entry 59.
  *
  * `MAX_RIPPLES` and `AUDIO_RIPPLES` are declared once in `ripples.ts` and
  * copied by hand into every geometric shader, which has no way to import a
@@ -35,8 +35,11 @@ check(
   `AUDIO_RIPPLES=${AUDIO_RIPPLES} MAX_RIPPLES=${MAX_RIPPLES}`,
 )
 
-// Discovered by grep rather than a hardcoded list, so a seventh geometric
-// view added later is covered without anyone remembering to add it here.
+// Discovered by grep rather than a hardcoded list, so which *files* to check
+// never needs updating by hand as views are added. The *count* below still
+// does — `views.ts` imports every shader through Vite's `?raw` suffix, which
+// plain Node has no loader for, so this file cannot import GEOMETRIC_VIEWS
+// itself to derive the number automatically and has to be told it.
 const SHADER_DIR = new URL('../src/shaders/', import.meta.url).pathname
 const shaderFiles = readdirSync(SHADER_DIR).filter((f) => f.endsWith('.frag.glsl'))
 
@@ -68,10 +71,12 @@ for (const file of shaderFiles) {
 }
 
 // A probe that only ever passes cannot be trusted — confirm it actually
-// found the six geometric shaders it is meant to be checking, so a future
-// rename or a shader moved out of src/shaders/ doesn't silently make this
-// check vacuous.
-check('found the six geometric shaders that declare these constants', matched === 6, `found ${matched}`)
+// found the seven geometric shaders it is meant to be checking (docs/todo.md
+// entry 101 added Rose, the seventh), so a future rename or a shader moved
+// out of src/shaders/ doesn't silently make this check vacuous. Bump this
+// number by hand, same as GEOMETRIC_VIEWS in views.ts, whenever the registry
+// gains or loses a geometric view.
+check('found the seven geometric shaders that declare these constants', matched === 7, `found ${matched}`)
 
 console.log(failures === 0 ? `\nall checks passed` : `\n${failures} check(s) failed`)
 process.exit(failures === 0 ? 0 : 1)

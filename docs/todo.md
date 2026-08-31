@@ -11595,7 +11595,83 @@ capture no · dependency no (the moon maths is entry 96's, already refused a
 library).
 
 ### 101. Rose — Circles turned ninety degrees, and spinning
-`status: building` · added 2026-08-30
+`status: done` · added 2026-08-30 · build 330
+
+**Build note (Mine).** Shipped `src/shaders/rose.frag.glsl` (new) and a fourth
+`GEOMETRIC_VIEWS` entry in `src/views.ts`, before `drift` as Lands-in asks.
+Every hit fires an N-fold rosette (3/5/6/8-fold, picked by section from
+`uSeed.x`) that sweeps in angle from a hashed birth angle, alternating
+direction by ring-buffer slot parity ("odd slots turn the other way"). A
+standing angular ladder — fixed bearings rather than fixed radii — holds a
+fading record of which directions were recently swept, lit by a closed-form
+"time since this bearing was last crossed" exactly as Circles' own radial
+ladder is, generalised for the one place the dual is not exact: a spinning
+spoke re-crosses the same bearing every revolution, where a Circles ring
+crosses each radius once and stops, so the closed form here has to find the
+most recent of several periodic crossings rather than the only one, and a
+dead ripple's spoke is frozen at its own moment of death so old wakes stop
+recurring. The ladder itself creeps continuously between hits and quantises
+to one rung per beat once `uBeatConfidence` is confident, contributing
+exactly nothing at `uBeatConfidence == 0` by construction (`mix` returns the
+continuous term untouched). Touch spawns its own rosette at the finger and
+does not light the (centre-keyed) ladder, one `atan` per live slot.
+
+**Two real bugs, found only by reading pixels back out of a throwaway
+harness, not by eye.** `pnpm build`/`tsc` cannot check a fragment shader's
+own math, and this file's own live-verification story (below) is why both
+were caught before shipping rather than after.
+
+1. *The double stroke was invisible by construction.* The first version put
+   both spokes at the *same* bearing, one shorter and thinner "inside" the
+   other — a literal reading of "a thinner one inside it at 0.70 of the
+   radius" that collapsed the moment it was actually rendered: a shorter,
+   narrower ray at the same angle as a longer, broader one is a strict subset
+   of it, so the inner spoke could never contribute a visible pixel the outer
+   one had not already lit. The fix reread what makes Circles' two rings
+   *visible* as two rather than what makes them share a centre: they sit at
+   different *radii*. The dual is a second spoke trailing the front one at
+   0.70 of the angle swept so far, not a shorter ray alongside it — the same
+   "0.70 of the ring's own radius" idea, applied to the thing that is actually
+   travelling here (angle, not radius).
+2. *Stroke width, first attempt, was unbounded.* Circles' stroke width is a
+   fraction of the ring's own current *radius* — a quantity that is bounded
+   by construction, since `radius = maxRadius * percent` can never exceed the
+   frame's own visible extent. Angle swept since birth (`omega * age`) has no
+   such ceiling: a loud, fast-spinning rosette sweeps several multiples of its
+   own fold spacing well before its own death, so a width scaled directly
+   against that unbounded angle grew wide enough, a couple of seconds into a
+   live ripple's own life, to blur every fold into a solid disc — invisible
+   at birth (which is when a first check happened to look), glaringly wrong
+   two seconds later (which is when a pixel-dump check across a spoke's whole
+   life happened to look). The fix scales width by `fold` (the *bounded* size
+   of one spoke's own angular slot — the true dual of Circles' bounded
+   `maxRadius`) times `percent` (age over lifespan, the same growth curve
+   Circles itself uses), which cannot exceed a fixed, small fraction of the
+   spacing between spokes regardless of loudness or spin speed.
+
+**Verification, and its real limit.** No mic is reachable from this session's
+sandboxed browser profile (same class of gap disclosed for entries 99 and
+100), so live audio-driven verification was done by importing `src/scene.ts`
+directly through Vite's own dev-mode ES module serving, constructing a real
+`Visualiser` with `geometricView: 'rose'`, and driving `render()` with
+synthetic transient spikes to spawn real ripples through the app's own
+`ripples.ts` state machine — not a hand-rolled substitute for it. Verified
+both by eye (screenshots showing a converging N-fold rosette with a bold
+leading beam and a thin trailing companion per arm, exactly the double
+stroke asked for, plus the standing ladder recording bearings that had been
+swept) and quantitatively (`gl.readPixels()` sampled around fixed radii
+across a ripple's whole life: coverage grows from a thin hairline near birth
+to a bounded, never-solid maximum near death, then fades to zero — the shape
+this entry's own Done-when describes, not merely "something nonzero").
+`pnpm build`/`pnpm lint` clean; the full probe suite (twenty scripts,
+including the pre-existing `probe:ripples`, whose own hardcoded expected
+shader count needed bumping from six to seven — the same class of
+already-anticipated-but-not-actually-self-healing miss `probe-name-decode.ts`
+hit for a hardcoded timing constant in entry 99) passes with zero
+regressions. Not verified: a real room, a real phone, and the two things
+Done-when itself says can only be judged there — whether the ladder reads as
+structure or as a screen door during silence, and frame time with sixteen
+fingers down.
 
 **Do** — a seventh geometric view: spokes instead of rings, sweeping in angle
 instead of travelling in radius, several at once and turning against each
