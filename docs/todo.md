@@ -11952,7 +11952,53 @@ consumer; its type, meaning and default are unchanged) · url no · capture no �
 dependency no.
 
 ### 103. A tap plays. Only the camera takes photos.
-`status: building` · added 2026-08-30 · fixes what makes 87 invisible
+`status: done` · added 2026-08-30 · fixes what makes 87 invisible · build 335
+
+**Build note (Mine).** Shipped exactly where Lands-in says, inside
+`src/main.ts:1215-1290`: the tap resolver collapses from a list of pending
+saves, each holding its own `setTimeout`, to a single remembered tap —
+position, down-time, and the `pointerId` that lets a later drag or cancel on
+*that same contact* forget it before it can pair with something unrelated.
+There is no timer left anywhere in this machinery: with no save left to
+schedule, there is nothing to commit once a tap's window closes, so a lone
+tap now does precisely nothing beyond being remembered for a moment in case
+a second one arrives to pair with. `resolveTapDown`/`cancelPendingTap` keep
+their names since they still do what those names say; `PendingTap` becomes
+`LastTap`; `SAVE_RATE_LIMIT_MS` and `TAP_RESOLVE_MS`'s old save-side comments
+are gone, `CAMERA_SAVE_RATE_LIMIT_MS` and the emitter's raw-`down` dispatch
+are untouched, exactly as Decided requires.
+
+`saveCapture()` now has exactly one call site in the entire file — inside
+`cameraMode`'s own branch — which is the structural version of "tapping the
+picture ... writes nothing to the camera roll, however many times it is
+tapped": there is no longer a code path from an ordinary tap to a write at
+all, not merely a rate limit or a delay standing in front of one.
+
+Rewrote `scripts/probe-tap.ts` to mirror the new resolver rather than patch
+around the old one — the old file's `tick()`/`saved()` machinery tested a
+timer that no longer exists. New checks assert the shape Decided actually
+asks for: ten independent, unpaired taps open the panel zero times (the
+direct translation of "ten rapid taps ... produce zero files" into the
+resolver's own vocabulary, since this file has never touched saving
+directly — only pairing); a second tap outside the radius or window
+*replaces* what's remembered rather than the old list's two coexisting
+entries, which is entry 103's own explicit simplification ("one remembered
+tap ... instead of a list"); and the drag/cancel and two-finger-open guards
+against a stale tap pairing later carry over unchanged in spirit.
+
+**Not independently verified: the phone/camera-roll half of Verify**
+("tapping the picture a dozen times and then opening the camera roll," and
+the armed path twice in a row). This entry is deletion-heavy rather than
+new-math-heavy — the strongest available guarantee is the call-site count
+above plus the full probe suite — and the previous entry's live-verification
+attempt through the same dev-server-plus-synthetic-frames technique cost two
+hung browser-automation calls for comparatively little additional
+confidence on a change this structurally simple. Left for Victor, exactly as
+Verify's own phrasing ("on the phone") already assumes a human doing it.
+
+`pnpm build`, `pnpm lint`, and the full `pnpm probe:*` suite (19 scripts,
+including the rewritten `probe:tap`) all pass with no regressions.
+
 
 **Do** — stop the single tap from saving a screenshot. Camera mode becomes the
 only path to a photo, which is what makes the mode entry 87 already built

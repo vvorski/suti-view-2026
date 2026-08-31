@@ -1213,33 +1213,27 @@ async function main(): Promise<void> {
   // to survive.
   document.addEventListener('lostpointercapture', (e) => touchField.cancel(e.pointerId))
 
-  // A single tap saves a frame; a double opens the panel — docs/todo.md
-  // entry 52, retiring entry 41's three screen zones. The two used to be
-  // told apart by *where* a tap landed; now they are told apart by *time*,
-  // which is the harder problem entry 41 (and, before it, the deleted
-  // gestures.ts) tried and failed to solve: a zero-delay tap-to-open
-  // listener always wins a race against a second tap that has not arrived
-  // yet, so the panel used to pre-empt every double before it could be
-  // recognised. The fix is structural, not a smarter race: whatever sits on
-  // the *single* has to tolerate a delay, because a single is only knowable
-  // once the double's window has passed without a second tap — and a save
-  // can tolerate that in a way a menu never could. Play is untouched by any
-  // of this: entry 50's emitter still fires on the raw `down`, immediately,
-  // never waiting on or cancelled by what a tap resolves to.
+  // A tap plays; only a double opens the panel — docs/todo.md entry 103,
+  // replacing entry 52's tap-saves-a-frame design. Entry 87 built a
+  // deliberate two-tap camera shutter and it landed invisibly, because
+  // entry 52's ordinary tap already wrote a PNG of its own 400ms later —
+  // arming camera mode only changed *when* the save happened, never
+  // *whether* one did. The two reports this entry answers — an ordinary
+  // tap taking a photo, and the two-shot camera looking unbuilt — turn out
+  // to be the same fault: remove the save from a single tap and both close
+  // at once. Play is untouched by any of this: entry 50's emitter still
+  // fires on the raw `down`, immediately, never waiting on or cancelled by
+  // what a tap resolves to.
   //
-  // One window serves both purposes by construction, rather than two
-  // separately-tuned numbers: a second qualifying tap arriving before
-  // TAP_RESOLVE_MS has elapsed, and close enough to the first, pre-empts
-  // the pending single and opens the panel instead; if none arrives, the
-  // same timer firing *is* what commits the first tap as a single and
-  // saves. **Mine** — the entry names 400ms for the save delay and 30px
-  // for the double's radius, but never a separate "how long may the second
-  // tap be late" figure, and there is no natural second number: the delay
-  // a single must tolerate and the window a double must arrive inside are
-  // the same wait looked at from either end of it.
+  // The double still needs telling apart from two unrelated singles, so the
+  // window and radius below survive entry 52 even though what they gate no
+  // longer includes a save: a second qualifying tap arriving within
+  // TAP_RESOLVE_MS of the first, and close enough to it, opens the panel;
+  // if none arrives, the first tap simply did what a tap already does
+  // elsewhere — play — and nothing further happens.
   //
-  // docs/todo.md entry 67: recognised on the second tap's *down* now, not
-  // its *up*, and the window runs from the first tap's down rather than its
+  // docs/todo.md entry 67: recognised on the second tap's *down*, not its
+  // *up*, and the window runs from the first tap's down rather than its
   // release — down-to-down, the way every platform's own double-tap
   // detector measures it, and the way a hand actually experiences "how fast
   // did I tap": a deliberate double with real (non-zero) contact durations
@@ -1250,73 +1244,51 @@ async function main(): Promise<void> {
   // separate taps start pairing by accident.
   const TAP_RESOLVE_MS = 400
   const DOUBLE_TAP_RADIUS_PX = 30
-  // "One save per 700ms, silently dropping the rest" (Decided) — a run of
-  // taps should not write a run of near-identical PNGs to the camera roll.
-  const SAVE_RATE_LIMIT_MS = 700
-  // docs/todo.md entry 72: the same constraint inverted. Entry 52's 700ms
-  // exists to catch accidental taps; in camera mode every tap is a
-  // deliberate shutter press, and the constraint is only there to stop a
-  // genuinely double-tapped shutter from writing the same frame twice.
+  let lastSaveAt = -Infinity
+  // docs/todo.md entry 72: camera mode's own rate limit. Every tap in here
+  // is a deliberate shutter press, not one entry 52 needed protecting from
+  // — this exists only to stop a genuinely double-tapped shutter from
+  // writing the same frame twice.
   const CAMERA_SAVE_RATE_LIMIT_MS = 300
 
-  // A list, not a single slot: "ten taps in five seconds save no more than
-  // seven frames" (Done-when) only holds if each tap not close enough to
-  // pair with another gets its *own* independent timer, rate-limited only
-  // by SAVE_RATE_LIMIT_MS — not silently dropped because a later, unrelated
-  // tap happened to land somewhere else on the screen first.
-  //
-  // Keyed by `pointerId` now as well as position: entry 67 starts the timer
-  // on `down`, before it is known whether the contact will end as a clean
-  // tap or a drag — `TAP_SLOP_PX` can no longer be checked at the moment of
-  // resolution, only later, at that same contact's `up`. `pointerId` is
-  // what lets that later `up` find its own pending entry back and cancel
-  // it, since by then the release position may be nowhere near where the
-  // double's own 30px radius match would still find it.
-  interface PendingTap {
+  // docs/todo.md entry 103: one remembered tap, not a list of pending
+  // ones — with no save left to schedule, there is nothing to commit and
+  // therefore no per-tap timer to hold, only a position and a down-time to
+  // compare the next qualifying down against. `pointerId` is kept so that
+  // *that same contact's* own later drag or cancel can forget it — a
+  // gesture that turns out not to have been a tap at all should not still
+  // be sitting here, eligible to pair with some later, unrelated tap into a
+  // spurious double.
+  interface LastTap {
     x: number
     y: number
+    t: number
     pointerId: number
-    timer: number
   }
-  const pendingTaps: PendingTap[] = []
-  let lastSaveAt = -Infinity
+  let lastTap: LastTap | null = null
 
   const resolveTapDown = (pointerId: number, clientX: number, clientY: number): void => {
-    const matchIndex = pendingTaps.findIndex(
-      (p) => Math.hypot(clientX - p.x, clientY - p.y) <= DOUBLE_TAP_RADIUS_PX,
-    )
-    if (matchIndex !== -1) {
-      // The match's own timer firing is what would have committed it as a
-      // single — arriving here at all means it has not fired yet, so being
-      // inside its own window is implicit and needs no separate check.
-      const [match] = pendingTaps.splice(matchIndex, 1)
-      window.clearTimeout(match.timer)
+    if (
+      lastTap !== null &&
+      performance.now() - lastTap.t <= TAP_RESOLVE_MS &&
+      Math.hypot(clientX - lastTap.x, clientY - lastTap.y) <= DOUBLE_TAP_RADIUS_PX
+    ) {
+      lastTap = null
       panel.open()
       return
     }
-    const entry: PendingTap = { x: clientX, y: clientY, pointerId, timer: 0 }
-    entry.timer = window.setTimeout(() => {
-      const i = pendingTaps.indexOf(entry)
-      if (i !== -1) pendingTaps.splice(i, 1)
-      if (performance.now() - lastSaveAt >= SAVE_RATE_LIMIT_MS) {
-        lastSaveAt = performance.now()
-        saveCapture(visualiser)
-      }
-    }, TAP_RESOLVE_MS)
-    pendingTaps.push(entry)
+    lastTap = { x: clientX, y: clientY, t: performance.now(), pointerId }
   }
 
-  /** Called from the matching contact's `up`, once it is known whether that
-   *  contact travelled past `TAP_SLOP_PX` — a drag cancels whatever pending
-   *  single its own `down` may have started, rather than let a save fire
-   *  for a gesture that turned out not to be a tap at all. A no-op if that
-   *  down already resolved as a double (its entry is gone by then) or was
-   *  never a pending tap to begin with (a chip, the HUD, the gate). */
+  /** Called from the matching contact's `up` once it is known whether that
+   *  contact travelled past `TAP_SLOP_PX`, and from a `cancel` — a drag or a
+   *  cancelled contact was never a tap, and forgetting it here is what keeps
+   *  it from later pairing with an unrelated tap into a double it never
+   *  earned. A no-op if that down already resolved as a double (`lastTap` is
+   *  gone by then), belongs to a different contact, or was never remembered
+   *  to begin with (a chip, the HUD, the gate). */
   const cancelPendingTap = (pointerId: number): void => {
-    const i = pendingTaps.findIndex((p) => p.pointerId === pointerId)
-    if (i === -1) return
-    window.clearTimeout(pendingTaps[i].timer)
-    pendingTaps.splice(i, 1)
+    if (lastTap !== null && lastTap.pointerId === pointerId) lastTap = null
   }
 
   /**
@@ -1459,11 +1431,12 @@ async function main(): Promise<void> {
         // own `down` never satisfies `nonChipDown === 2`.
         if (nonChipDown === 2) {
           // docs/todo.md entry 78: the first finger's own `down`, moments
-          // earlier, already started a pending single-tap resolution below
-          // (nonChipDown was 1 then) — left running, it fires a screenshot
-          // 400ms later regardless of the menu having opened in between.
-          // Opening the menu supersedes any tap still waiting to resolve.
-          for (const p of [...pendingTaps]) cancelPendingTap(p.pointerId)
+          // earlier, already remembered itself below (nonChipDown was 1
+          // then) as a candidate to pair into a double — left in place, it
+          // could still pair with some later, unrelated tap after the menu
+          // has opened. Opening the menu supersedes any tap still waiting
+          // to be paired.
+          lastTap = null
           panel.open()
           continue
         }
@@ -1476,21 +1449,22 @@ async function main(): Promise<void> {
       }
       // A cancelled contact (pointercancel, lostpointercapture) is never a
       // tap — only a clean release can be, exactly as before this entry —
-      // but its own `down` may already have started a pending single
-      // (docs/todo.md entry 67: resolution now begins at `down`, before it
-      // is knowable whether the contact will end cleanly). Cancel that
-      // pending entry unconditionally rather than let a save fire for a
-      // contact the platform itself gave up on — a no-op for a chip/HUD/gate
-      // contact, which never had one to begin with.
+      // but its own `down` may already have remembered itself as a
+      // candidate to pair into a double (docs/todo.md entry 67: resolution
+      // now begins at `down`, before it is knowable whether the contact
+      // will end cleanly). Forget it unconditionally rather than let a
+      // contact the platform itself gave up on still be eligible to pair
+      // with some later, unrelated tap — a no-op for a chip/HUD/gate
+      // contact, which never had a remembered tap to begin with.
       if (e.kind === 'cancel') {
         cancelPendingTap(e.id)
         continue
       }
       // The tap-versus-drag distinction entry 50 explicitly names as not
       // loosened: a release far from where the contact began is a
-      // completed drag, not a tap. Cancel whatever pending single its own
-      // `down` may have started, rather than let a save fire for a gesture
-      // that turned out not to be a tap at all.
+      // completed drag, not a tap. Forget whatever remembered tap its own
+      // `down` may have started, rather than let a gesture that turned out
+      // not to be a tap at all pair with a later one into a spurious double.
       if (Math.hypot(e.clientX - e.downClientX, e.clientY - e.downClientY) > TAP_SLOP_PX) {
         cancelPendingTap(e.id)
       }
