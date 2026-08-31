@@ -44,24 +44,42 @@ function truncateTitle(title: string, max = 24): string {
  * second entry 61).
  */
 function buildQueue(): { shipped: QueueRow[]; waiting: QueueRow[]; remaining: number } {
-  const text = readFileSync(resolve(rootDir, 'docs/todo.md'), 'utf8')
-  const lines = text.split('\n')
-  const entriesStart = lines.findIndex((l) => l.trim() === '## Entries')
-
+  // Both files, and this is not optional. `/ccc` moves an entry from
+  // docs/todo.md to docs/built.md once it has been read back against the
+  // code, so the *most recently shipped* entries are precisely the ones most
+  // likely to have left the queue already. Reading todo.md alone — which this
+  // did until build 353 — makes the gate's "last two built" drift steadily
+  // further into the past with every archival commit, and the drift is
+  // invisible because the panel still renders two plausible-looking rows.
+  //
+  // A missing built.md is not an error: it does not exist before the archive
+  // split, and this file has to keep building an old checkout.
   const entries: { n: number; title: string; status: string; build?: number }[] = []
-  for (let i = entriesStart + 1; i < lines.length; i++) {
-    const header = /^### (\d+)\.\s*(.+)$/.exec(lines[i])
-    if (!header) continue
-    const statusLine = lines[i + 1] ?? ''
-    const status = /^`status:\s*([a-z]+)/.exec(statusLine)?.[1]
-    if (!status) continue
-    const buildMatch = status === 'done' ? /build (\d+)/.exec(statusLine) : null
-    entries.push({
-      n: Number(header[1]),
-      title: header[2].trim(),
-      status,
-      build: buildMatch ? Number(buildMatch[1]) : undefined,
-    })
+  for (const file of ['docs/todo.md', 'docs/built.md']) {
+    let text: string
+    try {
+      text = readFileSync(resolve(rootDir, file), 'utf8')
+    } catch {
+      continue
+    }
+    const lines = text.split('\n')
+    const entriesStart = lines.findIndex((l) => l.trim() === '## Entries')
+    if (entriesStart === -1) continue
+
+    for (let i = entriesStart + 1; i < lines.length; i++) {
+      const header = /^### (\d+)\.\s*(.+)$/.exec(lines[i])
+      if (!header) continue
+      const statusLine = lines[i + 1] ?? ''
+      const status = /^`status:\s*([a-z]+)/.exec(statusLine)?.[1]
+      if (!status) continue
+      const buildMatch = status === 'done' ? /build (\d+)/.exec(statusLine) : null
+      entries.push({
+        n: Number(header[1]),
+        title: header[2].trim(),
+        status,
+        build: buildMatch ? Number(buildMatch[1]) : undefined,
+      })
+    }
   }
 
   // The two most recently shipped, oldest of the pair first — a short
