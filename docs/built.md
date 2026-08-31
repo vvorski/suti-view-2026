@@ -7156,3 +7156,1043 @@ that: nothing is written · url no (`?rgb` keeps its meaning) · capture no ·
 dependency no.
 
 **Verification note — `/ccc` at build 356.** The "nothing altered by having looked at the gate" clause holds structurally, which is the only way it could be trusted: the roll calls `shuffled()` directly and deliberately not through `panel.adopt()`, because adopt writes to `prefs` and saves. A `?rgb` link skips the roll outright rather than carving around one field.
+
+### 47. Day mode: a light ground, so the picture survives daylight
+`status: done` · added 2026-08-30 · shipped at build 194 · verified at build 356
+
+**Build note** — `uDay` added to `composite.frag.glsl`, applied after the
+exposure clamp exactly as Decided: `col = 1.0 - (1.0 - col) * (1.0 -
+ground)` with `ground = 0.6 * uDay * (1.0 - uCameraMix)`. At `uDay = 0`
+this is `col = 1.0 - (1.0-col)*1.0 = col`, an algebraic identity, not an
+approximation — "pixel-identical to today" when off is a property of the
+formula, not something that needs separate tuning to hold.
+
+`scene.ts` needed the same kind of surgery entry 58 just did for colour: a
+new `dayTarget`/`dayCurrent` pair, ticked toward each other at a fixed
+rate (`dt / DAY_FADE_S`) once per frame in `render()`, rather than an
+`Envelope`-style exponential tau — "about 400ms" reads as a duration the
+toggle takes, not a time constant it asymptotically approaches, so a
+linear ramp is the more literal reading. Both are seeded from a new
+`VisualiserOptions.day` at construction (mirroring `geoAlpha`/`atmAlpha`'s
+own pattern) rather than always starting at 0, so a session that left day
+mode on finds it already on rather than fading in over 400ms on load.
+`day: boolean` added to `Prefs` (the safe half of the stored-shape rule,
+per Hard Stops) and threaded through `resolvePrefs()`'s fallback and
+return, same shape as `gravity`.
+
+The chip needed one more wire than `gravity`'s own precedent: `gravity` is
+read straight from `prefs` by `main.ts` every frame, but day mode is a
+`scene.ts` render setting with its own fade, so it needs an explicit call
+on toggle. Added `onDayMode` to `hud.ts`'s `Handlers` interface (`main.ts`
+wires it to `visualiser.setDayMode`), following the same
+callback-on-user-action shape `onColour`/`onAlpha` already use rather than
+inventing a new one. The sun glyph is eight `<line>` rays (four cardinal,
+four diagonal) around a filled `<circle>`, in the same `ICONS`
+`fill="currentColor"` vocabulary as every other chip.
+
+Verified live via `scene.ts` loaded directly over Vite's dev server: five
+settled frames at day off gave a reference pixel sum; pumping frames for
+700ms after `setDayMode(true)` (long enough for the 400ms fade to
+complete) gave a sum about 30% higher, confirming a real, substantial
+lightening; toggling back off and pumping another 700ms returned to the
+**exact same pixel sum** as the reference, not merely a close one —
+concrete proof the round trip loses nothing. Separately verified the
+entry's own named risk directly: with a fake `CameraSource` and
+`setPassthrough(source, 1)` (full passthrough), day on and day off
+rendered **bit-identical** sums, confirming `(1 - uCameraMix)` genuinely
+retires the ground once the real room takes over, rather than trusting
+the algebra alone. Confirmed via `hud-narrow.html` at 320×568 and 360×640
+that the arc now reports 7 chips including "Day", with nothing escaping
+either viewport. `pnpm build`, `pnpm lint`, `pnpm probe:composite` (the
+existing blend-math regression guard), `pnpm probe:motion-bias`, and
+`pnpm probe:ripples` all pass unchanged. Not verified: actual daylight
+legibility on a real phone, which the entry's own Verify text says only
+that can answer.
+
+**Do** — add a day mode that puts the picture on a **light ground** instead of
+a black one, on a chip, off by default.
+**Why** — the picture is hard to read in daylight, which is where a phone
+propped up in a room actually lives.
+
+**Decided**
+- **One change at the composite, not thirteen in the shaders** → all thirteen
+  are built to *add light onto black*: `screen`, `add` and the ripple wakes all
+  assume a dark ground, and re-authoring them is a different project. Whatever
+  day mode is, it happens in `composite.frag.glsl` after everything else has
+  drawn. **Mine**, and it is the constraint the two decisions below are chosen
+  within.
+- **Revised 2026-08-30, against nine screenshots: a curve cannot do this.**
+  The original decision here was a gamma lift with a 0.06 black-level lift.
+  Looking at what this app actually draws, that was wrong, and wrong for a
+  reason worth keeping: **these pictures are mostly pure black.** Thin bright
+  rings on an empty field. And `pow(0.0, 1.0/gamma)` is **0.0** — gamma raises
+  midtones, and a frame that is four-fifths true black has almost no midtones
+  to raise. The curve would have brightened the rings slightly and left the
+  field exactly as dark, which is not what "much lighter" means and would have
+  read as the feature not working.
+- So the ground itself has to change → **screen the picture over a light
+  ground**, `1 - (1 - col) * (1 - ground)`, with `ground` rising with
+  `uDay`. Black becomes the ground colour, white stays white, and everything
+  between lifts smoothly with **no clipping possible** — which a gain cannot
+  promise. Starting at a ground of **0.6** at full day. **Mine**, and it costs
+  nothing new: it is `blendWith`'s mode 2, already in this file and already
+  the app's default merge mode.
+- **Not an inversion**, which is the other way to get a light picture →
+  `mix(col, 1.0 - col, uDay)` gives dark ink on white, and paper is
+  undeniably the most legible thing in sunlight. It is rejected because
+  inversion **changes every hue relationship in the app**: a warm orange ring
+  becomes teal, the palette the shuffle rolls stops meaning what it meant, and
+  every screenshot in the roll belongs to a different instrument. Screening
+  over a ground lifts the picture without moving a single hue. **Mine**, and
+  it is the difference between a lighter version of this app and a different
+  app.
+- One of the thirteen already proves it works → among those screenshots, the
+  striped view fills its whole frame with a pale ground and stays perfectly
+  legible. The visual language survives a light field; it has simply never
+  been offered one.
+- **A new uniform, because `uExposure` is already taken** → and this was
+  checked: `scene.ts:589` writes `uExposure` every frame from the camera's
+  light envelope (`0.85 + envelope * 0.3`) and `:547` resets it to 1 when the
+  camera is down. A day mode written into that uniform would be silently
+  overwritten on every frame the room is visible. So `uDay`, applied *after*
+  the exposure line at `composite.frag.glsl:153`.
+- `uDay` is **0..1 rather than a boolean** → identity at 0, so the whole
+  feature costs nothing when off, which is the same shape `uCameraMix` and
+  `uExposure` already use in that file. It also leaves room for the toggle to
+  fade rather than snap, and for a future light sensor to drive it, without
+  the uniform changing.
+- The chip, and where it comes from → a boolean gets a chip rather than a
+  band, which is the precedent `gravity` set at entry 30 and its comment
+  states outright. **Entry 45 frees a slot by removing the autopilot chip**,
+  so the arc's count comes back to where it is today. Build 45 first and the
+  arc re-spaces once rather than twice.
+- Stored as `day: boolean`, defaulting **off** → adding a field is the safe
+  half of the stored-shape rule, so no Hard Stop. Off by default for the same
+  reason `gravity` is: it changes what an untouched picture looks like, and a
+  returning visitor should find what they left.
+- **Entry 34 has since shipped (build 146), and that matters to this entry's
+  premise** → it was the reason to wait: two merge modes forced the frame to
+  black and the shuffle could land on them. That is fixed, and the picture is
+  *still* "all very dark" in every screenshot. So the darkness left over is the
+  app's own aesthetic rather than a defect, which is what makes this a feature
+  rather than a workaround, and it removes the only ordering constraint that
+  was in front of it.
+- Scope is **the picture only** → not the HUD, not the gate. Both have their
+  own contrast decisions already, and entry 28 fixed the gate's specifically
+  against a measured 2.33:1. A global brightness that also touched them would
+  reopen a settled question in a place nobody is complaining about.
+
+- **The ground is neutral grey, `vec3(0.6)`** → not warm, not tinted, and no
+  colour management: the same space everything else in that file is written
+  in. **Mine**, and it is deliberate that it is boring — entry 53 tints this
+  exact value from the hour of day, and a ground that already had an opinion
+  about warmth would fight it. This entry supplies the number; 53 supplies the
+  colour.
+- **The ground scales by `(1.0 - uCameraMix)`** → this is the gap most likely
+  to be missed, because it only shows up with passthrough raised. Screening a
+  0.6 ground under a camera frame washes the room to milk, and the room does
+  not need it: `uExposure` already answers the actual light in it
+  (`scene.ts:589`). The ground exists to stand in for daylight when there is no
+  daylight in frame, so it should retire as the real room arrives. **Mine.**
+- **The toggle fades over 400ms** → `uDay` is 0..1 precisely so it can, and a
+  chip that snaps the whole frame from black to grey reads as a glitch rather
+  than a setting. 400ms is long enough to be a transition and short enough to
+  feel like a button. **Mine**, and entry 53's override crossfade should use
+  this same constant rather than inventing a second one.
+- **The chip is a sun**, id `day`, label "Day" → a filled disc with eight rays,
+  in the same 24×24 `viewBox` with `fill="currentColor"` that every entry in
+  `ICONS` uses, sized by `.hud-icon` at 19px like the rest. **Mine**: the icon
+  set is already a visual vocabulary — three wedges for geo, stacked waves for
+  atm, concentric arcs for the ear — and a sun is the one shape that needs no
+  explaining next to them. Not a moon: the chip is named for what turning it
+  **on** does.
+
+**Lands in**
+- `src/shaders/composite.frag.glsl:65, 153` — the uniform and the screen, after
+  the exposure clamp.
+- `src/scene.ts:339` — the uniform's declaration, beside `uExposure`.
+- `src/prefs.ts` — `day: boolean`, defaulting false.
+- `src/hud.ts:274`, `ICONS` — the `day` sun glyph.
+- `src/hud.ts` — the chip, beside `gravChip`.
+
+**Done when** — with day mode on, the black field is visibly a light field and
+the whole frame reads outdoors in sun; the rings and their colours are the same
+colours, only sitting on light instead of dark; nothing clips. Toggling the
+chip takes about 400ms rather than snapping. **With passthrough raised, the
+room looks the same as it does with day mode off** — that is the
+`(1 - uCameraMix)` term working, and it is the one failure this can ship with
+unnoticed. With it off, the frame is pixel-identical to today. The frame-time
+figure is unchanged in every one of those states.
+**Verify** — outdoors, on the phone, in actual daylight, which is the only
+place the question exists — a desktop monitor cannot answer it and neither can
+a screenshot. Check it over both a bright view and a dark one, since a curve
+that rescues the dark one may blow out the bright one. On-screen check at
+320×568 and 360×640 for the chip. `pnpm build`, `pnpm lint`.
+**Hard stops** — prefs **no**: one boolean added, which is the safe half of the
+rule · url no · capture no · dependency no.
+
+**Verification note — `/ccc` at build 356.** The idea holds and the mechanism was replaced: entry 68 (build 229) superseded this entry's screen-onto-a-light-ground model with ink laid on paper in HSL, because screening lifts bright content nearly as hard as dark and measured 13-16% of the tonal range at ~90% desaturation — the "light and anaemic" report. `uDay` and the sampled clock this entry introduced are still what drive it.
+### 48. Every view answers a touch, through the stream it already listens to
+`status: done` · added 2026-08-30 · shipped at build 168 · verified at build 356
+
+**Build note** — `src/engine/touch.ts` is new (distinct from `touches.ts`,
+entry 49's per-id field): a pure envelope, `updateTouchStream(state, dt,
+began, anyDown, maxSpeed) -> {transient, level, roughness}`, fed by
+main.ts's own filtered read of `touchField.sample()`/`events()` rather than
+reaching into the field itself — this module knows nothing about screen
+zones or `.hud-chip`, same discipline as `touches.ts`. `pnpm probe:touch-
+stream` (new) checks the spike-and-decay, the level floor snapping to 0 the
+instant nothing is down, roughness tracking and saturating speed, and the
+`Math.max` injection arithmetic as a standalone fact, since the real call
+site is scene.ts and out of this module's own reach to test directly.
+
+Three constants had no value named in the entry and are **Mine**, tuned by
+feel rather than measured, same footing as `version.ts`'s gamma/lift in
+entry 47: `TRANSIENT_DECAY_S = 0.25` (the entry says "about 250ms", so this
+one is closer to given than guessed), `LEVEL_FLOOR = 0.35` (below the
+loudest music gets it, so a resting finger reads as *added* liveliness
+rather than as loud as the room), `ROUGHNESS_SPEED_SCALE = 0.3` (a
+full-screen swipe in roughly a third of a second saturates roughness).
+
+The injection sits exactly where Decided says — immediately before
+`scene.ts`'s existing `uniforms.uX.value = params.X` copy, now `uniforms.uX
+.value = Math.max(params.X, stream.X)` for level, transient and roughness
+only (the three the entry names; low/mid/high/tilt/breakdown/surge/novelty
+are untouched, since nothing in the entry asks a touch to fake a spectral
+band or a section boundary). **`params` itself is never written** — only
+read — which is what keeps the numeric readout honest: `main.ts` passes the
+same `params` object to `visualiser.render()` and then to `panel.update()`
+right after, and the entry's own text says the readout has to keep
+reporting the mapping's own output. Confirmed by inspection (no `params.x =`
+assignment appears anywhere in the diff) rather than by a runtime probe,
+since the readout itself needs a live HUD to observe.
+
+Exclusions applied in `main.ts`'s `dispatchTouches()`, not duplicated in
+`engine/touch.ts`: the capture band (a contact's `zone` is fixed at contact
+start, so one that began there stays excluded even if it later drags
+elsewhere — the same fixed-zone semantics entry 49 already gives every
+contact) and any `.hud-chip` contact, both per Decided. **One exclusion
+beyond the entry's own text, and Mine**: also inert while `.hud-scrim.open`.
+A HUD dial's own drag already `stopPropagation()`s before reaching this
+field, but a tap on the scrim itself (closing the panel) would not, and the
+picture is hidden behind the panel at that exact moment regardless — an
+unstated gap I found by tracing what the field would see, not something the
+entry called out, so it gets stated here rather than silently added.
+
+Verified: `pnpm build`, `pnpm lint`, `pnpm probe:touch-stream`, and every
+prior probe (`probe`, `probe:composite` in particular) unchanged and
+passing. Also verified the actual shader-visible effect directly, without
+the Start gate this harness cannot pass: loaded `scene.ts` over Vite's dev
+server, called `createVisualiser()` on an offscreen canvas at pure
+atmosphere (`geoAlpha: 0`, view `field`) — the same construction main.ts
+does before the gate resolves, since nothing about the renderer needs the
+microphone — and rendered the same low-resting `VisualParams` twice: once
+with `setTouchStream(false, false, 0)`, once with `setTouchStream(true,
+true, 5)`. `readPixels()` summed 5,541,338 with no touch and 6,261,361
+with one active — a real, substantial brightness rise from the injected
+level/transient/roughness, on the exact view family (atmospheric) this
+entry exists for. The same run also passed the identical `VisualParams`
+object into `render()` while the stream was active and confirmed every
+field (`transient`, `level`, `roughness`) came back exactly as passed in —
+concrete proof, not just an inspection of the diff, that the numeric
+readout's honesty requirement holds. Not verified: two hands and real
+music together, and the middle/top-third dispatch paths specifically,
+since those need a live pointer through the actual Start-gated app rather
+than a direct call into `scene.ts`.
+
+**Do** — a touch injects an event into the feature stream just before it
+reaches the uniforms: a transient on contact, a sustained level while the
+finger is down, and drag speed into roughness. Every view reacts, in its own
+idiom, with **no shader changed**.
+**Why** — asked for, and the app is already a machine for turning events into
+pictures. A touch should be an event.
+
+**Decided**
+- The measurement this rests on → the audio inputs each shader actually reads,
+  counted across all thirteen rather than estimated:
+
+  | views | audio inputs read |
+  |---|---|
+  | chorus, tide | 3 |
+  | circles, drift, grid, shards | 4 |
+  | aurora, spectrogram | 8 |
+  | caustics, fringe | 10 |
+  | cells | 11 |
+  | field, lattice | 12 |
+
+  The split is exact and it is the entry: **the six geometric views read 3–4
+  inputs and all six read `uRipples`; the seven atmospheric views read 8–12 and
+  none of them reads `uRipples`.** So the two halves of the app want opposite
+  mechanisms, and each already has the one it wants.
+- Which makes this and entry 33 **complementary, not overlapping** → entry 33
+  gives the geometric views a *positioned* ripple, which is the only way to
+  reach a view that reads four numbers. This entry gives the atmospheric views
+  an *event*, which is the only way to reach a view that reads twelve and has
+  no notion of a location. Together they are "every viz reacts". Neither alone
+  is, and neither is a substitute for the other.
+- One seam, and it is already there → `scene.ts:678-682` copies `params` into
+  the uniforms inside `render(params, spectrum)`. Injecting immediately before
+  that copy reaches all thirteen views at once. **No shader edit, no new
+  uniform, no per-view design.** **Mine**, and it is the reason this is one
+  entry rather than seven.
+- **Inject by `max`, never by adding** → `transient = max(transient,
+  touch.transient)`. A touch must not be able to *reduce* the music's own
+  response, and a sum would push past 1 into whatever each shader does at
+  saturation. **Mine.**
+- What a touch actually pushes → **a transient spike on contact** decaying over
+  about 250ms, **a level floor held while the finger is down**, and **drag
+  speed into `roughness`**. The transient is the hit; the held level is what
+  makes a resting finger keep the picture awake; the drag term is what makes
+  moving feel different from pressing. **Mine**, and "sensitive" is the reason
+  there is no threshold and no cooldown anywhere in it: every contact does
+  something, immediately.
+- **Diagnostics must stay honest** → the injection goes in at the render
+  boundary, *after* the mapping has produced its numbers. The numeric readout
+  reports the mapping's own output, so it keeps saying what the microphone
+  heard rather than what a finger faked. **Mine**, and it matters more than it
+  sounds: the readout is the instrument every audio entry in this queue is
+  debugged with, and a touch that could forge a transient in it would poison
+  entries 32, 37, 38 and 39 at once.
+- **The capture band is excluded** → a tap low on the screen saves a frame, and
+  the pulse fires on `pointerdown` while the save happens on `pointerup`. So
+  without this exclusion every screenshot would contain the flash the finger
+  just made. A screenshot should record the picture you were looking at, not
+  the picture your finger caused. **Mine**, and it is the kind of thing found
+  by someone looking at their photos a week later rather than by a test.
+- Everywhere else, every zone reacts → including the middle third that opens
+  the panel and the top third that entry 41 leaves inert. **Mine**: the point
+  of the feature is that the surface is alive under a finger, and a dead
+  region would be exactly the discoverability hole entry 41 already argues
+  about. Opening the panel *and* pulsing the picture is not a conflict; it is
+  two things a tap does.
+- The honest limitation → an atmospheric view will answer *that* it was
+  touched, not *where*. Four of the seven read enough inputs that a positioned
+  version is possible later, but it needs a new uniform and seven shader edits,
+  which is a separate entry and not this one.
+- What this inherits, and it is worth knowing before judging the result → a
+  view that reads three inputs will answer a touch about as thinly as it
+  answers music. `chorus` and `tide` will barely move. That is entry 32's
+  finding arriving from another direction, and the fix for it is entry 38 and
+  the per-view work, not more touch.
+
+**Lands in**
+- `src/engine/touch.ts` — new. The envelope: contact, hold, release, drag
+  speed.
+- `src/scene.ts:124, 678-682` — the injection, immediately before the copy.
+- `src/main.ts` — the recogniser feeds it; the capture band's zone does not.
+
+**Done when** — in every one of the thirteen views, touching the screen
+produces a visible change within a frame or two, and holding keeps the picture
+livelier than it is with no finger. Dragging fast looks different from
+dragging slowly. The numeric readout's audio figures do not move when the
+screen is touched in silence. A screenshot taken from the bottom band contains
+no touch flash.
+**Verify** — the phone, in silence first, because that is the only condition in
+which a touch's own contribution is separable from the music's. Then with music
+playing, to confirm a touch reads as *added to* the music rather than as a
+glitch in it. Walk all thirteen views. `views-probe.html?play` from entry 37
+once that exists, since it is the only way to drive every view at once.
+`pnpm build`, `pnpm lint`, and `pnpm probe` unchanged — the mapping is
+untouched by design, so if its numbers move, the injection is in the wrong
+place.
+**Hard stops** — prefs no · url no · capture no, and it protects the existing
+one · dependency no.
+
+### 49. A touch field: one owner of every finger on the picture
+`status: done` · added 2026-08-30 · shipped at build 167 · verified at build 356
+
+**Build note** — `src/engine/touches.ts` is new, exactly as Decided, but with
+one deliberate departure from the Lands-in text's placement: it is pure
+(no DOM, no clock of its own — `down`/`move`/`up`/`cancel` all take
+pre-extracted numbers and a caller-supplied `now`), because `engine/`'s own
+directory comment states that rule for everything in it ("nothing here
+touches the DOM, uses a global, or reads a clock") and the entry's own
+Decided list never argues for lifting it. `main.ts` binds the actual
+`document.addEventListener`s and calls into the field, same as it already
+owned every pointer listener before this entry. This also means the module
+runs and is checked under plain Node — `scripts/probe-touches.ts` (new,
+`pnpm probe:touches`) exercises multi-id tracking, the four-slot cap, a
+freed slot's reuse, zone/onChip persisting across a move, the event queue
+draining exactly once, and the uv conversion's geometry — none of which
+needed a browser.
+
+`toShaderUv` moved out of main.ts into the field, also kept pure (takes a
+plain `{left,top,width,height}` rather than reading
+`canvas.getBoundingClientRect()` itself) — "coordinates convert once", per
+Decided. `zone` is a `string` on `Touch`/`TouchFieldEvent` rather than a
+literal union, since the field cannot import main.ts's own zone type
+without knowing about screen thirds; main.ts still declares and owns the
+real `'capture' | 'panel' | 'none'` type at its own call sites.
+
+`main.ts`'s recognizer now drives the field instead of the scalars entry 41
+used (`downX`/`downY`/`downZone`/`emitting`/`holdTimer` are gone). The
+hold-timer became a per-frame check (`downFor >= HOLD_S`) rather than a
+`setTimeout`, since a sampled field is naturally polled once per rendered
+frame rather than armed once — indistinguishable to a finger at 60fps, and
+it also means a HUD that closes mid-hold can let a hold resume, where the
+old timer-armed version couldn't; noted rather than hidden, since it is a
+behavioural difference from before this entry even though a minor one. The
+panel-zone tap's gate-exclusion changed from `gate.contains(e.target)` to
+`!gate.hidden`, since the field's event queue carries clientY/clientX but
+not the original DOM target — same defensive purpose (comment already
+called it "defensive rather than load-bearing"), different mechanism.
+
+`scene.ts`'s single `emitter`/`touchActive`/`touchX`/`touchY` became four
+fixed `{id, state}` slots reconciled each frame against whatever
+`setTouches()` last reported: a touch already holding a slot keeps it; a
+new id claims the first free slot; a slot whose id has dropped out of the
+current set keeps ticking through its own afterlife (unchanged from
+entry 33) rather than being freed immediately, freeing only once its own
+`life` reaches 0. Verified this exact reconciliation loop against the real
+`emitter.ts`/`ripples.ts` with a throwaway script: a 3s hold reaches full
+charge and a 4.0s afterlife, the slot frees only after that afterlife
+actually expires, four concurrent ids each claim their own slot, a fifth
+is refused while all four are busy, and a freed slot is available to a
+later id.
+
+Verified the DOM-to-field wiring itself — not just the pure module — by
+loading `engine/touches.ts` directly over Vite's dev server and dispatching
+real `PointerEvent`s with two distinct `pointerId`s at `document`, mirroring
+main.ts's exact listener code: both ids tracked with independent uv
+positions, moving one left the other's position untouched, and lifting one
+left the other present in `sample()`. This sidesteps the Start-gated
+harness limitation hit repeatedly this session (`waitForStart()` needs a
+microphone grant this environment cannot give) for everything the field
+itself does, and was the strongest verification available short of a real
+touchscreen and, per the entry's own Verify text, two actual people — no
+substitute exists in this harness for either, so "the phone, with two
+hands, and then with two people" was not performed. Frame-time impact is
+reasoned rather than measured: the render pipeline itself is unchanged (no
+new shader, no new texture, no new draw call — `MAX_RIPPLES`'s 12-slot
+uniform upload is exactly as before), and the only new per-frame cost is
+iterating at most four map entries and four fixed slots, so no
+viewport-dependent regression is expected at 320×568 or 360×640.
+`pnpm build`, `pnpm lint`, and every existing probe (`probe`, `probe:shake`,
+`probe:slow`, `probe:haptics`, `probe:emitter`, `probe:composite`,
+`probe:nudge`) all still pass unchanged.
+
+**Do** — put every pointer on the picture behind one module that tracks them
+by id, up to four at once, and hand its per-frame state to the four things
+that want it. Nothing else reads a `PointerEvent`.
+**Why** — people reach for this thing. Four separate features now want to know
+where the fingers are, and the app can currently see one finger.
+
+**Decided**
+- The gap is exact and already measurable → `ripples.ts` **reserves four slots
+  for touch** (entry 33), and `emitter.ts` models **one** emitter, and
+  `main.ts` tracks **one** contact — `downX`, `downY`, `downZone`, `emitting`,
+  `holdTimer` are all scalars. **The buffer downstream is built for four
+  fingers and the input layer upstream can only produce one.** A second finger
+  today either does nothing or takes the first one's state. That mismatch is
+  the entry; everything else follows from closing it.
+- Four, and it is not an arbitrary number → it is the reserved band in
+  `ripples.ts`. Matching it means the framework can never overflow the buffer
+  and the buffer is never starved by an input layer that cannot fill it.
+- **The same argument entry 41 already won, one level up** → that entry deletes
+  two independent tap recognisers coordinated by event phase. Entries 33, 46
+  and 48 each need pointer facts, and each would grow its own listeners: three
+  recognisers again, in three files, six months after the last three were
+  merged. Doing this before they land is the difference between a framework and
+  a second cleanup. **Mine**, and it is the whole reason to build it now rather
+  than when it hurts.
+- The shape → **a field that is sampled, not a stream of callbacks.** Per
+  frame it answers: which pointers are down, where each is in shader uv, how
+  long it has been down, its charge, its velocity, and a small queue of
+  discrete things that happened since the last frame. **Mine**: shaders need a
+  value per frame, the render loop is the only clock that matters here, and a
+  callback-driven design would have four consumers each keeping their own copy
+  of state that the frame then has to reconcile.
+- Who consumes it, and none of them keeps its own copy →
+  - **entry 41**'s dispatch reads the event queue and the zone each contact
+    started in.
+  - **entry 33**'s emitter becomes one per pointer. `emitter.ts` already says
+    it is "pure state and a pure update function… no DOM, no clock of its
+    own", so this is instantiation rather than a rewrite — the module was
+    written for this without knowing it.
+  - **entry 48**'s injection reads aggregates: contact and drag speed as the
+    **max** across pointers, never the sum. Two fingers should not double the
+    response into saturation; they should each be felt.
+  - **entry 46**'s powder reads positions and velocities directly.
+- Coordinates convert once → `main.ts` already carries `toShaderUv`, with a
+  comment explaining that it converts against the canvas's client rect rather
+  than the window because the drawing buffer can be a different aspect under
+  the resolution ladder, and that y is flipped. That function moves into the
+  field and no consumer does the conversion again.
+- `pointercancel` is not an edge case here → a phone being handed between
+  people generates cancels and lost captures constantly, and that is the
+  literal scenario this entry exists for. Every pointer is removed on
+  `pointercancel` and on `lostpointercapture` as well as on `pointerup`, and a
+  pointer that has not been seen for a while is dropped, so a lost finger can
+  never hold a ripple slot open forever.
+- **Do not stall the build agent for this** → entry 33 is mid-build as a
+  single emitter. Let it land as it is. `emitter.ts`'s purity means
+  generalising it to four is a change to who calls it, not to what it does, and
+  a half-finished entry rewritten mid-flight is how both end up wrong. Order:
+  **41, then 33 as built, then this, then 48 and 46 as consumers.**
+- What this is *not* → no new gesture, no new control, nothing on screen that
+  was not there before. It is capacity. The visible change is that a second
+  finger works, and that two people can touch the picture at once, which is the
+  thing actually being asked for.
+
+**Lands in**
+- `src/engine/touches.ts` — new. The field, the per-id tracking, the uv
+  conversion, the event queue.
+- `src/main.ts` — the listeners become four lines that feed the field; every
+  scalar named above goes.
+- `src/engine/emitter.ts` — instantiated per pointer; the module itself is
+  unchanged.
+- `src/scene.ts` — the per-frame sample is passed in alongside the params.
+
+**Done when** — two fingers on the picture produce two emitters at two places
+at once, and lifting one leaves the other running. Four work; a fifth is
+ignored rather than displacing one. Handing the phone to someone mid-drag
+leaves nothing stuck on screen. A single finger behaves exactly as it does
+after entry 33, with no visible difference. No file outside `touches.ts`
+listens for a pointer event on the picture.
+**Verify** — the phone, with two hands, and then with two people, because the
+second is the case the entry is named for and it is not the same test. Check
+the frame time with four emitters live at 320×568 and 360×640. Then hand the
+phone over mid-drag and watch for an emitter that never dies — the failure
+this can actually ship with. `pnpm build`, `pnpm lint`.
+**Hard stops** — prefs no · url no · capture no · dependency no.
+
+**Verification note — `/ccc` at build 356, with one clause that cannot be literally true.** Done-when says *"no file outside `touches.ts` listens for a pointer event on the picture"*. `main.ts:1186-1209` does listen — and must, because `touches.ts` is a pure-state module with no DOM by design, so something has to feed it. Those four listeners are an adapter that forwards straight into `touchField`, not a second owner: nothing else in the codebase keeps finger state. The guarantee the entry was actually reaching for — one owner of every finger — holds; its wording describes an architecture the house pattern forbids.
+### 50. Touch is generous: a tap plays, everywhere
+`status: done` · added 2026-08-30 · shipped at build 184 (built together with entry 57) · verified at build 356
+
+**Build note** — the hold/drag threshold that used to gate the geometric
+emitter is gone from `main.ts`'s `dispatchTouches()`: the inclusion test
+for the emitter is now `!t.onChip && !hudOpen`, with no zone and no
+`downFor`/drag-distance check at all, so every one of the three zones —
+top, panel, capture — qualifies from the instant a contact begins, exactly
+per Decided. `HOLD_S` and the stale comment explaining the old
+threshold-reconciliation between entries 33 and 41 are both deleted rather
+than left as dead weight. `CHARGE_FLOOR` moved 0.4 → 0.6 in `emitter.ts`,
+with its comment rewritten to describe what a *tap* is worth rather than
+a threshold that no longer exists. Drag speed now boosts a spawned ring's
+birth level on top of charge (`SPEED_LEVEL_SCALE`, **Mine**, no value
+named in the entry), reading the same velocity `engine/touch.ts` already
+computes for entry 48's atmospheric stream — "both read the velocity
+entry 49's field already computes," per Decided.
+
+"Rapid taps stack rather than replace, up to the four slots entry 49
+establishes" **did not ship as literally written** — entry 57 landed in
+the queue after this one and explicitly absorbs this exact clause,
+replacing "four slots keyed by pointer" with "a pool of eight, keyed by
+contact." Building them together (that entry's own instruction, to avoid
+this one satisfying 57's Done-when by coincidence) means the stacking
+behaviour shipped through 57's newer, more correct mechanism — see that
+entry's build note for why pointer-keyed slots were wrong in the first
+place (a finger that taps, lifts and taps again can reuse the same
+pointer id on real hardware, and the old slots would have silently
+treated that as one contact continuing rather than two).
+
+Verified live, via `engine/touches.ts` and `engine/emitter.ts` loaded
+directly over Vite's dev server (bypassing the Start-gated harness
+limitation, same technique as entries 48/49): synthetic taps in all three
+zones (`none`/`panel`/`capture`) each satisfy the emitter's inclusion
+test with zone recorded but never checked; `createVisualiser()` renders a
+frame with two simultaneous contacts and `gl.getError()` returns 0.
+`pnpm build`, `pnpm lint`, and `pnpm probe:emitter` (extended with two new
+checks for the speed boost) all pass. See entry 57's build note for the
+shared pool-eviction and ripple-slot verification, which covers both
+entries' Done-when together since they landed in one commit.
+
+**Do** — make every contact leave something at the point it happened, with no
+threshold in front of it. This entry is the taste direction for entries 33, 41,
+48 and 49, and it overturns three specific decisions in them.
+**Why** — Victor, 2026-08-30: "make it very touch sensitive in a playful way",
+after watching people reach for the phone. Playful means the response arrives
+before you have finished deciding to ask for it.
+
+**Decided**
+- **A tap emits.** → overturns entry 33's "hold or drag emits; a plain tap
+  still opens the HUD". That call was right when a tap anywhere opened the
+  panel, because the two would have fought over the whole screen. Entry 41
+  has since given the panel **only the middle third**, so in the other two
+  thirds a tap has nothing to fight and the threshold is protecting nothing.
+  A gesture that requires you to *wait* is the least playful gesture there is.
+- **In the middle third a tap does both** → the panel opens *and* an emitter
+  lands. **Mine.** They do not compete: the panel is a HUD over the picture,
+  the emitter is in the picture, and a tap that opens a menu while the thing
+  underneath answers you is more alive than one that does only the
+  administrative half.
+- **The top third becomes the play zone**, and this sharpens rather than
+  reverses Victor's earlier call → he chose "nothing" for a tap up there over
+  "opens the menu", and that stands: nothing *administrative* happens. Which
+  is exactly what makes it the one region where touching the picture is the
+  only thing touching the picture does. Entry 41's discoverability worry is
+  answered by this entry rather than by the menu — the third is not dead, it
+  is the purest of the three.
+- **The emitter fires in the capture band too, and appears in the saved
+  frame** → **Mine**, and it is a deliberate split from entry 48's rule.
+  That entry excludes the *flash* from the capture band so a screenshot does
+  not contain the white pulse. That still holds, and the distinction is the
+  reason: **the flash is UI and must never be in the picture; the emitter is
+  picture and should be.** A frame with the ring your own finger made is a
+  better thing to have saved than one without it.
+- **A tap is instantly worth it** → `emitter.ts`'s `CHARGE_FLOOR` of 0.4 was
+  chosen as "the briefest hold that clears the gesture threshold". With no
+  threshold left, the floor is now what a *tap* is worth, and it should be
+  higher — **0.6**, with `CHARGE_TIME` unchanged at 2.5s so a hold still
+  climbs to something more. **Mine**: the first touch anyone gives this thing
+  is a tap, and it is the only chance to make them touch it twice.
+- **Rapid taps stack rather than replace** → up to the four slots entry 49
+  establishes, so drumming on the screen with one finger builds up rather than
+  restarting. **Mine**, and it is the difference between a toy and a control:
+  a control debounces, a toy accumulates.
+- **A fling throws further** → drag speed scales the emitted ring's birth
+  level, so a fast swipe leaves a brighter, wider trail than a slow drag over
+  the same path. Entry 48 already feeds drag speed into `roughness` for the
+  atmospheric views; this is the geometric half of the same idea, and both
+  read the velocity entry 49's field already computes.
+- **What is deliberately not loosened** → the shake ladder's thresholds, and
+  the tap-versus-drag distinction inside entry 41's dispatch. Sensitivity here
+  means *the picture answers everything*; it does not mean the app should start
+  guessing which administrative action you wanted. A screenshot taken by
+  accident is still a bad outcome and entry 41 already names that cost.
+- The honest risk → **more accidental captures**, because the bottom third now
+  rewards touching it and then also photographs it. Entry 41 already accepted
+  that cost and added the camera glyph so it is at least legible. If it becomes
+  annoying in use, the answer is to move capture off a bare tap, not to make
+  the picture less responsive — the responsiveness is the feature and the
+  capture is the thing that can move.
+
+**Lands in**
+- `src/engine/emitter.ts` — `CHARGE_FLOOR` 0.4 → 0.6, and the comment that
+  explains it in terms of a threshold that no longer exists.
+- `src/main.ts` — the dispatch: a tap in any zone spawns an emitter, in
+  addition to whatever else that zone does.
+- Entry 41's zone handling — the middle third stops being exclusive.
+- Entry 49's field — drag velocity into the emitted level.
+
+**Done when** — a single tap anywhere on the picture leaves a visible ring at
+the point it landed, in every geometric view, with no wait. Tapping in the
+middle third opens the panel and leaves a ring. Drumming four times quickly
+leaves four rings, not one. A fast swipe is visibly brighter than a slow one
+along the same path. A screenshot taken from the bottom band contains the ring
+but not the white flash.
+**Verify** — the phone, and specifically **someone else's** hands: the entry
+exists because of how other people reach for it, and the test of "playful" is
+whether a person who has never seen it touches it a second time without being
+asked. `pnpm build`, `pnpm lint`.
+**Hard stops** — prefs no · url no · capture no, and the emitter-in-frame
+question is a picture decision rather than a new capture · dependency no.
+
+### 51. The disc says "play with me"
+`status: done` · added 2026-08-30 · shipped at build 188 · verified at build 356
+
+**Build note** — the label carries its own line breaks as literal `\n`
+characters (three in `index.html`'s markup for "play with me", two in
+`permission-gate.ts`'s error-path relabel for "once more"), read by a new
+`white-space: pre-line` on `#start` rather than `<br>` markup — this keeps
+both labels plain-string assignments/literals, so `permission-gate.ts`'s
+existing `textContent = '...'` pattern needed no restructuring, only a
+new string. `#start` also gained `display: flex; flex-direction: column;
+align-items: center; justify-content: center;`, since nothing centred
+multi-line text vertically before (a single line's default button
+rendering was centred enough on its own). `text-indent: 0.14em` is
+removed entirely rather than retuned, per Decided — it existed only to
+cancel wide tracking's trailing phantom space, and at the new 0.02em that
+space is negligible.
+
+Verified via two side-by-side iframes at 320×568 and 360×640: "play with
+me" renders as three centred lowercase lines with even margins, computed
+style confirms `textTransform: none`, `fontWeight: 600`,
+`letterSpacing: 0.304px` (≈0.02em at the 320px-width font size),
+`display: flex`, `whiteSpace: pre-line` — every Decided value landed as
+declared. Forced the disabled/error state by hand (`textContent =
+'once\nmore'; disabled = true`) and confirmed it renders as two centred
+lines, legibly the same dimmed treatment as the primary label. `pnpm
+build`, `pnpm lint`, and `pnpm probe:fullscreen` (named explicitly in
+Verify, since nothing here is keyed on the label) all pass. Not verified:
+the phone-at-arm's-length "does this read as friendly" judgment the
+entry's own Verify text says only a real device can answer.
+
+**Do** — change the Start button's label to "play with me", set in three
+centred lines, and take the shout out of it.
+**Why** — the toy wants to be played with, and the one word on the screen
+currently issues an instruction.
+
+**Decided**
+- **Lowercase**, dropping `text-transform: uppercase` → Victor typed it
+  lowercase and "PLAY WITH ME" is the opposite of friendly: it is the same
+  sentence delivered as an order. **Mine**, and it is most of the "friendly"
+  in this entry — the words alone do not get there while the CSS is still
+  shouting them.
+- **Three lines, one word each** → a circle is widest across its middle, so a
+  short stack fits the shape where a single long line does not: "play with me"
+  set on one line inside a 115px disc at 320px is not going to happen at any
+  weight worth reading. Three centred lines at `line-height: 1.15`. **Mine.**
+- **Tracking 0.14em → 0.02em**, and `text-indent: 0.14em` goes with it → that
+  indent exists only to cancel the phantom space wide tracking adds after the
+  last glyph, so it is not a separate decision, it is the same one. Wide
+  tracking on lowercase reads as a luxury logotype, which is a different kind
+  of unfriendly from shouting but still not warm.
+- **Weight 700 → 600** → 700 was carrying a five-letter word alone. Three
+  short lowercase words at 700 is a slab.
+- **The disc does not grow, unless 320px says otherwise** → its diameter is
+  `min(36vw, min(20vh, 8rem))`, which is about 115px at the narrowest target.
+  Three lines at the current `clamp(0.95rem, 4vw, 1.15rem)` should sit inside
+  that with room; if they do not, the disc grows through that existing
+  expression rather than gaining a new rule. **The 320×568 check is the one
+  that decides this entry**, and it is the same width entry 43's title check
+  turns on.
+- **`id="start"` stays, and so does every internal use of the word** →
+  `main.ts:58`, `main.ts:517` and `permission-gate.ts` all address it by id, so
+  renaming the concept would touch four files and a dozen comments to change
+  nothing anybody sees.
+- **Correction, 2026-08-30: the label is not a single string.** This entry
+  first claimed the gate "only ever sets `disabled` on it, never its text",
+  and said so as a checked fact. It is wrong. `permission-gate.ts`'s error
+  path sets **`els.button.textContent = 'Try again'`**, which replaces the
+  label outright — so after a failed start the disc says "Try again" and every
+  type decision above has to hold for that string too.
+- Which needs its own answer, and the friendly one is not "Try again" →
+  **"once more"**, in the same three-line lowercase setting. **Mine.** "Try
+  again" is the voice of a form that rejected you; a toy that failed to start
+  should sound like it is still willing. Two words also fit the disc more
+  comfortably than three, so nothing about the fitting changes.
+- The error text itself is untouched → `#error` carries the actual reason
+  (`explain(err)`), and that is where a real explanation belongs. The disc's
+  job is the invitation, in both states.
+- The disabled state needs no separate copy → `#start:disabled` dims it and
+  stops the animation while permission is being asked for. A greyed "play with
+  me" reads correctly as *not yet*, where a greyed "Start" read as *broken*.
+- **One honest observation, not a blocker** → the gate's own comment records
+  that the two paragraphs it used to carry are gone at Victor's instruction,
+  and that one of them "carried the promise the page makes about the
+  microphone". So after this change the first thing a stranger meets is an
+  invitation to play, and the second is a browser asking for their microphone,
+  with no sentence anywhere saying why. The friendlier the invitation, the
+  larger that gap gets. Worth a decision at some point; not this entry's to
+  make.
+- **Build with or after entry 43** → that entry rescales the gate's type, adds
+  the band and reworks the disc's pulse, and both touch `#start` and the same
+  block of `index.html`. Doing them together means judging the screen once.
+
+**Lands in**
+- `index.html:437` — the label.
+- `index.html:213-222` — `#start`'s type: case, tracking, indent, weight,
+  line-height.
+
+**Done when** — the disc reads "play with me" in three centred lowercase lines
+at 320×568 and 360×640, with even margins inside the circle and no line
+touching the edge. It still reads as the one thing on the screen to press.
+Disabled, during the permission prompt, it is legibly the same words dimmed.
+**Verify** — the browser at both widths, since this is a fitting problem inside
+a fixed circle, and then the phone at arm's length, which is where "friendly"
+is actually judged. `pnpm probe:fullscreen` must still pass — it drives the
+gate, and this entry is the one that would break it if anything were keyed on
+the label. `pnpm build`, `pnpm lint`.
+**Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 52. Single tap saves a frame, double tap opens the menu
+`status: done` · added 2026-08-30 · shipped at build 186 · verified at build 356
+
+**Build note** — `zone()`, `CAPTURE_BAND_FRACTION` and `safeBottomInset()`
+are deleted from `main.ts`, per Decided. In their place, `resolveTap(x, y)`
+maintains a **list** of pending single-taps rather than one slot: each
+`up` event that survives the existing exclusions (chip, HUD-open, gate
+still showing, and the unloosened tap-vs-drag distance check) either
+matches an existing pending tap within 30px — cancelling that one's timer
+and opening the panel — or starts its own independent 280ms timer that, if
+nothing arrives to pair with it, commits it as a single and saves (subject
+to the 700ms rate limit).
+
+**A real bug found and fixed before it shipped, not after**: the first
+version used one global `pendingTap` slot. A second, spatially-unrelated
+tap arriving inside another tap's still-pending window unconditionally
+cancelled that first tap's timer — silently dropping its save rather than
+letting each resolve independently. Caught by testing exactly the
+scenario the entry's own Done-when names ("ten taps in five seconds save
+no more than seven frames" only holds if unmatched taps don't cancel each
+other): two taps landing 200px apart, both isolated, produced only one
+`saveCapture` call instead of two. Fixed with the list-based design above,
+re-verified: the same two-far-apart-taps case now produces two independent
+saves, and a close pair still produces exactly one `panel.open()` and no
+save.
+
+**One number is inferred rather than quoted**: the entry states 280ms for
+the save delay and 30px for the double's radius, but never a separate
+"how long may a second tap be late" figure. There isn't a second number to
+give — one timer serves both roles by construction: a second qualifying
+tap arriving before it fires pre-empts it into a double, and the timer
+itself firing *is* what commits a single. Stated as **Mine** in the code's
+own comment rather than left implicit.
+
+The touch stream's own capture-band exclusion (entry 48) is retired along
+with the zone it depended on, rather than ported to some other rule —
+**Mine**, since entry 52's own text never mentions the touch stream. The
+alternative (excluding "the tap that is about to save") is not knowable
+until 280ms after the fact, which the render loop cannot wait for; letting
+the stream's contribution land in a saved frame matches the precedent
+entry 50 already set for the geometric ring, on the same "it is picture,
+not UI" reasoning.
+
+Verified: `resolveTap`'s exact logic (copied faithfully, not paraphrased)
+tested standalone in a browser tab, with real timers, for four cases: an
+isolated tap saves; a close, quick pair opens the panel and does not save;
+two far-apart-but-quick taps each independently save (the bug above,
+confirmed fixed); and ten scattered taps over five seconds all eventually
+saved when driven by real timers — which turned out to demonstrate a
+harness limitation rather than the rate limit: this remote-controlled
+tab's backgrounded `setTimeout` calls clamp to roughly 1000ms regardless
+of the delay requested, coincidentally always exceeding the 700ms rate
+limit and never exercising it. Re-verified the rate limit's own arithmetic
+directly with injected timestamps instead (no real timers): ten taps at a
+genuine 500ms cadence over five seconds correctly cap at five saves, comfortably
+inside "no more than seven." `pnpm build`, `pnpm lint`, and `pnpm
+probe:fullscreen` (named explicitly in Verify) all pass. Not verified:
+anything requiring a real double-tap gesture from an actual finger, or the
+frame-time/visual confirmation of the ring-under-finger claim in
+Done-when, both of which need a phone this harness does not have.
+
+**Do** — retire entry 41's three zones. A single tap anywhere saves a frame; a
+double tap anywhere opens the panel.
+**Why** — asked for. One rule for the whole screen instead of three regions
+with no visible boundaries.
+
+**Decided**
+- **Double tap was tried before and could not work. It can now, and the reason
+  is precisely that the roles swap** → recovered from the history this entry
+  otherwise would have repeated. `gestures.ts`, before entry 27 deleted it,
+  carried this: *"This used to be double-tap/double-click, and it did not
+  actually work. The tap-to-open listener has zero delay by design — the panel
+  exists specifically to open on a tap with no wait — so the first tap of an
+  intended double tap already opened the panel before a second tap could ever
+  be compared against it."* There is a commit named **"Fix:
+  double-tap-to-randomise could never actually fire"**. The failure was never
+  double-tap; it was that the **panel** sat on the zero-delay tap and
+  pre-empted everything. Moving the panel *onto* the double removes the thing
+  that broke it.
+- Which names the price exactly → **whatever sits on the single tap must
+  tolerate a delay**, because a single tap is only knowable once the
+  double-tap window has passed. The panel could not tolerate that, and that is
+  why it failed. **A save can**: nobody perceives a screenshot as late.
+  **280ms.** So the capture happens 280ms after the tap, and the frame saved is
+  the frame at that moment.
+- **Play is not arbitrated, and this is the load-bearing decision** → entry
+  50's emitter fires on `pointerdown`, immediately, before any of this
+  resolves. It is not waiting on the window, it is not cancelled by a second
+  tap, and it does not care which of the two actions the tap turns out to be.
+  Otherwise every touch on the toy is 280ms late, which would undo entry 50
+  entirely. **Mine.**
+- **The collision worth your attention, and the thing to overturn if I have
+  read it wrong** → entry 50, written an hour ago, says *"drumming four times
+  quickly leaves four rings"* and *"if it becomes annoying in use, the answer
+  is to move capture off a bare tap"*. This moves capture **onto** a bare tap,
+  everywhere. Two consequences follow and neither is avoidable by cleverness:
+  **every play-tap saves a photo**, and **four rapid taps are now two double
+  taps**, so drumming opens and closes the panel instead of leaving four
+  rings.
+- How that is resolved, rather than pretended away → **the double requires the
+  second tap within 30px of the first**, not just within the window. Drumming
+  to play moves across the picture; a deliberate double tap does not. It makes
+  the two separable most of the time, and *most of the time* is the honest
+  claim — a person tapping twice in one spot to play will get the panel.
+  **Mine**, and if it is wrong in the hand, the fix is to put capture on
+  something that is not a bare tap, exactly as entry 50 predicted.
+- The rate limit on saving → **one save per 700ms**, silently dropping the
+  rest. **Mine.** Without it, a run of taps writes a run of near-identical
+  PNGs, and the thing that makes a toy unpleasant is not a missing photo, it
+  is a camera roll that has to be cleaned up afterwards.
+- **Controls are excluded from both** → the fullscreen chip (entry 42, now in
+  the centre of the screen), the HUD's own chips, and the gate's controls. A
+  tap on a control is that control's tap and neither saves nor opens. This is
+  the same `closest()` test entry 46 uses for the powder trigger, and after
+  entry 49 it belongs to the touch field so there is one copy of it.
+- **Entry 41 is superseded, not deleted** → its refactor is the reason this is
+  small: one recogniser owning the picture's taps is exactly what a temporal
+  rule needs, and it is already being built. What goes is the *zone* half —
+  the thirds, `inCaptureBand()`, `CAPTURE_BAND_FRACTION`, and Victor's "top
+  third does nothing" call, which stops having anything to be about. Mark 41
+  when this lands so its Done-when does not contradict the code.
+- The camera glyph survives and matters more → it was added in entry 41 because
+  a tap-band capture is silent. Now that a capture can happen anywhere, it is
+  the only thing that says one did. Entry 48's rule stands: the glyph is UI and
+  stays out of the saved frame; entry 50's ring is picture and stays in.
+
+**Lands in**
+- `src/main.ts` — the recogniser: the 280ms window, the 30px radius, the
+  700ms save limit; `inCaptureBand()` and `CAPTURE_BAND_FRACTION` go.
+- `src/hud.ts` — the panel opens on the double rather than on a zone.
+- `docs/todo.md` — entry 41's zone half marked superseded.
+
+**Done when** — a single tap anywhere saves one frame about a quarter-second
+later, with the camera glyph confirming it and the glyph absent from the PNG;
+a double tap anywhere opens the panel and saves nothing; a tap on any chip does
+neither; ten taps in five seconds save no more than seven frames; and in every
+case the ring from entry 50 appears under the finger with no perceptible delay.
+**Verify** — the phone, and specifically try to play with it for a minute
+without meaning to take a photo, because that is the failure this entry can
+ship with and no probe will find it. `pnpm probe:fullscreen` must still pass.
+`pnpm build`, `pnpm lint`.
+**Hard stops** — prefs no · url no · capture **already licensed** (entry 25),
+though this makes it far easier to trigger, which is the cost named above ·
+dependency no.
+
+**Verification note — `/ccc` at build 356. Superseded in substance.** Every clause here about saving is gone: entry 103 (build 339) removed tap-to-save outright, after Victor reported that *"when a touch becomes an emitter it shouldn't take a photo"*. With it went `pendingTaps`, the per-contact timers, `cancelPendingTap`, the drag-cancels-the-save rule and `SAVE_RATE_LIMIT_MS` — all of which existed solely to serve this entry. The probe's own save assertions went too, so probe and code agree. What survives: a tap on a chip still does neither thing, and entry 50's ring still appears under the finger with no delay. Worth recording that this entry was not wrong when written — it is what made camera mode invisible once entry 87 shipped, because arming changed a tap from *saves in 400ms* to *saves now*, which is no observable difference at all.
+### 53. The picture follows the sky
+`status: done` · added 2026-08-30 · shipped at build 196 · verified at build 356
+
+**Build note** — `src/sky.ts` is new and pure: four anchors on a 24-hour
+circle, wrapped by shifting any hour before the first anchor forward by
+24 before the segment search, and smoothstepped between neighbours so the
+derivative is zero at every anchor. `scripts/probe-sky.ts` (new, `pnpm
+probe:sky`) checks all four anchors land exactly, that no per-minute step
+anywhere in a full 24-hour sweep (midnight included) exceeds what a
+genuine discontinuity would blow past by orders of magnitude, and that
+smoothstep's own signature (slower near an anchor than at a segment's
+midpoint) holds.
+
+**One check in the entry's own Verify text doesn't actually hold, and the
+probe says so rather than papering over it**: "loading at 06:25 and again
+at 06:35 gives visibly different pictures" is false as stated, because
+06:30 is itself an anchor, and "no corner anywhere" (Decided) requires a
+*zero* derivative exactly there — the flattest point on the entire curve
+is the one point this example picks. `probe-sky.ts` confirms the
+06:25/06:35 delta is under 0.001 (not "visibly different") and tests the
+entry's actual intent instead at the true steepest point, the midpoint of
+the 06:30→13:00 segment (~09:45), where a ten-minute window genuinely is
+visible. Both facts are asserted, not just the convenient one.
+
+**A second conflict, resolved and stated**: entry 47 anticipated this
+entry reusing its own 400ms chip-fade constant for "entry 53's own
+override crossfade." Entry 53's own Decided text instead states "crossfades
+over 1.2s" explicitly. Implemented as 1.2s — the later, more specific,
+explicitly-authored number — with the conflict recorded in
+`DAY_OVERRIDE_FADE_S`'s own comment rather than silently picking whichever
+was more convenient.
+
+**A judgment call on `uSky.x` vs `uDay`, since "one uniform, two numbers...
+rather than adding a second one" reads as ambiguous between two designs**:
+implemented with `uDay` (unchanged name, still driving the ground's
+*amount*) receiving the override-blended effective value every frame, and
+the new `uSky` vec2 carrying the clock's own *raw* daylight (ignoring any
+override) alongside warmth — read in the shader only for `.y` (the warmth
+tint), with `.x` present for the readout so it can honestly show "it's
+2am, and the override is pinning it bright" as two separate facts rather
+than one blended number. The alternative — retiring `uDay` and reading
+`uSky.x` directly wherever it was — would have meant the readout could no
+longer distinguish "the clock says bright" from "the override says
+bright," which seemed like the wrong thing to lose for a numeral-storage
+convenience.
+
+Warmth tints the ground colour specifically (`vec3(0.6 + warmth*0.06, 0.6,
+0.6 - warmth*0.06)`), not the whole finished picture — matching entry 47's
+own anticipation ("This entry supplies the number; 53 supplies the
+colour"). `views-probe.html`'s time scrub (Lands-in) was **not built** —
+verification below used a `Date` monkey-patch directly against `scene.ts`
+instead, which answers the same question (does the wiring respond
+correctly to an arbitrary hour) without a permanent UI feature; flagged
+here as an unaddressed Lands-in item rather than silently dropped.
+
+Verified live via `scene.ts` loaded directly over Vite's dev server, with
+`window.Date` monkey-patched to report fixed hours (avoiding this
+backgrounded tab's real-timer throttling, hit again mid-verification —
+20 real `setTimeout`-paced render() calls exceeded a 45s tool timeout
+before completing, so the check was restructured around `uDay`/`uSky`'s
+construction-time seed, which needs no elapsed time at all): a visualiser
+constructed at 2am read back `{daylight: 0, warmth: -0.35}` — the anchor
+exactly — with a pixel sum of 9,468,264; one constructed at 13:00 read
+`{daylight: 1, warmth: -0.1}` — also exact — at 26,352,996, nearly 3×
+brighter. A third constructed at 2am **with the override on** rendered
+26,353,892 — matching the midday sum, not the night one — while its own
+`stats().sky` correctly reported `daylight: 0` (the clock's honest
+answer) alongside `override: 1` (what's actually driving the picture).
+`hud-narrow.html` confirms 7 chips including "Outdoor" (relabelled from
+entry 47's "Day") at both 320×568 and 360×640 with nothing escaping.
+`pnpm build`, `pnpm lint`, `pnpm probe:sky`, `pnpm probe:composite`,
+`pnpm probe:motion-bias`, and `pnpm probe:ripples` all pass. Not
+verified: the phone at two genuinely different hours, which the entry's
+own Verify text says only that can answer.
+
+**Do** — drive the picture's brightness and colour temperature from the local
+clock, on a continuous curve: cool and dark at night, warm at dawn, bright at
+midday, warmest at dusk, with no step anywhere including across midnight.
+**Why** — asked for. A thing left running in a room should belong to the hour
+it is in.
+
+**Decided**
+- **The local clock only. No geolocation, and this is not a small point** →
+  "day night cycle" invites a sunrise/sunset lookup, which means a location
+  permission on a page whose one promise is that nothing leaves the device.
+  A permission prompt for a lighting effect is disproportionate on its own; on
+  this page it is also the wrong kind of ask. `new Date()` needs nothing and is
+  already used once, at `main.ts:492`, for the screenshot's filename.
+- The honest cost of that → **the cycle is stylised, not astronomical.** In
+  Reykjavík in June the app will call 2am night while it is broad daylight
+  outside. That is the correct trade for a toy, and it should be written at the
+  anchor table so nobody later "fixes" it with a geolocation call.
+- **One uniform, two numbers** → `uSky = vec2(daylight, warmth)`, daylight 0..1
+  and warmth −1..1, both at their neutral values costing nothing. **Mine**, over
+  two separate uniforms: they are always computed together from one clock and
+  always applied together in one place, and splitting them is how one gets
+  updated without the other.
+- The anchors, on a 24-hour circle → **02:00 daylight 0.0 warmth −0.35;
+  06:30 daylight 0.35 warmth +0.50; 13:00 daylight 1.0 warmth −0.10;
+  19:30 daylight 0.40 warmth +0.60.** Warm at both ends and coolest in the
+  small hours, which is what a sky actually does. Numbers to start from and
+  settle by eye.
+- **Smoothstep between adjacent anchors, not linear** → the derivative is zero
+  at each anchor, so the change eases in and out instead of turning a corner.
+  Linear interpolation between four points is a triangle wave, and a triangle
+  wave is exactly the "sharp jumps" this entry exists to avoid — they would be
+  at the anchors rather than between them, but they would be there.
+- Wrapping is the part that breaks if it is not thought about → the last anchor
+  interpolates *forward into* the first across midnight, on a circle. A table
+  indexed 0..23 with no wrap gives a discontinuity at exactly the hour nobody
+  is testing at.
+- **It rides entry 47's tone curve rather than adding a second one** → that
+  entry establishes `uDay` and the gamma-plus-black-lift applied after
+  `uExposure`. `daylight` *is* that control, now driven by a clock instead of
+  only by a chip. Warmth is a small tint at the same site, **±6% on red and
+  blue** — a bias, not a filter, because at filter strength the visualiser's
+  own palette stops being the thing you are looking at.
+- Which changes what entry 47's chip means → it stops being "day mode on/off"
+  and becomes **an override that pins daylight to 1**, for reading the screen
+  outdoors at any hour. Its stored `day` boolean is unchanged, so no Prefs
+  work; only the label and the wiring. **Build 47 first**, or the two will each
+  write `uDay` and the last one to run will win.
+- Toggling that override **crossfades over 1.2s** → the clock's own movement is
+  imperceptible by construction, so the only way to produce a jump is a chip,
+  and the chip is the one place easing is needed. **Mine.**
+- **It is deliberately unnoticeable in the moment** → over a minute the change
+  is invisible; over an evening it is obvious. That is what "like the sky"
+  means and it should be stated plainly, because the natural bug report is
+  "nothing is happening" and the natural wrong fix is to speed it up. Sampling
+  once a second is ample; per-frame would be waste.
+- **Testable without waiting for dusk** → the clock is a pure function, so the
+  harness from entry 37 gets a time scrub and the numeric readout prints the
+  current pair. **No new URL parameter**, deliberately: the URL shape is a Hard
+  Stop and a debugging convenience is not worth spending it, when a dev page
+  and a readout answer the same question.
+- Interaction with the camera's own light response → `uExposure` is already
+  driven from the room's brightness when passthrough is up (`scene.ts:589`).
+  The two are complementary and must not be merged: one is what the room is
+  doing now, the other is what the hour is. They multiply, and both are gentle
+  enough that they can.
+
+**Lands in**
+- `src/sky.ts` — new. The anchor table, the wrapped smoothstep, one exported
+  pure function of a `Date`.
+- `src/scene.ts:339` — `uSky` beside `uExposure`, sampled once a second.
+- `src/shaders/composite.frag.glsl:153` — the tint, at the tone curve entry 47
+  puts there.
+- `src/hud.ts` — entry 47's chip becomes the override.
+- `views-probe.html` — the time scrub.
+
+**Done when** — the picture at 3am is visibly darker and cooler than at 1pm on
+the same phone with the same settings; loading at 06:25 and again at 06:35
+gives visibly different pictures with nothing in between that could be called a
+step; scrubbing the harness through 24 hours shows no corner anywhere,
+midnight included; and the override chip pins it bright at any hour, fading
+rather than snapping.
+**Verify** — the harness for the whole 24 hours, because that is the only way
+to see the curve at once, and then the phone at two genuinely different hours,
+because the harness cannot tell you whether the night end is too dark to enjoy.
+`pnpm build`, `pnpm lint`.
+**Hard stops** — prefs no (entry 47's `day` boolean is reused, no field added)
+· url no (deliberately: no scrub parameter) · capture no · dependency no, and
+**no geolocation** — see the first decision.
