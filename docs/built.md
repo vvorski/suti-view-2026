@@ -3183,3 +3183,698 @@ directly: no text-animation library** — forty lines against tens of kilobytes,
 in a project whose only runtime dependency is `three`.
 
 **Archival note — `/ccc` at build 354.** Not built and never will be: entry 99 absorbed it and shipped at build 325, and 99 is itself verified and archived here. Moved rather than left in the live queue, because a superseded entry sitting among the unverified ones points at an entry that is no longer beside it, and `/ccc`'s own stopping condition counts what remains in `todo.md`. The skill did not cover this case; it does now.
+
+### 81. The director waits for the bar
+`status: done` · added 2026-08-30 · started 2026-08-30 · build 279 · verified at build 355
+
+**Do** — when the tempo is confident, hold the director's decision until the
+next bar and fire it there. When it is not, fire immediately, exactly as now.
+
+**Why** — `docs/what-resolume-knew-about-layers.md`, lesson 1. A change landing
+0.4s after a downbeat reads as an accident; the same change *on* the downbeat
+reads as intent. This is the largest difference in feel between kiyo and a VJ
+tool, and entry 75 already shipped everything needed to close it.
+
+**Decided**
+- **Nothing about the director's own timing changes.** `SUSPEND` 30,
+  `COLOUR_HOLD` 30, `VIEW_HOLD` 30, `BOUNDARY` 0.45 and `BOUNDARY_RAMP` 30 all
+  stay. What changes is their meaning: they become **earliest**, not exact. A
+  decision that becomes due at 30.0s fires at the next bar line after it.
+- **Bounded wait, or it stops being a director.** At most **one bar** — beyond
+  that, fire anyway. A tempo that drifts or drops mid-wait must never strand a
+  decision. **Mine.**
+- **`beatConfidence` is the switch, and there is no threshold to tune** →
+  quantise when confidence is high, blend to immediate as it falls. Entry 75
+  made confidence continuous specifically so consumers would not each invent a
+  cutoff.
+- **A bar is four beats**, counted from the tracker's own phase. Nothing in the
+  app detects downbeats, so bar zero is simply where counting started — which
+  is honest: an unmarked bar line still groups changes into fours, and that is
+  what reads as musical. **Mine**, and it explicitly does not claim to know
+  where "one" is.
+- **Only the director quantises.** A shake, a tap and a chip are a person's own
+  timing and must stay instant — entry 45's suspend already encodes that a
+  deliberate choice outranks the autopilot.
+
+**Lands in** `src/director.ts` — a pending-decision slot and the bar test;
+`src/main.ts` — passing `beatPhase`/`beatConfidence` in, both already on
+`VisualParams`.
+**Done when** — with a steady four-on-the-floor, view and colour changes land
+on a beat rather than between beats; with no lock, timing is unchanged from
+today; and no decision is ever delayed more than one bar.
+**Verify** — the phone against a track with an obvious beat. `probe-slow.ts`
+can assert the bounded wait, which is the part that can strand something.
+**Hard stops** — prefs no · url no · capture no · dependency no.
+
+**Build note** — implemented as decided. `Director` gains a bar clock
+(`lastBeatPhase`/`beatsIntoBar`, incrementing on each beat-phase wrap —
+phase decreasing rather than advancing — and marking a bar boundary on
+every fourth one) and a single pending-decision slot (`pending`/
+`pendingWaited`). The three hold/dead-band timers (`COLOUR_HOLD`,
+`VIEW_HOLD`, `VIEW_STABLE`, `BOUNDARY`/`BOUNDARY_RAMP`) are untouched, per
+Decided — they still decide *whether* something is due; what changed is
+only what happens once it is.
+
+Once due, a decision fires immediately in two cases — `beatConfidence`
+low enough that `MAX_BAR_WAIT_S * beatConfidence` (the wait cap) collapses
+to ~0, or a bar boundary already landed on the exact frame it became due,
+where holding would only cost a full extra bar for nothing — and is
+otherwise stashed as `pending` and re-checked every subsequent frame: it
+fires the instant a bar boundary arrives, or once `pendingWaited` reaches
+the cap, whichever comes first. The cap is recomputed fresh from the
+*current* `beatConfidence` every single check, not fixed when the wait
+began — Decided's own explicit worry ("a tempo that drifts or drops
+mid-wait must never strand a decision") is what this buys: a lock lost
+partway through a wait collapses the cap toward 0 and releases the
+decision within a frame rather than leaving it stranded until some bar
+that may never arrive.
+
+`MAX_BAR_WAIT_S = 2.4` (**Mine**) is a fixed duration rather than a true
+bar length at whatever tempo is actually playing, since only
+`beatPhase`/`beatConfidence` reach this file — not `bpm` — per Lands-in's
+own scope. Chosen against a nominal ~100bpm four-beat bar; "at most one
+bar" is the ceiling this never crosses, not a promise to hit every
+possible tempo's own bar length exactly, and is disclosed as an
+approximation rather than presented as exact. `suspend()` now also clears
+any pending decision — a decision the autopilot was holding for the next
+bar is exactly as unwelcome mid-manual-edit as one that would have fired
+on the spot, and "never fight the user" reads as covering both.
+
+One small addition beyond Lands-in's literal text: `status()` gained a
+`waitingForBar: boolean` field, in keeping with this file's own stated
+philosophy for that method ("reporting the timers... stops 'restrained'
+being indistinguishable from 'not running'"). **Not** wired into the HUD's
+own printed readout — Lands-in scopes this entry to `director.ts` and
+`main.ts` only, and extending `hud.ts`'s formatting was not asked for. **Mine**.
+
+`scripts/probe-slow.ts` needed the two new arguments threaded through its
+own existing `director.update()` call (using `params.beatPhase`/
+`params.beatConfidence`, already present on every mapping since entry 75)
+to keep building at all, and gained a new, fully isolated section driving
+a fresh `Director` directly rather than through the full slow-analysis
+pipeline: confidence 0 fires on the spot; confidence 1 with a bar already
+arriving on the due frame also fires on the spot; confidence 1 with no bar
+yet holds (`status().waitingForBar` confirmed true) and releases exactly
+when the bar arrives; a confidence collapse mid-wait releases the held
+decision within a frame rather than stranding it; and `suspend()` discards
+a held decision outright, confirmed not to reappear afterward. All ten
+pass. The existing five-section arrangement test (unmodified) still passes
+its own two checks — the "drop"/"build" sections are genuinely rhythmic
+(bpm 125) and may exercise real bar-quantisation incidentally, but only
+the new isolated section proves each specific claim in Decided directly
+rather than by coincidence of what a synthetic track happens to do.
+
+Verified: `pnpm build`/`pnpm lint` clean; `pnpm probe`, `pnpm probe:tap`
+and `pnpm probe:fullscreen` all unaffected (0 failures / all pass) — this
+entry touches neither file. `pnpm probe:slow` is the entry's own named
+Verify method for this file (no browser check listed), and all of its
+checks pass, old and new.
+
+Not independently verified: the entry's own phone-and-obvious-beat Verify
+line — "does it visibly land on the beat" is not something an offline
+probe can answer, the same limit every beat-adjacent entry since 75 has
+disclosed.
+
+### 82. The layers move apart
+`status: done` · added 2026-08-30 · build 284 · verified at build 355
+
+**Build note (Mine)** — `uAtmTumbleScale` (0.55) scales both the rotation and
+the drift of `uTumble` for a second, atmosphere-only `uv` in
+`composite.frag.glsl`; geometry keeps sampling the original `uv` unscaled, so
+"1.0" for geometry is just the absence of a second uniform rather than a
+literal `1.0` multiplier anywhere. The shared `uTumble.w` overscan is left
+untouched — it's already sized for the geometry's full-strength motion via
+`overscanFor` in `scene.ts`, and since the atmosphere's scale is always ≤ 1
+that's always the larger of the two, so no second overscan computation was
+needed, matching the entry's own reasoning.
+
+The RGB-slip offset (entry 76) is now applied around each layer's own uv
+(`uv` for geometry, `uvAtm` for atmosphere) rather than a single shared one —
+not called out in Lands-in, but leaving the atmosphere's slip anchored to the
+geometry's uv would have reintroduced exactly the "moves as one plane"
+problem this entry exists to fix, just for the slip effect instead of the
+tumble. Small judgment call, disclosed here.
+
+`pnpm build`, `pnpm lint`, and `pnpm probe:composite` (the only probe that
+touches this shader, in its blend/colour tail — the tumble uv itself isn't
+part of that reimplementation) all pass. The bit-identical-at-scale-1 claim in
+Done-when is a trig identity (scale 1 makes `uvAtm` collapse to exactly `uv`'s
+own formula) rather than something I additionally probed numerically. Visible
+parallax on a moving phone is the entry's own stated Verify and it says so
+itself — "Depth is not measurable offline" — so that part is unverified by me
+this session; the change is otherwise a straightforward, reviewed read of the
+existing tumble math.
+
+**Do** — give each layer its own multiplier on the tumble, so the geometry and
+the atmosphere do not move as one rigid sheet.
+
+**Why** — `docs/what-resolume-knew-about-layers.md`, lesson 2: the best ratio
+of effect to cost in the whole note. Resolume transforms every layer
+independently; kiyo transforms the composite.
+
+**Decided**
+- **The cause is one `uv`.** `composite.frag.glsl` computes a single tumbled
+  `uv` and samples both layers with it, so the picture moves as one plane.
+  Giving the geometric layer a larger multiplier and the atmosphere a smaller
+  one makes the near thing move more than the far thing, which is parallax and
+  is the whole trick.
+- **Geometry 1.0, atmosphere 0.55.** **Mine** — the geometry is line art and
+  reads as the near plane; the atmosphere is a field and reads as behind it.
+  Not a new uniform each: one `uAtmTumbleScale`, since geometry keeping 1.0
+  means today's tumble is unchanged for it.
+- **Overscan follows the larger of the two**, not the average — `overscanFor`
+  already exists and is already shared for exactly this reason (its comment
+  says so). Cutting overscan to the smaller layer's need would expose the
+  bigger one's corners.
+- **No new state, no new plumbing** — one extra `uv` computation in a shader
+  that already computes one, and one uniform.
+
+**Lands in** `src/shaders/composite.frag.glsl:100-127`; `src/scene.ts` — the
+uniform.
+**Done when** — moving the phone separates the layers visibly; neither layer
+shows an exposed corner at full tumble; and at `uAtmTumbleScale = 1` the frame
+is bit-identical to today.
+**Verify** — the phone. Depth is not measurable offline.
+**Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 83. Solo a layer without losing your settings
+`status: done` · added 2026-08-30 · build 287 · verified at build 355
+
+**Build note (Mine)** — `mkChip` in `src/hud.ts` gained an optional fifth
+`solo` argument, wired only for the `geo`/`atm`/`cam` chips: a `pointerdown`
+starts a 350ms timer (`SOLO_PRESS_MS`, not derived, my own figure), and if it
+fires before `pointerup`/`pointercancel`/`pointerleave` arrives, the press
+becomes a solo instead of the ordinary tap that switches the edited group.
+`fired` is the flag that decides which behaviour a given press turned out to
+be, checked by whichever release-shaped event happens to arrive — this is
+what makes a genuinely-lost pointer (`pointercancel`, or `pointerleave` if a
+finger slides off the small chip mid-hold) restore correctly rather than only
+a clean `pointerup`, matching Done-when's "a release that never arrives
+still restores."
+
+`main.ts` forces the two un-soloed layers to alpha 0 directly through
+`visualiser.setGeoAlpha`/`setAtmAlpha`/`setPassthrough` and restores by
+re-reading `prefs.geoAlpha`/`prefs.atmAlpha`/`prefs.passthrough` fresh at
+release rather than a value captured at press time — nothing is stored at
+any point, so there is nothing that can go stale, and if a shuffle happened
+to land mid-hold the release correctly shows whatever is actually current
+rather than what was true when the press started.
+
+One thing not in Lands-in, disclosed here: soloing forces the camera layer's
+opacity through `visualiser.setPassthrough` directly rather than through
+`applyPassthrough`, which I read closely before writing this. That function
+closes the live camera stream outright on any mix ≤ 0 — its own comment says
+this is deliberate, to avoid holding a powered, undrawn sensor open with the
+OS indicator lit. Routing solo through it would have torn down and
+re-acquired the real camera on every press and release, which is neither
+momentary nor safe to assume always succeeds (a second `getUserMedia` call
+per release). Setting the render value alone leaves `cameraSource` untouched
+for the whole gesture, which is what "change nothing stored" should mean for
+a live stream too, not just for prefs.
+
+`pnpm build` and `pnpm lint` are clean. No probe touches chip pointer
+wiring, so none was added or run for this one. Verify is explicitly phone-only
+("holding a layer chip shows that layer alone... **Verify** — the phone"),
+and this session's live-browser check hit the same microphone-permission wall
+documented in earlier entries this window (the Start gate refuses to clear
+without a granted mic, and this Chrome profile has no fake-device flag or way
+to grant it that these tools reach) — so the actual on-screen solo/restore
+was verified by close reading of the render seam and the event wiring, not
+by touching a running instance. Disclosing rather than claiming a live check
+I didn't get.
+
+**Do** — a momentary solo on each layer: see that layer alone, change nothing
+stored, release and everything is where it was.
+
+**Why** — `docs/what-resolume-knew-about-layers.md`, lesson 3. To see what the
+geometry contributes today you drag `atmAlpha` to zero and then try to put it
+back. Resolume has had solo and bypass on every layer forever, and the reason is
+that a mix you cannot inspect is a mix you tune by guessing.
+
+**Decided**
+- **It is the override seam, not a new mechanism** → entries 48, 58, 60 and 72
+  all influence a value on its way to the renderer without writing prefs. Solo
+  is that applied to alpha: the other layers' alphas are forced to 0 for the
+  duration and the stored values are never touched, so there is nothing to
+  restore and nothing that can be left behind by an interrupted gesture.
+- **On the layer chips that already exist** — a **long press** on `geo`, `atm`
+  or `cam` solos while held. **Mine**: those three chips already mean "this
+  layer", the gesture cannot collide with the emitter charge (entry 57) because
+  chip contacts never reach the picture, and momentary-while-held is what makes
+  it impossible to leave the app in a soloed state.
+- **Not a fourth chip.** Entry 77 has just finished making the arc fit; adding
+  a mode chip for something momentary would spend the space it bought.
+
+**Lands in** `src/hud.ts` — long-press on the three layer chips; `src/main.ts`
+— the alpha override at the same seam.
+**Done when** — holding a layer chip shows that layer alone and releasing
+restores the exact previous mix; nothing is written to prefs at any point; a
+release that never arrives (pointer cancelled) still restores.
+**Verify** — the phone: solo, kill the app mid-hold, reopen, confirm the mix is
+untouched.
+**Hard stops** — prefs no · url no · capture no · dependency no.
+
+**Verification note — `/ccc` at build 355.** Solo is a pure render-time override — `soloLayer` forces the other layers' alphas to 0 and `unsolo` re-reads `prefs`, so there is no saved state for an interrupted gesture to strand, and a `pointercancel` restores by the same path as a release. The camera layer is forced through `setPassthrough` rather than `applyPassthrough` precisely so a momentary solo does not tear down and re-acquire the real camera on every press.
+### 84. Each layer drifts on its own clock
+`status: done` · added 2026-08-30 · build 290 · verified at build 355
+
+**Build note (Mine)** — the fix itself is two numbers: `COLOUR_HOLD` 30→25,
+`VIEW_HOLD` 30→45, in `src/director.ts`. Decided's own "the holds become
+per-layer, not the logic" is literally true here — `update()`'s two due-checks
+already gated `geoColour` and `atmosphericView` independently through their
+own `sinceColour`/`sinceView` timers; the only thing that ever made them read
+as one shared clock was both timers happening to carry the same value. Both
+constants are now exported (they weren't before) so `probe-slow.ts` can
+assert against them directly rather than a copied literal.
+
+Verify names `probe-slow.ts` over a long synthetic run for the lockstep
+claim, so I drove a bare `Director` directly through 8 alternating 90s-long
+"flavour" phases (12 simulated minutes) engineered to be due for both a
+colour and a view change on every switch, and recorded how far into each
+phase each axis actually fired. One honest surprise while building this:
+neither mean offset landed on `COLOUR_HOLD` or `VIEW_HOLD` themselves — 90s
+per phase is long enough that `sinceColour`/`sinceView` are already well
+past their own hold by the time each phase switches, so colour fires at
+offset ≈0 (nothing left gating it) and view fires at ≈30s, timed by
+`VIEW_STABLE` rather than `VIEW_HOLD` (the candidate itself only becomes new
+at the switch and has to persist 30s before the due-check's `candidateHeld`
+term is satisfied). I state this plainly in the probe's own comments rather
+than picking a phase length that would have hidden it — it doesn't weaken
+the entry's claim: the two axes still land at a persistent, non-closing gap
+(colour always first, view always ≥30s later, checked every single phase,
+never once at the same offset), which is exactly what "neither drifts into
+lockstep" asks for, and the two clocks being genuinely different values is
+what makes that gap exist at all rather than an artifact of one particular
+scenario.
+
+`pnpm build`, `pnpm lint`, and `pnpm probe:slow` all pass (10 pre-existing
+bar-quantisation checks plus 7 new ones, all green). Not independently
+verified on the phone this session — the "visibly change at different
+times" half of Done-when is exactly the kind of multi-minute perceptual
+claim `probe-slow.ts`'s own file comment says a screen can't be trusted to
+judge in real time, and Verify names the probe rather than the phone for
+that reason; SUSPEND-silences-both is covered by both the existing global
+suspend logic (untouched) and a dedicated new check.
+
+**Do** — split the director's holds so the atmosphere and the geometry change
+on independent schedules rather than together.
+
+**Why** — `docs/what-resolume-knew-about-layers.md`, lesson 4. Resolume's
+autopilot is per layer. kiyo's director rolls the whole picture on shared
+thirty-second holds, so everything changes at once and then nothing changes at
+all.
+
+**Decided**
+- **The holds become per-layer, not the logic.** `COLOUR_HOLD` and `VIEW_HOLD`
+  become a pair each; every dead band, the `BOUNDARY` novelty test and
+  `SUSPEND` stay exactly as they are and stay global — a person's deliberate
+  choice suspends the whole director, not one layer of it.
+- **Atmosphere slower than geometry**, since it is the ground: **45s and 25s**
+  against today's 30/30. **Mine.** Deliberately not multiples of each other, so
+  the two do not re-synchronise into the behaviour this replaces — the same
+  reasoning `index.html`'s start-button animation already uses for its 3.4s and
+  5.9s periods.
+- **Build after entry 81**, or the two rhythms land at arbitrary moments and
+  the point is lost. Independent clocks are worth having *because* each one
+  lands on a bar.
+
+**Lands in** `src/director.ts:61-64` and the state it holds.
+**Done when** — the atmosphere and the geometry visibly change at different
+times; neither drifts into lockstep over several minutes; `SUSPEND` still
+silences both.
+**Verify** — `probe-slow.ts` over a long synthetic run, for the lockstep claim.
+**Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 85. A gentle shake asks for a shuffle and gets nothing
+`status: done` · added 2026-08-30 · build 294 · verified at build 355
+
+**Build note (Mine)** — a new `envelopePeak(envelope)` in `src/shake.ts`,
+next to `intensity()`, maps the `disturb` envelope onto `intensity()`'s own
+peak scale (`STRONG_UP`..`PEAK_CEILING`), calibrated so `SUSTAIN_LEVEL`
+(0.55, the least envelope that can ever reach it) lands just past
+`SHUFFLE_RESEED` and full saturation lands near what a hard reversal-path
+shake already reports natively. `detectSustained`'s peak snapshot changes
+from `this.strongPeak = this.peak` to
+`Math.max(this.peak, envelopePeak(this.envelope))` — fixing defect 1 outright,
+since a gentle sustained shake's `this.peak` alone was always going to be
+0-ish there.
+
+Beyond Lands-in's literal text (`intensity`, `detectSustained`'s snapshot,
+and `probe-shake.ts`'s expectations): I also applied the same
+`Math.max(this.peak, envelopePeak(this.envelope))` blend to `detectStrong`'s
+own `strongPeak`/`doublePeak` snapshots, not just `detectSustained`'s.
+Defect 2 (the deliberate shake's depth swinging from 0.54 to 0.21 across
+sample rates) fires through the *reversal* path, not the sustained one, and
+"stop deriving depth from instantaneous peak" only actually fixes it if the
+reversal path gets the same treatment — leaving `detectStrong` untouched
+would have fixed the entry's own headline defect while leaving its second,
+equally-documented one exactly as broken as it started. The `Math.max`
+means a hard shake's own genuinely-caught peak still wins outright (nothing
+here can ever pull a strong reading down), so "the reversal path genuinely
+measures a peak and should keep reporting one" still holds whenever the
+sensor actually caught one.
+
+Measured, not asserted: `pnpm probe:shake` now shows the gentle-sustained
+rows at depth 0.42 (native) and 0.36 (@12Hz) — both past 0.30, both inside
+the entry's own named 0.35-0.5 target — and the four deliberate-shake rows
+(native/30/20/12Hz) all read depth 0.55, spread 0 rather than the ~0.1 Done-when
+allows. That flat spread is not a tuning coincidence: 28 m/s² is double
+`FULL` (14), so `disturb` saturates to 1 on the very first sample near any
+peak regardless of how few samples a slow sensor delivers, and the reversal
+counter only needs to see `STRONG_UP` (18, itself under `FULL`) crossed three
+times to fire — so by the time it does, `envelope` has already locked at its
+own ceiling at every rate tested. Two new checks added to `probe-shake.ts`
+pin both numbers down (depth > 0.30 for both gentle rows; spread ≤ 0.1
+across the four deliberate rows) so this doesn't silently regress.
+
+Knock rejection and the double-shake counting logic are both completely
+untouched — the fix only ever changes what value gets *reported* once
+`strongPending`/`doublePending` are already true, never whether they become
+true, so every existing count-based check (knock strong 0, double counts)
+passed unmodified. `pnpm build`, `pnpm lint`, `pnpm probe:shake` (now 34
+checks, up from 32) and `pnpm probe:haptics` (unaffected — it drives
+`intensity()` directly with synthetic peaks, never through shake detection)
+all pass. Not verified on a real phone this session; Verify names
+`pnpm probe:shake` specifically, and its own header explains why synthetic
+motion is what's tunable here at all.
+
+**Do** — derive shuffle depth from evidence the detector actually has, so the
+sustained path stops reporting zero and the same gesture means the same thing
+on a slow-sampling phone.
+
+**Why** — asked to check sensitivity across the shake modes. Two real defects,
+both visible in `pnpm probe:shake`'s own output today.
+
+**Decided**
+- **Defect 1: the sustained path always reports depth 0.00.** From the probe:
+  *gentle sustained shake (12 m/s², 3 Hz)* → `strong 1`, `peak 11.8`,
+  **`depth 0.00`**; same at 12 Hz sampling. The path fires and the shuffle does
+  nothing. The cause is exact — `detectSustained` sets `strongPeak = this.peak`,
+  and `intensity()` maps peak over `[STRONG_UP 18, PEAK_CEILING 36]`, so a
+  gesture that never reached 18 clamps to 0. **The sustained path exists
+  precisely for shakes that never reach 18**, and then reports them as
+  nothing. It is self-defeating by construction.
+- **Defect 2: depth depends on the phone's sample rate.** Same deliberate
+  shake: `depth 0.54` natively, `0.49` @30 Hz, `0.40` @20 Hz, **`0.21` @12 Hz`.
+  The shuffle rungs are 0.30 / 0.45 / 0.70 / 0.90, so on a 12 Hz Android that
+  shake **does not reach the first rung at all** while on an iPhone it reaches
+  the second. Entry 36 lowered `PEAK_CEILING` for this exact reason and fixed
+  only the ceiling; the mapping underneath is still rate-dependent.
+- **Both have one fix: stop deriving depth from instantaneous peak.** Use the
+  **`disturb` envelope**, which is normalised against `FLOOR`/`FULL` and
+  computed from every sample regardless of rate — `shake.ts`'s own
+  `SUSTAIN_LEVEL` comment already argues this, saying the envelope "does not
+  care what absolute numbers the sensor reports, and it is computed from every
+  sample regardless of rate". The argument was made and then only half used.
+- **Keep `intensity(peak)` where it is honest** → the reversal path genuinely
+  measures a peak and should keep reporting one; blend the two so a hard shake
+  is unchanged and a sustained one gets a real number. A sustained shake should
+  land around **0.35-0.5** — past the re-seed rung, short of views. **Mine.**
+- **`PEAK_CEILING` and `STRONG_UP` do not move.** Entry 36 settled them against
+  the probe and they are not what is wrong.
+- Deliberately **not** changed: knock rejection, which the probe shows working
+  exactly as designed — a single knock and a knock-plus-rebound both stay at
+  `strong 0` while every real shake fires.
+
+**Lands in** `src/shake.ts:95-110` (`intensity`), `detectSustained`'s peak
+snapshot, and `probe-shake.ts`'s expectations.
+**Done when** — the two gentle-sustained rows report a depth above 0.30; the
+deliberate-shake rows report depths within ~0.1 of each other across 12, 20 and
+30 Hz; every knock row still reports `strong 0`; and the double rows are
+unchanged.
+**Verify** — `pnpm probe:shake`, whose table is the whole test and already
+prints every number this entry is about.
+**Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 86. One owner for the sensor, and watchers that cannot starve each other
+`status: done` · added 2026-08-30 · build 298 · verified at build 355
+
+**Build note (Mine)** — `ShakeSensor.frame(dt)` now returns a `ShakeFrame`
+(`{ tilt, disturb, tumble, events }`, `Object.freeze`d) instead of a bare
+`TumbleState`, and `takeStrong`/`takeDouble` are gone from `ShakeSensor`'s
+own interface entirely — removed, not just discouraged, so nothing outside
+`shake.ts` can call a clearing method even by accident. `Tumble` itself is
+untouched: its own `takeStrong`/`takeDouble` are still called, but now only
+from inside `frame()`, exactly once, with the double-wins-over-strong
+precedence that used to live at main.ts's own call site moved in alongside
+them (same comment, same logic, new home). `events` is `readonly
+ShakeEvent[]`, at most one entry (`{kind:'strong'|'double', peak}`) per
+frame.
+
+`main.ts` gained one `let latestShake: ShakeFrame` replacing the old
+`currentDisturb`/`pendingScatterPeak` pair; both the idle-preview loop and
+the real loop now do `latestShake = shake.frame(dt)` and everything else
+(`visualiser.setTumble`, `setMotion`, the double/strong branch, the powder's
+`getMotion` closure, the numeric readout's `disturb`) reads from it. The
+idle loop's old defensive `shake.takeDouble()` — called and discarded so a
+double did not fire again once the real loop started reading — is gone
+outright: since a `ShakeFrame` is replaced wholesale rather than
+accumulated, the real loop's own first `frame()` call already only ever
+reports what happened since the *last* `frame()` call (idle or real), so
+there was nothing left to leak once destructive reads were confined to one
+call site.
+
+Powder's `getMotion()` now reads `latestShake` (tilt/disturb/the one event's
+peak) without clearing anything, matching Decided's "reading is not
+consuming" directly — if the powder's own rAF happens to run more than once
+before main.ts's next tick, it now sees the same shake both times rather
+than the second read getting 0. That's a real, if narrow, behaviour change
+from before (the old closure cleared `pendingScatterPeak` on its own first
+read), and it's the correct one per this entry's own stated goal, so I did
+not try to preserve the old one-shot-per-read semantics on top of a
+snapshot that is explicitly supposed to not do that.
+
+Verify's own grep (`takeStrong`/`takeDouble` outside `shake.ts`) still
+matches `probe-shake.ts`, which calls `tumble.takeStrong()`/`takeDouble()`
+directly on a raw `Tumble` — exactly what Decided asks for ("probe-shake.ts
+keeps driving Tumble directly, so its table stays comparable"), so I'm
+reading the grep as scoped to `ShakeSensor`'s own consumers (main.ts,
+powder.ts), not literally every file in the repo; a few stale comments in
+both files that described the old clear-on-read mechanism were also
+updated so they don't describe a mechanism that no longer exists.
+
+`pnpm build` and `pnpm lint` are clean. `pnpm probe:shake` (34 checks) and
+`pnpm probe:haptics` (10 checks) both pass unchanged — neither drives
+`ShakeSensor` at all (the former drives `Tumble` directly, the latter drives
+`intensity()` with synthetic peaks), which is exactly what "the physics
+being untouched" as Verify's first half should mean. `pnpm probe:rgb-slip`
+and `pnpm probe:motion-bias` (both touch `shake.ts`'s constants/Tumble
+indirectly) also pass. Not separately verified on a real phone — this is a
+plumbing change with no user-visible behaviour difference apart from the
+powder narrowing noted above, and the entry's own Verify names the probe
+and the grep, not the phone.
+
+**Do** — make the shake sensor publish an immutable per-frame snapshot plus a
+list of events, so any number of consumers can read it without consuming it.
+
+**Why** — asked directly whether the model keeps watchers independent. **It
+does not**, and the workaround is a hand-maintained convention that has already
+been noted twice in comments.
+
+**Decided**
+- **Two of five accessors are destructive and nothing says which.**
+  `frame(dt)` advances the springs and must be called exactly once per frame —
+  a second caller double-integrates. `takeStrong()` and `takeDouble()` clear on
+  read, so **the first caller wins and every other sees nothing**. `tilt()` and
+  `gravity()` are pure. The type gives no hint, and the names only hint for
+  two.
+- **The convention already exists, undocumented as a rule.** `main.ts:717`
+  says it out loud — *"`shake.frame()` and `shake.takeStrong()` both consume
+  state"* — and the fix in place is that `main.ts` alone owns the sensor and
+  re-publishes through `getMotion()`; `powder.ts` reads that snapshot rather
+  than the sensor. `powder.ts:260` records the near-miss from the other side:
+  *"takeStrong() actually returned something, since getMotion() clears it."*
+  Two files carrying comments about the same hazard is the diagnosis.
+- **The idle-preview loop proves the leak.** `main.ts:831-832` calls
+  `takeDouble()` and throws the result away, purely so it does not fire later
+  when the real loop starts reading. A model where you must consume an event to
+  stop it happening is a model that leaks.
+- **The fix is a snapshot plus events, not a subscriber API.** Once per frame
+  the owner calls `frame(dt)` and produces `{ tilt, disturb, tumble, events:
+  [...] }` — a plain frozen value. Consumers read fields and filter events, and
+  **reading is not consuming**, so N watchers are independent by construction
+  rather than by discipline. **Mine**: no callbacks, no registration, no
+  ordering, nothing to unsubscribe — the same "pure state, sampled once per
+  frame" discipline `touches.ts` already states in its own header.
+- **`Tumble` keeps its internals.** This is the boundary, not the physics. The
+  reversal counter, the envelope, the springs and every constant entry 36
+  settled are untouched — and `probe-shake.ts` keeps driving `Tumble` directly,
+  so its table stays comparable across the change.
+- **This is what makes entry 85 safe to build**, and the two should land in that
+  order: 85 changes what a shake *reports*, and the snapshot is what guarantees
+  every consumer sees the same report.
+
+**Lands in** `src/shake.ts` — `ShakeSensor` gains the snapshot; `src/main.ts:
+717-731, 828-832, 1463-1510`; `src/powder.ts:260`.
+**Done when** — no consumer outside the owner calls a clearing method; two
+consumers reading the same frame both see the same shake; the idle-preview loop
+no longer discards an event to suppress it; and `probe-shake.ts` passes
+unchanged.
+**Verify** — the probe for the physics being untouched, and a grep for
+`takeStrong`/`takeDouble` outside `shake.ts` returning nothing.
+**Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 87. Camera mode is one shot: arm, shoot, done
+`status: done` · added 2026-08-30 · started 2026-08-30 · build 273 · supersedes the mode built by 72 and 78 · verified at build 355
+
+**Do** — camera mode arms a single photo. Tap the chip: the menu closes and the
+camera glyph appears. The next tap takes **one** picture and leaves the mode.
+Nothing about the picture changes while armed.
+
+**Why** — Victor, asked directly: *"Enter camera mode display camera icon next
+click takes picture exits camera mode."* That is not what entries 72 and 78
+built, and the difference is not a detail — it is a different mode.
+
+**Decided**
+- **What is being corrected, plainly.** Entry 72 was mine and it misread the
+  request. "Camera mode" was taken to mean the *passthrough* camera, so
+  `enterCameraMode` calls `applyPassthrough(0.75)` and the room comes up at 75%
+  — directly against the original request's own words, **"animation not
+  affected"**. The build agent implemented the entry faithfully; the entry was
+  wrong.
+- **So entering touches the passthrough not at all.** No `applyPassthrough`, no
+  `preCameraMix`, no restore — the room layer stays exactly wherever it was,
+  including off, and the picture on screen does not change by one pixel when
+  the mode is entered. What makes it a mode is the glyph, the instant shutter
+  and the locked-out menu. Nothing visual.
+- **One shot, and this dissolves three problems rather than solving them.**
+  A mode that ends at the first photo has no exit gesture to design, so:
+  entry 78's two-finger exit and its **spurious screenshot on the first
+  finger** simply stop existing; there is no state to be stranded in; and
+  "how do I get out" never has to be discoverable. The bug is deleted along
+  with the gesture that carried it.
+- **After the shot, back to the menu.** **Mine**, and it is the direct answer
+  to *"camera mode is not connected to the menu!!"* — you entered from the
+  chip, so you land back where you came from, and a second photo is a
+  deliberate two-tap act rather than a held state that can be forgotten about.
+  Reversible if it proves annoying in a burst; nothing else depends on it.
+- **The shutter stays instant.** Entry 72's real insight survives intact and is
+  now stronger: with the menu locked out *and* only one tap to interpret, the
+  photo fires on `pointerdown` with nothing to wait for. That was always the
+  best argument for the mode existing.
+- **Kept from entry 78**: the chip paints its armed state (it was `void
+  shutterChip`, so nothing repainted it), and the exception at `hud.ts:408`
+  that keeps it live. **Dropped from entry 78**: the chip-as-exit, the
+  two-finger case, and the reopen-on-exit plumbing, all of which existed to
+  manage a mode that no longer persists.
+- **Still needed, and unrelated to any of this** → the stray pending save on the
+  ordinary two-finger menu open (`main.ts:1354`), which entry 78 also carried.
+  If 78 already fixed it, leave it; if not, it stays outstanding on its own.
+- **Entry 80 still outranks this.** Fullscreen has right of way, so a tap while
+  windowed restores fullscreen and does not spend the armed shot. Being armed
+  must survive that tap — the photo is still waiting afterwards. **Mine**, and
+  it is the one interaction between the two that could silently eat a picture.
+- **Timeout, so armed is never forever** → if no tap arrives within **10s**,
+  disarm and hide the glyph. **Mine**: a mode entered by accident should not
+  wait indefinitely to take a photo of something you have stopped looking at.
+
+**Lands in**
+- `src/main.ts:1017-1042` — `enterCameraMode` loses the passthrough call;
+  `exitCameraMode` becomes the post-shot return.
+- `src/main.ts:1331-1347` — the camera branch: one shot, then exit; the
+  two-finger case goes.
+- `src/hud.ts` — the chip keeps its armed paint, loses its exit role.
+
+**Done when** — tapping the chip changes nothing on screen except the glyph
+appearing and the menu closing; the next tap anywhere on the picture saves
+exactly one frame and returns to the menu; the passthrough mix is identical
+before and after; a tap that restores fullscreen does not consume the shot;
+and an armed mode left alone disarms after 10s.
+**Verify** — the phone, counting files, as entry 78 asked and nobody ran:
+arm, shoot, arm, shoot, and confirm exactly two frames arrived and the room
+camera never turned on.
+**Hard stops** — prefs no · url no · capture **yes, and answered**: strictly
+fewer and more deliberate captures than what shipped — one per arming, no
+accidental frame on exit, and the camera hardware is never opened by this mode
+at all · dependency no.
+
+**Build note** — implemented as decided. `enterCameraMode` lost the
+`applyPassthrough(0.75)` call, the refusal-revert branch that existed only
+to unwind it, and `preCameraMix` entirely — entering now does nothing but
+set the flag, tell the HUD (`panel.setCameraActive(true)`), and show the
+glyph. The dispatch's camera branch takes the shot (respecting the existing
+`CAMERA_SAVE_RATE_LIMIT_MS`/`lastSaveAt` guard, untouched — Lands-in didn't
+ask for it and one-shot arming makes a self-repeat within a single arm
+structurally impossible anyway, since `cameraMode` flips false synchronously
+before the event loop's next iteration) and calls `exitCameraMode`
+unconditionally, even on the rare frame the rate limit itself suppressed the
+save — leaving the mode armed after its one qualifying tap would be a worse
+failure than an occasional shot lost to a limit built for the ordinary
+tap-to-save path, not this one. **Mine**, since the entry doesn't say which
+way to break that specific tie.
+
+The 10s auto-disarm (`CAMERA_ARM_MS`, **Mine** — the entry asks for a
+timeout, not the figure) is a *separate* inline path from `exitCameraMode`,
+not a call to it: it flips the same three things `exitCameraMode` does
+(flag, `setCameraActive(false)`, hide glyph) but deliberately does **not**
+call `panel.open()`. Reasoned rather than found in the entry's own text:
+"a mode entered by accident should not wait indefinitely to take a photo of
+something you have stopped looking at" reads as someone who has moved on,
+and forcing the menu open over whatever they moved on to would be its own
+surprise — reopening on the *timeout* path is not the same claim as
+reopening after an actual photo. `cameraArmTimeout` is cleared in
+`exitCameraMode` so a shot at 9s does not also fire a disarm at 10s.
+
+Entry 78's toggle is gone from `onCameraMode` — it reverts to
+`enterCameraMode` directly, exactly as entry 72 had it, since the chip
+"loses its exit role" per Decided: `enterCameraMode`'s own
+`if (cameraMode) return` already makes a second tap on an already-armed
+chip a harmless no-op, so no dedicated handling was needed for that case.
+Kept from entry 78 completely unchanged, per the entry's own "Kept from
+entry 78" bullet: `Hud.setCameraActive`, the `.hud-chip--shutter` class,
+the `.hud-scrim:not(.open) .hud-chip--shutter[aria-pressed='true']`
+exception, and the chip's own paint-through-`aria-pressed` mechanism —
+"armed" reuses the exact same true/false the old "in persistent mode" used,
+so nothing about how the chip is *painted* needed to change, only what
+causes the flag to flip back to false.
+
+Verified: `pnpm build`/`pnpm lint` clean; `pnpm probe` and `pnpm probe:tap`
+both unaffected (0 failures / all pass) — this entry touches neither the
+mapping engine nor the tap-resolver's own state machine. `grep -n
+preCameraMix src/main.ts` returns nothing, confirming the removal is
+complete rather than merely unused.
+
+**A genuine new capability, and an honest account of where it stopped**:
+for the first time this session, Start was reached live rather than being
+disclosed as unreachable. `navigator.mediaDevices.getUserMedia` stubbed to
+return a real oscillator-backed `MediaStreamAudioDestinationNode` stream
+(the same shape of trick entry 73 used for the camera, applied here to the
+microphone for the first time) plus `requestAnimationFrame` patched to a
+`setTimeout`-driven version *before* clicking Start with the real
+`computer` tool for a genuine trusted gesture — together these got past the
+gate, into the real render loop, live: the gate hid, the picture began
+actively animating in response to the fake tone, and this was confirmed
+directly (an `await new Promise` chained to real `requestAnimationFrame`
+timed out completely before the patch, and produced a visibly evolving
+frame after it). This is further than entries 67, 72, 73 or 78 got.
+
+It stopped there. Synthetic `PointerEvent`s dispatched at the canvas
+(`pointerdown`/`pointerup`, matched to `elementFromPoint`, `isPrimary:
+true`) were confirmed to reach `document`-level listeners generally (a
+throwaway listener of my own fired on the identical dispatch), and the
+canvas's own `getBoundingClientRect()` was sane — but neither a lone tap
+nor several double-tap variants (immediate synthetic pairs at 150ms
+apart, the real `computer` tool's own `double_click`, before and after the
+rAF fix) ever produced an observable effect: no `.hud-scrim.open`, and — the
+most direct test available, since `saveCapture` calls
+`URL.createObjectURL` — zero calls to a monkey-patched
+`URL.createObjectURL` after a single ordinary tap that should have saved a
+frame 400ms later. The gap between "the event reaches `document`" and "the
+app's own dispatch loop visibly acts on it" was not tracked down further
+within this entry's own scope — most likely `dispatchTouches`'s own
+per-frame consumption of `touchField`'s queue behaving differently under a
+`setTimeout`-driven rAF than a real one, but that is a diagnosis, not a
+finding.
+
+So: `enterCameraMode`/`exitCameraMode`/the one-shot dispatch branch and the
+10s timeout are verified by careful reading against the entry's own text
+and by the shape of the diff (a pure subtraction of the passthrough call
+plus one unconditional `exitCameraMode()` call added where the two-finger
+case used to be), not by watching them run. The entry's own Verify line —
+the phone, counting files — remains the phone's question, same as entry 78
+before it; what's new here is that the *reason* is now "the harness's touch
+dispatch didn't cooperate this time" rather than "Start could not be
+reached at all," which is worth keeping distinct for whoever debugs this
+gap next.
+
+**Verification note — `/ccc` at build 355.** All five clauses hold, including the subtle one: *a tap that restores fullscreen does not consume the shot*. `main.ts`'s dispatch checks `fsBlocking` and `continue`s before the `cameraMode` branch is reached, so entry 80's fullscreen priority and this entry's instant shutter compose correctly rather than racing. Entering touches passthrough not at all, which is what 72's misreading got wrong and this entry exists to correct.
