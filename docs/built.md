@@ -5363,3 +5363,849 @@ strictly *reduces* when the camera opens — the director loses the ability
 entirely — and adds no new path to a stream · dependency no.
 
 **Verification note — `/ccc` at build 356.** Both halves are there: `camera.ts` listens on `visibilitychange` and re-plays, which is what a returning tab needs, and `maybeRollCamera` is documented and coded never to raise the camera over one that has already frozen. The underlying cause this entry names — a `play()` refused because a shake was never an activation gesture — is why the director cannot start one.
+
+### 61. The powder becomes a material: hold piles, drag pushes, motion moves it
+`status: done` · added 2026-08-30 · shipped at build 216 · verified at build 356
+
+**Build note** — a process note first: this entry was implemented without the
+`status: building` claim commit the queue's own protocol calls for (an
+oversight on my part). Checked before writing this note: `docs/todo.md`'s
+entry 61 was untouched by the concurrent session in the interim (two of its
+docs-only commits landed on entries 63/64/68 while this was in flight), so
+nothing collided — but the claim step is not optional going forward.
+
+`powder.ts`'s drag no longer lays grains: `spawnDragSegment` and
+`DRAG_GRAINS_PER_PX`/`DRAG_VELOCITY_FRACTION` are gone (deleted, not zeroed —
+`DRAG_GRAINS_PER_PX = 0` would still have spawned one grain per move event,
+since the old code's `Math.max(1, ...)` floor doesn't know the rate is
+meant to be off; deletion is the honest way to make "instead of laying new
+ones" literally true). `pushGrains(x, y, vx, vy)` replaces it: every grain
+within `PUSH_RADIUS_PX` (40, the entry's own number) gets an impulse scaled
+by the finger's own pixel velocity and a linear falloff to the radius's
+edge. A hold vs. a drag is told apart by `lastMovedAt`, which only advances
+on a move past `HOLD_STILL_PX` (3px — real touch input jitters even under a
+"still" finger); once `STILL_DELAY_S` (0.12s, **Mine**) has passed since the
+last real move, `step()` piles continuously at `PILE_RATE_PER_S` (60, the
+entry's number) at the last known position, and the two are mutually
+exclusive by construction — piling stops the instant a real move resumes.
+Disturb adds a small random-walk jitter to every grain (`DISTURB_JITTER_ACCEL`,
+**Mine**, well under `TILT_ACCEL` so carrying the phone reads as a tremor,
+not a slide). A `takeStrong()` peak scatters every grain outward from the
+field's own centre, scaled by `intensity(peak)` (`SCATTER_SPEED_PX_S`,
+**Mine**).
+
+The actual coordination bug the entry names, found by tracing it rather than
+assuming it: `Tumble.takeStrong()` is one-shot — read-and-cleared — and
+`idleFrame` in `main.ts` was already calling it, unconditionally, every idle
+tick, discarding the result (a deliberate no-op, per its own comment, so a
+shake taken pre-Start doesn't retroactively fire something once the live
+loop starts reading it after Start). Nothing before this entry ever needed a
+*second* reader of that one-shot value. The powder's own render loop is a
+second, independent `requestAnimationFrame` chain running alongside
+`idleFrame`'s — if powder tried to call `shake.takeStrong()` itself from
+that loop, it would race `idleFrame`'s own call for whichever fires first in
+a tick, and the loser would always see zero. Fixed by keeping `idleFrame` as
+the *only* caller of `shake.takeStrong()`/`.frame()` (as it already was),
+routing its return into a `pendingScatterPeak` closure variable instead of
+discarding it, and having the widened `getMotion()` getter passed into
+`mountPowder` read-and-clear that variable itself — the same one-shot shape
+`takeStrong()` has, just relayed through one more hop, with a single
+consumer at each end. `takeDouble()` is left exactly as it was (still
+unconditionally discarded): nothing here gives it a job.
+
+Also on the third tap: `goFullscreen()` is now called on entry (never on
+exit — Decided, Mine, matches the entry's "leaving the egg does not leave
+fullscreen").
+
+Verified: `pnpm build`, `pnpm lint`, `pnpm probe:shake` (unchanged, per the
+entry's own Verify line — confirmed still green, not just assumed). Live
+against the real dev server: the three-tap toggle correctly swaps gate for
+powder and back (confirmed via `gate.hidden`/`powder.hidden`), and a
+script-dispatched tap on the powder canvas produces a visible burst
+(confirmed by canvas pixel readback, both immediately and after the render
+loop's next draw). `goFullscreen()` does not throw and produces no console
+error on a script-dispatched (untrusted) tap, consistent with the function's
+own documented silent-refusal design — `document.fullscreenElement` stayed
+false, which is the expected outcome of an untrusted gesture, not a defect.
+
+Not verified live: continuous piling, the push impulse, disturb's jitter and
+the shake scatter, all of which only show up as the render loop keeps
+ticking over real seconds. This session's Chrome tab has, over the course of
+this conversation, gone from the previously-documented "no real rAF, but a
+`setTimeout`-based polyfill fires roughly once a second" (entries 44 and
+onward) to a tab whose `setTimeout` calls — patched or native — stopped
+firing at all after several minutes backgrounded: an 8-second and a 9-second
+wait, on two separate attempts, produced zero canvas change even for grains
+that should have been settling under their own decaying velocity, let alone
+piling. This is a harness limitation, escalating over the session's own
+lifetime, not a code defect — the state-machine half (toggle, burst) is
+confirmed live because it does not depend on the render loop ticking more
+than once. In its place, the four per-frame formulas (push falloff, pile
+accumulation, scatter's zero-at-rest and nonzero-under-a-real-peak) were
+checked as isolated arithmetic in a throwaway Node script: all four correct.
+One thing found there worth recording as a non-bug: `PILE_RATE_PER_S`
+accumulated as `IEEE-754` floats loses exactly one grain per second to
+floating-point rounding (59 rather than 60 over 1s of continuous ticks at a
+1/60s step) — cosmetically invisible in an easter egg and not worth a
+correction.
+
+**Do** — the easter egg enters fullscreen; a hold builds a pile; a drag pushes
+the grains that are there instead of laying new ones; and shaking or moving the
+phone moves the powder.
+**Why** — entry 46 shipped at build 180 as a drawing toy. This makes it a
+substance, which is what "powder" was always promising.
+
+**Decided**
+- **A drag stops depositing, and that is a reversal of shipped behaviour** →
+  `powder.ts:62` is `DRAG_GRAINS_PER_PX = 0.5`, so dragging currently *creates*
+  grains along the path. It should **push the grains already there**: an
+  impulse to every grain within about **40px** of the finger, scaled by the
+  finger's own velocity. `DRAG_GRAINS_PER_PX` goes to zero. Victor's call,
+  and it is what makes the difference between drawing and handling.
+- Three verbs, cleanly separated → **a tap bursts** (the existing
+  `BURST_COUNT = 16`, unchanged, so there is still a fast way to put powder on
+  screen), **a hold piles**, **a drag pushes**. **Mine** on keeping the tap:
+  without it the only way to get any powder is to wait, and the first thing
+  anyone does to a black screen is tap it.
+- The pile → a stationary finger deposits continuously at about **60 grains a
+  second**, with the existing `BURST_SPREAD_PX` of 6, so it grows where the
+  finger is rather than appearing all at once. It is a pile by accumulation,
+  not by stacking: grains do not rest on each other, and simulating that is a
+  cellular-automaton sand model this entry is deliberately not.
+- **Fullscreen on entry** → the third tap is a real user gesture, so
+  `requestFullscreen()` is allowed there, and it puts no dialog on screen so it
+  does not spend the gesture the way the microphone prompt does — the
+  order-of-operations comment in `permission-gate.ts` is about calls that open
+  dialogs, and this is not one.
+- **Leaving the egg does not leave fullscreen** → **Mine.** Dropping out would
+  be a second unrequested change of state, and the gate is better in fullscreen
+  anyway; Start would only have to ask for it again a moment later. It also
+  means `fullscreenStatus()` and the chip see one transition rather than two.
+- Motion, in two kinds because the app already measures two → **`disturb`
+  jitters, a shake scatters.** A continuous small jitter proportional to
+  `disturb` so carrying the phone unsettles the powder, and on `takeStrong()`
+  an outward impulse on every grain scaled by `intensity(peak)` so a shake
+  throws it. Both numbers already exist and are already probe-covered; nothing
+  new is measured.
+- **The shake must not do both things at once** → `takeStrong()` is consumed by
+  `main.ts`'s loop to re-roll the picture. While the powder is showing, the
+  visualiser is not on screen, so the shake belongs to the powder and the
+  shuffle must not also fire — otherwise a shake scatters the grains *and*
+  silently re-rolls a picture nobody can see, and the picture a person comes
+  back to is not the one they left. **Mine**, and it is the one coordination
+  bug this entry can ship with.
+- Tilt stays as built → `TILT_ACCEL = 900` via the `getTilt()` the module
+  already takes. The getter widens to carry `disturb` and the shake events
+  rather than three separate arguments, which keeps `powder.ts` a pure module
+  taking one motion source.
+- `CAP = 3000` is unchanged → a pile is dense rather than large, and the cap is
+  a frame-time number that entry 46 already settled. If piling makes it feel
+  short, that is a measurement to take on the phone, not a number to raise here.
+
+**Lands in**
+- `src/powder.ts:62, 133-141` — the drag becomes a push; the deposit goes.
+- `src/powder.ts:55-58` — the hold's continuous deposit, beside the burst.
+- `src/powder.ts:83` — the motion source widens from tilt to tilt plus
+  `disturb` plus shake impulses.
+- `src/main.ts:575-621` — `requestFullscreen()` on the third tap, and the
+  shake's routing while the powder is up.
+
+**Done when** — three taps open the egg fullscreen; holding a finger still
+grows a visible pile under it; dragging through an existing pile moves it
+rather than adding to it, and a fast drag throws it further than a slow one;
+tilting slides it; carrying the phone unsettles it; a hard shake scatters it
+across the screen and **does not** change the picture waiting behind the egg.
+Leaving the egg leaves you in fullscreen on the gate.
+**Verify** — the phone, for all of it, since every one of these is a hand or a
+motion question. Check the picture behind the egg specifically: enter, shake
+hard several times, leave, and confirm the visualiser is exactly as it was.
+`pnpm probe:shake` unchanged. `pnpm build`, `pnpm lint`.
+**Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 62. Fullscreen comes back by itself, and windowed is a state the app knows it is in
+`status: done` · added 2026-08-30 · shipped at build 217 (built together with entry 66) · verified at build 356
+
+**Build note** — built together with entry 66 as one change to
+`permission-gate.ts`, per both entries' own text: 66 is the structural
+version of the same fix 62 asks for from the UX side, and 66's own "Mine"
+says as much ("with no 'ever entered' concept there is nothing for a future
+guard clause to be written against"). See entry 66's build note for the
+implementation; this entry's own specific pieces:
+
+- The retry now listens on `#canvas` (`setFullscreenRetryTarget(canvas)`,
+  called once from `main()` right after `canvas` is resolved), not `window`.
+  This is also what satisfies "should not also arm a retry while the powder
+  is showing" (entry 61's own coordination worry) for free: `#powder-canvas`
+  sits above `#canvas` in z-index while the powder is up, so a tap there
+  never reaches `#canvas`'s listener. No powder-awareness needed in
+  `permission-gate.ts` at all — verified by reasoning about the DOM stacking
+  established by entries 46/61, not by a live powder+fullscreen-loss test
+  (compounding two things this harness already can't drive for real: a
+  trusted fullscreen gesture and the powder's own render loop).
+- `document.documentElement.dataset.fullscreen` is set to `'true'`/`'false'`
+  from the same `fullscreenchange` handler that already tracks entry/exit —
+  confirmed live (see entry 66's build note) via a direct import of
+  `permission-gate.ts` in a real browser tab, not just the probe's own DOM
+  stub.
+- The fullscreen chip's own hidden-state logic (`main.ts`'s
+  `updateFullscreenChip`) is unchanged — `'exited'`/`'refused'` are still the
+  two states it shows on, and both still exist under the new model.
+
+Not verified live: the actual chip click and `waitForStart` wiring, since
+both sit behind the real Start gesture this harness cannot complete (the
+microphone permission prompt never resolves). What was verified live instead
+is `permission-gate.ts` itself, directly, which is where all of this
+entry's and entry 66's logic actually lives.
+
+**Do** — re-arm the fullscreen retry every time fullscreen is lost, not only
+before the first entry, and mark the windowed state so the app can look and
+behave like what it is.
+**Why** — fullscreen is lost repeatedly and only comes back if you find the
+chip. The recovery already exists; it is switched off after the first success.
+
+**Decided**
+- The cause, exactly → `permission-gate.ts:144` is
+  **`if (fsArmed || fsEverEntered) return`**. `armFullscreenRetry()` arms a
+  one-shot `pointerup` handler that re-enters fullscreen, and that guard makes
+  it refuse forever once fullscreen has succeeded once. So the recovery is
+  built, tested and correct, and it is unreachable in exactly the situation
+  being complained about.
+- The second half → `watchFullscreen()` at `:127-129` sets `'exited'` with the
+  comment "**A deliberate exit. Recorded, deliberately not acted on.**" That
+  was a real decision and Victor is overturning it: an exit is now to be
+  treated as an accident until proven otherwise, because on a phone it usually
+  is — a system back-swipe, a notification, the address bar reappearing.
+- **What "never lose it" can actually mean**, and it is worth stating plainly
+  so nobody builds toward the impossible version → **a browser will not enter
+  fullscreen without a user gesture.** There is no API that keeps it. The
+  strongest achievable behaviour is *re-enter on the very next touch of the
+  picture*, silently, forever — which is what `armFullscreenRetry()` already
+  does and what removing the guard delivers.
+- **The retry listens on the picture, not on `window`** → today it is
+  `window.addEventListener('pointerup', retry, true)`. Someone who left
+  fullscreen to use the address bar or read a notification would be dragged
+  straight back by their next tap anywhere. Scoping it to the canvas means the
+  gesture that recovers fullscreen is the gesture that says "I am back to
+  playing with this". **Mine**, and it removes the need for a cooldown, a
+  deliberate-exit flag, or any attempt to read the user's mind.
+- It does not consume the tap → the handler is capture-phase and does not stop
+  propagation, so the touch that restores fullscreen also does whatever it
+  normally does. That is already true and must stay true: with entries 50 and
+  52 landing, that same tap is an emitter and a screenshot.
+- **Windowed becomes a state the document declares** → a `data-fullscreen`
+  attribute on the root element, set from the same `watchFullscreen()` that
+  already tracks this. **Mine**, and the reasoning is that "behave differently
+  in a window" is a request with no end: rather than guess which differences
+  are wanted, give CSS and the HUD one honest fact to key off and let each
+  difference be its own small decision later. The first user of it is the
+  fullscreen chip, which is already conditional and can stop reimplementing the
+  test.
+- What is deliberately **not** decided here → what should actually look
+  different when windowed. The viewport is shorter, the browser chrome is
+  present, and the composition changes; whether the HUD moves, the resolution
+  ladder relaxes, or the capture band shifts are separate questions with
+  separate answers. This entry makes them answerable and answers none of them.
+- Interaction with entry 61 → the powder now enters fullscreen on its third
+  tap. It should not also arm a retry while it is showing, since the powder
+  owns the screen and its own exit is a different thing from the app's. Route
+  it the same way the shake is routed there.
+- `probe-fullscreen.ts` is the guard on all of this → it covers the state
+  machine and its docstring already records that a browser cannot prove
+  fullscreen without real activation. The states change here; the probe's
+  fourteen checks must be updated with them rather than around them.
+
+**Lands in**
+- `src/permission-gate.ts:143-153` — the guard, and the listener's target.
+- `src/permission-gate.ts:120-132` — the exit branch calls
+  `armFullscreenRetry()` and sets the root attribute.
+- `scripts/probe-fullscreen.ts` — the re-arm case, which is the behaviour this
+  entry exists for and has no coverage today.
+
+**Done when** — leaving fullscreen by any route and then touching the picture
+puts it back, every time, not just the first; touching the address bar or a
+notification does not; the root element says which state it is in; and the
+fullscreen chip still appears while windowed. `pnpm probe:fullscreen` passes
+with a new case asserting the retry re-arms after a successful entry.
+**Verify** — the phone, leaving fullscreen the way it actually gets lost: the
+system back-swipe, and pulling down a notification. A desktop browser cannot
+answer this — `probe-fullscreen.ts`'s own docstring says so — so the probe
+covers the state machine and the phone covers the behaviour.
+**Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 63. The app is called kiyo · plays
+`status: done` · added 2026-08-30 · shipped at build 219 · verified at build 356
+
+**Build note** — every listed site changed exactly as specified: `index.html`
+(`<title>`, the `<h1>` wordmark with its hairspace-flanked middot),
+`public/manifest.webmanifest` (`name`/`short_name`), `src/share.ts`'s share
+sheet title (plain spaces, no hairspaces — matching the entry's own "an OS
+share sheet is not the place for typography"), `src/main.ts`'s screenshot
+filename prefix (`suti-` → `kiyo-`), `README.md`'s heading, and
+`package.json`'s `name` (→ `kiyo-plays`, kebab-case, not published anywhere).
+`src/prefs.ts`'s `STORE_KEY` is untouched in value, with a new comment
+explaining why, so the next person to notice the mismatch does not "tidy" it
+into a settings-losing migration. `src/shaders/circles.frag.glsl`'s history
+sentence is untouched, as decided. `grep -ril suti src/ index.html public/`
+returns exactly `prefs.ts` and `circles.frag.glsl`, matching the entry's own
+Done-when literally.
+
+Verified live against the real dev server, not just by reading the diff: set
+a fixed `localStorage` value under the old `suti-view:prefs` key, reloaded,
+and confirmed both the tab title and the `#gate` wordmark read `kiyo · plays`
+while the stored `geometricView`/`geoColour`/every other field came back
+byte-identical — the actual claim behind "prefs yes, and answered by not
+moving". Checked the wordmark for overflow at true 320×568 and 360×640
+viewports (via the iframe technique — `resize_window` cannot shrink this
+harness's own window, see entry 56/60's build notes): `kiyo · plays` is one
+character longer than `suti · view` and entry 43's own CSS comment flags
+this exact line as "the one place this change can overflow or wrap" at
+320px — it does not, at either width.
+
+Not verified live: `navigator.share`'s actual OS sheet title (this harness
+has no OS share surface to open) and the installed-PWA `name`/`short_name`
+display (would need an actual install). Both are single-line, low-risk
+string changes read directly from the diff rather than exercised.
+
+**Do** — replace the name everywhere a person sees it. Leave the repository,
+both deploy URLs and the stored prefs key exactly as they are.
+
+**Why** — the piece has a name now. `suti · view` described a viewer; this one
+describes what it does with you, which is the same turn "play with me" and the
+powder already made.
+
+**Decided**
+- **The wordmark keeps its treatment** → `kiyo&#8202;&middot;&#8202;plays`,
+  lowercase, the same hairspace-flanked middot as `suti&#8202;&middot;&#8202;view`
+  at `index.html:563`. Victor's call, over title case and caps. The
+  construction is the identity, not the word inside it.
+- **The repository and both URLs do not move.** Victor's call. `share.ts`
+  exists so people send this to each other, and a Pages URL is not reliably
+  redirected after a repo rename — so renaming the repo would quietly break
+  links already in other people's messages. `vvorski/suti-view-2026`,
+  `vvorski.github.io/suti-view-2026` and `suti-view-2026.pages.dev` stay, and
+  so does `PROJECT_NAME` in `deploy/deploy.sh:13` and every reference under
+  `.claude/` and in `CLAUDE.md:243`. Nothing about the deploy changes.
+- **`STORE_KEY` stays `'suti-view:prefs'`** — `prefs.ts:21`. **Mine**, and it
+  is the one place where doing the obvious thing is destructive: changing the
+  key does not migrate anything, it silently hands every existing user the
+  defaults and loses the view, the colours and the mapping they had chosen.
+  A rename that costs people their settings to fix a string nobody sees is a
+  bad trade. Leave it and put the reason in a comment, so the next person to
+  notice it does not "tidy" it.
+- Screenshot filenames **do** change: `suti-` → `kiyo-` at `main.ts:530`.
+  **Mine** — this one is genuinely seen, in a camera roll, next to photos.
+  Files already saved keep their names, which is correct: they were made by
+  `suti · view`. The worked examples in entries 26, 39 and 44 are records of
+  what shipped and are not to be rewritten.
+- **`short_name` is `kiyo`, not the full wordmark.** `public/manifest.web
+  manifest`. **Mine**: `short_name` is what sits under the home-screen icon
+  with about twelve characters of room, and a middot rendered at that size in
+  a launcher is a smudge. `name` takes `kiyo · plays` in full.
+- The share sheet gets plain spaces → `'kiyo · plays'` at `share.ts:97`,
+  matching how `'suti·view'` was already plain text there rather than carrying
+  the hairspaces. An OS share sheet is not the place for typography.
+- **History stays true.** `README.md:93` and `circles.frag.glsl:3` both say
+  "suti-view-2026 grew out of `~/dev/circles`", and that sentence is about a
+  repository and remains accurate. Rename the README's heading; do not rewrite
+  its history, and do not touch shipped entries in this file.
+- No collision with the name animation → entry 62's neighbour at
+  `docs/todo.md:5433` animates `#release-name` and `.gate-byline` inside
+  `.gate-name`. This entry touches only the `<h1>`. They can land in either
+  order.
+- Not decided here → whether **kiyo** appears anywhere else, in a dedication or
+  a byline. That is the open question from the Kiyo conversation and it belongs
+  in its own entry, not smuggled into a rename. **Answered by entry 69:
+  nothing further is added — the name itself is the whole statement.**
+
+**Lands in**
+- `index.html:16` (`<title>`), `:563` (the `<h1>`).
+- `public/manifest.webmanifest` — `name`, `short_name`.
+- `src/share.ts:97` — the share sheet title.
+- `src/main.ts:530` — the screenshot filename prefix.
+- `src/prefs.ts:21` — a comment only; the value must not change.
+- `package.json:2` and `README.md:1` — cosmetic; `package.json`'s `name` is not
+  published anywhere and is safe to change.
+
+**Done when** — the gate reads `kiyo · plays`, the tab and the installed app
+say so, a shared link opens a sheet titled `kiyo · plays`, and a screenshot
+saves as `kiyo-<build>-<release>-…png`. A browser that had prefs stored before
+the change still has them after it. `grep -ril suti src/ index.html public/`
+returns only `prefs.ts` and `circles.frag.glsl`.
+**Verify** — the phone, with settings already stored: change a view, reload,
+confirm it survived. That is the only part of this that can break anything.
+**Hard stops** — prefs **yes, and answered by not moving**: the stored key is
+untouched, so the shape and its meaning are unchanged and nothing migrates ·
+url no · capture no (the filename changes, the capture path does not) ·
+dependency no.
+
+**Verification note — `/ccc` at build 356.** Verified against its own grep, which is what makes this entry checkable at all: `grep -ril suti src/ index.html public/` returns exactly `prefs.ts` and `circles.frag.glsl` and nothing else — the two files Decided allows, one holding the storage key that must not change and one a comment about the project's origins. Screenshots save as `kiyo-<build>-<release>-<stamp>.png`.
+### 64. In daylight the picture is ink, not light
+`status: superseded by 68` · added 2026-08-30 · verified at build 356
+
+**Superseded 2026-08-30**, before being built. Entry 68 keeps this entry's
+model and its density/colour split verbatim and widens the scope: measurement
+of four day-mode frames showed the atmospheric layer is where the damage
+actually is, so the exclusion decided here — geometry only — is the one thing
+68 reverses. Build 68; do not build this.
+
+**Do** — in day mode the geometric layer becomes dark ink on the light ground
+instead of bright light on it. At night it stays exactly as it is.
+
+**Why** — entry 47 lifted the ground to 0.6 and left the ink white, so a white
+ring on a light ground has 0.4 of contrast where it used to have 1.0, and it is
+*lighter* than the paper it sits on. Daylight legibility is the whole point of
+day mode and this is the half that was missed: nothing readable in sunlight is
+drawn in white light. It is drawn in ink.
+
+**Decided**
+- **The model, stated once so the algebra follows from it** → night is *light
+  emitted in a dark room*, and it is additive. Day is *ink laid on paper*, and
+  it is subtractive. Entry 47 supplied the paper and kept drawing with light.
+  This supplies the ink.
+- **The geometric layer only. The atmosphere keeps screening onto the paper.**
+  **Mine**, and it is the fork this entry turns on. The geometric views are
+  line art — thin bright figures on an empty field — and line art wants ink.
+  The atmospheric views are fields of colour with no empty ground to speak of;
+  making a field subtractive turns it into a dark wash over the whole frame,
+  which is a duotone print rather than a lighter picture. It also matches what
+  was asked for: *circles*.
+- **Hue survives.** The naive version — inverting the finished picture — makes
+  a blue ring yellow, and a person who chose blue would rightly call that
+  broken. So split the geometry into a **density** (`max` channel, how much ink
+  is here) and a **colour** (the geometry's own rgb), and lay the ink as
+  `mix(paper, geoColour * INK, density)`. A white ring becomes near-black; a
+  blue ring becomes dark blue. **Mine**, and it is why this is four lines
+  rather than one.
+- `INK = 0.12` — dark enough to read as black against a 0.6 ground, not so
+  dark that a coloured ink loses its hue entirely. **Mine** as to the value.
+- **The ink leads the paper.** This is the failure this design has to dodge and
+  it is not obvious: entry 53 made `uDay` continuous and clock-driven, so dawn
+  walks it from 0 to 1 — and if ink and ground cross over together, there is a
+  stretch around `uDay ≈ 0.5` where a mid-grey ring sits on a mid-grey ground
+  and the picture is at its *least* readable, in the exact hour day mode exists
+  for. So drive the ink with `smoothstep(0.15, 0.55, uDay)` while the ground
+  keeps its plain `uDay`: the ink goes dark before the paper comes up, and
+  contrast never dips below what night already had. **Mine**.
+- **Applied after exposure and scaled by `(1 - uCameraMix)`**, in the same
+  place and on the same terms as the ground it belongs to. Carry `geo`'s
+  density and colour down as two locals computed where `geo` is already
+  sampled — the layer is gone by then, and re-sampling the texture a second
+  time to recover it would be the expensive way to save two variables.
+- **Identity at night is algebraic, not tuned** — the final `mix(col, inked,
+  uDay * (1 - uCameraMix))` is exactly `col` at `uDay = 0`, the same property
+  entry 47 was careful to give the ground. Nothing about the night picture can
+  drift as a side effect of this.
+- Deliberately **not** touching `uGeoColour` or anything stored → the ink is a
+  render-time transform of what the layer already drew, at the same seam
+  entries 48, 58 and 60 use. A person's chosen colour is unchanged, still what
+  the HUD shows, still what a shared URL carries.
+- Reversible if the field views turn out to want it too → the density/colour
+  split works identically on the atmosphere. Excluded here on judgement, not
+  on cost.
+
+**Lands in**
+- `src/shaders/composite.frag.glsl:126` — two locals where `geo` is sampled.
+- `src/shaders/composite.frag.glsl:185-187` — the ground line, which gains the
+  ink step after it.
+- `scripts/probe-composite.ts` — it has no day-mode coverage at all today.
+
+**Done when** — with day mode on, Circles reads as dark rings on a light
+ground; a non-white `geoColour` reads as a dark version of itself rather than
+its complement; at `uDay = 0` the frame is bit-identical to before the change;
+and sweeping `uDay` from 0 to 1 never produces a frame with less ring-to-ground
+contrast than at `uDay = 0`. That last one is the entry's real assertion and
+belongs in `probe-composite.ts` as a sweep, not as a spot check.
+**Verify** — the probe for the arithmetic, including the crossover sweep, then
+a phone outdoors, which is the only thing that can answer whether 0.12 and 0.6
+are the right pair. Entry 47's own Verify said the same and that half is still
+unanswered.
+**Hard stops** — prefs no · url no · capture no (the capture shows what is on
+screen, and in daylight that is now the readable version) · dependency no.
+
+**Archival note — `/ccc` at build 356.** Superseded by entry 68 before being built, and 68 is itself verified and archived here. Moved rather than left in the live queue, for the reason entry 94's own note gives.
+### 65. The disc still pulses when motion is reduced, and the app says when it is
+`status: done` · added 2026-08-30 · shipped at build 220 · verified at build 356
+
+**Build note** — process lapse first, same as entry 61's: implemented before
+committing a `status: building` claim. Checked before writing this note —
+no concurrent commit touched this entry in the interim, so nothing
+collided, but this is the second time; worth actually stopping to do the
+claim commit as the very first action from here on, not just meaning to.
+
+`#start`'s reduced-motion override changed from `animation: none` to
+`animation: start-pulse-reduced 3.4s ease-out infinite`, a new keyframe
+animating `background` between the resting `#9d9bf0` and the `:hover`
+colour `#b9b7ff` at the midpoint — same period as `start-pulse`, no
+box-shadow spread, no `scale`, matching the entry's own reasoning exactly
+(the disc breathes in colour, not size). `main.ts` now reads
+`window.matchMedia('(prefers-reduced-motion: reduce)').matches` once per
+frame into a new `reducedMotion` field on the stats object passed to
+`panel.update()`; `hud.ts` reports it in the readout as `os motion
+reduced`/`os motion full`, appearing only when defined.
+
+One naming collision found and fixed before shipping: the readout already
+has a `motion ${samples} ev  peak ...` line — shake-sensor diagnostics,
+unrelated to this entry. A first draft used the same `motion` prefix for
+the new field, which would have put two differently-meaning lines starting
+with the same word next to each other in the same readout. Renamed to `os
+motion` specifically to keep them apart.
+
+Verified live against the real dev server via the CSS Object Model, not
+just by reading the source: confirmed `start-pulse-reduced` exists as an
+actual parsed keyframes rule with two steps, and confirmed the
+`@media (prefers-reduced-motion: reduce) { #start { ... } }` rule resolves
+its `animation` shorthand to `start-pulse-reduced` at 3.4s ease-out infinite
+— not `none`, and not silently pointing at a nonexistent keyframe name — a
+class of typo neither `pnpm build` nor `pnpm lint` would have caught, since
+neither TypeScript nor ESLint parses embedded `<style>` CSS.
+
+Not verified, matching the entry's own stated limits exactly: real behaviour
+on a phone with Battery Saver toggled, and even a DevTools
+`prefers-reduced-motion: reduce` emulation, which needs the Chrome DevTools
+Protocol's Emulation domain — this session's browser tools don't expose it.
+`pnpm build`, `pnpm lint` both clean; no probe script covers this file's
+embedded CSS today and the entry doesn't ask for one.
+
+**Do** — give `#start` a reduced-motion pulse instead of switching it off, and
+report `prefers-reduced-motion` in the `?debug` readout.
+
+**Why** — the pulse has shipped twice (builds 99 and 159) and has never been
+seen. The CSS is correct, so the cause is environmental and the app cannot
+currently say which environment it is in.
+
+**Decided**
+- **What was ruled out first**, so nobody re-checks it: the rule at
+  `index.html:421` is present and well-formed; `#start` is *not* `disabled` at
+  load, so `:disabled { animation: none }` at `:453` is not firing; the
+  reduced-motion override at `:514` is later in the file at equal specificity,
+  so it does win, which is the point below; and `start-breathe` correctly uses
+  the `scale` property rather than `transform`, so `#start:active` is not
+  deleting it. Nothing about the authored animation is wrong.
+- **The cause, most likely** → `@media (prefers-reduced-motion: reduce)` at
+  `:514` sets `animation: none` and kills **both** animations outright. Android
+  sets that query under Battery Saver and under Settings → Accessibility →
+  Remove animations, neither of which announces itself to a web page. A phone
+  in that state is also the leading explanation for entry 40's haptics, which
+  failed on every rung — the same restricted-power posture, on the same
+  handset, across the same weekend.
+- **The file already disagrees with itself about this, and the other half is
+  right.** Entry 41's shake pulse does not go silent under reduced motion — it
+  swaps to `shake-pulse-reduced` and `shake-pulse-double-reduced` at `:174` and
+  `:178`, keeping the signal and dropping the movement, with a comment that
+  states the principle exactly: *"it still goes green; it just stops
+  blinking."* `#start` is the inconsistency, not the precedent. The preference
+  asks for less **motion**, not less **feedback**, and a disc whose entire job
+  is to say *press me* is the last thing that should answer it by going still.
+- **So: `start-pulse-reduced`** — the same 3.4s period, animating `background`
+  between `#9d9bf0` and the `:hover` colour `#b9b7ff` rather than a travelling
+  ring. **Mine.** No box-shadow spread (that is the movement), no `scale` (that
+  is `start-breathe`, which stays off — it is literally size change and is what
+  the preference is about). The disc breathes in colour instead of in size,
+  which is legible across a room and moves nothing.
+- **The readout is the load-bearing half, not the fix.** If reduced motion is
+  *not* the cause, the change above alters nothing and we are guessing a fourth
+  time. One word in the `?debug` line turns it into a fact at a glance —
+  exactly the argument `shake.ts`'s own `diagnostics()` already makes for
+  `samples` and `peak`, and for the same reason: two very different faults with
+  one indistinguishable symptom.
+- Confirming it explains **three** symptoms at once → the same query also
+  silences the byline glow (`:329`) and both shake-flash tiers (`:112`,
+  `:209`). If the readout says motion is reduced, the byline is not glowing
+  either, and that is checkable on the same screen without changing anything.
+- Not decided here → whether to offer an in-app override. A page that ignores a
+  stated accessibility preference on the user's say-so is a real design
+  question and it is not this entry's.
+
+**Lands in**
+- `index.html:514-516` — the override becomes a swap, not an off switch.
+- `index.html` — one new `@keyframes start-pulse-reduced`, beside the shake
+  pair it is modelled on.
+- `src/hud.ts:1214` — the readout, beside the existing `full <state>` field.
+
+**Done when** — with Android's "Remove animations" on, the disc still visibly
+changes, in colour, on the same 3.4s period, and does not move or resize; with
+it off, the ring and the breathe are exactly as they are today; and the `?debug`
+readout states which of the two the phone is in.
+**Verify** — the phone, with Battery Saver toggled both ways, which is the
+whole question. A desktop can only rehearse it: DevTools can emulate
+`prefers-reduced-motion: reduce`, which proves the CSS swaps but not that the
+handset was ever in that state.
+**Hard stops** — prefs no · url no · capture no · dependency no.
+
+**Verification note — `/ccc` at build 356.** Built as specified and since improved: the `?debug` readout reports `os motion reduced/full`, and `start-pulse-reduced` still drives the reduced branch — but entry 99 (build 325) rewrote its keyframes from the two-lavender background swap this entry shipped into a glow and a brightness swing, because the original was invisible on a phone in sunlight and was reported as "not landing" five times. The mechanism this entry chose was right; the amplitude was not.
+### 66. Fullscreen is a desire, not a history — and the probe asserts the invariant
+`status: done` · added 2026-08-30 · shipped at build 217 (built together with entry 62) · verified at build 356
+
+**Build note** — `permission-gate.ts`'s five flags (`fsState`, `fsError`,
+`fsAttempts`, `fsArmed`, `fsEverEntered`) collapse to `wantFullscreen` (the
+one desire, set true the first time anything calls `goFullscreen()`, never
+set back to false) plus `fsState`/`fsError`/`fsAttempts` kept as plain
+diagnostics, plus a re-added `fsArmed` — not eliminated, since the entry
+itself asks the readout to show "whether the retry is armed" as
+independent of `state`. What's actually gone is `fsEverEntered` and the
+`||`-guard that conditioned re-arming on it; `grep -c fsEverEntered src/` is
+0 (checked, including in a doc comment that named the flag historically —
+the mechanical Done-when check doesn't distinguish code from prose, so that
+comment was reworded rather than left as a false negative).
+
+`watchFullscreen()`'s `fullscreenchange` handler now calls
+`armFullscreenRetry()` unconditionally on every exit, not only from a
+rejected `goFullscreen()` promise — "if we want it and we are not in it, arm
+the retry", re-evaluated fresh every time, exactly as the entry states it.
+`armFullscreenRetry()`'s own guard is `if (!wantFullscreen || fsArmed ||
+!retryTarget) return` — no history term at all, so it cannot refuse a second
+time for the same reason it refused every time after the first before this
+entry.
+
+**Deliberately verified the check can fail, not just that it passes** —
+before running the final probe, temporarily reintroduced an `everEntered`
+flag ORed into the same guard (the old bug's exact shape) and confirmed
+`pnpm probe:fullscreen` failed 7 of its checks, specifically the new cycle's
+second and third iterations (`armed was false`, state stuck on `exited`
+instead of recovering) — exactly where the original bug would have shown up
+had this check existed when it was introduced. Reverted immediately after
+confirming the failure, then reran clean.
+
+`probe-fullscreen.ts` rewritten: the DOM stub's `document.addEventListener`
+was a bare no-op before this entry (the old cases never needed a real
+`fullscreenchange` event, since every failure path they tested went through
+`goFullscreen()`'s own promise rejection, not a genuine loss-while-active).
+Entry 66's own invariant — recovery after any number of *real* losses, not
+rejections — can't be exercised without one, so the stub now captures
+`fullscreenchange` listeners for real and exposes `stub.exit()` to fire one
+with `fullscreenElement` already null, simulating a system back-swipe. A
+second stub target (a fake canvas-like object with its own listener map)
+replaces the old `window`-based tap simulation, matching entry 62's retry
+now living on `#canvas` rather than `window`. The two "unbounded negative"
+checks (`granted → a later tap does not re-request`, `recovered → stops
+asking`) are restated as `while active, a tap does not re-request` — bounded
+by the entry's own naming convention ("a check whose name is a negative must
+say under what condition the behaviour resumes"). The new case 6 runs the
+entry's own example — enter, lose, tap, re-enter, three times — asserting
+`state`/`armed` at every step, not just the final call count, so a
+regression that only breaks the *second* cycle (exactly what the original
+bug did) cannot hide behind a passing aggregate.
+
+`hud.ts`'s readout line gains ` want`/` armed` beside `full <state>` — only
+appended when true, so the common steady-state case (`full active`) reads
+exactly as it always did and the two new words appear only when there is
+something to say. Not verified via the real numeric readout on a phone
+(requires a completed Start), but `fullscreenStatus()`'s new `want`/`armed`
+fields were confirmed live against the real module: `active(want=true,
+armed=false) → exited(want=true, armed=true) → active(want=true,
+armed=false)` across two full loss/recovery cycles, and a tap on an element
+other than the registered retry target was confirmed to leave `attempts`,
+`state`, and `armed` all unchanged.
+
+**Do** — replace the fullscreen flags with a single "do we want fullscreen"
+plus state derived from the document, and change `probe-fullscreen.ts` to
+assert the invariant rather than the current behaviour.
+
+**Why** — asked how to stop this happening again. The honest answer is not a
+bisect: it never worked, and the guard that was supposed to catch it asserts
+the fault as correct.
+
+**Decided**
+- **It is not a regression, and that matters for the fix.** `git log -S` puts
+  `if (fsArmed || fsEverEntered) return` in `7e24054`, the same commit that
+  first introduced `fsEverEntered` — and `99b6315`, *"A way back into
+  fullscreen once it has been lost"*, comes after it and shipped the chip
+  precisely because the automatic path was first-entry-only. **Automatic
+  re-entry has never worked twice in any build.** So there is no bad commit to
+  find and no bisect to run, and "how do we make sure it doesn't happen again"
+  cannot be answered by watching for a change — the thing was wrong when it was
+  written.
+- **The probe asserts the bug.** `probe-fullscreen.ts:113` is
+  `'granted → a later tap does not re-request'`, checking `stub.calls === 1`,
+  and `:143` is `'recovered → stops asking'`. Both are green today. Both are
+  the defect, written down as a requirement. The probe's own docstring opens
+  with *"fullscreen went missing for several builds and nothing noticed"* —
+  it was written to stop exactly this, and it froze the fault instead.
+- **Why they were written that way, because it was not carelessness** → they
+  are anti-nag checks, and nagging is a real failure: a page that re-requests
+  fullscreen on every tap is unusable. The mistake is that they condition on
+  **history** ("has it ever succeeded") when the thing they mean conditions on
+  **state** ("is it fullscreen right now"). Those two agree exactly until
+  fullscreen is lost, which is the case nobody wrote a check for.
+- **The rule worth keeping past this entry**: *a check whose name is a negative
+  must say under what condition the behaviour resumes.* "Does not re-request"
+  and "stops asking" are unbounded, and an unbounded negative is how a probe
+  turns a decision into a permanent one. Restated: **"while active, a tap does
+  not re-request"** — same protection, and it is now false in exactly the
+  situation it should be.
+- **The structural fix: remove the concept that made it expressible.** Five
+  module-level flags currently model this (`fsState`, `fsError`, `fsAttempts`,
+  `fsArmed`, `fsEverEntered`). Replace the history ones with **one desire**:
+  `wantFullscreen`, true from the Start gesture, false only when the person
+  leaves deliberately. Everything else is derived from
+  `document.fullscreenElement` on each `fullscreenchange`, and the whole rule
+  becomes one line — **if we want it and we are not in it, arm the retry** —
+  re-evaluated every time, with no memory of how many times it has happened.
+  **Mine**, and the point is not tidiness: with no "ever entered" concept there
+  is nothing for a future guard clause to be written against, so the bug cannot
+  be reintroduced in the same shape.
+- **"Deliberately" is defined by entry 62, not re-decided here** → the retry
+  listens on the picture rather than on `window`, so a person who left to use
+  the address bar is not dragged back. That is what lets `wantFullscreen` stay
+  true without becoming a nag, and it is why these two entries are one change.
+- **The invariant the probe must assert instead** → a cycle: enter, lose, tap,
+  re-enter — three times, with the stub's call count reaching 4. It is one
+  loop, it fails today at the second iteration, and it is the check that would
+  have caught this on the day it was written.
+- **And say it on the phone** → the readout's `full <state>` field gains the
+  desire and whether the retry is armed. State alone cannot distinguish "not
+  fullscreen and trying" from "not fullscreen and given up", which is the
+  distinction this whole entry is about.
+
+**Lands in**
+- `src/permission-gate.ts:85-92` — the flags collapse to `wantFullscreen` plus
+  derived state.
+- `src/permission-gate.ts:120-153` — `watchFullscreen` and
+  `armFullscreenRetry` become the one rule.
+- `scripts/probe-fullscreen.ts:113,143` — restate both negatives; add the
+  cycle.
+- `src/hud.ts:1214` — two more fields on the existing line.
+
+**Done when** — the cycle check passes at three iterations and fails if
+anything conditions arming on history again; both anti-nag checks still pass in
+their restated form; and `grep -c fsEverEntered src/` is 0.
+**Verify** — the probe carries this one, deliberately: it is deterministic
+given a stubbed `requestFullscreen`, and the docstring already explains why a
+browser here cannot answer it. The phone confirms the behaviour once, via entry
+62's own Verify; the probe is what keeps it true afterwards.
+**Hard stops** — prefs no · url no · capture no · dependency no.
+
+**Verification note — `/ccc` at build 356.** Verified exactly as its own Done-when asks, which is the neatest acceptance test in the queue: `grep -rc fsEverEntered src/` returns zero, and `probe-fullscreen` passes all 40 checks including the recovery case. This is the entry that established fullscreen as a *desire* rather than a history — the guard it removed was the actual cause of the "why did we lose fullscreen" reports, and the probe had been asserting the bug.
+### 67. The menu opens on the second touch, and has a way in that cannot be missed
+`status: done` · added 2026-08-30 · shipped at build 222 · verified at build 356
+
+**Build note** — `resolveTap` became `resolveTapDown`, called from the
+`down` branch of `dispatchTouches`'s events loop instead of `up`, with
+`TAP_RESOLVE_MS` raised to 400 and measured from the first tap's own down.
+`PendingTap` gained `pointerId`: since resolution now starts before it is
+knowable whether a contact will end as a clean tap or a drag, the
+`TAP_SLOP_PX` check moved to that same contact's later `up`, where a new
+`cancelPendingTap(pointerId)` removes the entry its own `down` may have
+started rather than letting a save fire for a completed drag. A `cancel`
+event (pointercancel/lostpointercapture) cancels the same way — a real gap
+the old up-triggered model never had, since nothing existed to leave
+dangling before a contact's release was the only thing that mattered. The
+two-finger tap is recognised in the same `down` branch: `nonChipDown`,
+counted once from the existing `touchField.sample(now)` pass, hits exactly
+2 the instant a second finger lands while a first is still down, which
+opens the panel immediately and skips creating a pending single for that
+second contact.
+
+**Deviated from the entry's own "Lands in"**: it names
+`scripts/probe-touch-stream.ts` for the two new checks, but that file tests
+`engine/touch.ts`'s touch→atmosphere envelope — an unrelated pure module
+with no tap-resolution logic in it. **Mine**: added `scripts/probe-tap.ts`
+instead, a fresh file named for what it actually tests, following
+`probe-nudge.ts`'s own established precedent for exactly this situation —
+a plain re-implementation of the state machine "kept in lockstep with
+main.ts by eye" — since `resolveTapDown`'s logic lives inline in `main()`'s
+closure and main.ts cannot be imported into a Node script (it reaches for
+`document` at module load). New `pnpm probe:tap` script in package.json.
+Nine checks: the entry's own human-timing figure (down 0, up 90, down 240
+opens); the bounded negative restated per entry 66's own naming rule ("a
+lone tap does not open the panel *within its window*", checked one
+millisecond before the window closes, then again as it closes and commits);
+a second tap arriving after the window does not retroactively open
+anything; a second tap inside the window but outside the 30px radius stays
+independently pending rather than pairing; and a cancelled contact never
+saves. All nine pass.
+
+`pnpm probe:touches` and `pnpm probe:touch-stream` both rerun clean and
+unchanged — neither this entry nor its fix touches `engine/touches.ts` or
+`engine/touch.ts` themselves, only how `main.ts` reads their output.
+
+Not verified live end-to-end: the actual double tap, drag-cancels-a-pending-
+save, and two-finger-open behaviours all live inside `dispatchTouches`,
+which only runs after `waitForStart()` resolves — gated behind the live
+microphone permission prompt this harness cannot complete, the same limit
+disclosed in entries 60–62's build notes. What was verified instead is the
+extracted state machine (`probe-tap.ts`, against the exact same constants
+and logic shape as the real code) and, by code reading, that the wiring
+into the real event loop matches it: the same guard order (`onChip`,
+`hudOpen`, `gateShowing`) the old up-based dispatch used, moved to gate the
+new down-based one instead.
+
+**Do** — recognise the double on the second tap's *down* rather than its up,
+widen the window to 400ms measured from the first tap's down, and add a
+two-finger tap as a second way in.
+
+**Why** — the menu is genuinely harder to reach than it was, and it is one
+gesture away from being unreachable at all.
+
+**Decided**
+- **When it was lost, and to what** → build 186, entry 52. Before it, the menu
+  opened on a single tap in the middle third: a zero-delay gesture with a
+  target a third of the screen high. After it, the menu needs a double tap
+  landing inside 30px and inside 280ms. That trade was right — entry 52's
+  reasoning about a zero-delay opener always winning the race against a second
+  tap still holds — but the replacement was tuned optimistically and nothing
+  measured whether a hand can actually land it.
+- **The window is measured from the wrong edge.** `resolveTap` is called on
+  `up`, so the 280ms runs from the first tap's *release* to the second tap's
+  *release* — which means **the second tap's own contact duration is spent out
+  of the budget**. A deliberate double with 120ms contacts and a 200ms gap is
+  320ms up-to-up and fails, saving two screenshots instead of opening
+  anything. Nobody's idea of "how fast did I tap" includes how long their
+  finger rested on the glass. Every platform measures this down-to-down for
+  exactly that reason.
+- **So recognise it on the second `down`, not its up.** **Mine**, and it is
+  strictly better on three counts: the second contact's duration leaves the
+  budget entirely, the second tap's `TAP_SLOP_PX` check stops applying to a
+  gesture that has not finished moving yet, and the menu appears the instant
+  the finger lands rather than after it lifts — which is what "responsive"
+  means here. This is also what Android's own `onDoubleTap` does.
+- **400ms, still one number.** Entry 52's "the same wait looked at from either
+  end of it" is right and survives: the single commits 400ms after the first
+  *down*, and a second down inside that same 400ms opens the panel. Android's
+  double-tap timeout is 300ms down-to-down and its slop is far wider than
+  30px; 400 buys back the frame-quantisation this design adds on both ends
+  (`dispatchTouches` drains once per rendered frame) without reaching the
+  ~500ms where two deliberate separate taps start pairing. **Mine** as to the
+  value. The save it delays is the one thing in the app that can tolerate a
+  delay, which was entry 52's own argument.
+- **`DOUBLE_TAP_RADIUS_PX` stays 30.** It is measured between two taps, not
+  within one, and it is not what is failing.
+- **A second way in, because one path is how the last three of these
+  happened.** `hud.ts:408` is `.hud-scrim:not(.open) .hud-chip { pointer-events:
+  none }` — **every chip is inert while the panel is closed**, so the double
+  tap is not the main way to the menu, it is the *only* way. That is the same
+  shape as entry 66's fullscreen: a single fragile path with no alternative and
+  nothing asserting it still works. **A two-finger tap opens the menu too.**
+  **Mine**: it cannot be confused with play (entry 50 is one contact), it
+  cannot happen by accident with a thumb, and it costs nothing to hold in
+  reserve. It is a safety net, not a taught gesture, and it does not need to be
+  discoverable to be worth having.
+- **Not a long press**, which is the obvious alternative → entry 57's emitter
+  charges over 2.5s from the moment a contact begins, so any hold-to-open
+  threshold sits inside the charge and would make the two gestures fight.
+- **Assert it at human timing.** `probe-touch-stream.ts` should drive a
+  synthetic double at figures a hand actually produces — down 0, up 90, down
+  240 — and require the panel to open; today nothing anywhere asserts the
+  menu can be opened at all. Per entry 66's rule, the paired negative gets its
+  bound stated: **"a lone tap does not open the panel *within its window*"**,
+  not "does not open the panel".
+
+**Lands in**
+- `src/main.ts:990-1030` — `resolveTap` takes the down point and time; the
+  match runs from the `down` branch of the event loop rather than `up`.
+- `src/main.ts:1041` — `dispatchTouches`, where the two-finger case is
+  recognised.
+- `scripts/probe-touch-stream.ts` — the two checks above.
+
+**Done when** — a double tap at 240ms down-to-down opens the menu every time,
+including when each contact rests 120ms on the glass; a single tap still saves,
+400ms later; two fingers open the menu regardless of timing; and ten taps in
+five seconds still save no more than seven frames, which entry 52 already
+requires and this must not break.
+**Verify** — the probe for the timing, then the phone, which is the only place
+"every time" means anything. Try it one-handed with a thumb, which is the case
+that fails today.
+**Hard stops** — prefs no · url no · capture no (when a save fires moves by
+120ms; nothing about what is captured changes) · dependency no.
+
+**Verification note — `/ccc` at build 356.** The timing clauses hold — the tap probe's twelve checks include a real double at down 0 / up 90 / down 240 opening the panel, which is the down-to-down measurement this entry introduced. Two clauses are gone by design rather than broken: *"a single tap still saves, 400ms later"* and *"ten taps in five seconds still save no more than seven frames"* both describe tap-to-save, which entry 103 removed at build 339 after Victor asked that a touch not take a photograph. The probe's own save assertions went with it, so probe and code agree; only this entry's prose still describes the old world.
