@@ -34,6 +34,7 @@ import type { GeoColour } from './geo-colour'
 import type { Character } from './engine'
 import type { AtmosphericViewName } from './views'
 import type { Posture } from './engine'
+import { CELESTIAL_IDENTITY, type CelestialInfluence } from './engine/celestial.ts'
 
 /**
  * docs/todo.md entry 90 — multipliers on `COLOUR_HOLD`/`VIEW_HOLD` by how
@@ -262,9 +263,21 @@ const lerp = (a: number, b: number, t: number): number => a + (b - a) * t
  * which is both the obvious metaphor — noise is white — and the thing that
  * keeps a noisy passage from reading as a *hue* when what changed was the
  * absence of pitch.
+ *
+ * `moonRampBias` — docs/todo.md entry 100 — nudges the ramp position itself,
+ * signed by whether the moon is waxing (positive, up the ramp toward
+ * jade/cold) or waning (negative, down toward ember). Defaults to 0, today's
+ * exact behaviour, for every caller that has no moon term to offer — every
+ * existing call site in this codebase, and every probe fixture that predates
+ * this entry. Bounded well inside one ramp segment's own width (`t` spans
+ * `RAMP.length - 1` = 2.0 in total; see `celestial.ts`'s own
+ * `MOON_RAMP_TIE_BIAS` for the actual figure) so this can only ever tip a
+ * genuinely close call between two adjacent stops — "the character calls
+ * equal," in Decided's own words — never manufacture a jump the audio itself
+ * did not ask for.
  */
-export function colourFor(c: Character): GeoColour {
-  const t = Math.max(0, Math.min(1, c.bright)) * (RAMP.length - 1)
+export function colourFor(c: Character, moonRampBias = 0): GeoColour {
+  const t = Math.max(0, Math.min(RAMP.length - 1, Math.max(0, Math.min(1, c.bright)) * (RAMP.length - 1) + moonRampBias))
   const i = Math.min(RAMP.length - 2, Math.floor(t))
   const f = t - i
   const wash = Math.max(0, Math.min(1, c.noisy)) * 0.6
@@ -381,6 +394,11 @@ export class Director {
   // constant.
   private colourHold = COLOUR_HOLD
   private viewHold = VIEW_HOLD
+  // docs/todo.md entry 100 — the sun/moon multipliers `update()` last
+  // actually used, stored for the same reason `colourHold`/`viewHold` are:
+  // `status()` reports them against what the decision was actually judged
+  // by, not a value recomputed fresh (and possibly stale by a frame) here.
+  private celestial: CelestialInfluence = CELESTIAL_IDENTITY
   // docs/todo.md entry 91 — the generative engine's own clock. Advances
   // unconditionally, suspend included, same reasoning as `candidateHeld`
   // above: a walk that froze while suspended would jump on resume.
@@ -452,6 +470,11 @@ export class Director {
      *  running" without it: a diagnostic that goes quiet precisely when the
      *  fault fires is not a diagnostic. */
     blocked: string | null
+    /** docs/todo.md entry 100 — "report it": the two multipliers actually
+     *  judging the current decision, so two invisible natural cycles
+     *  silently changing the app's pacing have a place to be seen doing it. */
+    sunRate: number
+    moonReach: number
   } {
     return {
       suspended: Math.max(0, this.suspended),
@@ -461,6 +484,8 @@ export class Director {
       candidateHeld: this.candidateHeld,
       waitingForBar: this.pending !== null,
       blocked: this.blocked,
+      sunRate: this.celestial.sunRate,
+      moonReach: this.celestial.moonReach,
     }
   }
 
@@ -494,10 +519,33 @@ export class Director {
     beatPhase: number,
     beatConfidence: number,
     posture: Posture,
+    // docs/todo.md entry 100. Defaulted to the identity, unlike `posture`
+    // above (required since entry 90, deliberately: no posture value is a
+    // neutral "do nothing" — every one of them is a real multiplier
+    // choice). Here, `CELESTIAL_IDENTITY` genuinely is "today's behaviour,
+    // unchanged" for every axis, so it is the correct default for the
+    // large majority of this file's own probe fixtures (scripts/probe-
+    // slow.ts, scripts/probe-posture.ts), which are testing entries 45,
+    // 81, 84, 89 and 91 — none of which this entry touches — and would
+    // otherwise all need updating to pass an inert value just to keep
+    // compiling. `main.ts` is the one caller that opts in for real.
+    celestial: CelestialInfluence = CELESTIAL_IDENTITY,
   ): Directives | null {
+    this.celestial = celestial
     const scale = HOLD_SCALE[posture]
-    this.colourHold = COLOUR_HOLD * scale
-    this.viewHold = VIEW_HOLD * scale
+    // docs/todo.md entry 100 — the sun's own rate term is a divisor, not a
+    // multiplier, on hold time: Decided frames it as "how often" (a
+    // frequency — twilight is *most restless*, i.e. changes *most often*),
+    // while this file's own HOLD_SCALE convention already establishes that
+    // a *shorter* hold is what "more often" means here (`still` — the
+    // fastest-changing posture — carries the *smallest* multiplier, 0.55).
+    // So `sunRate` above 1 (peak twilight) must shrink the hold, and
+    // dividing is what does that; multiplying would have inverted Decided's
+    // own "twilight is restless, the small hours and flat afternoon are
+    // calm" into its opposite. **Mine**: the translation from Decided's
+    // prose ("rate multiplier") to this file's own hold-duration mechanics.
+    this.colourHold = (COLOUR_HOLD * scale) / celestial.sunRate
+    this.viewHold = (VIEW_HOLD * scale) / celestial.sunRate
 
     this.sinceColour += dt
     this.sinceView += dt
@@ -600,7 +648,7 @@ export class Director {
         // for `mix < 1` is the blend's rounding noise ever a real question,
         // and at that point it is nowhere near the boundary this entry's own
         // probe fixture sits at.
-        const reactive = colourFor(c)
+        const reactive = colourFor(c, celestial.moonRampBias)
         const wanted =
           mix >= 1
             ? reactive
@@ -621,7 +669,10 @@ export class Director {
         // slightly-noisy flavour axis leaves behind, not to manufacture a
         // no-op re-announcement of the colour already on screen.
         if (step > 0) {
-          const neededStep = requiredStep(overdue)
+          // docs/todo.md entry 100 — the moon's own reach, centred on 1 so
+          // "moon off" (celestial.moonReach === 1, the default) leaves this
+          // exactly as `requiredStep(overdue)` always was.
+          const neededStep = requiredStep(overdue) * celestial.moonReach
           const neededNovelty = requiredNovelty(overdue)
           if (step < neededStep) {
             blocked = `colour: step ${step.toFixed(2)} < ${neededStep.toFixed(2)}`
@@ -656,7 +707,15 @@ export class Director {
         // second constant to keep in step with it. At `mix === 1` this plays
         // no part: the target is `candidate`, exactly as before this entry.
         const rotating = Math.floor(this.genPhase / this.viewHold) % 2 === 0 ? this.candidate : this.secondBest
-        const target = stuck ? this.secondBest : mix >= 1 ? this.candidate : rotating
+        // docs/todo.md entry 100 — the moon's own reach again, this time
+        // choosing between the bold primary suggestion and the nearer
+        // runner-up: below its own neutral 1 (a new moon that is up),
+        // prefer the safer answer; at or above 1 (moon off, or a full
+        // moon that is up), keep today's behaviour of always taking the
+        // primary suggestion. `< 1` rather than `!== 1` — the moon-off
+        // default and the full-moon case are meant to behave identically
+        // here, both preferring the bold answer.
+        const target = stuck ? this.secondBest : mix >= 1 ? (celestial.moonReach < 1 ? this.secondBest : this.candidate) : rotating
         const neededNovelty = requiredNovelty(overdue)
         if (target === null || target === current.atmosphericView) {
           blocked = blocked ?? `view: candidate = current (${current.atmosphericView})`

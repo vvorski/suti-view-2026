@@ -11389,7 +11389,104 @@ point: it must work as the phone is.
 function that already exists, no animation library (entry 94 settled that).
 
 ### 100. The sun says how often, the moon says how far
-`status: building` · added 2026-08-30 · build after 89, 90 and 96
+`status: done` · added 2026-08-30 · build after 89, 90 and 96 · build 327
+
+**Build note (Mine).** Shipped in `src/engine/celestial.ts` (new): a pure
+`celestialFor(date, location)` reading `Sky.slope` (a new field, added
+alongside `daylight`/`warmth`, computed as `interpolate`'s own analytic
+derivative — `6u(1-u)` from the chain rule through `smoothstep`, exact at
+every anchor rather than a finite-difference approximation) and `Moon`
+(`illuminated`/`waxing`/`presence`, entry 96/97) into three numbers:
+`sunRate` (bounded [0.75, 1.25], 1 at a flat sky), `moonReach` (centred on
+1, swinging ±0.35 at full presence and a full new/full moon), and
+`moonRampBias` (a small ±0.06-wide nudge, signed by waxing/waning, zero at
+either turning point or moon-down). `director.ts` applies them: hold times
+divide by `sunRate` rather than multiply (see below), `COLOUR_MIN_STEP`'s
+own acceptance gate scales by `moonReach`, the view axis's bold-vs-safer
+choice gates on `moonReach < 1`, and `colourFor` takes the ramp bias as a
+new, defaulted second parameter. `Director.update()`'s own new `celestial`
+parameter is defaulted to `CELESTIAL_IDENTITY` — a deliberate departure from
+entry 90's own `posture` (required there, because no posture value is a
+true no-op); `CELESTIAL_IDENTITY` genuinely is one, so defaulting it left
+every existing `scripts/probe-slow.ts`/`probe-posture.ts` call site
+untouched rather than needing dozens of six-argument calls rewritten to
+seven. `main.ts` samples `celestialFor` once a second (`CELESTIAL_SAMPLE_S`),
+matching `scene.ts`'s own sky/moon sampling discipline, and requests location
+once at start-up through the same module-singleton `geo-location.ts` (entry
+97) `scene.ts` already uses — a second caller does not re-prompt. The HUD
+gained one line, `sun 1.18x  moon 0.82x`-shaped, beside the `auto`/`hold`
+lines Decided asked to sit next to.
+
+**Three judgment calls, disclosed.** (1) *Divide, not multiply.* Decided's
+own prose frames the sun's contribution as "how often" — a frequency, where
+higher means more restless and more frequent. This codebase's own
+`HOLD_SCALE` convention encodes "more frequent" as a *smaller* multiplier on
+hold duration, the opposite sense. Reconciled by dividing hold time by
+`sunRate` rather than multiplying — `sunRate` is bounded to [0.75, 1.25] by
+construction, so this never inverts sign, only ever shortens (`sunRate > 1`,
+at a twilight) or lengthens (`sunRate < 1`, at night or midday) the hold
+relative to posture's own scale, which stays the dominant term as Decided
+requires. (2) *One multiplier, two mechanisms.* `moonReach` drives both a
+continuous distance gate (`COLOUR_MIN_STEP`'s scale) and a discrete
+categorical choice (bold suggestion vs. the runner-up), rather than two
+separate constants — Decided's own "how far a step goes" reads as one idea
+wearing two hats in this codebase, not two ideas. (3) *The ramp tie-break as
+an additive bias on `colourFor`'s own continuous ramp position.* Considered
+and rejected: a literal branch-equality tie inside `viewFor` (there is no
+such tie to break — `viewFor` is not what "ramp" refers to in Decided's own
+text), and a hue-drift interaction with entry 91's generative engine (out of
+scope — entry 91 owns its own axis, untouched here). The bias is bounded to
+0.06 against a 2.0-wide `t` range specifically so it can only tip a close
+call between two adjacent `RAMP` stops, never manufacture a jump the audio
+did not ask for.
+
+**A bug ruled out before it shipped.** `sky.ts`'s `slope` field was drafted
+once to differentiate real solar altitude for `skyForLocation` (matching
+`daylight`/`warmth`'s own location-aware behaviour) and once to always use
+the clock-based anchor curve regardless of which function produced the
+`Sky`. Kept the second: Decided's own words — "the slope is still meaningful
+even when its absolute hours are wrong for the latitude" — say directly that
+differentiating the real ephemeris was never required to satisfy this entry,
+and doing it anyway would have made `skyFor`/`skyForLocation` diverge on a
+field where nothing asked them to.
+
+**Verify.** `scripts/probe-celestial.ts` (new) scrubs a representative day at
+one-minute resolution (`sunRate` never leaves [0.75, 1.25]; two windows,
+dawn and dusk, cross 1.1; midday and the small hours stay under 0.85) plus a
+scattered year of dates (same bounds hold regardless of calendar day, since
+`slope` is clock-only — the year mostly re-proves the daily shape is stable
+over a long timescale, which is honest: the sun's own two-peak curve does
+not itself vary by season in this implementation, only by hour). New moon
+and full moon (found by scanning each phase's own day for its presence
+peak, the same technique `probe-moon.ts` already uses) produce `moonReach`
+values 0.3+ apart, and that gap measurably changes how many marginal colour
+changes a fixed borderline-oscillating trace clears through a real
+`Director`. A waxing and a waning half-moon, matched by presence rather than
+by clock hour (the two quarters transit at different hours by construction),
+produce near-equal `moonReach` and opposite-signed `moonRampBias`. Moon down
+(twelve hours from a full moon's own transit) reproduces `CELESTIAL_IDENTITY`
+on both moon fields, within tolerance. And the load-bearing regression
+guard: the same 240-second synthetic four-axis trace run through
+`Director.update()` once omitting the `celestial` argument and once passing
+`CELESTIAL_IDENTITY` explicitly produces `JSON.stringify`-identical directive
+sequences, frame for frame — proof the defaulted parameter really is a
+no-op for every caller that predates this entry. All twenty existing probes
+plus this new one pass; `pnpm build`/`pnpm lint` clean.
+
+**A verification shortfall, disclosed rather than hidden.** The HUD line was
+not seen live through the running app — the sandboxed browser profile used
+for on-screen checks this session has no way to grant microphone access
+(`chrome://settings` is unreachable from browser automation here, the same
+class of tooling gap disclosed for entry 99's `resize_window`), and the app
+needs a warm microphone buffer before `s.director` exists at all. Verified
+instead by importing `src/hud.ts` directly in the page's own module graph
+(Vite serves ES modules in dev), constructing a real `Hud` with a synthetic
+`director` stats object (`sunRate: 1.18, moonReach: 0.82`), and screenshotting
+the result: `sun 1.18x  moon 0.82x` renders correctly, immediately after the
+`auto ...` line and before `hold ...`, with no clipping. This is layout
+verification of the readout, not a live end-to-end microphone-driven check —
+narrower than Decided's own "a phone left out across an actual sunset" ask,
+which cannot be done from here at all and was not attempted.
 
 **Do** — put the director's own energy on the two natural clocks. The solar
 cycle sets how *often* it moves; the lunar cycle sets how *far* a move goes and

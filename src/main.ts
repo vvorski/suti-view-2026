@@ -35,7 +35,8 @@ import { mountShare } from './share'
 import { Director } from './director'
 import { createVisualiser, type Visualiser } from './scene'
 import { RELEASE_NAME } from './release-name'
-import { SlowAnalysis, createPostureState, updatePosture } from './engine'
+import { SlowAnalysis, createPostureState, updatePosture, celestialFor, CELESTIAL_IDENTITY, type CelestialInfluence } from './engine'
+import { requestLocation, type GeoLocation } from './geo-location'
 import { hasMotionPermissionGate, intensity, startShake, STILL_FRAME, type ShakeFrame } from './shake'
 import { confirmBuzz, doubleBuzz, hapticStatus } from './haptics'
 import { IdlePreview } from './idle-preview'
@@ -949,6 +950,25 @@ async function main(): Promise<void> {
   // docs/todo.md entry 90 — how the phone is currently being held, so the
   // director can pace itself by posture rather than one fixed cadence.
   const postureState = createPostureState()
+  // docs/todo.md entry 100 — the same coordinate `scene.ts` already
+  // requested (or refused, or never resolved), read again here rather than
+  // threaded through the `Visualiser` interface: `geo-location.ts` is a
+  // module-level singleton that caches its own result, so this second call
+  // never asks the user a second time — it resolves instantly to whatever
+  // the first caller already got.
+  let geoLocationForDirector: GeoLocation | null = null
+  void requestLocation().then((location) => {
+    geoLocationForDirector = location
+  })
+  // docs/todo.md entry 100 — sampled once a second, not every frame, the
+  // same discipline `scene.ts`'s own sky/moon sampling already uses and
+  // for the identical reason stated there: "over a minute the change is
+  // invisible... per-frame would be waste." `Infinity` forces the first
+  // real frame to sample immediately rather than waiting a full second on
+  // `CELESTIAL_IDENTITY`.
+  const CELESTIAL_SAMPLE_S = 1
+  let celestialSample: CelestialInfluence = CELESTIAL_IDENTITY
+  let sinceCelestialSample = Infinity
 
   /** Held open only while passthrough is actually showing. See applyPassthrough. */
   let cameraSource: CameraSource | null = null
@@ -1539,6 +1559,12 @@ async function main(): Promise<void> {
         params.bpm,
         params.beatConfidence,
       )
+      sinceCelestialSample += audio.dt
+      if (sinceCelestialSample >= CELESTIAL_SAMPLE_S) {
+        sinceCelestialSample = 0
+        celestialSample = celestialFor(new Date(), geoLocationForDirector)
+      }
+
       if (!autoOverrideOff) {
         // docs/todo.md entry 81 — beatPhase/beatConfidence, both already on
         // params (entry 75), are what let the director hold a decision for
@@ -1553,6 +1579,7 @@ async function main(): Promise<void> {
           params.beatPhase,
           params.beatConfidence,
           posture.posture,
+          celestialSample,
         )
         if (next) panel.adopt(next, COLOUR_RAMP_DIRECTOR_S)
       }

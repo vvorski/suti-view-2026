@@ -79,3 +79,6 @@ export type { RgbSlipState } from './rgb-slip.ts'
 
 export { createPostureState, updatePosture } from './posture.ts'
 export type { Posture, PostureState, PostureReading } from './posture.ts'
+
+export { celestialFor, CELESTIAL_IDENTITY } from './celestial.ts'
+export type { CelestialInfluence } from './celestial.ts'

@@ -207,6 +207,11 @@ export interface Hud {
          *  nothing is due, something just fired, or the autopilot is
          *  suspended or holding for a bar. */
         blocked?: string | null
+        /** docs/todo.md entry 100 — "report it": the sun's own rate
+         *  multiplier and the moon's own reach multiplier currently
+         *  judging the director's decisions. */
+        sunRate?: number
+        moonReach?: number
       }
       /** Whether the long-scale buffer has enough history to act on. */
       warm?: boolean
@@ -1522,6 +1527,14 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
                       `${Math.floor(s.director.candidateHeld)}s  ` +
                       `next ${Math.ceil(s.director.tillView)}s`,
             ]),
+        // docs/todo.md entry 100 — "report it": the sun's own rate multiplier
+        // and the moon's own reach multiplier, beside entry 90's posture line
+        // and entry 89's blocked-gate line above. Gated on the same
+        // `s.director` presence the two lines above already use, since both
+        // numbers live on the same status object.
+        ...(s.director === undefined || s.director.sunRate === undefined || s.director.moonReach === undefined
+          ? []
+          : [`sun ${s.director.sunRate.toFixed(2)}x  moon ${s.director.moonReach.toFixed(2)}x`]),
         // docs/todo.md entry 90 — five states that silently change the
         // director's own cadence, reported for the same reason the director
         // line above is: a silent classifier is indistinguishable from a

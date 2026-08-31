@@ -47,6 +47,14 @@ export interface Sky {
   daylight: number
   /** -1 (cool) .. 1 (warm). */
   warmth: number
+  /** docs/todo.md entry 100 — `daylight`'s own derivative, in daylight-units
+   *  per hour, always computed from the clock anchors below regardless of
+   *  which of `skyFor`/`skyForLocation` produced this `Sky` — real solar
+   *  altitude was never differentiated for this, since "the slope is still
+   *  meaningful even when its absolute hours are wrong for the latitude"
+   *  (Decided's own words) already covers the clock-only case, and
+   *  `engine/celestial.ts` is the one reader. */
+  slope: number
 }
 
 interface Anchor {
@@ -110,10 +118,41 @@ function interpolate(anchors: readonly Anchor[], rawHour: number): number {
   return anchors[0].value
 }
 
+/**
+ * `interpolate`'s own analytic derivative, at the same wrapped hour —
+ * docs/todo.md entry 100. `smoothstep(u) = 3u² - 2u³` has derivative
+ * `6u(1-u)` with respect to `u`; the chain rule through
+ * `u = (hour - a.hour) / (bHour - a.hour)` divides by the segment's own
+ * width in hours. Exact, not a finite-difference approximation: a numeric
+ * difference would introduce noise right at a segment's own two ends,
+ * where `interpolate`'s own "no corner" property (the thing `probe-sky.ts`
+ * already checks for `daylight` itself) needs the derivative to land on a
+ * true zero, not something merely close to it — `6u(1-u)` is exactly 0 at
+ * `u = 0` and `u = 1` by construction, with no rounding involved.
+ */
+function interpolateSlope(anchors: readonly Anchor[], rawHour: number): number {
+  const hour = rawHour < anchors[0].hour ? rawHour + 24 : rawHour
+
+  for (let i = 0; i < anchors.length; i++) {
+    const a = anchors[i]
+    const bIndex = (i + 1) % anchors.length
+    const b = anchors[bIndex]
+    const bHour = bIndex === 0 ? b.hour + 24 : b.hour
+    if (hour >= a.hour && hour < bHour) {
+      const width = bHour - a.hour
+      const u = (hour - a.hour) / width
+      const dSmoothstepDu = 6 * u * (1 - u)
+      return ((b.value - a.value) * dSmoothstepDu) / width
+    }
+  }
+  return 0
+}
+
 export function skyFor(date: Date): Sky {
   const rawHour = date.getHours() + date.getMinutes() / 60 + date.getSeconds() / 3600
   return {
     daylight: interpolate(DAYLIGHT_ANCHORS, rawHour),
+    slope: interpolateSlope(DAYLIGHT_ANCHORS, rawHour),
     warmth: interpolate(WARMTH_ANCHORS, rawHour),
   }
 }
@@ -280,8 +319,13 @@ function interpolateClamped(anchors: readonly AltitudeAnchor[], altitude: number
  */
 export function skyForLocation(date: Date, location: GeoLocation): Sky {
   const altitude = solarAltitudeDeg(date, location)
+  const rawHour = date.getHours() + date.getMinutes() / 60 + date.getSeconds() / 3600
   return {
     daylight: smoothstepRange(altitude, -CIVIL_TWILIGHT_DEG, CIVIL_TWILIGHT_DEG),
     warmth: interpolateClamped(WARMTH_ALTITUDE_ANCHORS, altitude),
+    // docs/todo.md entry 100 — the clock curve's own slope, same as
+    // `skyFor` uses, not a derivative of real solar altitude — see
+    // `Sky.slope`'s own comment for why.
+    slope: interpolateSlope(DAYLIGHT_ANCHORS, rawHour),
   }
 }
