@@ -35,7 +35,18 @@ import { mountShare } from './share'
 import { Director } from './director'
 import { createVisualiser, type Visualiser } from './scene'
 import { RELEASE_NAME } from './release-name'
-import { SlowAnalysis, createPostureState, updatePosture, celestialFor, CELESTIAL_IDENTITY, type CelestialInfluence } from './engine'
+import {
+  SlowAnalysis,
+  createPostureState,
+  updatePosture,
+  celestialFor,
+  CELESTIAL_IDENTITY,
+  type CelestialInfluence,
+  createCameraArmState,
+  armCamera,
+  disarmCamera,
+  updateCameraArm,
+} from './engine'
 import { requestLocation, type GeoLocation } from './geo-location'
 import { hasMotionPermissionGate, intensity, startShake, STILL_FRAME, type ShakeFrame } from './shake'
 import { confirmBuzz, doubleBuzz, hapticStatus } from './haptics'
@@ -1035,26 +1046,6 @@ async function main(): Promise<void> {
     return mix
   }
 
-  // docs/todo.md entry 87 — how long armed waits for a tap before quietly
-  // giving up. **Mine**: the entry asks for a timeout but not this figure.
-  // Raised from 10s at build 369, and the reason is a changed premise rather
-  // than a taste adjustment. Entry 87 picked ten seconds while entry 52's
-  // tap-to-save was still live, so an expired arm cost nothing observable —
-  // the tap that arrived late still saved a frame, just without the glyph.
-  // Entry 103 removed tap-to-save (build 339) and nobody re-examined this
-  // number, so a late tap now does *nothing at all*, and the disarm below is
-  // deliberately silent. Ten seconds is not long enough to close the menu,
-  // raise the phone, find the shot and press — framing is exactly the part
-  // that takes longer than that, which is why "the photo mode doesn't work"
-  // is the correct description of the built behaviour.
-  //
-  // Sixty seconds is **Mine**. What the timeout is actually for is stopping
-  // a forgotten mode persisting forever, not putting a clock on composing a
-  // picture; a minute serves the first without touching the second. Whether
-  // a wall clock is the right measure at all — the app knows whether the
-  // phone is being held and moved — is docs/todo.md entry 109.
-  const CAMERA_ARM_MS = 60_000
-
   // docs/todo.md entry 87 corrects entry 72's own misreading: "camera mode"
   // was taken to mean the passthrough camera, so entering used to call
   // applyPassthrough(0.75) — directly against the original request's own
@@ -1064,39 +1055,62 @@ async function main(): Promise<void> {
   // only, never a stored write, matching the seam entries 48, 58 and 60 use
   // for their own render-time overrides.
   let cameraMode = false
-  // docs/todo.md entry 87 — armed disarms itself after CAMERA_ARM_MS with
-  // no tap, quietly (no menu reopen: the person has stopped looking, and
-  // forcing the menu back open over whatever they moved on to would be its
-  // own surprise). Cleared whenever the mode leaves any other way, so a
-  // photo taken at 9s does not also trigger a disarm one second later.
-  let cameraArmTimeout = 0
+  // docs/todo.md entry 109 — replaces entry 87's wall-clock timeout
+  // (10s, then 60s at build 369) with a state machine over posture and
+  // tilt, ticked once per frame below rather than a single `setTimeout`.
+  // See camera-arm.ts's own comment for why a clock was the wrong measure.
+  const cameraArmState = createCameraArmState()
+
+  // How long the glyph's own fade-out takes once an automatic expiry
+  // decides to leave camera mode — matches index.html's own
+  // `#shutter-glyph.fading` transition duration. **Mine**: entry 109 asks
+  // for "visible rather than instantaneous" without a figure.
+  const GLYPH_FADE_MS = 600
+  let glyphFadeTimeout = 0
+
+  // docs/todo.md entry 109 — only the automatic-expiry path fades; a manual
+  // exit (a tap on the picture, or the chip) still hides the glyph
+  // instantly via `exitCameraMode` below, unchanged since entry 87.
+  function fadeOutGlyph(): void {
+    const glyph = document.getElementById('shutter-glyph')
+    if (!glyph || glyph.hidden) return
+    window.clearTimeout(glyphFadeTimeout)
+    glyph.classList.add('fading')
+    glyphFadeTimeout = window.setTimeout(() => {
+      glyph.hidden = true
+      glyph.classList.remove('fading')
+    }, GLYPH_FADE_MS)
+  }
 
   function enterCameraMode(): void {
     if (cameraMode) return
     cameraMode = true
     panel.setCameraActive(true)
     const glyph = document.getElementById('shutter-glyph')
-    if (glyph) glyph.hidden = false
-    cameraArmTimeout = window.setTimeout(() => {
-      if (!cameraMode) return
-      cameraMode = false
-      panel.setCameraActive(false)
-      if (glyph) glyph.hidden = true
-    }, CAMERA_ARM_MS)
+    if (glyph) {
+      window.clearTimeout(glyphFadeTimeout)
+      glyph.classList.remove('fading')
+      glyph.hidden = false
+    }
+    armCamera(cameraArmState, performance.now() / 1000)
   }
 
   // docs/todo.md entry 87 — the post-shot return; also reached by a manual
   // exit (a second tap on the chip while armed, `cameraActive`'s own toggle
-  // in hud.ts is unaffected by this entry). Never the quiet timeout path,
-  // which disarms inline above rather than through this function, precisely
-  // so it does not also reopen the menu.
+  // in hud.ts is unaffected by this entry). Never the automatic-expiry
+  // path, which leaves camera mode from inside the frame loop below
+  // precisely so it does not also reopen the menu.
   function exitCameraMode(): void {
     if (!cameraMode) return
     cameraMode = false
-    window.clearTimeout(cameraArmTimeout)
+    disarmCamera(cameraArmState)
     panel.setCameraActive(false)
+    window.clearTimeout(glyphFadeTimeout)
     const glyph = document.getElementById('shutter-glyph')
-    if (glyph) glyph.hidden = true
+    if (glyph) {
+      glyph.classList.remove('fading')
+      glyph.hidden = true
+    }
     // docs/todo.md entry 78 overturns entry 72's "exit goes to the normal
     // picture rather than opening the panel" — every other chip leaves you
     // where you were, and the trip being one-way was the whole complaint.
@@ -1153,8 +1167,8 @@ async function main(): Promise<void> {
     // docs/todo.md entry 87 drops entry 78's toggle: the chip only arms.
     // `enterCameraMode`'s own `if (cameraMode) return` already makes a tap
     // on an already-armed chip a harmless no-op rather than an exit — the
-    // mode ends at the next tap on the picture (or the 10s timeout), never
-    // at a second tap on the chip.
+    // mode ends at the next tap on the picture (or the automatic expiry —
+    // docs/todo.md entry 109), never at a second tap on the chip.
     onCameraMode: enterCameraMode,
     onManualChange: () => director.suspend(),
   }, new URLSearchParams(window.location.search).has('debug'))
@@ -1553,6 +1567,27 @@ async function main(): Promise<void> {
         params.bpm,
         params.beatConfidence,
       )
+      // docs/todo.md entry 109 — ticked once per rendered frame while
+      // armed, same lag against `latestShake` as posture above accepts for
+      // the same reason. Only visible while `document.visibilityState` is
+      // `'visible'` (this whole branch is skipped otherwise), which freezes
+      // the countdown rather than expiring it while backgrounded — entry
+      // 109 leaves that question open, so freezing is the conservative
+      // reading rather than a considered answer to it.
+      if (cameraMode) {
+        const arm = updateCameraArm(
+          cameraArmState,
+          performance.now() / 1000,
+          posture.posture,
+          latestShake.tilt.x,
+          latestShake.tilt.y,
+        )
+        if (!arm.armed) {
+          cameraMode = false
+          panel.setCameraActive(false)
+          fadeOutGlyph()
+        }
+      }
       sinceCelestialSample += audio.dt
       if (sinceCelestialSample >= CELESTIAL_SAMPLE_S) {
         sinceCelestialSample = 0

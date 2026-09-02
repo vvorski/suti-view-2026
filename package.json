@@ -28,6 +28,7 @@
     "probe:tap": "node --experimental-strip-types scripts/probe-tap.ts",
     "probe:rgb-slip": "node --experimental-strip-types scripts/probe-rgb-slip.ts",
     "probe:posture": "node --experimental-strip-types scripts/probe-posture.ts",
+    "probe:camera-arm": "node --experimental-strip-types scripts/probe-camera-arm.ts",
     "probe:ambient-light": "node --experimental-strip-types scripts/probe-ambient-light.ts",
     "probe:name-decode": "node --experimental-strip-types scripts/probe-name-decode.ts",
     "probe:celestial": "node --experimental-strip-types scripts/probe-celestial.ts",

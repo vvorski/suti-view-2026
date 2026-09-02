@@ -25,6 +25,9 @@
  *   posture.ts   still, carried, driving, dancing, handled — how the phone
  *                is currently being held, for director.ts's own pacing —
  *                docs/todo.md entry 90.
+ *   camera-arm.ts  how long armed camera mode stays armed, read from
+ *                posture and tilt rather than a wall clock — docs/todo.md
+ *                entry 109.
  *
  * This became a directory when the slow tier arrived. Before that there was one
  * interpretation of the captured audio living behind an interface, which is a
@@ -79,6 +82,9 @@ export type { RgbSlipState } from './rgb-slip.ts'
 
 export { createPostureState, updatePosture } from './posture.ts'
 export type { Posture, PostureState, PostureReading } from './posture.ts'
+
+export { createCameraArmState, armCamera, disarmCamera, updateCameraArm } from './camera-arm.ts'
+export type { CameraArmState, CameraArmReading } from './camera-arm.ts'
 
 export { celestialFor, CELESTIAL_IDENTITY } from './celestial.ts'
 export type { CelestialInfluence } from './celestial.ts'

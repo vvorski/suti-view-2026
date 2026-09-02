@@ -561,7 +561,7 @@ an event.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 109. Camera mode ends when you put the phone down, not when a clock runs out
-`status: building` · added 2026-09-02 · started 2026-09-02 · follows the build-369 fix
+`status: done` · added 2026-09-02 · build 372 · follows the build-369 fix
 
 **Do** — replace the armed mode's wall-clock timeout with one that reads
 whether the phone is still being held and aimed, and make the expiry visible

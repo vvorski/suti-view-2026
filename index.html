@@ -227,6 +227,15 @@
         z-index: 6;
       }
       #shutter-glyph[hidden] { display: none; }
+      /* docs/todo.md entry 109 — an automatic expiry (posture and tilt both
+         read as put-down for the quiet window, or the five-minute ceiling)
+         fades the glyph out over GLYPH_FADE_MS rather than toggling
+         `hidden` straight to `display: none`, so leaving camera mode this
+         way is a visible signal rather than the silent vanish entry 87
+         chose back when a late tap still saved a frame. A manual exit (a
+         tap on the picture, or the chip) is untouched — main.ts's own
+         `exitCameraMode` still hides it instantly. */
+      #shutter-glyph.fading { opacity: 0; transition: opacity 600ms ease-out; }
       /* The one mechanical gesture a camera makes: a contraction and a
          bloom back, restrained rather than decorated — no shutter sound, no
          border flash, no vignette, so this single movement is what reads.
