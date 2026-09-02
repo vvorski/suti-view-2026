@@ -559,3 +559,84 @@ chosen, so this class of gap cannot recur silently.
 across an actual dawn, which is the only test of whether a crossover reads as
 an event.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 109. Camera mode ends when you put the phone down, not when a clock runs out
+`status: ready` · added 2026-09-02 · follows the build-369 fix
+
+**Do** — replace the armed mode's wall-clock timeout with one that reads
+whether the phone is still being held and aimed, and make the expiry visible
+when it does happen.
+
+**Why** — reported: *"the photo mode doesn't work"*. The immediate cause was a
+10-second window that expired silently while the person was still framing, and
+that is fixed at build 369 by raising it to 60s. This entry is the part the
+number cannot fix: **a clock is measuring the wrong thing.**
+
+**Decided**
+- **The timeout's real job is "this was forgotten", and a clock is a poor
+  proxy for it.** Sixty seconds is generous enough for most shots and still
+  arbitrary: it expires on someone lining up a long exposure of a stage, and
+  it keeps the mode armed for a phone that went into a pocket at second three.
+  The app already measures the difference — entry 90's posture classifier
+  distinguishes **still**, **carried**, **driving**, **dancing** and
+  **handled**, and `shake.ts` has `disturb` continuously.
+- **So: the arm persists while the posture is `handled` or the phone is
+  plainly being aimed, and expires after a short quiet period once it is
+  not.** A phone held up and moving is someone composing; a phone flat and
+  still for fifteen seconds, or in a pocket, is someone who has moved on.
+  **Mine**, and the shape is entry 90's own "it reads, it never writes".
+- **Keep an absolute ceiling anyway.** Five minutes, whatever the posture, so
+  a phone propped up and vibrating on a table cannot hold the mode open
+  indefinitely. A rule with no bound is how the director latched shut (entry
+  89) and the lesson transfers. **Mine.**
+- **The expiry stops being silent, and this reverses entry 87 deliberately.**
+  87 chose a quiet disarm because "the person has stopped looking, and forcing
+  the menu back open over whatever they moved on to would be its own
+  surprise". That was correct when a late tap still saved a frame — the
+  expiry was unobservable *and* harmless. Since entry 103 a late tap does
+  nothing at all, so the silence now hides a real failure. **The glyph should
+  fade out visibly rather than vanish between frames**, which is a signal
+  without being an interruption: it does not reopen the menu, so 87's actual
+  objection is untouched.
+- **Not decided here** → whether arming should survive a backgrounded tab.
+  Related, separate, and needs the `visibilitychange` behaviour entry 73
+  established to be thought about properly.
+
+**And the process finding, which is the more useful half**
+
+This fault existed because **two entries that are each correct do not
+compose**, and nothing in the system looks for that. 87 and 103 were both
+verified clause by clause by `/ccc` in the days before this was reported, and
+both passed, because neither entry's **Done when** mentions the other. 87's
+window was chosen against an assumption — *a late tap still saves* — that 103
+removed without knowing it was load-bearing anywhere.
+
+- **`/ccc` should read the entries a change supersedes.** 103's own Decided
+  says it supersedes tap-to-save "and both reports close at once"; what it did
+  not do is ask which *other* entries relied on the behaviour being removed.
+  A grep for the removed mechanism's name across `docs/built.md` would have
+  found 87's dependence on it in one read.
+- **Camera mode has no probe and cannot have one as written.** It lives in a
+  `main.ts` closure with DOM handles and `window.setTimeout`, so nothing
+  headless can reach it. Every fault in it has been found by a person using
+  the app. Extracting the arm/disarm state machine as a pure module — the
+  `shake.ts`/`emitter.ts` pattern, state plus a pure update taking `now` —
+  would make this entry's own rules testable and is most of its work.
+
+**Lands in** `src/engine/camera-arm.ts` (new — pure state, pure update over
+`now`, posture and `disturb`); `src/main.ts:1040-1075` — `enterCameraMode` and
+the timeout give way to it; `index.html` — the glyph gains a fade-out;
+`scripts/probe-camera-arm.ts` (new), which is the first probe this feature has
+ever had.
+**Done when** — a simulated trace of a phone held and moving keeps the mode
+armed past 60s; the same trace going still expires it after the quiet period;
+neither exceeds the five-minute ceiling; the glyph's disappearance is visible
+rather than instantaneous; and taking a photo still exits immediately as entry
+87 requires.
+**Verify** — the probe for the state machine, which is the point of extracting
+it. Then the phone: arm it, spend a slow minute framing something, and take
+the picture — which is the gesture that was reported broken and the only test
+that matters.
+**Hard stops** — prefs no · url no · capture **yes, and it narrows**: the mode
+that saves becomes harder to leave armed by accident, never easier ·
+dependency no.
