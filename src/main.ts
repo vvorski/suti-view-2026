@@ -1037,7 +1037,23 @@ async function main(): Promise<void> {
 
   // docs/todo.md entry 87 — how long armed waits for a tap before quietly
   // giving up. **Mine**: the entry asks for a timeout but not this figure.
-  const CAMERA_ARM_MS = 10_000
+  // Raised from 10s at build 369, and the reason is a changed premise rather
+  // than a taste adjustment. Entry 87 picked ten seconds while entry 52's
+  // tap-to-save was still live, so an expired arm cost nothing observable —
+  // the tap that arrived late still saved a frame, just without the glyph.
+  // Entry 103 removed tap-to-save (build 339) and nobody re-examined this
+  // number, so a late tap now does *nothing at all*, and the disarm below is
+  // deliberately silent. Ten seconds is not long enough to close the menu,
+  // raise the phone, find the shot and press — framing is exactly the part
+  // that takes longer than that, which is why "the photo mode doesn't work"
+  // is the correct description of the built behaviour.
+  //
+  // Sixty seconds is **Mine**. What the timeout is actually for is stopping
+  // a forgotten mode persisting forever, not putting a clock on composing a
+  // picture; a minute serves the first without touching the second. Whether
+  // a wall clock is the right measure at all — the app knows whether the
+  // phone is being held and moved — is docs/todo.md entry 109.
+  const CAMERA_ARM_MS = 60_000
 
   // docs/todo.md entry 87 corrects entry 72's own misreading: "camera mode"
   // was taken to mean the passthrough camera, so entering used to call
