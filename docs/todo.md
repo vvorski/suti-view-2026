@@ -3320,7 +3320,7 @@ being a switch? Proposal above.
 
 
 ### 133. The gate's name starts blank, and on a phone that is all anyone sees
-`status: ready` · added 2026-09-05 · **corrects the reduced path re-anchored by 113** · the fourth report of this animation being invisible — see Recon
+`status: building` · added 2026-09-05 · started 2026-09-05 · **corrects the reduced path re-anchored by 113** · the fourth report of this animation being invisible — see Recon
 
 **Do** — stop the reduced-motion decode from rendering an empty span on its
 first frame, return its pace to entry 99's, and put the branch it took and how
