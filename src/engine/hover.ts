@@ -56,6 +56,21 @@ export const HOVER_QUIET = 1.5
  */
 export const HOVER_CHARGE_CAP = 0.35
 
+/**
+ * Time constant for `presence`, the eased 0-1 the lattice's lens reads —
+ * docs/todo.md entry 114. A cursor entering the window must not snap the
+ * picture into a new shape on one frame, and one leaving must not drop it;
+ * a quarter of a second is short enough that the warp still feels attached
+ * to the pointer rather than trailing it.
+ *
+ * Entry 114's own acceptance figures are stated at three time constants:
+ * presence passes 0.95 within 0.75s of arriving and falls under 0.05 within
+ * 0.75s of leaving. Both hold at exactly 3τ — 1 − e⁻³ is 0.9502 — which is a
+ * margin of two ten-thousandths, so `probe-hover.ts` asserts them rather
+ * than anyone eyeballing the arithmetic again.
+ */
+export const PRESENCE_TAU = 0.25
+
 export interface HoverState {
   /** Canvas-space position of the cursor, in the same units the emitter
    *  wants. Meaningless while `present` is false. */
@@ -73,10 +88,20 @@ export interface HoverState {
    *  `lastMoved` because leaving is immediate and parking is a timeout —
    *  two different ways to stop, and the entry wants both. */
   present: boolean
+  /** docs/todo.md entry 114 — the eased 0-1 a shader can multiply by, as
+   *  distinct from the hard yes/no the emitter switches on. Held here rather
+   *  than in `scene.ts` so there is one answer to "is the cursor here" and
+   *  one place it is smoothed; two would be two cursors that disagree. */
+  presence: number
+  /** When `updateHover` last ran, so it can ease `presence` without being
+   *  handed a `dt` its one caller would have to compute. `null` until the
+   *  first tick, which is what stops a first frame after a long gap from
+   *  easing a whole second's worth in one step. */
+  lastUpdate: number | null
 }
 
 export function createHoverState(): HoverState {
-  return { x: 0, y: 0, speed: 0, lastMoved: null, present: false }
+  return { x: 0, y: 0, speed: 0, lastMoved: null, present: false, presence: 0, lastUpdate: null }
 }
 
 /**
@@ -124,6 +149,10 @@ export interface HoverReading {
   x: number
   y: number
   speed: number
+  /** docs/todo.md entry 114 — `active`, eased. What a shader multiplies by,
+   *  so a cursor arriving or leaving bends the picture over a quarter second
+   *  rather than on one frame. */
+  presence: number
 }
 
 /**
@@ -138,5 +167,16 @@ export interface HoverReading {
 export function updateHover(state: HoverState, now: number): HoverReading {
   const moving = state.lastMoved !== null && now - state.lastMoved < HOVER_QUIET
   const active = state.present && moving
-  return { active, x: state.x, y: state.y, speed: active ? state.speed : 0 }
+
+  // Exponential, with the exact per-step factor rather than `dt / TAU`, so a
+  // run of small steps composes to the same value as one large one and the
+  // probe's figures do not depend on the frame rate it happened to use.
+  const dt = state.lastUpdate === null ? 0 : Math.max(0, now - state.lastUpdate)
+  state.lastUpdate = now
+  if (dt > 0) {
+    const k = 1 - Math.exp(-dt / PRESENCE_TAU)
+    state.presence += ((active ? 1 : 0) - state.presence) * k
+  }
+
+  return { active, x: state.x, y: state.y, speed: active ? state.speed : 0, presence: state.presence }
 }

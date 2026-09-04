@@ -1454,7 +1454,7 @@ async function main(): Promise<void> {
     // nothing answers it until a frame goes by. `updateHover` is what
     // applies HOVER_QUIET; this file only forwards its verdict.
     const cursor = updateHover(hover, now)
-    visualiser.setHover(cursor.x, cursor.y, cursor.active, cursor.speed)
+    visualiser.setHover(cursor.x, cursor.y, cursor.active, cursor.speed, cursor.presence)
 
     // Defensive rather than load-bearing: dispatchTouches only ever runs
     // after Start (frame() is not scheduled before it), so the gate should

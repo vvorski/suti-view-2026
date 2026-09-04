@@ -1272,7 +1272,7 @@ changes, so CLAUDE.md's gate-copy clause is not engaged — this changes how lon
 an existing element takes to resolve, not what it says.
 
 ### 114. The lattice bends toward the cursor
-`status: building` · added 2026-09-04 · started 2026-09-04 · **build after 112**
+`status: done` · added 2026-09-04 · build 404 · followed 112
 
 **Do** — on desktop, contract the lattice's space toward the mouse pointer: a
 smooth local lens centred on the cursor, fading to nothing at its edge and to

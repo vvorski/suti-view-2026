@@ -50,9 +50,31 @@ uniform sampler2D uSpectrum;
 uniform sampler2D uHistory;
 uniform float uHistoryHead;
 uniform vec4 uSeed; // re-rolled on demand; see scene.ts
+// docs/todo.md entry 114 — the mouse cursor: xy in this shader's own uv space
+// (the pointer needs no conversion, `toShaderUv` and the uv below are already
+// the same space), z the eased 0-1 presence from engine/hover.ts. The first
+// time a pointer has ever reached the atmospheric layer, which is why it is a
+// uniform rather than a parameter. vec3(0,0,0) on any device without a mouse.
+uniform vec3 uPointer;
 
 const float PI = 3.14159265;
 const float TAU = 6.28318531;
+
+// How hard the lens pulls, and how far it reaches — docs/todo.md entry 114.
+//
+// The bound that matters is folding: the map stays injective while
+// PULL < 4. For f(d) = d(1 + k*w(d/R)), f'(d) = 1 + k(w + t*w'), and
+// (w + t*w') bottoms out at -0.25 for a smoothstep, so f' >= 1 - 0.25k. At
+// 0.8 that is f' >= 0.8 — five times under the fold, with a fifth of a
+// margin, so space compresses toward the cursor and never turns back on
+// itself. Chosen visible rather than tasteful: the last motion effect to
+// ship was reported as too subtle (entry 111). Peak apparent displacement is
+// about 9% of the short screen dimension.
+//
+// REACH just under half the short dimension keeps this a local event on the
+// picture rather than a whole-frame zoom.
+const float POINTER_PULL = 0.8;
+const float POINTER_REACH = 0.45;
 
 float hash(vec2 p) {
   p = fract(p * vec2(127.1, 311.7));
@@ -131,7 +153,37 @@ void main() {
   vec2 uv = (gl_FragCoord.xy - 0.5 * uResolution) / min(uResolution.x, uResolution.y);
 
   // A break collapses the tunnel inward; the surge on re-entry blows it open.
-  uv *= 1.0 + uBreak * 0.35 - uSurge * 0.28;
+  float breakScale = 1.0 + uBreak * 0.35 - uSurge * 0.28;
+  uv *= breakScale;
+
+  // docs/todo.md entry 114 — the cursor contracts space toward itself.
+  //
+  // A radial scale about the pointer, not a displacement along a normal:
+  // normalize(uv - P) is singular exactly where the cursor is, which is the
+  // one place the effect is strongest and the one place a NaN would be most
+  // visible. This form has no singularity and is conformal, which is the
+  // right kind of warp for a shader whose whole construction rests on
+  // log-polar being conformal (see the note further down). Scaling the
+  // sample coordinates outward is what makes the picture contract inward.
+  //
+  // The mandala's own centre does not move. The header above calls the
+  // single central focus a composition decision, and dragging the log-polar
+  // singularity around under the cursor would be a different work — a local
+  // lens leaves that intact.
+  //
+  // P is scaled by breakScale too, so the lens stays under the cursor's
+  // actual screen position mid-break rather than sliding up to 35% away from
+  // the pointer exactly when the picture is moving most.
+  //
+  // Written as `uv += (uv - P) * amount` rather than the algebraically equal
+  // `uv = P + (uv - P) * (1.0 + amount)`: at presence 0, or anywhere outside
+  // the lens, `amount` is exactly 0 and `uv + 0.0` is bit-identical to uv.
+  // The other form rounds through P and back, which is only *nearly* the
+  // identity — and "pixel-identical outside the lens" is a claim this has to
+  // meet exactly rather than approximately.
+  vec2 P = uPointer.xy * breakScale;
+  float lens = smoothstep(1.0, 0.0, length(uv - P) / POINTER_REACH);
+  uv += (uv - P) * (POINTER_PULL * uPointer.z * lens);
 
   float radius = max(length(uv), 1e-4);
   // Seed spin re-orients which screen direction each petal points at.

@@ -75,7 +75,15 @@ export type { RippleState } from './ripples.ts'
 export { createEmitterState, updateEmitter } from './emitter.ts'
 export type { EmitterState } from './emitter.ts'
 
-export { createHoverState, moveHover, hoverLeft, updateHover, HOVER_QUIET, HOVER_CHARGE_CAP } from './hover.ts'
+export {
+  createHoverState,
+  moveHover,
+  hoverLeft,
+  updateHover,
+  HOVER_QUIET,
+  HOVER_CHARGE_CAP,
+  PRESENCE_TAU,
+} from './hover.ts'
 export type { HoverState, HoverReading } from './hover.ts'
 
 export { createTouchField, toShaderUv, VELOCITY_SMOOTH } from './touches.ts'

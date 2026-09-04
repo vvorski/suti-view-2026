@@ -22,6 +22,7 @@ import {
   updateHover,
   HOVER_QUIET,
   HOVER_CHARGE_CAP,
+  PRESENCE_TAU,
 } from '../src/engine/hover.ts'
 import { createEmitterState, updateEmitter } from '../src/engine/emitter.ts'
 import { createRippleState } from '../src/engine/ripples.ts'
@@ -248,6 +249,80 @@ const DT = 1 / 60
     'omitting chargeCap and passing 1 are the same gesture, frame for frame',
     omitted.every((v, i) => v === explicit[i]),
     'traces diverged',
+  )
+}
+
+// --- 9. Presence, for the lattice's lens — docs/todo.md entry 114 ---------
+//
+// Its two acceptance figures land at exactly three time constants, where
+// 1 - e^-3 is 0.9502 against a required 0.95 — a margin of two
+// ten-thousandths. That is precisely the kind of number nobody should be
+// re-deriving by hand later, so both ends are asserted here.
+{
+  const hover = createHoverState()
+  let now = 0
+  // One tick to seed lastUpdate, then the cursor arrives.
+  updateHover(hover, now)
+  let atArrival = 0
+  for (let i = 0; i < Math.round(0.75 / DT); i++) {
+    now += DT
+    moveHover(hover, now, 0.1, 0.1)
+    atArrival = updateHover(hover, now).presence
+  }
+  check(
+    'presence passes 0.95 within 0.75s of the cursor arriving',
+    atArrival >= 0.95,
+    `${atArrival.toFixed(4)} after 0.75s (tau ${PRESENCE_TAU})`,
+  )
+
+  hoverLeft(hover)
+  let atDeparture = 1
+  for (let i = 0; i < Math.round(0.75 / DT); i++) {
+    now += DT
+    atDeparture = updateHover(hover, now).presence
+  }
+  check(
+    'and falls below 0.05 within 0.75s of it leaving',
+    atDeparture < 0.05,
+    `${atDeparture.toFixed(4)} after 0.75s`,
+  )
+}
+
+// The identity the lattice's lens rests on: a device that has never seen a
+// mouse reports presence exactly 0, so `uv += (uv - P) * (PULL * 0 * lens)`
+// is `uv + 0.0`, which is bit-identical rather than nearly so.
+{
+  const hover = createHoverState()
+  let now = 0
+  let worst = 0
+  for (let i = 0; i < Math.round(30 / DT); i++) {
+    now += DT
+    worst = Math.max(worst, updateHover(hover, now).presence)
+  }
+  check('a cursor that never existed leaves presence at exactly 0', worst === 0, String(worst))
+}
+
+// Easing is frame-rate independent: the exact exponential factor composes,
+// so a 30fps run and a 120fps run reach the same place. Without this the
+// warp would arrive at different speeds on different machines.
+{
+  const at = (dt: number): number => {
+    const hover = createHoverState()
+    let now = 0
+    updateHover(hover, now)
+    for (let i = 0; i < Math.round(0.5 / dt); i++) {
+      now += dt
+      moveHover(hover, now, 0.1, 0.1)
+      updateHover(hover, now)
+    }
+    return hover.presence
+  }
+  const slow = at(1 / 30)
+  const fast = at(1 / 120)
+  check(
+    'presence eases at the same rate whatever the frame rate',
+    Math.abs(slow - fast) < 1e-9,
+    `${slow.toFixed(9)} at 30fps vs ${fast.toFixed(9)} at 120fps`,
   )
 }
 
