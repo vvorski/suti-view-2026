@@ -374,7 +374,13 @@ export interface Visualiser {
    * entry 110), which is the first thing here that has to tell a phone
    * lying flat apart from a laptop with no accelerometer at all.
    */
-  setMotion(tiltX: number, tiltY: number, disturb: number, hasMotion?: boolean): void
+  setMotion(
+    tiltX: number,
+    tiltY: number,
+    disturb: number,
+    hasMotion?: boolean,
+    busyness?: number,
+  ): void
   /**
    * docs/todo.md entry 102 — a released touch emitter's own acceleration.
    * `g`, when given, is `shake.gravity()` (the same capped, in-plane pair
@@ -877,6 +883,12 @@ export function createVisualiser(
   let motionTiltX = 0
   let motionTiltY = 0
   let motionDisturb = 0
+  // docs/todo.md entry 111 — how much the phone has been moving over the
+  // last half-minute, 0-1. Recorded rather than acted on here: the only
+  // reader is `updateRgbSlip`, which stretches its own cap by it. Kept
+  // beside the other motion values for the same reason they are — this file
+  // reads sensors and never writes them back.
+  let motionBusyness = 0
   // Whether any `devicemotion` sample has ever arrived — docs/todo.md entry
   // 110. A tilt of (0, 0) means two entirely different things on a phone
   // lying face-up and on a laptop that has no accelerometer at all, and
@@ -1373,7 +1385,7 @@ export function createVisualiser(
       // `slipAccelX`/`slipAccelY` are the raw sample setTumble recorded,
       // whichever frame called it last — this module owns the direction's
       // own held state entirely; nothing here is read back from uTumble.
-      const slip = updateRgbSlip(rgbSlip, dt, motionDisturb, slipAccelX, slipAccelY)
+      const slip = updateRgbSlip(rgbSlip, dt, motionDisturb, slipAccelX, slipAccelY, motionBusyness)
       compositeUniforms.uSlip.value.set(slip.x, slip.y)
 
       // docs/todo.md entries 47, 53 and 71. The clock is sampled once a
@@ -1582,11 +1594,12 @@ export function createVisualiser(
       }
     },
 
-    setMotion(tiltX, tiltY, disturb, hasMotion = false) {
+    setMotion(tiltX, tiltY, disturb, hasMotion = false, busyness = 0) {
       motionTiltX = tiltX
       motionTiltY = tiltY
       motionDisturb = disturb
       motionHasData = hasMotion
+      motionBusyness = busyness
     },
 
     setGravity(g) {

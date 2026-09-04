@@ -1629,6 +1629,7 @@ async function main(): Promise<void> {
         latestShake.tilt.y,
         latestShake.disturb,
         shake.hasMotionData(),
+        latestShake.busyness,
       )
       dispatchTouches(performance.now() / 1000)
       // The discrete gesture stands down while the panel is open — a

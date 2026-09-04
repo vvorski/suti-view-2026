@@ -54,7 +54,7 @@ function len(off: { x: number; y: number }): number {
   const state = createRgbSlipState()
   let worst = 0
   const dt = 1 / 60
-  for (let i = 0; i < 300; i++) worst = Math.max(worst, len(updateRgbSlip(state, dt, 0, 1, 0)))
+  for (let i = 0; i < 300; i++) worst = Math.max(worst, len(updateRgbSlip(state, dt, 0, 1, 0, 0)))
   check('a still phone (disturb always 0) never produces any slip', worst === 0, `worst ${worst}`)
 }
 
@@ -82,7 +82,7 @@ function len(off: { x: number; y: number }): number {
   // constant shake.ts uses) has genuinely reached zero, not merely a value
   // this test's own threshold happened to be looser than.
   for (let i = 0; i < 8 * 60; i++) {
-    updateRgbSlip(state, dt, disturb, 1, 0)
+    updateRgbSlip(state, dt, disturb, 1, 0, 0)
     if (state.amount > disturb) {
       overtook = true
       overtookBy = Math.max(overtookBy, state.amount - disturb)
@@ -94,7 +94,32 @@ function len(off: { x: number; y: number }): number {
     overtook,
     overtook ? `overtook by up to ${overtookBy.toFixed(4)}` : 'never exceeded the target it was chasing',
   )
-  check('the ring settles back to (near) zero within 8s', state.amount < 1e-4, `settled at ${state.amount}`)
+  // What "settles" means had to be restated for docs/todo.md entry 111's
+  // response curve, and the restatement is the honest one rather than a
+  // loosened threshold. This section feeds a *pure exponential* disturb that
+  // approaches zero without ever arriving; `pow(x, 0.6)` decays at 0.6 of
+  // that rate, so after 8s the spring's own target is still 0.00105 and the
+  // spring is sitting on it correctly. Nothing is ringing. The old `< 1e-4`
+  // was measuring the target's tail, not the spring's behaviour, and it only
+  // ever passed because a linear target decayed faster.
+  //
+  // Two claims replace it. The spring has converged on whatever it is
+  // chasing — that is the property this section exists to prove — and the
+  // residue is invisible: 0.02px of separation on a 1080px phone. The real
+  // signal does reach exactly zero, because `shake.ts`'s `FLOOR` subtracts
+  // before clamping, which is why every row of the handling table below
+  // prints a rest of 0.000000 against real `Tumble` output.
+  const finalTarget = Math.pow(disturb, 0.6)
+  check(
+    'the ring converges onto its target rather than ringing on',
+    Math.abs(state.amount - finalTarget) < 1e-4,
+    `amount ${state.amount.toExponential(3)} vs target ${finalTarget.toExponential(3)}`,
+  )
+  check(
+    'and what is left is invisible — under a tenth of a pixel on a 1080px phone',
+    2 * state.amount * MAX_SLIP * 1080 < 0.1,
+    `${(2 * state.amount * MAX_SLIP * 1080).toFixed(3)}px`,
+  )
 }
 
 // --- 3. A sustained hard disturbance reaches the cap, and the resulting uv
@@ -106,7 +131,7 @@ function len(off: { x: number; y: number }): number {
   let worst = 0
   let reachedCap = false
   for (let i = 0; i < 2 * 60; i++) {
-    const off = updateRgbSlip(state, dt, 1, 1, 0)
+    const off = updateRgbSlip(state, dt, 1, 1, 0, 0)
     worst = Math.max(worst, len(off))
     if (state.amount >= 1 - 1e-6) reachedCap = true
   }
@@ -146,34 +171,101 @@ const cases: Case[] = [
   { name: 'sustained low agitation (5 m/s², 2.5 Hz)', seconds: 3, motion: (t) => shaking(t, 5, 2.5) },
 ]
 
-console.log('\nHandling table — peak slip (uv) and rest slip after settling:\n')
-for (const { name, seconds, motion, settle = 4 } of cases) {
-  const dt = 1 / 60
-  const tumble = new Tumble()
-  const slip = createRgbSlipState()
+// docs/todo.md entry 111 — the table is printed at three busyness levels
+// rather than one, because the whole of that entry's second half is a claim
+// about what busyness does to this table and a single column cannot show it.
+// `busyness` is passed directly rather than driven through `Tumble`'s own
+// 25-second EMA: reaching a genuine sqrt(calm) of 1.0 would need minutes of
+// synthetic violence per row, and what is under test here is `rgb-slip.ts`'s
+// use of the number, not `shake.ts`'s production of it (which is entry 88's
+// and `probe-shake.ts`'s, and still passes unchanged).
+const BUSYNESS_LEVELS = [0, 0.5, 1]
 
-  // Half a second of stillness first, matching probe-shake.ts's own run() —
-  // lets the gravity estimate settle before the motion under test starts.
-  for (let i = 0; i < 30; i++) tumble.sample(still(), dt)
+/** What every row is measured against at each level — MAX_SLIP stretched by
+ *  exactly the formula rgb-slip.ts applies. Recomputed here from MAX_SLIP
+ *  rather than hard-coded, so raising the cap again cannot leave the probe
+ *  asserting yesterday's number. */
+const capAt = (busyness: number): number => MAX_SLIP + busyness * 0.010
 
-  let peak = 0
-  let t = 0
-  while (t < seconds) {
-    tumble.sample(motion(t), dt)
-    const s = tumble.advance(dt)
-    peak = Math.max(peak, len(updateRgbSlip(slip, dt, s.disturb, s.accelX, s.accelY)))
-    t += dt
+const peaks = new Map<string, number[]>()
+
+for (const busyness of BUSYNESS_LEVELS) {
+  const cap = capAt(busyness)
+  console.log(
+    `\nHandling table at busyness ${busyness.toFixed(1)} (cap ${cap.toFixed(3)} uv, ${(2 * cap * 1080).toFixed(1)}px total on a 1080px phone) — peak slip (uv) and rest slip after settling:\n`,
+  )
+  for (const { name, seconds, motion, settle = 4 } of cases) {
+    const dt = 1 / 60
+    const tumble = new Tumble()
+    const slip = createRgbSlipState()
+
+    // Half a second of stillness first, matching probe-shake.ts's own run() —
+    // lets the gravity estimate settle before the motion under test starts.
+    for (let i = 0; i < 30; i++) tumble.sample(still(), dt)
+
+    let peak = 0
+    let t = 0
+    while (t < seconds) {
+      tumble.sample(motion(t), dt)
+      const s = tumble.advance(dt)
+      peak = Math.max(peak, len(updateRgbSlip(slip, dt, s.disturb, s.accelX, s.accelY, busyness)))
+      t += dt
+    }
+    for (let i = 0; i < settle * 60; i++) {
+      tumble.sample(still(), dt)
+      const s = tumble.advance(dt)
+      peak = Math.max(peak, len(updateRgbSlip(slip, dt, s.disturb, s.accelX, s.accelY, busyness)))
+    }
+
+    const rest = slip.amount * cap
+    console.log(`  ${name.padEnd(38)} peak ${peak.toFixed(5)}  rest ${rest.toFixed(6)}`)
+    check(`${name} @ ${busyness}: never exceeds the cap`, peak <= cap + 1e-9, `peak ${peak} vs cap ${cap}`)
+    check(`${name} @ ${busyness}: settles back to (near) zero`, rest < cap * 0.01, `rest ${rest}`)
+    if (!peaks.has(name)) peaks.set(name, [])
+    peaks.get(name)!.push(peak)
   }
-  for (let i = 0; i < settle * 60; i++) {
-    tumble.sample(still(), dt)
-    const s = tumble.advance(dt)
-    peak = Math.max(peak, len(updateRgbSlip(slip, dt, s.disturb, s.accelX, s.accelY)))
-  }
+}
 
-  const rest = slip.amount * MAX_SLIP
-  console.log(`  ${name.padEnd(38)} peak ${peak.toFixed(5)}  rest ${rest.toFixed(6)}`)
-  check(`${name}: never exceeds MAX_SLIP`, peak <= MAX_SLIP + 1e-9, `peak ${peak} vs cap ${MAX_SLIP}`)
-  check(`${name}: settles back to (near) zero`, rest < MAX_SLIP * 0.01, `rest ${rest}`)
+// Entry 111's own acceptance figures. The three rows it names are the ones
+// ordinary handling actually produces — the entry's whole complaint is that
+// these, not the violent cases, are what "doesn't appear strong" means — and
+// the figures are what entry 104's build printed for them.
+{
+  const BEFORE: Record<string, number> = {
+    'a nudge (8 m/s², 1 cycle)': 0.00307,
+    'a jolt (10 m/s², half cycle)': 0.00368,
+    'sustained low agitation (5 m/s², 2.5 Hz)': 0.00171,
+  }
+  for (const [name, before] of Object.entries(BEFORE)) {
+    const now = peaks.get(name)![0]
+    check(
+      `${name}: at least 1.8x its pre-entry-111 peak, at rest-level busyness`,
+      now >= before * 1.8,
+      `${before.toFixed(5)} -> ${now.toFixed(5)} (${(now / before).toFixed(2)}x)`,
+    )
+  }
+  // The floor is the other half of the claim, and the more important half:
+  // a curve that front-loads small disturbances must not turn a phone lying
+  // on a table, or a hand's own tremor, into a visible effect. Checked at
+  // every busyness level, since the cap stretching is exactly what would
+  // make a leaked floor visible.
+  for (const name of ['still on a table', 'held in a hand (0.4 m/s² tremor)']) {
+    const all = peaks.get(name)!
+    check(
+      `${name}: still exactly zero at every busyness level`,
+      all.every((p) => p === 0),
+      all.map((p) => p.toFixed(5)).join(', '),
+    )
+  }
+  // And the stretch itself: the same gesture must reach further on a phone
+  // that has been moving. Compared on a case violent enough to be near the
+  // cap, where the stretch is the whole difference.
+  const violent = peaks.get('violent shake (45 m/s², 6 Hz)')!
+  check(
+    'the same violent shake reaches further at higher busyness',
+    violent[1] > violent[0] * 1.3 && violent[2] > violent[1] * 1.2,
+    violent.map((p) => p.toFixed(5)).join(' -> '),
+  )
 }
 
 // --- 5. docs/todo.md entry 104's own acceptance test: a single decay
@@ -203,7 +295,7 @@ function countReversals(amp: number, hz = 5.5, knockSeconds = 0.09, seconds = 3)
   while (t < seconds) {
     tumble.sample(t < knockSeconds ? shaking(t, amp, hz) : still(), dt)
     const s = tumble.advance(dt)
-    const off = updateRgbSlip(slip, dt, s.disturb, s.accelX, s.accelY)
+    const off = updateRgbSlip(slip, dt, s.disturb, s.accelX, s.accelY, 0)
     const l = len(off)
     if (l > peakLen) peakLen = l
     // Read off the held direction itself, not the magnitude-scaled offset —
@@ -294,7 +386,7 @@ function countReversals(amp: number, hz = 5.5, knockSeconds = 0.09, seconds = 3)
         dt,
       )
       const st = tumble.advance(dt)
-      const off = updateRgbSlip(slip, dt, st.disturb, st.accelX, st.accelY)
+      const off = updateRgbSlip(slip, dt, st.disturb, st.accelX, st.accelY, 0)
       // Sampled while the first knock is still live. By 0.9s `disturb` has
       // decayed to zero and `updateRgbSlip` returns an exact (0,0) — the held
       // axis survives (deliberately; it is never reset), but the *offset* it
@@ -320,22 +412,30 @@ function countReversals(amp: number, hz = 5.5, knockSeconds = 0.09, seconds = 3)
     )
   }
 
-  // docs/todo.md entry 104's other check: MAX_SLIP's own comment claims
-  // "about two to four pixels on a phone", against a compositor uv that
-  // spans 0-1 across the *full* frame width (not the aspect-normalised uv
-  // the geometric shaders use) — Decided's own worked example is a
-  // 1080px-wide phone, where 0.006 uv is 6.48px each way, ~13px of total
-  // R-to-B separation at the cap.
+  // The measurement entry 104 added and entry 111 raised: the compositor's
+  // uv spans 0-1 across the *full* frame width (not the aspect-normalised uv
+  // the geometric shaders use), so on Decided's own 1080px worked example
+  // 0.010 uv is 10.8px each way. Printed rather than argued about, because
+  // this is the number a comment got wrong once already.
   const PHONE_WIDTH_PX = 1080
   const perChannelPx = MAX_SLIP * PHONE_WIDTH_PX
   const totalSeparationPx = 2 * perChannelPx
   console.log(
     `\nAt MAX_SLIP on a ${PHONE_WIDTH_PX}px-wide phone: ${perChannelPx.toFixed(1)}px per channel, ${totalSeparationPx.toFixed(1)}px total R-to-B separation.`,
   )
+  for (const busyness of [0, 0.5, 1]) {
+    const px = 2 * capAt(busyness) * PHONE_WIDTH_PX
+    console.log(`  busyness ${busyness.toFixed(1)}: cap ${capAt(busyness).toFixed(3)} uv, ${px.toFixed(1)}px total`)
+  }
   check(
-    "the measured separation is ~13px, matching Decided's own figure — the stale comment is the thing that was wrong",
-    Math.abs(totalSeparationPx - 12.96) < 0.5,
+    'the measured separation at rest is 21.6px — entry 111\'s own figure',
+    Math.abs(totalSeparationPx - 21.6) < 0.5,
     `${totalSeparationPx.toFixed(2)}px`,
+  )
+  check(
+    'and 43.2px at full busyness, the doubling entry 111 asks for',
+    Math.abs(2 * capAt(1) * PHONE_WIDTH_PX - 43.2) < 0.5,
+    `${(2 * capAt(1) * PHONE_WIDTH_PX).toFixed(2)}px`,
   )
 }
 

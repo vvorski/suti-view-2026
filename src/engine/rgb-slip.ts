@@ -41,19 +41,67 @@ const STIFF = 400
 const DAMP = 14 // 2 * 0.35 * 20
 
 /**
- * The uv-space cap. This comment used to claim "about two to four pixels on
- * a phone" — docs/todo.md entry 104 measured it while in here for the
- * direction fix and found the comment stale, not the geometry: the
- * compositor's own `uv` spans 0-1 across the *full* frame width (not the
- * aspect-normalised uv the geometric shaders use internally), so on a
- * 1080px-wide phone 0.006 uv is 6.48px per channel — about **thirteen
- * pixels of total R-to-B separation** at the cap, not two to four. Per
- * Decided: MAX_SLIP itself is unchanged (see this file's own header); this
- * is the comment being corrected to match the geometry it was describing,
- * not the constant being retuned to match the comment. See
- * `scripts/probe-rgb-slip.ts`'s own pixel measurement.
+ * The uv-space cap on a still-ish phone — docs/todo.md entry 111 raised it
+ * from entry 76's 0.006, and the arithmetic behind that is the reason it
+ * could be raised at all.
+ *
+ * Entry 76 justified 0.006 as "about two to four pixels on a phone… past a
+ * few pixels line art stops looking dispersed and starts looking broken".
+ * Entry 104 measured it and found the *comment* wrong, not the geometry: the
+ * compositor's own `uv` spans 0-1 across the **full** frame width (not the
+ * aspect-normalised uv the geometric shaders use internally), so 0.006 uv is
+ * 6.48px per channel on a 1080px-wide phone — **thirteen pixels** of total
+ * R-to-B separation, not two to four. Which means the "past a few pixels it
+ * looks broken" ceiling was never actually tested at a few pixels: the
+ * picture everyone has looked at and approved has been sitting at thirteen
+ * the whole time, and the argument for the limit was made about a number
+ * three times smaller than the one shipping.
+ *
+ * 0.010 uv is 10.8px per channel, **21.6px total** at this cap — a real
+ * increase, and still under twice what has already been seen and liked.
+ * Victor's word, quoted in entry 111, is what lifts entry 76's freeze:
+ * "make it stronger, also can you detect ongoing motion then it should
+ * stretch further". `STIFF` and `DAMP` stay frozen; the request is about
+ * reach, not about the spring's feel. See `scripts/probe-rgb-slip.ts`'s own
+ * pixel measurement, which prints this rather than asserting a comment.
  */
-export const MAX_SLIP = 0.006
+export const MAX_SLIP = 0.010
+
+/**
+ * docs/todo.md entry 111 — how much further the cap stretches when the phone
+ * has been moving for a while. The effective cap is
+ * `MAX_SLIP + busyness * SUSTAIN_SLIP`, so a phone that has been carried
+ * around reaches 0.020 uv (43.2px total) where one lifted off a table
+ * reaches 0.010 (21.6px).
+ *
+ * Equal to `MAX_SLIP`, which is the point: "stretch further" should be a
+ * doubling at the top of the range, large enough that the second nudge after
+ * a minute of walking is unmistakably wider than the first. `busyness` is
+ * `shake.ts`'s own `sqrt(calm)` — entry 88's existing 25-second EMA of
+ * `disturb`, not a second envelope invented here, because two slow estimates
+ * of "how busy has this phone been" at different time constants would drift
+ * apart and give the app two disagreeing opinions about the same question.
+ */
+const SUSTAIN_SLIP = 0.010
+
+/**
+ * docs/todo.md entry 111 — the exponent the magnitude spring's target is
+ * raised to before it is chased.
+ *
+ * Raising the cap alone barely changes what anyone feels, because almost
+ * nothing ordinary asks for much of the range: `disturb` is
+ * `(mag − 1.2) / (14 − 1.2)`, so a nudge at 8 m/s² asks for 0.53 of it and a
+ * hand tremor asks for nothing at all. An exponent below 1 front-loads
+ * exactly the small-`disturb` regime ordinary handling lives in — the same
+ * shape, and the same reason, as `shake.ts`'s own `busyness()` taking
+ * `sqrt(calm)`.
+ *
+ * It cannot lift the floor: `pow(0, 0.6)` is 0, so a phone reading no
+ * disturbance at all still asks for exactly nothing, and `FLOOR` in
+ * `shake.ts` — which is what makes a phone on a table read 0 in the first
+ * place — is untouched.
+ */
+const TARGET_CURVE = 0.6
 
 /**
  * docs/todo.md entry 104 — how quickly the held direction eases toward a
@@ -129,7 +177,7 @@ export function createRgbSlipState(): RgbSlipState {
 }
 
 /**
- * Call once per rendered frame with the tumble's own `disturb` (0-1) and the
+ * Call once per rendered frame with the tumble's own `disturb` (0-1), the
  * raw in-plane acceleration behind it (`shake.ts`'s `TumbleState.accelX/Y` —
  * the same reading the offset spring's own kicks are built from, read here
  * *before* it becomes a spring, which is what lets this hold a direction the
@@ -147,11 +195,18 @@ export function createRgbSlipState(): RgbSlipState {
  * apart and bounces back" asks for, rather than an easing crossfade toward
  * whatever `disturb` currently reads.
  *
- * Returns the ready-to-upload uv offset, a `vec2` already scaled by
- * `MAX_SLIP` and pointed in the held direction — the caller applies no
+ * `busyness` is `shake.ts`'s own 0-1 reading of how much the phone has been
+ * moving over the last half-minute (docs/todo.md entry 111). It stretches
+ * the cap and nothing else: it never adds slip on its own, so a phone that
+ * has been carried around and then set down produces exactly as little as
+ * one that never moved.
+ *
+ * Returns the ready-to-upload uv offset, a `vec2` already scaled to the
+ * effective cap and pointed in the held direction — the caller applies no
  * further scaling or direction of its own. Exactly `{x: 0, y: 0}` whenever
- * the magnitude spring is at rest, regardless of what direction is held,
- * which is what keeps a still phone byte-identical to before this entry.
+ * the magnitude spring is at rest, regardless of what direction is held or
+ * how busy the phone has been, which is what keeps a still phone
+ * byte-identical to before either entry.
  */
 export function updateRgbSlip(
   state: RgbSlipState,
@@ -159,8 +214,10 @@ export function updateRgbSlip(
   disturb: number,
   accelX: number,
   accelY: number,
+  busyness: number,
 ): { x: number; y: number } {
-  const target = disturb < 0 ? 0 : disturb > 1 ? 1 : disturb
+  const clamped = disturb < 0 ? 0 : disturb > 1 ? 1 : disturb
+  const target = Math.pow(clamped, TARGET_CURVE)
   state.velocity += (STIFF * (target - state.amount) - DAMP * state.velocity) * dt
   state.amount += state.velocity * dt
 
@@ -218,7 +275,13 @@ export function updateRgbSlip(
     state.dirY += (sampleY - state.dirY) * k
   }
 
-  const magnitude = state.amount * MAX_SLIP
+  // The cap is consulted only here, after the spring has run: `amount` stays
+  // a plain 0-1 reading of how hard the phone is being disturbed *now*, and
+  // how far that is allowed to reach is a separate question answered by how
+  // much it has been moving lately. Keeping them apart is what stops a phone
+  // that has been in a pocket from having a spring already wound up.
+  const cap = MAX_SLIP + (busyness > 0 ? Math.min(1, busyness) : 0) * SUSTAIN_SLIP
+  const magnitude = state.amount * cap
   if (magnitude === 0) return { x: 0, y: 0 }
 
   // No direction has ever been trustworthy yet (a session that starts dead

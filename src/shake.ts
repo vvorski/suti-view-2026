@@ -498,8 +498,17 @@ export class Tumble {
    * doesn't count, short enough that stillness forgives quickly). **Mine**
    * — Decided names the four bounds, not this curve; the walking-then-shake
    * probe case below is what this is tuned against.
+   *
+   * Public since docs/todo.md entry 111, which stretches the RGB slip's cap
+   * by exactly this reading. It is deliberately the *same* number the
+   * adaptive shake bar uses rather than a second slow envelope at a second
+   * time constant: two estimates of "how busy has this phone been" would
+   * drift apart and give the app two disagreeing opinions about one
+   * question. Note what that shares, and what it does not — the freeze in
+   * `updateCalm` during a detection comes along for free, which is what
+   * stops a gesture from inflating its own cap while it is still happening.
    */
-  private busyness(): number {
+  busyness(): number {
     return Math.sqrt(this.calm)
   }
 
@@ -831,6 +840,7 @@ export const STILL: TumbleState = {
 export const STILL_FRAME: ShakeFrame = Object.freeze({
   tilt: Object.freeze({ x: 0, y: 0 }),
   disturb: 0,
+  busyness: 0,
   tumble: STILL,
   events: Object.freeze([]),
 })
@@ -900,6 +910,13 @@ export interface ShakeEvent {
 export interface ShakeFrame {
   tilt: { x: number; y: number }
   disturb: number
+  /** docs/todo.md entry 111 — how much this phone has been moving over the
+   *  last half-minute, 0-1 (`sqrt(calm)`, entry 88's own 25-second EMA of
+   *  `disturb`). As much a per-frame fact as `disturb` is, and here for the
+   *  reason this interface exists at all: two watchers of the same frame
+   *  must see the same reading, which a clearing accessor could not
+   *  promise. Frozen during a shake detection — see `Tumble.updateCalm`. */
+  busyness: number
   tumble: TumbleState
   events: readonly ShakeEvent[]
 }
@@ -1025,6 +1042,7 @@ export function startShake(granted: boolean): ShakeSensor {
       return Object.freeze({
         tilt: tumble.tilt(),
         disturb: state.disturb,
+        busyness: tumble.busyness(),
         tumble: state,
         events: Object.freeze(events),
       })

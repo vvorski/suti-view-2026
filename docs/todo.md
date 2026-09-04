@@ -934,7 +934,7 @@ Fringe and Rose were) · url no (`?atmospheric=strata`, a new value not a new
 parameter) · capture no · dependency no. The control surface is unchanged.
 
 ### 111. The slip goes further, and further still when the phone has been moving
-`status: building` · added 2026-09-04 · started 2026-09-04 · unfreezes 76 · build after nothing
+`status: done` · added 2026-09-04 · build 392 · unfreezes 76
 
 **Do** — raise the RGB slip's cap, put a response curve on its target so
 ordinary handling reaches a visible fraction of that cap, and let the cap
