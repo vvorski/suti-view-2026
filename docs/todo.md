@@ -2953,3 +2953,132 @@ chosen change's own check: on a phone, hold 3.5 s, then tap — what happens is
 what he chose, and he can see the armed state from arm's length.
 **Verify** — `pnpm build`, `pnpm lint`, `pnpm probe:tap`; then the phone.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 130. The lattice's timbre reaches its shape, not only its hue
+`status: ready` · added 2026-09-05 · the same diagnosis as 32, one tier up · lattice only
+
+**Do** — give the two continuous shape parameters an audio term each:
+`uRoughness` thickens the tunnel's shell density, `uTilt` tightens its spiral.
+Both additive on top of the existing breath, neither replacing it.
+
+**Why** — Victor: *"review how lattice changes shape and how music shapes it,
+and make it more dynamic flow."* The review is below and it has a clean answer:
+every timbral feature the shader reads lands in colour.
+
+**The review, counted rather than recalled**
+
+*What is already musical, and genuinely is:* `uFlow` appears **9 times** and is
+not a clock — `scene.ts:1316` builds it as
+`churn = 0.06 + level*0.95 + transient*0.6 + surge*1.5`, integrated per frame
+and stalled 85% by a breakdown. So the drain speed down the tunnel, which is
+the lattice's dominant motion, is played. Entry 32 then deepened the fast and
+loud tiers: `uTransient` got a global node-brightness term, `past`'s weight in
+`nodeR` went 0.5→1.0, the filament width's `uLevel` term went 9→14.
+
+*What is frozen, and must stay frozen:* `SYMMETRY` (4..9) and `ACROSS` (3..6)
+are integers consumed by `floor()` and `mod()`. They cannot be animated
+continuously without the whole figure jumping a sector at each step. The
+discrete skeleton being seed-only is a fact about the construction, not an
+omission — see Decided.
+
+*What is nominally continuous but barely moves:* only two parameters are free
+— `DEPTH` and the twist rate — and both are driven by decorative sines on the
+flow clock and nothing else:
+
+| parameter | line | base | its only continuous motion | swing |
+|---|---|---|---|---|
+| `DEPTH` (shells per unit log-radius) | 152 | 1.6 .. 3.2 | `0.18 * sin(uFlow * 0.07)` | **±6–11%** |
+| twist rate | 161 | 0.16 | `0.06 * sin(uFlow * 0.11)` | ±37% of a small term |
+
+*And the finding:* **`uTilt`, `uNovelty` and `uRoughness` appear exactly once
+each in the body — lines 334 and 339 — and all three compute hue.** Not one of
+the three timbral features touches geometry anywhere. That is entry 32's own
+diagnosis restated one tier up: 32 found the transient confined to a thin ring
+and fixed the rhythmic tier; the *timbral* tier is still entirely a colour
+signal. So, as in 32, the fix is coupling depth and no new uniform is needed.
+
+**Decided**
+- **Additive, on top of the two sines — they are not replaced** → `DEPTH`'s and
+  the twist's existing `sin(uFlow …)` terms stay exactly as they are. **Mine**,
+  and a reasoned comment is what decides it: `lattice.frag.glsl:150` calls the
+  sine *"a permanent breath, independent of any reshape, so the tunnel is never
+  perfectly still even through a long unchanging stretch of the track."* That
+  is a deliberate answer to silence and to a static passage, and CLAUDE.md is
+  explicit that such a comment outranks an entry that did not know about it.
+- **`uRoughness` → shell density**, `DEPTH += 0.55 * clamp(uRoughness, 0.0,
+  1.0)`. **Mine**: against a 1.6–3.2 base that is up to +17–34% more shells
+  down the tunnel, which is the same order as the seed's own range rather than
+  a new extreme, and density is what a gritty, noisy texture ought to read as —
+  the tunnel packing tighter. Bounded above by construction, so it can never
+  collapse the log-polar step toward zero.
+- **The clamp is load-bearing, not decoration** → **Mine**, and it is the one
+  detail a straight `+ 0.55 * uRoughness` would get wrong invisibly. This
+  project's features deliberately refuse to answer rather than guess:
+  CLAUDE.md names `spectralFlatness` returning **-1 on silence** *"rather than
+  reporting a quiet room as maximum noise"*. An unclamped negative would make
+  the tunnel **thinner than its own base in a silent room** — the opposite of
+  the intent, and invisible to any test that only ever plays music. Clamping at
+  the point of use also means the entry does not have to assert a range it did
+  not measure.
+- **`uTilt` → twist rate**, the rate term becoming
+  `0.16 + 0.06 * sin(uFlow * 0.11) + 0.10 * clamp(uTilt, 0.0, 1.0)`. **Mine**:
+  up to +63% on the base, so a bright, treble-led passage visibly coils the
+  lattice tighter and a bass-led one lets it run straight — and spectral tilt
+  is the slowest and most expressive thing the shader reads, which is what
+  makes it right for the parameter that shapes rather than flickers. Clamped
+  for the same reason as above, and matching line 334, which already clamps
+  `uTilt` where it uses it.
+- **`SYMMETRY` and `ACROSS` are deliberately not animated** → **Mine**, and
+  written down so nobody tries: they are integers inside `floor()`/`mod()`, so
+  any continuous drive makes the whole mandala jump a sector at every integer
+  crossing. The seed changing them at a structural boundary — which is already
+  what happens — is the only way they can move without popping.
+- **The whole-frame scale is not touched** → entry 32 refused it in writing:
+  *"whole-frame scale is the one coupling that turns responsive into
+  nauseating, and it is already the largest single geometric swing in the file.
+  If the result still reads as flat, the answer is another emissive term, not
+  more zoom."* Unchanged by this entry, and quoted so it is not reopened.
+- **`uNovelty` stays on hue** → **Mine**: a real structural boundary already
+  re-rolls the seed, which changes symmetry, density and twist together, so
+  novelty's structural job is done by the biggest lever in the shader. A second
+  novelty term on geometry would fire at the same moment and read as the same
+  event twice.
+- **This view only** → the same scope clause entry 32 wrote, for the same
+  reason. `chorus`, `grid`, `shards`, `tide` and `circles` are thinner still,
+  and whether that is restraint or the same gap is a separate entry.
+
+**Identity when off** — both new terms are `clamp(x, 0, 1)` multiplied by a
+coefficient and added, so in silence — where the features read 0, or the
+negative that means *no answer* — each contributes exactly 0 and the shader is
+bit-identical to today. The identity falls out of the clamp rather than being
+guarded by a branch, and the clamp is there for the refusal case anyway, so
+there is no separate guard to forget.
+
+**Lands in** — `src/shaders/lattice.frag.glsl:152` (`DEPTH`) and `:161` (the
+twist rate), plus their comments, which currently describe the sines as the
+only continuous motion and will no longer be telling the whole truth. Nothing
+else: no uniform, no `scene.ts` change, no mapping change.
+
+**Done when** — driven from `views-probe.html` with synthetic params, all else
+held: a `uRoughness` sweep 0→1 **visibly adds shells** down the tunnel and the
+shell count at a fixed radius increases monotonically; a `uTilt` sweep 0→1
+**visibly tightens the spiral**, measurable as the angular offset of a fixed
+shell against its neighbour; `uRoughness = -1` renders **pixel-identical** to
+`uRoughness = 0`, which is the refusal case; and an all-zero param set renders
+**pixel-identical to the current build**. Then real music: a bright passage and
+a bass-heavy one produce visibly different tunnel geometry, not only different
+colour — which is the thing the eye has been failing to see and the reason this
+entry exists.
+
+**Verify** — `pnpm build`, `pnpm lint`, and `pnpm probe` **unchanged** (the
+mapping is untouched; if its numbers move, something other than this shader
+changed — entry 32's own Verify makes the same point for the same reason).
+Then `views-probe.html`, every atmospheric view side by side from identical
+synthetic audio, and **look at it**: CLAUDE.md's `Fringe` lesson is exactly
+this case — a shader that compiles, passes a pixel readback and still draws the
+wrong figure. Specifically watch the kaleidoscopic fold's seams as the twist
+term grows, since `abs()` mirrors each sector and a shear that is smooth in
+screen space is not automatically smooth across a mirror line. No HUD surface
+changes, so no 320×568 pass is owed.
+
+**Hard stops** — prefs no · url no · capture no · dependency no.
