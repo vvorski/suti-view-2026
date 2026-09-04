@@ -1047,7 +1047,7 @@ constants of entry 76 are overridden, with Victor's word quoted above and by
 the mechanism entry 76 itself specifies.
 
 ### 112. The cursor is a finger, while it is moving and while it is on the glass
-`status: ready` · added 2026-09-04 · independent of 110 and 111
+`status: building` · added 2026-09-04 · started 2026-09-04 · independent of 110 and 111
 
 **Do** — on desktop, let a moving mouse drive a geometric emitter at the cursor,
 so passing the pointer across the canvas changes the picture; a cursor that has
