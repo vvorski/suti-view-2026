@@ -2308,3 +2308,138 @@ each of the six views, drag then tap. No HUD surface is touched, so the
 320×568 / 360×640 pass is not required.
 
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 123. The opening name decode cannot be skipped by a slow first frame
+`status: ready` · added 2026-09-04 · strengthens 99 · build in either order with 113 — whichever lands second re-runs `probe:name-decode`
+
+**Do** — make both of `mountReleaseName()`'s decode loops advance on
+*bounded per-frame time* instead of wall-clock time since mount, and put the
+first-frame delay on the numeric readout so a skipped decode has a number.
+**Why** — Victor: *"it doesn't work many releases, only saw it work once or
+twice."* The animation is built, wired and correct (entries 55, 94, 99). It is
+skipped whole whenever the main thread stalls for longer than the animation
+lasts — which on a phone, on a cold load, is most of the time.
+
+**Recon, in the order 1a requires.**
+1. **The code exists and runs.** `version.ts:mountReleaseName` — phase one
+   flips through `RELEASE_NAMES` for `NAME_FLIP_MS` (850 ms), phase two locks
+   the real name at `NAME_LOCK_STEP_MS` (55 ms a character); an 11-character
+   name is done in ~1.45 s. The reduced-motion path types at 3 characters a
+   second. Both were verified by `probe-name-decode.ts` and on screen at
+   build 352.
+2. **What masks it: `const start = performance.now()` is taken at mount, and
+   every frame computes `elapsed = now - start`.** Mount is `main.ts:645`.
+   What follows it *synchronously* on the same tick: `resolvePrefs()`, a
+   `shuffled()` roll, and **`createVisualiser()` at `:699`** — a
+   `new WebGLRenderer` (context creation) and four `ShaderMaterial`s. Then
+   the idle preview's first `render()` is where three.js actually compiles
+   those four programs, so the *first* animation frame after mount is also
+   the shader-compile frame. On a phone that is one to three seconds with
+   nothing else running. The first `step()` call is synchronous and paints
+   the oldest name; the next frame arrives with `elapsed` past the whole
+   animation, and the loop's own exit — `if (locked >= target.length)
+   { el.textContent = target; return }` — fires on that first real frame.
+   **What is seen is the oldest name, a pause, then a cut to the real name.
+   Nothing flips and nothing decodes.** A warm shader cache or a fast phone
+   shortens the stall below 1.45 s, and the animation is seen — "once or
+   twice". The reduced-motion path has the identical flaw with the identical
+   `now - start`.
+3. **Not a switch or device state.** Entry 99 already removed the
+   `prefers-reduced-motion` dependency and added `#motion-glyph` so that
+   state is visible on the gate; this is a different fault with the same
+   symptom, which is why 99's verification passed and the report persists.
+4. **The diagnosis goes on screen**, per CLAUDE.md's two-symptoms rule:
+   "it didn't animate" is now three candidate causes — reduced motion (the
+   glyph), a stall (this entry), or the loop never ran — and only a number
+   separates the second from the third.
+
+**Why entry 113 does not fix this on its own.** 113 makes the decode ten
+times longer (8.5 s flip + 550 ms a character). A two-second stall then eats
+a quarter of phase one rather than all of both phases, so the fault becomes a
+jump rather than a skip — better, still wrong, and still invisible to any
+probe, because the stall happens between frames on a real device. Both
+entries are wanted and neither depends on the other: 113 changes the
+constants, this changes the clock.
+
+**Decided**
+- The clock → **accumulate `elapsed += min(now − last, MAX_FRAME_MS)` each
+  frame, `MAX_FRAME_MS = 50`.** Any gap longer than 50 ms — shader compile,
+  GC, a hidden tab, a phone that drops to 20 fps — counts as 50 ms, so a
+  stall *pauses* the decode rather than skipping it, and the animation is
+  guaranteed to show every frame it has regardless of what else the page is
+  doing. Over starting the clock at the first `requestAnimationFrame`
+  instead of at mount, which fixes the init stall but not the compile stall
+  on frame one, nor any later gap. **Mine.** 50 ms is the 20 fps floor: a
+  phone genuinely rendering that slowly still sees real time; below that,
+  the difference between "slow" and "stalled" is not one a person can see.
+- Both paths → the reduced-motion typing loop gets the same clock. **Mine**:
+  it has the same flaw, and entry 99's whole point was that path must
+  actually be seen.
+- The pure helpers `lockedCountAt` / `reducedLockedCountAt` → **unchanged**;
+  the bounded clock is a new pure function beside them,
+  `advanceDecodeClock(state, nowMs) → elapsedMs`, exported for the probe.
+  113's changes to the constants those helpers read compose with this
+  without conflict. **Mine.**
+- Mount order in `main.ts` → **unchanged.** The synchronous first `step()`
+  that paints the oldest name immediately is documented and right
+  (`version.ts`'s own comment: *"an unstarted flip is a worse failure than
+  one that has not finished"*). Moving the mount after `createVisualiser`
+  would trade one stall for a blank span. The clock fix makes order
+  irrelevant. **Mine.**
+- Visibility → **no `document.hidden` branch.** A hidden tab gets no rAF and
+  therefore no advance; the first frame back is clamped to 50 ms and the
+  decode resumes where it paused. Falls out of the clock. **Mine.**
+- The number → record **the gap from mount to the first rAF callback** and
+  **the longest single frame gap during the decode**, and print them on the
+  numeric readout as `decode first Nms  worst Mms`, one line, the same shape
+  as `motion N ev  peak X/18`. Reached through the existing `panel.update`
+  stats object like `samples` is; nothing on the gate itself changes.
+  **Mine**: without this the next "it didn't animate" report is another
+  five rounds of guessing, which is exactly what 99's build note describes.
+- Back-forward-cache restore (`pageshow` with `persisted`) → **not this
+  entry.** A page restored from bfcache shows the final name with no
+  animation; that is a different path, was not reported, and would need
+  its own decision about whether a *return* should replay an *arrival*.
+  Recorded so it is not mistaken for this fault later.
+
+**Identity when off** — with no stall, `min(now − last, 50)` equals
+`now − last` on every frame and the accumulated clock equals wall time to
+within a millisecond; the animation is unchanged frame for frame. The probe
+asserts this directly.
+
+**Lands in**
+- `src/version.ts` — `mountReleaseName()`'s two `step` closures (full and
+  reduced) read the new clock; the comment above `NAME_FLIP_MS` gains the
+  reason wall-clock was wrong; a new exported `advanceDecodeClock` beside
+  `lockedCountAt`; the two recorded gaps exposed by a small getter for
+  `main.ts` to read (the same way `versionHudRunning` already is).
+- `src/main.ts:645` — unchanged; `panel.update(...)` near `:1685` passes the
+  two gaps.
+- `src/hud.ts:1500-1512` — one readout line beside `motion N ev`.
+- `scripts/probe-name-decode.ts` — a new section driving `advanceDecodeClock`
+  with a synthetic frame sequence.
+
+**Done when**
+- The probe feeds 60 fps frames for 100 ms, then **one 2000 ms gap**, then
+  60 fps to the end, through `advanceDecodeClock` → `lockedCountAt` and the
+  phase-one index: the sequence of distinct phase-one names shown and of
+  locked counts reached is **identical** to an unstalled run of the same
+  frames — every locked count from 0 to the name's length appears, in order,
+  none skipped. The probe also runs the *old* `now − start` arithmetic on
+  the same sequence and asserts it yields a single frame after the gap, so
+  the probe is shown to detect the fault it guards.
+- Unstalled, the accumulated clock differs from wall time by < 1 ms at
+  every frame (identity).
+- The readout shows `decode first Nms  worst Mms` with real numbers on a
+  phone.
+- On a phone, **ten consecutive reloads from the reload chip** all show the
+  history flip and then the left-to-right lock; zero cuts. The readout's
+  `worst` figure on those loads is the evidence that a stall happened *and*
+  was survived.
+
+**Verify** — `pnpm build`, `pnpm lint`, `pnpm probe:name-decode`; then the ten
+reloads above with the numeric readout on. The gate's own markup and CSS are
+untouched, so the 320×568 / 360×640 pass is only for the readout line, which
+is the HUD's and already wraps.
+
+**Hard stops** — prefs no · url no · capture no · dependency no.
