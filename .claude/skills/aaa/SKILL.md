@@ -246,8 +246,12 @@ nothing between them:
 
 ```bash
 # 1. another agent mid-edit? its half-written entry must not ride in your commit
-git status --short docs/todo.md            # must be empty; if not, wait a few
-                                           # seconds and re-check, do not stash
+git diff --quiet docs/todo.md              # exits 0 when clean; if not, wait a
+                                           # few seconds and re-check, do not
+                                           # stash. (`git status --short` is the
+                                           # wrong test here: with status.branch
+                                           # set it prints a header line even
+                                           # when nothing is modified.)
 # 2. number, append, commit, as one step
 N=$(( $(grep -o '^### [0-9]*\.' docs/todo.md | tr -dc '0-9\n' | sort -n | tail -1) + 1 ))
 sed "s/{N}/$N/g" "$SCRATCH/entry.md" >> docs/todo.md

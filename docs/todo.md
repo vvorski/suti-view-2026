@@ -2831,3 +2831,68 @@ been a sky parameter — `?geometric= ?atmospheric= ?view= ?rgb= ?mix= ?mapping=
 ?auto= ?debug=` is the whole list and none of them is this) · capture no ·
 dependency no. The control surface loses a control and gains none, so the
 circular constraint is not engaged.
+
+### 128. On an iPhone, no tap on the picture has played since build 277
+`status: ready` · added 2026-09-05 · found at build 416 while checking touch response · independent of the rest of the queue
+
+**Do** — stop `goFullscreen()` recording a *want* for fullscreen on a platform
+that has no element Fullscreen API, so entry 80's tap gate can never be held
+shut by a request that could never succeed.
+**Why** — `fsBlocking = fullscreenStatus().want && !document.fullscreenElement`
+(`main.ts:1525`) drops every non-chip tap — no emitter, no stream, no
+resolution (`:1576`, `:1642`) — so that the tap can re-request fullscreen
+instead. On iPhone Safari there is no `requestFullscreen` on elements:
+`goFullscreen()` sets `wantFullscreen = true` **and then** discovers that
+(`permission-gate.ts:214-219`, state → `'unsupported'`), `want` stays true for
+the life of the page, `document.fullscreenElement` is always `undefined`, and
+the gate is shut on every frame. **Every geometric view has been touch-dead
+on an iPhone since entry 80 landed at build 277.**
+
+**Recon.** Not a report of "touch is lost" being taken at face value: all seven
+geometric views were rendered at build 416 with the same synthetic
+`setTouches()` contact and every one answered at the finger (mean pixel change
+0.6–11.6 against a 0.0–0.1 time-only baseline). The rendering is fine. The
+input layer has three ways to consume a tap; this is the one that is a bug
+rather than a decision. `scripts/probe-fullscreen.ts:220-232` already has a
+"no API" section and asserts `attempts === 0` and `armed === false` — and
+does **not** assert `want === false`, which is exactly the fact the gate
+reads. The probe passes today because nobody wrote the one line that would
+have failed. Entry 80's own Decided records the gate as *"fullscreen has
+right of way"* over a tap; it did not consider a platform where fullscreen
+can never arrive, and the `?debug` readout on such a phone says exactly that
+— `full unsupported want` — without anyone having read it.
+
+**Decided**
+- Where the fix goes → **`goFullscreen()`: test for the API first, and only
+  then set `wantFullscreen`.** Over special-casing `'unsupported'` inside
+  `fsBlocking` in `main.ts`. **Mine**: `want` is defined at
+  `permission-gate.ts:93-99` as *"the one desire … true from the moment
+  anything first asks for fullscreen"*, and a desire for something the
+  platform cannot provide is not a state the rest of the app should have to
+  know how to read around. Fix the fact, not every reader of it.
+- The `'unsupported'` state itself → **unchanged**; it is what the readout and
+  the fullscreen chip already key on, and it stays true.
+- The powder egg's own `goFullscreen()` call (`main.ts:818`) and the gate's →
+  both go through the same function; nothing else to change.
+- `want`'s "nothing here ever sets it back to false" comment (`:96-98`) →
+  **still true**; this entry never *sets* it false, it declines to set it true.
+  The comment gains one sentence saying so.
+
+**Identity when off** — on any platform with the API, `requestFullscreen` is
+present, `want` is set exactly as today on the same line's next statement,
+and the probe's granted/refused/recovered sections are byte-identical.
+
+**Lands in** — `src/permission-gate.ts:214-219` (reorder two statements, one
+comment); `scripts/probe-fullscreen.ts:220-232` — add `no API → want is
+false` beside the two existing "no API" checks, **and run it before the fix
+to confirm it fails**, since a check that has never failed has never been
+shown to test anything. CI already runs `probe:fullscreen`.
+
+**Done when** — the new probe assertion fails at build 416 and passes after;
+on an iPhone, with the readout on, the fullscreen line reads
+`full unsupported` with **no `want`**, and a tap on Circles draws a ring.
+
+**Verify** — `pnpm build`, `pnpm lint`, `pnpm probe:fullscreen` (both before
+and after); then an iPhone. No HUD surface is touched.
+
+**Hard stops** — prefs no · url no · capture no · dependency no.
