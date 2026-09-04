@@ -1664,7 +1664,7 @@ changes, so no 320×568 pass is owed.
 is added, retyped or repurposed) · url no · capture no · dependency no.
 
 ### 117. A mouse gets its own map: right click opens the menu, left click arms the camera
-`status: ready` · added 2026-09-04 · **build after 112 and 115** · does not supersede 115 — 115 is the finger's map, this is the mouse's
+`status: building` · added 2026-09-04 · started 2026-09-05 · **build after 112 and 115** · does not supersede 115 — 115 is the finger's map, this is the mouse's
 
 **Do** — on a mouse, right click opens the menu and left click enters camera
 mode; the next left click takes the picture and leaves. Touch keeps entry 115's
