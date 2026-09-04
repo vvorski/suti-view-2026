@@ -13,7 +13,7 @@
  *   node --experimental-strip-types scripts/probe-touches.ts
  */
 
-import { createTouchField, toShaderUv } from '../src/engine/touches.ts'
+import { createTouchField, toShaderUv, pointerAction } from '../src/engine/touches.ts'
 
 let failures = 0
 function check(name: string, ok: boolean, detail: string): void {
@@ -110,6 +110,29 @@ function check(name: string, ok: boolean, detail: string): void {
   check('the top edge has positive uv.y (flipped)', topY > 0, String(topY))
   const [, botY] = toShaderUv(10 + 150, 20 + 500, rect) // bottom edge
   check('the bottom edge has negative uv.y', botY < 0, String(botY))
+}
+
+// docs/todo.md entry 117 — the mouse's own map, split from the finger's.
+{
+  const mouse = (button: number): string => pointerAction({ pointerType: 'mouse', button })
+  check('a mouse right click opens the menu', mouse(2) === 'menu', mouse(2))
+  check('a mouse left click plays', mouse(0) === 'play', mouse(0))
+  // The fix, not just the feature: every button used to reach the touch
+  // field, so a right click spawned an emitter and counted toward the
+  // two-contact menu gesture — right-then-left opened the menu by accident,
+  // and middle and the back/forward buttons did the same.
+  for (const b of [1, 3, 4]) {
+    check(`a mouse button ${b} reaches nothing`, mouse(b) === 'ignore', mouse(b))
+  }
+  // A finger has no buttons, so its map cannot depend on one. `button` is 0
+  // for a touch contact by spec, and this asserts the map does not care
+  // either way — a touchscreen reporting something else is still a finger.
+  for (const type of ['touch', 'pen']) {
+    for (const b of [0, 1, 2, 3, 4]) {
+      const got = pointerAction({ pointerType: type, button: b })
+      check(`a ${type} contact plays whatever button ${b} reads`, got === 'play', got)
+    }
+  }
 }
 
 console.log(failures === 0 ? `\nall checks passed` : `\n${failures} check(s) failed`)

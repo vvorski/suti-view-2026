@@ -132,6 +132,44 @@ interface Slot {
 }
 
 /**
+ * What a pointer press means to this app, from the two facts the DOM event
+ * carries about the hardware — docs/todo.md entry 117.
+ *
+ * `'play'` reaches the touch field and everything downstream of it; `'menu'`
+ * opens the panel and reaches nothing else; `'ignore'` reaches nothing at
+ * all.
+ *
+ * **Two maps, split by hardware, not one map with exceptions.** A mouse has
+ * two buttons and a hover state; a finger has neither. Entry 115's finger map
+ * — single tap plays, double tap arms, a 3.5s hold opens the menu — is
+ * untouched here, and a touchscreen laptop gets whichever map the contact
+ * actually came from rather than whichever the device is thought to be.
+ *
+ * **Buttons other than left and right reach nothing**, and that is a fix
+ * rather than a new rule. `main.ts` forwarded `pointerdown` with no button
+ * filter, so a right click already spawned an emitter and counted toward the
+ * two-contact menu gesture — right-then-left opened the menu by accident, and
+ * middle click and the back/forward buttons did the same.
+ *
+ * Pure, and here rather than in `main.ts`, because this file is already the
+ * one that turns a DOM pointer event into this app's own terms — the same
+ * reason `toShaderUv` lives here — and `probe-touches.ts` already runs
+ * against it.
+ */
+export type PointerAction = 'play' | 'menu' | 'ignore'
+
+export function pointerAction(e: { pointerType: string; button: number }): PointerAction {
+  // A finger or a pen has one contact and no buttons. `button` is 0 for a
+  // touch contact by spec, but it is not read at all here: a touchscreen that
+  // reported something else would still be a finger, and the map that serves
+  // it is entry 115's.
+  if (e.pointerType !== 'mouse') return 'play'
+  if (e.button === 2) return 'menu'
+  if (e.button === 0) return 'play'
+  return 'ignore'
+}
+
+/**
  * The canvas's own box, not the window's: the drawing buffer can be a
  * different aspect from the viewport under the resolution ladder, but every
  * geometric shader's own `uv` is built from `gl_FragCoord` against

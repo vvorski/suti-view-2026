@@ -192,9 +192,9 @@ void main() {
   // Rotational symmetry order, nodes-per-sector, and tunnel density all come
   // from the seed: one lattice reads as a dense honeycomb, the next as six
   // wide spokes, and nothing about the audio mapping has to change for that
-  // variety to exist. The seed re-rolls on request (space bar, double-tap,
-  // double-click) and, on its own, whenever the music crosses a real
-  // structural boundary (see scene.ts) — a section change is a different
+  // variety to exist. The seed re-rolls on request (the space bar, or a
+  // shake on a device that has one) and, on its own, whenever a real
+  // structural boundary is crossed (see scene.ts) — a section change is a different
   // lattice, not just a different colour.
   float SYMMETRY = 4.0 + floor(uSeed.y * 6.0); // 4..9
   float ACROSS = 3.0 + floor(uSeed.w * 4.0); // 3..6

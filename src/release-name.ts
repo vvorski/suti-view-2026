@@ -158,6 +158,7 @@ export const RELEASE_NAMES: readonly string[] = [
   'bends toward',
   'hold opens',
   'one key',
+  'right opens',
 ]
 
 /** The current release's name — derived as the list's last element, so

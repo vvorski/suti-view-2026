@@ -666,8 +666,12 @@ export function createVisualiser(
     // Where "now" sits in the ring buffer, 0-1. The shader walks backwards from
     // here to read into the past.
     uHistoryHead: { value: 0 },
-    // Four free numbers, re-rolled on demand (space bar, double-tap, double
-    // click). Audio drives everything else here; this is the one thing a
+    // Four free numbers, re-rolled on demand — the space bar on a machine
+    // with a keyboard, a shake on a device with an accelerometer. (This said
+    // "space bar, double-tap, double click" until docs/todo.md entry 117
+    // checked: the double tap has opened the menu since entry 103 and now
+    // arms the camera, and no double-click handler has ever existed.) Audio
+    // drives everything else here; this is the one thing a
     // person gets to reach in and change directly. Each view is free to spend
     // its four components however suits its own look — scene.ts hands them
     // out and stays agnostic, same as with the fragment shader itself.

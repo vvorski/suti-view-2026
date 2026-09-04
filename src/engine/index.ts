@@ -86,8 +86,8 @@ export {
 } from './hover.ts'
 export type { HoverState, HoverReading } from './hover.ts'
 
-export { createTouchField, toShaderUv, VELOCITY_SMOOTH } from './touches.ts'
-export type { Touch, TouchField, TouchFieldEvent, TouchEventKind } from './touches.ts'
+export { createTouchField, toShaderUv, pointerAction, VELOCITY_SMOOTH } from './touches.ts'
+export type { Touch, TouchField, TouchFieldEvent, TouchEventKind, PointerAction } from './touches.ts'
 
 export { createTouchStreamState, updateTouchStream } from './touch.ts'
 export type { TouchStreamState, TouchStream } from './touch.ts'

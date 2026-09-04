@@ -18,6 +18,7 @@ import {
   hoverLeft,
   MAPPINGS,
   moveHover,
+  pointerAction,
   toShaderUv,
   updateHover,
   type Mapping,
@@ -1220,6 +1221,18 @@ async function main(): Promise<void> {
   // a finger permanently down, holding `touchAnyDown` true for ever and
   // parking the tap recogniser below mid-gesture.
   const hover = createHoverState()
+  /**
+   * Which live contacts came from a mouse — docs/todo.md entry 117.
+   *
+   * The touch field carries no `pointerType`, and deliberately: it is a field
+   * of contacts, and what hardware made one is this file's question. A set
+   * keyed by pointer id is enough, and it is read in `dispatchTouches` rather
+   * than acted on in the listener for a reason worth stating — arming in the
+   * listener would arm *before* the same event reached the dispatch, and the
+   * dispatch would then see an armed mode and shoot on the very click that
+   * armed it. One click cannot be both.
+   */
+  const mousePointers = new Set<number>()
 
   // Contact ids for the geometric emitter's pool (scene.ts) — docs/todo.md
   // entry 57. `touchField`'s own id is a *pointer* id, which the platform
@@ -1235,6 +1248,34 @@ async function main(): Promise<void> {
   document.addEventListener('pointerdown', (e) => {
     const rect = canvas.getBoundingClientRect()
     const [x, y] = toShaderUv(e.clientX, e.clientY, rect)
+    // docs/todo.md entry 117 — a mouse gets its own map. Routed before the
+    // contact reaches the field at all, because the two wrong outcomes are
+    // both things the field would already have done by the time anything
+    // downstream could veto them: a right click spawned an emitter and
+    // counted toward the two-contact menu gesture, so right-then-left opened
+    // the menu by accident, and middle click did the same.
+    const action = pointerAction(e)
+    if (action === 'ignore') return
+    if (e.pointerType === 'mouse') mousePointers.add(e.pointerId)
+    if (action === 'menu') {
+      // A chip or the gate keeps the browser's own context menu — the
+      // picture is the only surface this entry claims. `isChip` is the same
+      // test the rest of this listener uses.
+      if (isChip(e.target) || e.target !== canvas) return
+      // Right click while armed leaves the mode without taking a picture —
+      // entry 72's "two fingers always means get me out of what I am in",
+      // applied to the device that has a second button. Entry 87 locked the
+      // menu out during the mode, which was right when the only exit was the
+      // shot; a mode whose exits are a photo or a fifteen-second timeout is
+      // one a right click should be able to leave.
+      // `exitCameraMode` leaves without opening anything since entry 115
+      // took its `panel.open()` out, so this is a plain disarm and the
+      // `panel.open()` below is the right click's own doing.
+      if (cameraMode) exitCameraMode()
+      lastTap = null
+      panel.open()
+      return
+    }
     // A chip button's own listener already stopPropagation()s its own
     // pointerup, which is enough in the ordinary case — but a release that
     // lands a pixel outside the button (a real touchscreen possibility) has
@@ -1276,13 +1317,25 @@ async function main(): Promise<void> {
     if (e.pointerType === 'mouse' && e.relatedTarget === null) hoverLeft(hover)
   })
   window.addEventListener('blur', () => hoverLeft(hover))
-  document.addEventListener('pointerup', (e) => touchField.up(e.pointerId))
-  document.addEventListener('pointercancel', (e) => touchField.cancel(e.pointerId))
+  document.addEventListener('pointerup', (e) => {
+    touchField.up(e.pointerId)
+    mousePointers.delete(e.pointerId)
+  })
+  document.addEventListener('pointercancel', (e) => {
+    touchField.cancel(e.pointerId)
+    mousePointers.delete(e.pointerId)
+  })
   // A lost capture (another element or the browser chrome stealing it
   // mid-drag) is not followed by pointerup or pointercancel on this target
   // — the same "handed between people" scenario entry 49's field is built
   // to survive.
   document.addEventListener('lostpointercapture', (e) => touchField.cancel(e.pointerId))
+  // docs/todo.md entry 117 — the browser's own context menu must not open
+  // over the picture, since a right click there is now the way into this
+  // app's menu. Bound on the canvas rather than the document on purpose: a
+  // right click on a `.hud-chip`, on the gate, or anywhere else keeps the
+  // browser's menu, which is the escape hatch for anyone who needs it.
+  canvas.addEventListener('contextmenu', (e) => e.preventDefault())
 
   // A tap plays; only a double opens the panel — docs/todo.md entry 103,
   // replacing entry 52's tap-saves-a-frame design. Entry 87 built a
@@ -1583,6 +1636,21 @@ async function main(): Promise<void> {
           panel.open()
           continue
         }
+        // docs/todo.md entry 117 — a mouse arms on a single left click,
+        // where a finger needs a double tap. The difference is the hardware:
+        // entry 115 could not give the finger a single tap because the
+        // emitter fires on every `down`, so every touch of the picture would
+        // arm and the touch after it would shoot. A mouse does not have that
+        // problem, because it has a second button for the menu and hover for
+        // play — so the click is free.
+        //
+        // Reached only when `cameraMode` is false: the branch above already
+        // took the armed case and shot. That is what keeps one click from
+        // arming and shooting at once.
+        if (mousePointers.has(e.id)) {
+          enterCameraMode()
+          continue
+        }
         // Recognised on this tap's own `down`, not its `up` — see
         // resolveTapDown's own comment for why. `e.clientX`/`e.clientY`
         // equal `e.downClientX`/`e.downClientY` for a `down` event; using
@@ -1667,7 +1735,7 @@ async function main(): Promise<void> {
       const params = mapping.update(audio)
 
       // Any disturbance tumbles the picture; a hard shake re-rolls the seed —
-      // the same action the space bar and a vertical swipe already perform, so
+      // the same action the space bar already performs, so
       // shaking the phone is a third way in rather than a new behaviour.
       // Structure and flavour over minutes. Fed the fast tier's output as
       // well as the frame: transient, roughness and level are already computed
