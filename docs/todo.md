@@ -503,25 +503,13 @@ the app naming its own presence, in two words, in its own register. No
 disclaimer, no list of senses, no live/available-only-if-granted logic: the
 plainest of the three options on offer.
 
-**The answer after that, 2026-09-04 — reversed, and this is now the standing
-answer. Victor: *"don't need the text 'i am' on the opening page."*** Built at
-374, looked at, removed at 397 (entry 118). The gate says nothing about what
-kiyo is aware of, which is this entry's own first option — *"the app is more
-present for knowing where it is whether or not it announces it"* — reached the
-better way, by trying the alternative on screen rather than by arguing about
-it.
-
-**So the question is closed, and this is the paragraph that closes it.** It
-has been raised twice already (97, then 107). Anyone reaching for it a third
-time should know that a line *was* shipped, seen, and taken back off: the
-absence on the gate is a decision with a build number on either side of it,
-not an omission waiting to be filled.
-
 **The answer again, later the same day — Victor's call, and it reverses the
 one above.** *"don't need the text 'i am' on the opening page."* So the answer
 is the first of the three options this entry sketched: **nothing**. The gate
 names no sense at all, and stays as clean as build 66 left it. Entry 118 takes
-the line back out. Recorded here rather than only in 118 because this entry's
+the line back out, at build 397 — so the line was shipped at 374, seen on
+screen, and removed three hours later, and the absence is a decision with a
+build number on either side of it rather than a gap waiting to be filled. Recorded here rather than only in 118 because this entry's
 own closing condition says the answer must live where the question was asked —
 it has been raised twice already, and nobody should raise it a third time
 without reading that it was tried on screen and taken off again.
