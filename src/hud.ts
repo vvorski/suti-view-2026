@@ -45,6 +45,8 @@ import { type GeoColour } from './geo-colour'
 import { savePrefs, type Prefs, type SkyOverride } from './prefs'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
+import { chipPosition } from './chip-arc.ts'
+
 const DEG = Math.PI / 180
 const TAU = Math.PI * 2
 
@@ -93,63 +95,9 @@ const CUTOFF = 40 * DEG
  */
 const BAND_R = [0.88, 0.75, 0.63, 0.53, 0.43, 0.33]
 
-/** The inner icon arc, outside every band and the tick rim — what the wedge
- *  edits: `geo`, `atm`, `cam`, `ear`. */
-const R_CHIPS_INNER = 1.08
-/** docs/todo.md entry 77. The outer icon arc, outside the inner one — the
- *  global toggles that never change what the bands mean: `num`,
- *  `grav`, `day`. Wider so the two rings read as concentric
- *  rather than overlapping. **Mine**, per that entry's own "Mine" on the
- *  exact radius and size factor. */
-const R_CHIPS_OUTER = 1.22
 /** docs/todo.md entry 77. The outer ring is drawn smaller, not harder to
  *  hit — see `mkChip`'s own comment on how that split is achieved. **Mine**. */
 const R_CHIPS_OUTER_SCALE = 0.8
-/** Where each icon arc is centred — not the notch. A symmetric arc at this
- *  radius puts the first icon's left edge at roughly x=0 on a 320px screen;
- *  the wedge's corner hinge means the arc leaves the screen sooner at the
- *  top-left than at the bottom-right, so rotating it buys margin at both ends.
- *  Shared by both rings — docs/todo.md entry 77 split eight chips into two
- *  rows of four specifically so both could centre honestly here again. */
-const CHIP_ARC_MID = 232 * DEG
-/** Gap between neighbouring icons along their arc, in px. */
-const CHIP_GAP = 5
-/**
- * The smallest start angle the leading (leftmost) chip on a ring may sit at.
- *
- * Centring blindly on CHIP_ARC_MID works for up to six chips — at 320×568 the
- * centred start is 210°, already clear of this. A seventh does not append a
- * slot, it re-centres all seven and pushes the leading one off the left edge
- * (205.6° there, putting its left edge at roughly -5.7px). Docs/todo.md entry
- * 77 split what had grown to eight chips into two rings of four specifically
- * to retire this clamp — four is under the six it was invented for, so
- * neither ring should ever reach it again; it stays only as the same safety
- * floor it always was. See docs/todo.md entry 19.
- */
-const CHIP_ARC_MIN_START = 209 * DEG
-
-/**
- * Where chip `index` of `n` total on a given ring sits, in viewport pixels.
- *
- * No longer exported — docs/todo.md entry 77. The fullscreen chip (entry 19)
- * once needed this arc too and lived outside the HUD's own container to get
- * it, but entry 42 moved that chip to the centre of the screen; this file's
- * own `placeChips` has been the only caller since. `n` must count every chip
- * that will actually be shown on `ring`, including the caller's own, since
- * the clamp above depends on the true row length before anything is laid out.
- */
-function chipPosition(index: number, n: number, chipSize: number, ring: 'inner' | 'outer'): [number, number] {
-  const w = window.innerWidth
-  const h = window.innerHeight
-  const base = Math.min(w, h)
-  const cx = w + 10
-  const cy = h + 10
-  const r = base * (ring === 'outer' ? R_CHIPS_OUTER : R_CHIPS_INNER)
-  const step = (chipSize + CHIP_GAP) / r
-  const start = Math.max(CHIP_ARC_MID - ((n - 1) / 2) * step, CHIP_ARC_MIN_START)
-  const a = start + index * step
-  return [cx + r * Math.cos(a), cy + r * Math.sin(a)]
-}
 
 /** A tap that travels further than this is a drag or a swipe, not a tap —
  *  entry 27 removed the pointer-swipe gestures that once claimed anything
@@ -1138,7 +1086,7 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
     const place = (list: HTMLButtonElement[], ring: 'inner' | 'outer'): void => {
       const size = list[0]?.offsetWidth || 48
       list.forEach((chip, i) => {
-        const [x, y] = chipPosition(i, list.length, size, ring)
+        const [x, y] = chipPosition(i, list.length, size, ring, window.innerWidth, window.innerHeight)
         chip.style.left = `${x - size / 2}px`
         chip.style.top = `${y - size / 2}px`
       })

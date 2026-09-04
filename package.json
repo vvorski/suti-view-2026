@@ -19,6 +19,7 @@
     "probe:emitter": "node --experimental-strip-types scripts/probe-emitter.ts",
     "probe:hover": "node --experimental-strip-types scripts/probe-hover.ts",
     "probe:keyboard": "node --experimental-strip-types scripts/probe-keyboard.ts",
+    "probe:chips": "node --experimental-strip-types scripts/probe-chips.ts",
     "probe:composite": "node --experimental-strip-types scripts/probe-composite.ts",
     "probe:nudge": "node --experimental-strip-types scripts/probe-nudge.ts",
     "probe:touches": "node --experimental-strip-types scripts/probe-touches.ts",

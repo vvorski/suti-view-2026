@@ -1790,7 +1790,7 @@ five-minute ceiling. Nothing new is captured and nothing leaves the device ·
 dependency no.
 
 ### 119. In landscape, the Camera mode chip is drawn above the top of the screen
-`status: building` · added 2026-09-04 · started 2026-09-05 · found at build 373 from a "there is no camera" report · independent of the rest of the queue · if 115 builds first, the shutter chip is gone and the Done-when's tap check moves to the Sky chip, which is clipped too
+`status: done` · added 2026-09-04 · build 417 · found at build 373 from a "there is no camera" report · 115 built first, so the clipped chip was the Sky chip — measured, still clipped, still fixed
 
 **Do** — make `chipPosition()` derive the arc's usable angular span from the
 viewport it is given, on both the left edge and the top edge, so no chip on
