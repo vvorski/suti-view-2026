@@ -187,7 +187,7 @@ alter them. Also `pnpm build`, `pnpm lint`.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 71. The sky gets a noon and a night, and the override swings both ways
-`status: done` · added 2026-08-30 · shipped at build 238 · build with or after 68
+`status: done` · added 2026-08-30 · shipped at build 238 · build with or after 68 · **control retired by 127**
 
 **Build note** — `sky.ts`'s single four-anchor table split into two:
 `DAYLIGHT_ANCHORS` (six: 04:00/0.0, 06:30/0.35, 10:30/1.0, 15:30/1.0,
