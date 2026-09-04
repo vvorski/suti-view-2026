@@ -761,7 +761,7 @@ that saves becomes harder to leave armed by accident, never easier ·
 dependency no.
 
 ### 110. Strata: the picture is sand between two panes of glass
-`status: done` · added 2026-09-04 · build 386 · a new atmospheric view · the view is complete; the autopilot cannot reach it and that conflict is entry 124, not an omission from this one · **reverted by 131 — the view was a misreading of the ask; see 132 for what was meant**
+`status: done` · added 2026-09-04 · build 386 · **reverted by 131** — the sand was a misreading of "take inspiration from those sand art frames", which was about the dynamics, not a picture. Kept in the file as the record of it. · **reverted by 131 — the view was a misreading of the ask; see 132 for what was meant**
 
 **Do** — add an atmospheric view, **Strata**, in which the audio pours coloured
 sand from whichever edge is up, the grains sift down under the phone's own
@@ -1173,7 +1173,7 @@ absent wherever one does not) · url no · capture no · dependency no. The
 control surface is unchanged; this adds no control.
 
 ### 113. The gate's name decodes ten times slower
-`status: done` · added 2026-09-04 · build 402 · independent of 110–112 · the "does 15s read as deliberate" judgement is Victor's and could not be made here — see build note
+`status: done` · added 2026-09-04 · build 402 · independent of 110–112 · the "does 15s read as deliberate" judgement is Victor's and could not be made here — see build note · **its reduced-path re-anchoring is corrected by 133**
 
 **Do** — multiply both timing constants of the opening screen's release-name
 flip by ten: `NAME_FLIP_MS` 850 → **8500**, `NAME_LOCK_STEP_MS` 55 → **550**.
