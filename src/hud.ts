@@ -335,6 +335,13 @@ export interface Hud {
    * screen right now" needs this rather than the stored preference.
    */
   showingStats(): boolean
+  /**
+   * Flip the numeric readout, exactly as tapping the `num` chip does —
+   * docs/todo.md entry 116, for the `d` key. The same one path, including
+   * the write back to `prefs` and the chip's own repaint, so the two can
+   * never disagree about what is showing or whether it was remembered.
+   */
+  toggleStats(): void
 }
 
 interface Handlers {
@@ -1036,23 +1043,31 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
   // ring, by that same test the file's own GROUPS/loose-mkChip split
   // already drew, now made visible as a second arc rather than only as
   // which function these four calls happen to sit in.
-  const statsChip = mkChip(
-    'num',
-    'Numeric readout',
-    '#9d9bf0',
-    () => {
-      // A tap is an explicit choice, so it is the one thing that writes back
-      // to prefs — arriving via ?debug and never touching this chip writes
-      // nothing about stats at all. See docs/todo.md entry 31.
-      showStats = !showStats
-      prefs.showStats = showStats
-      stats.hidden = !showStats
-      if (!showStats) stats.textContent = ''
-      save()
-      paint()
-    },
-    'outer',
-  )
+  /**
+   * Flip the numeric readout — docs/todo.md entries 31 and 116.
+   *
+   * Extracted from the `num` chip's own handler by entry 116, which gave the
+   * readout a second way in (the `d` key) and needed both to be the same
+   * thing rather than two that agree by inspection. This does five things —
+   * flips `showStats`, writes it back to `prefs`, hides the element, clears
+   * its text, saves and repaints — and a key that reimplemented four of them
+   * would be a state that disagrees with the chip's own pressed paint the
+   * first time anyone used both.
+   *
+   * Writing to prefs is what makes it an explicit choice, and is why
+   * arriving via `?debug` and never touching either control writes nothing
+   * about stats at all.
+   */
+  const toggleStats = (): void => {
+    showStats = !showStats
+    prefs.showStats = showStats
+    stats.hidden = !showStats
+    if (!showStats) stats.textContent = ''
+    save()
+    paint()
+  }
+
+  const statsChip = mkChip('num', 'Numeric readout', '#9d9bf0', toggleStats, 'outer')
   // docs/todo.md entry 30. A boolean needs a chip rather than a band, same
   // as the readout above — no visualiser call here, either: main.ts reads
   // prefs.gravity itself, once per frame, the same way it already reads
@@ -1546,6 +1561,7 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
       atmAlpha: prefs.atmAlpha,
     }),
     showingStats: () => showStats,
+    toggleStats,
     open: () => setOpen(true),
     close: () => setOpen(false),
 

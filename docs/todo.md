@@ -1580,7 +1580,7 @@ unasked reads as a gift or as a fault.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 116. `d` toggles the numbers
-`status: building` · added 2026-09-04 · started 2026-09-04 · independent of 110–115
+`status: done` · added 2026-09-04 · build 409 · independent of 110–115
 
 **Do** — pressing `d` toggles the numeric readout, exactly as the `num` chip
 does, through the same one path.

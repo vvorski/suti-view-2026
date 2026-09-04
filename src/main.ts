@@ -1185,6 +1185,9 @@ async function main(): Promise<void> {
 
   bindKeyboard({
     onRandomise: () => visualiser.randomise(),
+    // docs/todo.md entry 116 — the same one path the `num` chip takes, not a
+    // second implementation of it.
+    onToggleStats: () => panel.toggleStats(),
   })
 
   // One recogniser for every gesture on the picture — docs/todo.md entries
