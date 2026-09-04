@@ -750,7 +750,7 @@ that saves becomes harder to leave armed by accident, never easier ·
 dependency no.
 
 ### 110. Strata: the picture is sand between two panes of glass
-`status: ready` · added 2026-09-04 · a new atmospheric view · independent of 108
+`status: building` · added 2026-09-04 · started 2026-09-04 · a new atmospheric view · independent of 108
 
 **Do** — add an atmospheric view, **Strata**, in which the audio pours coloured
 sand from whichever edge is up, the grains sift down under the phone's own
