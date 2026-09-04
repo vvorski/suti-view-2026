@@ -435,7 +435,7 @@ plus a phone in real daylight. The number to watch is `p5`: it should sit near
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 107. Does the gate say what kiyo is aware of?
-`status: blocked` · added 2026-08-31 · the remainder of 97, reopened under the new rule
+`status: done` · added 2026-08-31 · answered 2026-09-04 · build 374 · the remainder of 97, reopened under the new rule
 
 **Do** — nothing yet. This is a question for Victor, raised because entry 97
 shipped without the gate copy it asked for and `CLAUDE.md`'s amended Hard Stop
@@ -486,6 +486,12 @@ goes.
 see at all.
 **Hard stops** — prefs no · url no · capture **yes, and that is the entire
 point of the entry** · dependency no.
+
+**The answer, 2026-09-04 — Victor's call.** One line: **"i am"**. Not the
+fuller *"listens · knows the hour · follows the moon"* sketched above — just
+the app naming its own presence, in two words, in its own register. No
+disclaimer, no list of senses, no live/available-only-if-granted logic: the
+plainest of the three options on offer.
 
 ### 108. The sky's crossover is twice as long as entry 71 promised
 `status: ready` · added 2026-08-31 · answered 2026-09-04 · found by `/ccc` at build 355 · build before 71 is archived
