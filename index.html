@@ -415,19 +415,6 @@
         text-shadow: 0 1px 14px rgba(5, 6, 10, 0.95);
         line-height: 1;
       }
-      /* docs/todo.md entry 107. Same type scale and colour as .gate-byline
-         (no new rule, per the entry's own instruction), lowercase rather
-         than the byline's tracked-out uppercase so it reads as a spoken
-         line and not a second label. No glow, no shadow animation — one
-         moving line under the title was already the byline's job. */
-      .gate-aware {
-        font: 400 calc(0.7rem * var(--gate-type-scale))/1 ui-monospace, SFMono-Regular, Menlo,
-          monospace;
-        letter-spacing: 0.14em;
-        color: #8d88b8;
-        text-shadow: 0 1px 12px rgba(5, 6, 10, 0.95);
-        margin: 0 0 0.3rem;
-      }
       .gate-name {
         font: 500 calc(clamp(0.95rem, 4.4vw, 1.3rem) * var(--gate-type-scale))/1 ui-monospace,
           SFMono-Regular, Menlo, monospace;
@@ -822,14 +809,6 @@
              itself carries it. This is deliberate, not an omission — do
              not add one. -->
         <h1>kiyo&#8202;&middot;&#8202;plays</h1>
-        <!-- docs/todo.md entry 107. Victor's answer to the reopened
-             question: the gate names what kiyo is aware of, in two words,
-             in the app's own voice — not the reassurance copy build 66
-             removed, and not a list of senses. Reuses .gate-byline's font
-             rule and colour rather than adding a second scale: the entry's
-             own instruction was no new band, no icon row, no second
-             paragraph. -->
-        <p class="gate-aware">i am</p>
         <div class="gate-name"><span id="release-name"></span></div>
       </header>
 

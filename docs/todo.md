@@ -445,7 +445,7 @@ plus a phone in real daylight. The number to watch is `p5`: it should sit near
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 107. Does the gate say what kiyo is aware of?
-`status: done` · added 2026-08-31 · answered 2026-09-04 · build 374 · the remainder of 97, reopened under the new rule · **answer reversed 2026-09-04 — see 118**
+`status: done` · added 2026-08-31 · answered 2026-09-04 · build 374 · **answer reversed 2026-09-04 by 118, build 397** · the remainder of 97, reopened under the new rule
 
 **Do** — nothing yet. This is a question for Victor, raised because entry 97
 shipped without the gate copy it asked for and `CLAUDE.md`'s amended Hard Stop
@@ -502,6 +502,20 @@ fuller *"listens · knows the hour · follows the moon"* sketched above — just
 the app naming its own presence, in two words, in its own register. No
 disclaimer, no list of senses, no live/available-only-if-granted logic: the
 plainest of the three options on offer.
+
+**The answer after that, 2026-09-04 — reversed, and this is now the standing
+answer. Victor: *"don't need the text 'i am' on the opening page."*** Built at
+374, looked at, removed at 397 (entry 118). The gate says nothing about what
+kiyo is aware of, which is this entry's own first option — *"the app is more
+present for knowing where it is whether or not it announces it"* — reached the
+better way, by trying the alternative on screen rather than by arguing about
+it.
+
+**So the question is closed, and this is the paragraph that closes it.** It
+has been raised twice already (97, then 107). Anyone reaching for it a third
+time should know that a line *was* shipped, seen, and taken back off: the
+absence on the gate is a decision with a build number on either side of it,
+not an omission waiting to be filled.
 
 **The answer again, later the same day — Victor's call, and it reverses the
 one above.** *"don't need the text 'i am' on the opening page."* So the answer
@@ -2121,7 +2135,7 @@ surface changes, so the 320×568 / 360×640 pass is not required.
 capture **yes — licensed, quoted in Decided** · dependency no.
 
 ### 118. The gate stops saying "i am"
-`status: building` · added 2026-09-04 · started 2026-09-04 · **reverses the answer recorded in 107** · independent of 110–117
+`status: done` · added 2026-09-04 · build 397 · **reverses the answer recorded in 107**
 
 **Do** — remove the `i am` line from the gate: the `<p class="gate-aware">` and
 the `.gate-aware` rule that exists only for it.
