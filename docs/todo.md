@@ -761,7 +761,7 @@ that saves becomes harder to leave armed by accident, never easier ·
 dependency no.
 
 ### 110. Strata: the picture is sand between two panes of glass
-`status: done` · added 2026-09-04 · build 386 · a new atmospheric view · the view is complete; the autopilot cannot reach it and that conflict is entry 124, not an omission from this one
+`status: done` · added 2026-09-04 · build 386 · a new atmospheric view · the view is complete; the autopilot cannot reach it and that conflict is entry 124, not an omission from this one · **reverted by 131 — the view was a misreading of the ask; see 132 for what was meant**
 
 **Do** — add an atmospheric view, **Strata**, in which the audio pours coloured
 sand from whichever edge is up, the grains sift down under the phone's own
@@ -1509,7 +1509,7 @@ expiries — surviving untouched. Nothing new is captured, nothing leaves the
 device · dependency no.
 
 ### 124. The autopilot cannot reach Strata, and the obvious fix hands it a black screen
-`status: blocked` · added 2026-09-04 · found while building 110 · needs Victor
+`status: closed` · added 2026-09-04 · found while building 110 · **closed by 131: Strata is being removed, so there is nothing for the autopilot to reach; no answer needed**
 
 **Do** — nothing yet. This is a question for Victor, raised because entry 110
 shipped a view the director can never choose, and the standing rule in
@@ -3082,3 +3082,238 @@ screen space is not automatically smooth across a mirror line. No HUD surface
 changes, so no 320×568 pass is owed.
 
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 131. Strata comes out: the sand was a misreading
+`status: ready` · added 2026-09-05 · **reverts 110 (build 386) and closes 124** · build before 132
+
+**Do** — remove the Strata view and everything that exists only for it, and
+leave in place the two things entry 110 built that other entries now depend
+on.
+**Why** — Victor: *"oh no, you added sand on top of everything? that's not what
+I wanted, it was just a suggestion on the dynamics."* Entry 110 read "use the
+axis detection to change the display … take inspiration from those sand art
+frames" as *a sand picture* and built a view. The sand frame was the
+**dynamics** — how things fall and settle when the phone is upright and hang
+when it is flat — and the display it was meant to change was the one already
+there. Entry 132 is what the instruction actually asked for; this entry clears
+the misreading out of the way first.
+
+**Owned here, not only in chat.** The misreading was the capture agent's (this
+session's), not the builder's: 110's Decided argued *"a new view, over gravity
+applied to the existing picture"* and marked it **Mine**, on the grounds that
+the existing picture was approved and a feedback render target was missing.
+Both facts were true and neither was the question. The rejected option was the
+instruction.
+
+**What comes out** — everything in build 386 (`11ec8c5`) that exists for the
+view, and nothing else:
+- `src/engine/sediment.ts`, `src/shaders/strata.frag.glsl`,
+  `scripts/probe-sediment.ts`; the `probe:sediment` line in `package.json`;
+  the `strata` entry in `views.ts`'s `ATMOSPHERIC_VIEWS`; the `uSediment`
+  texture and its per-frame `updateSediment` in `scene.ts`; the sediment
+  exports in `engine/index.ts`.
+- Entry 124 (*the autopilot cannot reach Strata*) → `status: closed` with the
+  reason: there is no Strata for it to reach. No decision from Victor is
+  needed any more; the question it asked dissolves.
+
+**What stays** — two things 110 built that were right and are now load-bearing
+elsewhere:
+- `src/engine/tilt.ts` and `isFlatTilt()` — `camera-arm.ts` imports it in
+  place of its own `AIM_TILT_MIN`; removing it would re-duplicate the constant
+  CLAUDE.md says not to duplicate.
+- `shake.hasMotionData()` and the fourth argument to `setMotion()` — entry 120
+  reads it for the camera arm's no-motion case. Nothing else about 110's
+  `main.ts` change survives.
+
+**Decided**
+- Revert by hand, not `git revert` → **by hand.** `11ec8c5` also carries the
+  two keepers above and a `release-name.ts` line, and eight builds have landed
+  on top of it. **Mine.**
+- A stored `atmosphericView: 'strata'` in someone's `localStorage` → `loadPrefs`
+  validates each field and falls back to the default (`prefs.ts`), so a phone
+  that had Strata selected opens on the default view. Adding a value was safe;
+  removing one is safe for the same reason. Hard Stop 1: **no** — no field
+  changes type or meaning.
+- `?atmospheric=strata` links → break, and land on the default view. Hard Stop
+  2 names renaming and repurposing, not removal of a value one day old, and
+  Victor's instruction is the licence; but it is said here rather than
+  discovered. Any such link was made in the last 24 hours.
+- 110's own record → its `status:` line gets `· reverted by 131` and stays
+  in the file; it is the record of the misreading, which is worth more than a
+  clean queue.
+
+**Lands in** — the files listed above; `docs/todo.md` entries 110 and 124's
+status lines (edited in the same commit as this entry, with this entry's own
+number).
+**Done when** — `grep -ri strata src scripts package.json` returns nothing;
+`pnpm build`, `pnpm lint` pass; `pnpm probe:camera-arm` passes unchanged
+(proving `tilt.ts` survived); `views-probe.html` shows seven atmospheric
+views; the `atm` band in the HUD has seven options and seats them under the
+notch at 320×568 and 360×640; a phone with Strata stored opens on the default
+view without an error.
+**Verify** — the gates above, `hud-narrow.html` for the band, then the phone.
+**Hard stops** — prefs no · url no (removal, licensed — see Decided) · capture
+no · dependency no.
+
+### 132. The toy feels gravity
+`status: ready` · added 2026-09-05 · **what entry 110 should have been** · build after 131 · extends 30 and 102
+
+**Do** — give the geometric layer's own centre a body that hangs under gravity
+— swinging down when the phone is raised, settling with a bounce, hanging at
+centre when the phone is flat — and give the atmospheric layer weight, so it
+sits heavier toward whichever edge is down. Both from the in-plane gravity the
+app already measures, both behind the `grav` chip that already exists.
+**Why** — Victor: *"use those dynamics to move the emitters of the geometrics
+and affect the lower layer also … think what it would be like for the toy as
+a whole to feel gravity."* Today gravity reaches the toy in two places, both
+small: the whole picture slides up to 0.033 uv (entry 30), and a *released
+touch emitter* falls (entry 102). Neither moves what the picture is made of.
+The audio-born rings, shards, cells and roses are all born at `vec2(0.0)` —
+dead centre, whatever the phone is doing — and the field behind them is
+weightless.
+
+**Recon — what is already decided, and what is already there.**
+- **The physics of flat-versus-upright is settled and is not a mode.** Entry
+  102's record: *"Phone upright: that projection is the full vector and things
+  fall. Phone flat on a table: … there is nothing pulling it … A mode flag here
+  would be strictly worse than the physics."* `shake.gravity()` is that
+  in-plane vector, capped; `shake.tilt()` is it uncapped; both already
+  low-passed (`GRAVITY_TAU` 0.5 s) so nothing downstream needs its own
+  smoothing. Everything here reads those two and adds no sensor path.
+- **A body that falls, bounces and settles already exists** —
+  `emitter.ts:289-335`: `GRAVITY_ACCEL_SCALE 36`, restitution 0.45, tangential
+  loss 0.85, `TERMINAL_SPEED 2.0`, `SETTLE_SPEED 0.25`, bouncing off whichever
+  frame edge is down. Entry 102 tuned those by feel and they are approved.
+- **A spring that gravity loads already exists** — the tumble's offset springs
+  in `shake.ts` (`OFF_STIFF 80`, `OFF_DAMP 7.1`) and entry 30's steady bias on
+  top of them. Entry 30 is *this idea at small amplitude*: it chose 0.6 ×
+  `MAX_OFFSET` because the overscan that hides the picture's edge is 0.055 uv.
+  That cap is the reason 30 could never be felt, and it is the right cap for
+  *sliding the whole composite*, which exposes an edge. Moving the **origin**
+  of the geometry exposes nothing — the shaders draw everywhere regardless of
+  where their centre is — so the origin can move an order of magnitude further
+  than the picture can.
+- **Where every shader anchors its audio-born geometry** — seven sites, counted:
+  `circles.frag.glsl:227` (`dist = length(uv)`), `shards:85` (origin
+  `vec2(0.0)`) and `:134`, `grid:92` (`originCell`), `rose:174`, `drift:98/151/185`
+  (`emitterAt`, which already wanders — around the centre), `chorus:124/154`,
+  `tide:132`. Touch-born slots already carry their own origin in `uRipples[i].zw`
+  and are untouched.
+- **The atmosphere already moves with the tumble** at `uAtmTumbleScale = 0.55`
+  (entry 82, `composite.frag.glsl:186-189`), so it already slides a little with
+  entry 30's gravity. It has no *weight*.
+- **The switch.** All of 30 and 102 sit behind `prefs.gravity`, default
+  `false` (`main.ts:869-873`). Skill rule 1a-3 applies to whoever verifies
+  this: **test with the `grav` chip on.**
+
+**Decided**
+- The geometric centre is **a pendulum bob, not a falling grain.** A body on a
+  spring anchored at the frame centre, loaded by gravity: upright, it hangs
+  below centre; flat, it hangs *at* centre; tilted, it hangs toward the low
+  edge; and every transition swings and settles. Over the emitter's
+  fall-to-the-edge physics, which would carry the picture's centre to the
+  bottom edge whenever the phone is held normally — half the picture off
+  screen in the commonest posture — and would leave it there when the phone is
+  laid flat. A bob answers "flat" by returning to centre **with no rule saying
+  so**, the same way 102's grain answers it by not moving. **Mine**, and the
+  only decision in this entry that changes what the picture is; overturn it if
+  the sand frame's *staying put when flat* is the point rather than the swing.
+- How far it hangs → **`ORIGIN_SAG = 0.28` uv at 90°**, linear in the in-plane
+  magnitude (`|tilt()|`, uncapped). Portrait, upright: the centre sits 0.28
+  below the middle — a third of the way to the bottom edge; the rings still
+  fill the frame. **Mine**: 30's 0.033 is invisible and the edge is 0.89 away;
+  0.28 is the largest value at which Circles' outermost wake rungs still reach
+  the top of a portrait frame.
+- The swing → **natural frequency ω = 3 rad/s (period ~2.1 s), damping ratio
+  0.35**: raise the phone and the centre drops, overshoots by about a third,
+  swings back once and settles inside 3 s. **Mine**, over reusing the tumble's
+  `OFF_STIFF/OFF_DAMP` (ω ≈ 9, tuned for a knock — too twitchy for a thing
+  meant to feel heavy). The tumble's own kicks still reach the bob: a knock
+  swings it, a shake throws it, the spring brings it home — no new coupling,
+  the bob simply also receives `pendingX/pendingY` each frame.
+- **Touch emitters keep entry 102's fall** — a dropped grain still falls to
+  the edge and bounces. A bob and a grain are different things and both are
+  right; the toy having two kinds of gravity is the sand frame's own
+  vocabulary (the pile sits, the falling grains fall). **Mine.**
+- Where the bob's position goes → **one uniform, `uOrigin` (vec2, uv), shared
+  by both layers' materials like every other uniform in `scene.ts:564`**, and
+  each geometric shader measures its audio-born geometry from it: the seven
+  sites above become `uv - uOrigin`, `uOrigin`, `floor(uOrigin / cellSize)`,
+  `emitterAt(...) + uOrigin`. About ten lines across seven files. Over
+  shifting the layer in the composite (which is entry 30's job and exposes an
+  edge) and over shifting `uv` itself at the top of each shader (which would
+  drag the touch-born origins along with it). **Mine.**
+- **Identity at `uOrigin = (0,0)` is exact** — `uv - vec2(0.0)` is `uv`; with
+  the chip off the uniform is never written and every shader is
+  bit-identical. With the chip on and the phone flat, the bob rests at centre
+  and the same holds.
+- The atmosphere → **weight, not displacement.** In `composite.frag.glsl`, the
+  atmosphere's contribution is scaled by `1 + WEIGHT · |g| · s`, where `s` is
+  the pixel's position along the down direction (−0.5 at the up edge, +0.5 at
+  the down edge) and `WEIGHT = 0.5`: upright, the field reads 25 % denser
+  along the bottom and 25 % thinner along the top, and the gradient turns with
+  the phone. Over warping the sample coordinate to pool content downward,
+  which reads past the texture's edge (ClampToEdge streaks) exactly where the
+  content is thinnest. Over per-view gravity in eight atmospheric shaders,
+  which is a project and would make each field its own physics. **Mine**, and
+  on `the-toy-wants-to-be-played-with.md`'s own rule: the field is what
+  *persists*, so it gets restraint (a gradient); the geometry is what
+  *responds*, so it gets the swing.
+- The weight follows the low-passed gravity directly, **no spring**: a fluid
+  settles, it does not bounce. **Mine.**
+- The camera layer → untouched, as 30 already decided: a room does not slide
+  or sag when you tilt the phone.
+- The switch → **everything here sits behind `prefs.gravity`, exactly as 30
+  and 102 do.** Whether gravity should *stop being optional* — the ask says
+  "the toy as a whole" — is a Hard Stop 1 question (the stored field's
+  meaning) and is **put to Victor separately, below**, not decided here.
+  Proposal, for his answer: keep the chip, flip the default to `true` for
+  new installs (safe — `loadPrefs` supplies the default only when the field
+  is absent), and leave existing installs as they are. That is not part of
+  this build.
+- The second tenant → the bob's step is a pure-state module,
+  `src/engine/origin.ts` (`createOriginState`, `updateOrigin(state, dt,
+  tiltX, tiltY, kickX, kickY)`), beside `emitter.ts` and `motion-bias.ts`,
+  probeable headless. **Mine**, per CLAUDE.md's refactor rule — two bodies
+  reading gravity is a fact, not a guess.
+
+**Lands in**
+- `src/engine/origin.ts` — new; exported from `engine/index.ts`.
+- `src/scene.ts:564` — `uOrigin` in the shared uniforms; the per-frame
+  `updateOrigin` call beside the emitter loop (`:1342`), fed from
+  `motionTiltX/Y` (already recorded by `setMotion`) and the tumble's pending
+  kicks; written only while the caller passes gravity (`setGravity` non-null,
+  `main.ts:873`), otherwise left at `(0,0)`.
+- `src/shaders/{circles,shards,grid,rose,drift,chorus,tide}.frag.glsl` — the
+  seven sites above, plus `uniform vec2 uOrigin;` in each.
+- `src/shaders/composite.frag.glsl` — `uGravity` (vec2, in-plane) and the
+  weight term on the atmosphere sample; `scene.ts` writes it from the same
+  `setGravity` value 30 already receives.
+- `scripts/probe-origin.ts` — new; `package.json`; `checks.yml`.
+- `src/main.ts:869-873` — unchanged: the same two calls already pass gravity
+  or `null` by the chip.
+
+**Done when**
+- Headless: from rest, `tilt = (0, 1)` → the bob's displacement passes 0.28
+  (overshoot ≥ 25 %, ≤ 40 %) and settles within ±0.01 of 0.28 by 3 s; then
+  `tilt = (0, 0)` → returns within ±0.01 of centre by 3 s with at most two
+  sign changes; `tilt = (0.7, 0.7)` → rests along that diagonal at 0.28 ×
+  its magnitude; a kick with `tilt = (0,0)` decays to centre.
+- Probe: with gravity `null`, `uOrigin` is never written and stays `(0,0)`.
+- `views-probe.html` with a synthetic `tilt` of `(0, 1)`: every geometric
+  view's centre sits 0.28 uv below the middle; every atmospheric view is
+  visibly heavier along the bottom; at `(0, 0)` every view is pixel-identical
+  to build 416 with the chip on.
+- On a phone with the `grav` chip on: raise it from flat and the picture's
+  centre falls, swings once and hangs; lay it flat and the centre floats back;
+  tilt it left and the centre hangs left with the field heavier on that side.
+  With the chip off, nothing moves.
+
+**Verify** — `pnpm build`, `pnpm lint`, `pnpm probe:origin`, `pnpm probe:shake`
+unchanged (the tumble is not touched), `pnpm probe:emitter` unchanged (102's
+grain is not touched); `views-probe.html` at the two tilts; then the phone,
+**with the chip on**. No HUD surface changes.
+
+**Hard stops** — prefs no (read only, same switch) · url no · capture no ·
+dependency no. **Put to Victor, not blocking this build:** should gravity stop
+being a switch? Proposal above.
