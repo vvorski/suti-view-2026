@@ -1927,7 +1927,6 @@ async function main(): Promise<void> {
         latestShake.tilt.x,
         latestShake.tilt.y,
         latestShake.disturb,
-        shake.hasMotionData(),
         latestShake.busyness,
       )
       dispatchTouches(performance.now() / 1000)

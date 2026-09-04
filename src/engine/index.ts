@@ -14,9 +14,6 @@
  *   touches.ts   one owner of every finger on the picture, up to four at
  *                once — docs/todo.md entry 49. Feeds `emitter.ts`, among
  *                others; does not replace it.
- *   sediment.ts  Strata's falling-sand grid — docs/todo.md entry 110. The
- *                one module here that is not about listening: the spectrum
- *                feeds it, but what it models is the phone's own gravity.
  *   tilt.ts      what counts as "flat", for the two features that ask
  *   raise-camera.ts  whether a shake with a finger down may bring the room
  *                in — docs/todo.md entry 121. The finger is what supplies
@@ -111,14 +108,6 @@ export { isFlatTilt, FLAT_TILT_MIN } from './tilt.ts'
 
 export { shouldRaiseCamera, PRESS_SHAKE_PASSTHROUGH } from './raise-camera.ts'
 export type { RaiseCameraInput } from './raise-camera.ts'
-
-export {
-  createSedimentState,
-  updateSediment,
-  sedimentGridFor,
-  SEDIMENT_SHORT_SIDE,
-} from './sediment.ts'
-export type { SedimentState } from './sediment.ts'
 
 export { celestialFor, CELESTIAL_IDENTITY } from './celestial.ts'
 export type { CelestialInfluence } from './celestial.ts'

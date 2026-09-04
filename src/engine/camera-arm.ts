@@ -135,9 +135,10 @@ export function updateCameraArm(
   }
 
   // The tilt half of this was this module's own `AIM_TILT_MIN` until entry
-  // 110 needed the identical question answered for Strata's sand. Same
-  // number, same meaning, now named once in `tilt.ts` — see its own comment
-  // for why the second reader is what moved it.
+  // 110 needed the identical question answered elsewhere. Same number, same
+  // meaning, now named once in `tilt.ts`. Entry 131 removed the view that
+  // was the second reader; the constant stays there, since bringing it back
+  // here would only re-create the duplication that moved it.
   const aimed = posture === 'handled' || !isFlatTilt(tiltX, tiltY)
 
   if (aimed) {

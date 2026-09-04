@@ -3,19 +3,24 @@
  *
  * `shake.ts`'s `tilt()` returns an in-plane pair, -1..1 per axis, which is
  * `sin(angle)` about each axis: `(0, 0)` lying flat on a table, unit length
- * held upright, and every angle between correct without a case for it. Two
- * features now need to ask that pair the same yes/no question — is this
- * phone lying down, or is it being held up:
+ * held upright, and every angle between correct without a case for it. The
+ * yes/no question it answers — is this phone lying down, or being held up —
+ * has had two askers:
  *
  * - `camera-arm.ts` uses it as "not being aimed", one half of the test that
  *   expires an armed camera (docs/todo.md entry 109);
- * - `sediment.ts` uses it as "nothing falls", the state where Strata's sand
- *   holds its pile and new grains hang as dust (entry 110).
+ * - it was a second reader that moved it here at all — entry 110's Strata,
+ *   which used it as "nothing falls". That view was removed by entry 131 as
+ *   a misreading, and this stays: `camera-arm.ts` reads it, and putting the
+ *   constant back inside that file would re-create exactly the duplication
+ *   CLAUDE.md names. A shared notion does not stop being shared because one
+ *   of the two things that shared it left.
  *
- * The threshold lived in `camera-arm.ts` while it had one reader. It has two
- * now, and the second arriving is what turns "a number one module happens to
- * use" into a notion the app has — so it is named here and read from here,
- * rather than copied and then drifting apart the first time either is tuned.
+ * The threshold lived in `camera-arm.ts` while it had one reader. A second
+ * arriving is what turned "a number one module happens to use" into a notion
+ * the app has, so it was named here and is read from here rather than copied
+ * and then drifting apart the first time either was tuned. That reasoning
+ * does not expire with the second reader.
  *
  * Pure, no DOM, no clock: the same discipline as every other module here.
  */

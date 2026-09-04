@@ -944,10 +944,11 @@ export interface ShakeSensor {
    * 88, but that is documented "for the numeric readout only" and reads as a
    * debug surface; asking it a yes/no question at a call site that is not
    * the readout hides the question behind a field nobody expects to be
-   * load-bearing. This is that question, named once — docs/todo.md entry
-   * 110, which needs it because a tilt of (0, 0) means "lying flat" on a
-   * phone and "there is no sensor here" on a laptop, and Strata behaves
-   * differently for each.
+   * load-bearing. This is that question, named once — added by docs/todo.md
+   * entry 110 and outliving it: entry 131 removed the view that first needed
+   * it, and entry 120 is the reader now, because a tilt of (0, 0) means
+   * "lying flat" on a phone and "there is no sensor here" on a laptop, and
+   * an armed camera must not expire on the second.
    *
    * docs/todo.md entry 116 — armed camera mode dying after its quiet window
    * on any device with no motion data, because a missing sensor reads as a
