@@ -19,6 +19,8 @@ import {
   MAPPINGS,
   moveHover,
   pointerAction,
+  PRESS_SHAKE_PASSTHROUGH,
+  shouldRaiseCamera,
   toShaderUv,
   updateHover,
   type Mapping,
@@ -321,7 +323,11 @@ interface Shuffle {
  * 2026-08-29 (entry 22), narrowly: only at the top rung, only sometimes, and
  * only where permission was already granted — a `devicemotion` event
  * carries no user activation, so this can raise the level but never itself
- * ask for the camera the first time. `shuffled()` itself is unchanged by
+ * ask for the camera the first time. **That last clause is still true of
+ * this path and is no longer true of every path**: docs/todo.md entry 121
+ * adds a shake *with a finger already on the glass*, where the finger's own
+ * `pointerdown` supplies the activation this one lacks, and which therefore
+ * may open the camera for the first time. See `maybeRaiseCameraOnPress`. `shuffled()` itself is unchanged by
  * this; the roll lives in `maybeRollCamera()` because it needs an async
  * permission check this function cannot make.
  *
@@ -958,11 +964,51 @@ async function main(): Promise<void> {
       // user activation, so this path can never be the one that calls
       // `startCamera()` for the first time — the confirmed cause of the
       // frozen-camera report, since `play()` was refused essentially every
-      // time it was reached this way. `cameraSource` is declared further
+      // time it was reached this way. Still true here, and deliberately:
+      // docs/todo.md entry 121's press-and-shake is the path that *can* open
+      // it, because a finger on the glass is a live user gesture and a
+      // `devicemotion` event is not. This one is unchanged. `cameraSource` is declared further
       // down this same closure but, as with `cameraMode` above, this
       // function only ever runs later, after that declaration.
       if (level > 0 && !(cameraSource?.isLive() ?? false)) return
       const actual = await applyPassthrough(level)
+      panel.adopt({ passthrough: actual }, 0)
+    })()
+  }
+
+  /**
+   * docs/todo.md entry 121 — a shake with a finger on the glass brings the
+   * room in, on top of everything the shake already does.
+   *
+   * Called from both shake branches after `maybeRollCamera`, which still owns
+   * raising a camera that is *already* live (entries 22 and 73). This exists
+   * for the case that one cannot serve: the camera that is not open yet, and
+   * which only a live user gesture may open. The finger is that gesture.
+   *
+   * The raise goes through the same two calls `maybeRollCamera` makes —
+   * `applyPassthrough` then `panel.adopt` — so the band, `prefs.passthrough`
+   * and `localStorage` all agree without a second path through any of them.
+   * A refused or absent camera needs nothing extra: `applyPassthrough`
+   * already returns 0 and the band stays where it was.
+   *
+   * `cameraMode` and `cameraSource` are declared further down this same
+   * closure; as with `maybeRollCamera` above, this only ever runs from the
+   * frame loop, long after those declarations have.
+   */
+  function maybeRaiseCameraOnPress(): void {
+    if (
+      !shouldRaiseCamera({
+        shake: true,
+        fingersDown: fingersOnPicture > 0,
+        panelOpen: document.querySelector('.hud-scrim.open') !== null,
+        cameraMode,
+        live: cameraSource?.isLive() ?? false,
+      })
+    ) {
+      return
+    }
+    void (async () => {
+      const actual = await applyPassthrough(PRESS_SHAKE_PASSTHROUGH)
       panel.adopt({ passthrough: actual }, 0)
     })()
   }
@@ -1448,6 +1494,11 @@ async function main(): Promise<void> {
    *  `?debug` readout only. Recomputed each frame in `dispatchTouches`; 0
    *  when nothing qualifies. */
   let longestStillHold = 0
+  /** How many non-chip fingers are on the picture — docs/todo.md entry 121's
+   *  press-and-shake. Recomputed each frame in `dispatchTouches` and read in
+   *  the frame loop's own shake branch, which is a different function, so it
+   *  lives out here rather than in either. */
+  let fingersOnPicture = 0
   let lastSaveAt = -Infinity
   // docs/todo.md entry 72: camera mode's own rate limit. Every tap in here
   // is a deliberate shutter press, not one entry 52 needed protecting from
@@ -1564,6 +1615,12 @@ async function main(): Promise<void> {
     // until 280ms after the fact, which the render loop cannot wait for.
     let streamAnyDown = false
     let streamMaxSpeed = 0
+    // docs/todo.md entry 121 — recounted each frame. Entry 67 kept this for
+    // its two-finger opener and entry 125 deleted both together, correctly:
+    // it had no reader left. It has one again, and a different one — the
+    // question now is "is anybody touching the picture", not "are there
+    // exactly two".
+    let nonChipDown = 0
     longestStillHold = 0
     for (const t of touchField.sample(now)) {
       const speed = Math.hypot(t.vx, t.vy)
@@ -1574,6 +1631,7 @@ async function main(): Promise<void> {
       // merely "no ring". A chip contact is unaffected, exactly as Decided
       // states — the `!t.onChip` guard here is what keeps that true.
       if (!t.onChip && fsBlocking) continue
+      if (!t.onChip) nonChipDown++
       if (!t.onChip && !hudOpen) {
         streamAnyDown = true
         streamMaxSpeed = Math.max(streamMaxSpeed, speed)
@@ -1611,6 +1669,7 @@ async function main(): Promise<void> {
       if (contactId === undefined) continue
       active.push({ contactId, x: t.x, y: t.y, speed })
     }
+    fingersOnPicture = nonChipDown
     visualiser.setTouches(active)
 
     // docs/todo.md entry 112 — asked here rather than at the event, because
@@ -1897,6 +1956,7 @@ async function main(): Promise<void> {
           // PEAK_CEILING, and would otherwise have no way to ask for everything.
           shuffle(1)
           maybeRollCamera(1)
+          maybeRaiseCameraOnPress()
           // A shake is a manual gesture. The autopilot standing down is the same
           // courtesy every HUD control gets, and without it the director could
           // start walking the views back a moment later.
@@ -1915,6 +1975,7 @@ async function main(): Promise<void> {
           const depth = intensity(strongPeak)
           shuffle(depth)
           maybeRollCamera(depth)
+          maybeRaiseCameraOnPress()
           // The buzz is what distinguishes "the phone heard me" from "the
           // image happened to wander". Android only — see haptics.ts.
           confirmBuzz(strongPeak)

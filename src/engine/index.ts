@@ -18,6 +18,9 @@
  *                one module here that is not about listening: the spectrum
  *                feeds it, but what it models is the phone's own gravity.
  *   tilt.ts      what counts as "flat", for the two features that ask
+ *   raise-camera.ts  whether a shake with a finger down may bring the room
+ *                in — docs/todo.md entry 121. The finger is what supplies
+ *                the user activation `getUserMedia` needs.
  *   hover.ts     a mouse cursor moving over the picture, as a thing the
  *                picture answers — docs/todo.md entry 112. Deliberately not
  *                a synthesised touch; see its own comment for why.
@@ -105,6 +108,9 @@ export { createCameraArmState, armCamera, disarmCamera, updateCameraArm } from '
 export type { CameraArmState, CameraArmReading } from './camera-arm.ts'
 
 export { isFlatTilt, FLAT_TILT_MIN } from './tilt.ts'
+
+export { shouldRaiseCamera, PRESS_SHAKE_PASSTHROUGH } from './raise-camera.ts'
+export type { RaiseCameraInput } from './raise-camera.ts'
 
 export {
   createSedimentState,
