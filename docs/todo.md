@@ -1388,112 +1388,6 @@ a phone that the lattice is unchanged.
 **Hard stops** — prefs no · url no · capture no · dependency no. The control
 surface is unchanged; this adds no control.
 
-### 117. A drag floods the frame: sixteen touch rings need an ink budget
-`status: ready` · added 2026-09-04 · finishes 79 · independent of 110–116
-
-**Do** — weight every touch ring's opacity by `1/√n`, where `n` is the number of
-touch rings alive in that shader this frame, in the six geometric views that
-draw touch rings; and fix the `+=` entry 79 missed in Shards.
-**Why** — a press-and-drag on Circles, Rose, Drift, Tide, Chorus or Shards
-turns the frame solid in the layer colour. Entry 79 (build 343) stopped the
-ink *exceeding* 1; it did nothing about the frame reaching 1 everywhere, and
-solid-at-exactly-1 times `uGeoColour` is one flat colour.
-
-**The finding, measured.** A headless mirror of Circles' touch loop (same
-by-eye convention `probe-ripples.ts` already uses): 9:16 frame on a 90×160
-grid, a 2 s drag across the middle at 0.4 uv/s followed by the emitter's
-2.5 s afterlife, rings laid every 0.15 s or 0.05 uv (`emitter.ts:53,60`),
-sixteen slots with the oldest recycled, `birthLevel` 0.8.
-
-| | rings alive | frame above 0.9 ink | frame above 0.1 | mean ink |
-|---|---|---|---|---|
-| as shipped, mid-drag | 8 | 9.2 % | 13.6 % | 0.12 |
-| as shipped, full load | 16 | **53.8–58.9 %** | 59.9–73.4 % | 0.58–0.69 |
-| stroke cap 0.04 uv, full load | 16 | 50.0–50.5 % | 57–69 % | 0.55–0.63 |
-| `1/n`, full load | 16 | 0.0 % | 48–51 % | **0.10–0.11** |
-| **`1/√n`, full load** | 16 | **0.0–3.0 %** | 59.2–72.6 % | 0.28–0.33 |
-
-Three numbers multiply into the flood: stroke width is *proportional to
-radius* (`circles.frag.glsl:124-126` — `OUTER_STROKE 0.22`, `INNER_STROKE
-0.09`, of radius), so a ring's painted area grows as r²; **sixteen** touch
-slots (`ripples.ts:35`) stay full for the whole of a drag and its afterlife;
-and each ring is `0.35 + 0.65 × birthLevel` opaque, ≥ 0.74 on a drag because
-speed *adds* level (entry 50). Screen ink of sixteen bands at ≥ 0.74 on
-sixteen different radii is 1 almost everywhere.
-
-**What the measurement overturned.** Capping the stroke width — the obvious
-"attack the r²" fix — barely moves the number (58.9 → 50.5 %). It is not the
-root; count × opacity is. Recorded so the next reader does not reach for it,
-and it also means the approved look of a single ring at full size is not in
-question here. `1/n` conserves ink linearly and leaves a drag too faint to see
-(mean 0.10). `1/√n` — total ink energy held constant, the same compromise
-audio mixing makes — removes the solid field while keeping every ring
-visible: coverage is unchanged to within a point, so the trail is still
-there; it is simply no longer a wall.
-
-**Decided**
-- Weight → **`1/√n`**, over `1/n` (too faint, table above) and over a stroke
-  cap (does not address the cause). **Mine**, on the numbers.
-- What `n` counts → **touch slots only**, `i ≥ AUDIO_RIPPLES`, alive by the
-  shader's own existing test `age ≥ 0 && age ≤ lifespan`. Audio rings are
-  eight, independent, and not part of the report; **with no finger on the
-  glass the picture is bit-identical.** **Mine.**
-- Where `n` is counted → **in the shader, a pre-pass over the sixteen touch
-  slots before the drawing loop**, over a `uTouchAlive` uniform from
-  `ripples.ts`. **Mine**: `lifespan` is `LIFESPAN × uMoonLife` (entry 96) and
-  differs per shader, so TypeScript cannot know "alive" exactly; sixteen
-  compares a frame is nothing; and the same test in the same file cannot
-  drift from the loop it governs.
-- Identity → `weight = inversesqrt(max(n, 1.0))`, **exactly 1 for a lone
-  ring, by arithmetic, not a guard.** A single tap is bit-identical to today.
-- Shards → **`shards.frag.glsl:127`'s `ink +=` becomes the screen operator**
-  entry 79 gave the other five, *and* takes the weight. Entry 79's build note
-  says Grid and Shards were "intensity-based" and correctly left alone; **that
-  was true of Grid (`grid.frag.glsl:123`, `max`) and false of Shards.** Owned
-  here and noted under 79 in `built.md`.
-- Grid → **untouched.** `max` cannot accumulate density, and its fronts are a
-  record where the strongest wins, exactly as the wake ladder is.
-- Interference (a signed wave per ring, magnitude at the end) → **still not
-  this entry.** Entry 79 reserved it for its own entry proven on Circles
-  first; nothing here changes that.
-- The per-slot phase/stroke variation entry 79 added → untouched; it and the
-  weight compose.
-
-**Lands in** — the touch-ring contribution line in each of six shaders, plus
-the pre-pass above its loop:
-- `src/shaders/circles.frag.glsl:346-380` (touch loop; the audio loop at
-  `:268` and the wake are untouched)
-- `src/shaders/rose.frag.glsl:294-337`
-- `src/shaders/drift.frag.glsl:141-176` — shared loop; weight gated on
-  `i >= AUDIO_RIPPLES`, the same gate 79's slot hash already uses at `:162`
-- `src/shaders/tide.frag.glsl:109-155` — shared loop, same gate
-- `src/shaders/chorus.frag.glsl:106-146` — shared loop, same gate
-- `src/shaders/shards.frag.glsl:75-127` — shared loop, same gate, and the
-  `+=` → screen change
-- `scripts/probe-ripples.ts` — the drag scene above, mirrored: assert **above
-  0.9 ink on < 5 % of the frame** with the weight and **> 40 % without it**
-  (so the probe is shown to detect the fault it guards), coverage above 0.1
-  within 5 points of the unweighted figure, and `weight(1) === 1`. Its
-  "found the seven geometric shaders" count is unchanged — no shader is
-  added. Grep the six files for the pre-pass so a seventh ring view added
-  later without it fails the probe.
-- `docs/built.md` — one dated note under entry 79.
-
-**Done when**
-- The probe's four new assertions pass, and its unweighted control still
-  reports > 40 % solid.
-- `pnpm probe:ripples`'s existing checks are unchanged.
-- On a phone: a slow two-second drag across Circles, then Shards, leaves
-  individual rings distinguishable for the whole afterlife and never a solid
-  field of the layer colour; a single tap on each is indistinguishable from
-  build 373.
-
-**Verify** — `pnpm build`, `pnpm lint`, `pnpm probe:ripples`; then the phone,
-each of the six views, drag then tap. No HUD surface is touched, so the
-320×568 / 360×640 pass is not required.
-
-**Hard stops** — prefs no · url no · capture no · dependency no.
-
 ### 115. The camera leaves the menu, and the menu moves to a hold
 `status: ready` · added 2026-09-04 · **supersedes the entry points built by 72, 78 and 87** · independent of 110–114
 
@@ -2308,3 +2202,109 @@ touching gate copy is a proposal rather than a no, and Victor's instruction
 above *is* the decision. The direction is toward the build-66 baseline rather
 than away from it: this removes a line, adds none, and the ban on
 reassurance copy is untouched · dependency no.
+
+### 122. A drag floods the frame: sixteen touch rings need an ink budget
+`status: ready` · added 2026-09-04 · finishes 79 · independent of the rest of the queue
+
+**Do** — weight every touch ring's opacity by `1/√n`, where `n` is the number of
+touch rings alive in that shader this frame, in the six geometric views that
+draw touch rings; and fix the `+=` entry 79 missed in Shards.
+**Why** — a press-and-drag on Circles, Rose, Drift, Tide, Chorus or Shards
+turns the frame solid in the layer colour. Entry 79 (build 343) stopped the
+ink *exceeding* 1; it did nothing about the frame reaching 1 everywhere, and
+solid-at-exactly-1 times `uGeoColour` is one flat colour.
+
+**The finding, measured.** A headless mirror of Circles' touch loop (same
+by-eye convention `probe-ripples.ts` already uses): 9:16 frame on a 90×160
+grid, a 2 s drag across the middle at 0.4 uv/s followed by the emitter's
+2.5 s afterlife, rings laid every 0.15 s or 0.05 uv (`emitter.ts:53,60`),
+sixteen slots with the oldest recycled, `birthLevel` 0.8.
+
+| | rings alive | frame above 0.9 ink | frame above 0.1 | mean ink |
+|---|---|---|---|---|
+| as shipped, mid-drag | 8 | 9.2 % | 13.6 % | 0.12 |
+| as shipped, full load | 16 | **53.8–58.9 %** | 59.9–73.4 % | 0.58–0.69 |
+| stroke cap 0.04 uv, full load | 16 | 50.0–50.5 % | 57–69 % | 0.55–0.63 |
+| `1/n`, full load | 16 | 0.0 % | 48–51 % | **0.10–0.11** |
+| **`1/√n`, full load** | 16 | **0.0–3.0 %** | 59.2–72.6 % | 0.28–0.33 |
+
+Three numbers multiply into the flood: stroke width is *proportional to
+radius* (`circles.frag.glsl:124-126` — `OUTER_STROKE 0.22`, `INNER_STROKE
+0.09`, of radius), so a ring's painted area grows as r²; **sixteen** touch
+slots (`ripples.ts:35`) stay full for the whole of a drag and its afterlife;
+and each ring is `0.35 + 0.65 × birthLevel` opaque, ≥ 0.74 on a drag because
+speed *adds* level (entry 50). Screen ink of sixteen bands at ≥ 0.74 on
+sixteen different radii is 1 almost everywhere.
+
+**What the measurement overturned.** Capping the stroke width — the obvious
+"attack the r²" fix — barely moves the number (58.9 → 50.5 %). It is not the
+root; count × opacity is. Recorded so the next reader does not reach for it,
+and it also means the approved look of a single ring at full size is not in
+question here. `1/n` conserves ink linearly and leaves a drag too faint to see
+(mean 0.10). `1/√n` — total ink energy held constant, the same compromise
+audio mixing makes — removes the solid field while keeping every ring
+visible: coverage is unchanged to within a point, so the trail is still
+there; it is simply no longer a wall.
+
+**Decided**
+- Weight → **`1/√n`**, over `1/n` (too faint, table above) and over a stroke
+  cap (does not address the cause). **Mine**, on the numbers.
+- What `n` counts → **touch slots only**, `i ≥ AUDIO_RIPPLES`, alive by the
+  shader's own existing test `age ≥ 0 && age ≤ lifespan`. Audio rings are
+  eight, independent, and not part of the report; **with no finger on the
+  glass the picture is bit-identical.** **Mine.**
+- Where `n` is counted → **in the shader, a pre-pass over the sixteen touch
+  slots before the drawing loop**, over a `uTouchAlive` uniform from
+  `ripples.ts`. **Mine**: `lifespan` is `LIFESPAN × uMoonLife` (entry 96) and
+  differs per shader, so TypeScript cannot know "alive" exactly; sixteen
+  compares a frame is nothing; and the same test in the same file cannot
+  drift from the loop it governs.
+- Identity → `weight = inversesqrt(max(n, 1.0))`, **exactly 1 for a lone
+  ring, by arithmetic, not a guard.** A single tap is bit-identical to today.
+- Shards → **`shards.frag.glsl:127`'s `ink +=` becomes the screen operator**
+  entry 79 gave the other five, *and* takes the weight. Entry 79's build note
+  says Grid and Shards were "intensity-based" and correctly left alone; **that
+  was true of Grid (`grid.frag.glsl:123`, `max`) and false of Shards.** Owned
+  here and noted under 79 in `built.md`.
+- Grid → **untouched.** `max` cannot accumulate density, and its fronts are a
+  record where the strongest wins, exactly as the wake ladder is.
+- Interference (a signed wave per ring, magnitude at the end) → **still not
+  this entry.** Entry 79 reserved it for its own entry proven on Circles
+  first; nothing here changes that.
+- The per-slot phase/stroke variation entry 79 added → untouched; it and the
+  weight compose.
+
+**Lands in** — the touch-ring contribution line in each of six shaders, plus
+the pre-pass above its loop:
+- `src/shaders/circles.frag.glsl:346-380` (touch loop; the audio loop at
+  `:268` and the wake are untouched)
+- `src/shaders/rose.frag.glsl:294-337`
+- `src/shaders/drift.frag.glsl:141-176` — shared loop; weight gated on
+  `i >= AUDIO_RIPPLES`, the same gate 79's slot hash already uses at `:162`
+- `src/shaders/tide.frag.glsl:109-155` — shared loop, same gate
+- `src/shaders/chorus.frag.glsl:106-146` — shared loop, same gate
+- `src/shaders/shards.frag.glsl:75-127` — shared loop, same gate, and the
+  `+=` → screen change
+- `scripts/probe-ripples.ts` — the drag scene above, mirrored: assert **above
+  0.9 ink on < 5 % of the frame** with the weight and **> 40 % without it**
+  (so the probe is shown to detect the fault it guards), coverage above 0.1
+  within 5 points of the unweighted figure, and `weight(1) === 1`. Its
+  "found the seven geometric shaders" count is unchanged — no shader is
+  added. Grep the six files for the pre-pass so a seventh ring view added
+  later without it fails the probe.
+- `docs/built.md` — one dated note under entry 79.
+
+**Done when**
+- The probe's four new assertions pass, and its unweighted control still
+  reports > 40 % solid.
+- `pnpm probe:ripples`'s existing checks are unchanged.
+- On a phone: a slow two-second drag across Circles, then Shards, leaves
+  individual rings distinguishable for the whole afterlife and never a solid
+  field of the layer colour; a single tap on each is indistinguishable from
+  build 373.
+
+**Verify** — `pnpm build`, `pnpm lint`, `pnpm probe:ripples`; then the phone,
+each of the six views, drag then tap. No HUD surface is touched, so the
+320×568 / 360×640 pass is not required.
+
+**Hard stops** — prefs no · url no · capture no · dependency no.

@@ -615,7 +615,7 @@ arithmetic and needs no GPU.
 
 **Verification note — `/ccc` at build 351.** Correct as built, and correct as scoped — but the scope was short. Chorus was never named and is the fourth ring family; and Rose, written two days later by entry 101, inherited Circles' stroke vocabulary from *before* this fix and reproduced the saturation wholesale. Both now screen their ripple strokes. A finding fixed in one view came back in a view written after it, which is an argument for this file being searched, not only the live queue.
 
-**Note, 2026-09-04 (recon at build 373).** Two things this entry's record got wrong, both carried forward by entry 117 in `docs/todo.md`: the build note above says Shards was left alone as "intensity-based" — `shards.frag.glsl:127` is `ink +=`, the same summation this entry fixed elsewhere; and the screen operator bounded the ink at 1 without touching density, so a drag still fills 54–59 % of the frame to solid at exactly 1. Decided's own line — *"the mass is fixed by structure and density"* — named the cause; only structure was built.
+**Note, 2026-09-04 (recon at build 373).** Two things this entry's record got wrong, both carried forward by entry 122 in `docs/todo.md`: the build note above says Shards was left alone as "intensity-based" — `shards.frag.glsl:127` is `ink +=`, the same summation this entry fixed elsewhere; and the screen operator bounded the ink at 1 without touching density, so a drag still fills 54–59 % of the frame to solid at exactly 1. Decided's own line — *"the mass is fixed by structure and density"* — named the cause; only structure was built.
 ### 101. Rose — Circles turned ninety degrees, and spinning
 `status: done` · added 2026-08-30 · build 330 · verified at build 351
 
