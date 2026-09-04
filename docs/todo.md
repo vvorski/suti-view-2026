@@ -1987,7 +1987,7 @@ window still fires when it is genuinely laid flat.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 121. Press and shake brings the room in
-`status: done` · added 2026-09-04 · build 424 · extends 22 · **the phone half is unverified — no probe can answer whether iOS honours the activation; see build note**
+`status: done` · added 2026-09-04 · build 426 · extends 22 · **the phone half is unverified — no probe can answer whether iOS honours the activation; see build note**
 
 **Do** — when a strong or double shake lands while at least one finger is on
 the picture, do everything the shake already does *and* raise the passthrough
