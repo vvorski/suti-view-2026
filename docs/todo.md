@@ -748,3 +748,178 @@ that matters.
 **Hard stops** — prefs no · url no · capture **yes, and it narrows**: the mode
 that saves becomes harder to leave armed by accident, never easier ·
 dependency no.
+
+### 110. Strata: the picture is sand between two panes of glass
+`status: ready` · added 2026-09-04 · a new atmospheric view · independent of 108
+
+**Do** — add an atmospheric view, **Strata**, in which the audio pours coloured
+sand from whichever edge is up, the grains sift down under the phone's own
+in-plane gravity and pile in layers along whichever edge is down; laid flat,
+nothing falls — the pile holds and new grains hang as dust until the phone is
+raised again; turned over, the pile becomes the source and rains back down.
+**Why** — the app already measures which way is down and uses it three times
+(entries 30, 61, 102), and every use is a *nudge*: the picture slides a little,
+an emitter drops, powder skids. None of them makes lying-flat and held-upright
+*different pictures*. A sand-art frame does exactly that with nothing but
+gravity, and it is the one toy whose entire behaviour is "what angle am I at".
+
+**What the recon settled, and it overturns the ask's own premise.** Victor asked
+to *"use the axis detection"* — the `gravZ` component `shake.ts:370` keeps and
+never exposes. **It is not needed, and must not be used here.** Three built
+entries already reached this fork and decided it the same way; `built.md`'s
+record of entry 102 is the clearest: *"Phone upright: that projection is the
+full vector and things fall. Phone flat on a table: the vector points into the
+screen, its in-plane length is zero, and the emitter stays exactly where it
+was put — not by a rule saying so, but because there is nothing pulling it
+… **A mode flag here would be strictly worse than the physics.**"* Flat-versus-
+vertical is *already the physics* of the in-plane pair `shake.tilt()` returns:
+`(0, 0)` flat, unit length vertical, every angle between correct for free, and
+a sideways or upside-down phone handled with no case for it. `gravZ` would
+only add face-up versus face-down, and a sand frame lying on its face behaves
+exactly like one lying on its back. **Decided against, on that reasoned
+record.**
+
+**A naming trap the builder will fall into unless told.** `uTilt` in
+`caustics`, `cells` and `aurora` (`scene.ts:573`, default 0.5) is *spectral*
+tilt — bass-versus-treble balance — and has nothing to do with the phone. The
+phone's tilt reaches `scene.ts` only through `setMotion(tiltX, tiltY,
+disturb)` (`:364`, `:1495`), where it currently feeds a colour bias and
+nothing else; **no fragment shader has ever received the phone's tilt.** This
+entry does not change that: the tilt is consumed in TypeScript by the sediment
+model below, and what the shader receives is the resulting picture.
+
+**Decided**
+- A new view, or gravity applied to the existing picture → **a new atmospheric
+  view.** Over a composite-level "sift" that would let any view's pixels fall
+  and pile. **Mine**: the second modifies every approved picture at once —
+  Victor's *"both ways has good colours, finally, don't break it"* covers all
+  of them — and needs a feedback render target `scene.ts` does not have; the
+  first is additive, costs the other fourteen views nothing, and matches
+  `views.ts`'s own rule that *"adding one is a file plus a line here."* The
+  identity when off is therefore total: a view not selected draws nothing.
+- Where the state lives → **a pure-state module, `src/engine/sediment.ts`,
+  uploaded as a `DataTexture` — the shape `uHistory` already is.** Over
+  simulating in the shader with a ping-pong target. **Mine**: `views.ts`
+  says a view is *"nothing but a fragment shader plus a label"* and that the
+  constraint is deliberate; a view with its own render target breaks that for
+  everyone. The spectrogram already accumulates its state in TypeScript
+  (`historyTexture`, `scene.ts:550`) and hands it over as a texture, so this
+  is the second tenant of an existing pattern, not a new one. It is also what
+  makes the model probeable headless, which a shader never is.
+- The model → **a falling-sand cellular automaton on a fixed low-resolution
+  grid, colour per cell.** Over a heightfield (a pile along one edge as a 1D
+  profile), which cannot be turned over — the whole point of a sand frame is
+  that flipping it makes the pile the source, and a profile has no way to
+  fall. **Mine.** Entry 61 wrote *"a cellular-automaton sand model this entry
+  is deliberately not"* about the powder egg's pile; that was a scope line for
+  that entry, not a rule for the project, and this entry is exactly that
+  model on purpose. Grid **96 cells across the short side**, the long side by
+  aspect (≈170 tall in portrait: ~16k cells, one pass a frame, trivially
+  cheap in TypeScript; the upload is ~64 KB a frame, less than the spectrum
+  ring already moves).
+- Which way is down, on a square grid → **the dominant in-plane axis of
+  `tilt()`, with the minor component's sign choosing which diagonal a blocked
+  grain slips to first.** Portrait, landscape, upside-down and every diagonal
+  hold fall out of that: a phone leaned to the left builds its pile in the
+  bottom-left corner rather than flat along the bottom. **Mine**, over
+  rotating the grid into the gravity frame, which makes the flip continuous
+  but the pile's own cells shear on every re-sample.
+- What "flat" is → **in-plane magnitude below `0.2`** — the same `AIM_TILT_MIN`
+  `camera-arm.ts:33` already uses for "flat, not held up", about 11.5°, so
+  the app has one notion of flat. **Mine.** Below it, **landed grains do not
+  move at all** (sand lying flat stays where it lies); **airborne grains lose
+  their fall and take a random walk** instead, at about a cell every 0.25 s,
+  and never land. Raising the phone drops every one of them at once — the
+  reward for picking it up, and the reason the dust exists at all.
+- What pours, and where → **each spectrum band is a source along the up
+  edge, bass at one end, treble at the other, emitting grains in proportion
+  to its energy.** Over a single central pour. **Mine**: the pile's *shape*
+  then becomes the long-run spectrum of whatever has been playing and its
+  *layers* become the history, which is the spectrogram's whole idea rotated
+  ninety degrees and given weight. Reads `uSpectrum`'s own bands; no new
+  analysis.
+- Grain colour → **the atmospheric layer's colour, shifted by spectral tilt
+  at birth** — darker and warmer for a bass-heavy moment, lighter and cooler
+  for a bright one, ±0.08 in lightness and the same magnitude in hue, both
+  chosen so a track with changing texture writes visible strata and a steady
+  one writes a plain pile. **Mine** on the magnitudes; the layer colour as
+  the base is the only choice consistent with every other atmospheric view.
+- Pour rate → sized so a loud passage fills about **a fifth of the frame in
+  ninety seconds** of continuous vertical play, and silence pours nothing.
+  **Mine.** Faster and the frame is full before a song ends; the frame filling
+  is not a failure — see the next line — but it should take a whole side of a
+  record to get there.
+- A full frame → **the pile simply stops growing**; new grains that find no
+  room are dropped. Nothing fades, nothing scrolls. **Mine**: a sand frame
+  that has all its sand at the bottom is finished, not broken, and the person
+  turns it over — which is the gesture this entry exists for. The turn-over is
+  also the only reset there is; no tap, no shake clears it (a shake still
+  disturbs the picture through `uTumble` like every other view — that is
+  untouched and needs nothing here).
+- No motion data at all (desktop; iOS with the sensor refused) → **assume
+  portrait-down**, `g = (0, 1)` in screen space, rather than `(0, 0)`. Over
+  the refusal-is-behaviour answer of letting the view hang as dust for ever.
+  **Mine**: a view that can never do anything on a laptop is not a smaller
+  feature, it is an inert one, and portrait-down is what a phone in a hand
+  almost always is. The condition is *no `devicemotion` sample has ever
+  arrived*, which is the `samples` count `hud.ts:1507` already prints as
+  `motion N ev`. The camera-arm expiry fault found at build 373 (armed mode
+  dies in 15 s on any device with no motion data — not yet an entry) needs
+  the identical test, so **expose it once from `shake.ts`** and let that fix
+  read it when it is written.
+- Gated by `prefs.gravity`? → **No.** Over sitting behind the `grav` chip like
+  entries 30 and 102. **Mine**: those are gated because they move an approved
+  picture; here the falling *is* the picture, and a Strata that ignores
+  gravity has nothing left to show. Selecting the view is the consent.
+- Frozen while backgrounded → the model advances only when `render()` runs,
+  so a tab in the background does not fill or dissolve anything while unseen.
+  Falls out of where the tick lives; no timer of its own. **Mine.**
+
+**Lands in**
+- `src/engine/sediment.ts` — new: `createSedimentState(w, h)`, `updateSediment
+  (state, dt, tiltX, tiltY, bands, colour)`, pure, no DOM, no clock; the
+  eighth pure-state module beside `posture.ts`, `camera-arm.ts`,
+  `motion-bias.ts`.
+- `src/shaders/strata.frag.glsl` — new: samples the sediment texture with
+  soft cell edges, nothing else. Reads no audio uniforms itself — the
+  pouring already happened in TypeScript.
+- `src/views.ts:90-133` — one line in `ATMOSPHERIC_VIEWS`, the eighth.
+- `src/scene.ts` — a `uSediment` `DataTexture` beside `uHistory` (`:550`,
+  `:585`) and a per-frame `updateSediment` call in `render()`, fed from
+  `motionTiltX/Y` (`:1496`) which are already there — no new setter from
+  `main.ts`, the same "no new plumbing" shape entries 76 and 104 used.
+- `src/shake.ts` — expose whether any motion sample has ever arrived, for the
+  portrait-down fallback; written to be shared with the camera-arm fix above.
+- `scripts/probe-sediment.ts` — new, and `package.json`'s `probe:sediment`.
+- `views-probe.html` — Strata renders beside the other seven from the same
+  synthetic audio, per CLAUDE.md; this is where "looks like sand, not like a
+  bar chart" is judged.
+
+**Done when**
+- Headless, from empty: 90 s of synthetic loud audio with `tilt = (0, 1)`
+  fills **18–22 %** of cells, all of them landed, none above a cell with
+  nothing under it; the pile's column heights correlate with the synthetic
+  band energies (bass-heavy input → the bass end of the pile is taller).
+- Then `tilt = (0, 0)` for 60 s: **the landed count does not change by a
+  single cell**; airborne grains present at the flip are still airborne and
+  have all moved.
+- Then `tilt = (0, -1)`: within 10 s at least 90 % of the previously landed
+  grains are landed again against the opposite edge.
+- `tilt = (0.7, 0.7)`: the pile's centre of mass sits in the corresponding
+  corner, not along an edge.
+- `tilt = (0.1, 0.1)` (below the flat threshold) behaves as `(0, 0)`.
+- With the no-motion flag set and `tilt = (0, 0)`, grains fall as if `(0, 1)`.
+- A frame at 96×170 with 16k cells updates in under **2 ms** in the probe.
+- In `views-probe.html`, Strata is visibly banded after the synthetic run and
+  no other view's output has changed by a pixel.
+
+**Verify** — `pnpm build`, `pnpm lint`, `pnpm probe:sediment`, then
+`views-probe.html` looked at, then the phone: hold it up, watch it pour; lay
+it on the table, watch the dust hang; turn it over. The HUD is untouched — the
+view arrives in the existing atmospheric band — so the 320×568 / 360×640 pass
+is not required, but the band should be opened once to confirm the eighth
+option seats under the notch.
+
+**Hard stops** — prefs no (a new value on an existing validated enum, as
+Fringe and Rose were) · url no (`?atmospheric=strata`, a new value not a new
+parameter) · capture no · dependency no. The control surface is unchanged.
