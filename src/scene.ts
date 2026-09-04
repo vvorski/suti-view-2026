@@ -47,6 +47,7 @@ import {
   createSedimentState,
   createTouchStreamState,
   Envelope,
+  HOVER_CHARGE_CAP,
   MAX_RIPPLES,
   sedimentGridFor,
   updateEmitter,
@@ -423,6 +424,25 @@ export interface Visualiser {
    * regardless.
    */
   setTouches(touches: ReadonlyArray<{ contactId: number; x: number; y: number; speed: number }>): void
+  /**
+   * A mouse cursor over the picture — docs/todo.md entry 112. `x`/`y` are
+   * the same shader-uv pair `setTouches` takes; `speed` is the same smoothed
+   * uv/second. `present` is `hover.ts`'s own verdict on whether the cursor
+   * is being *played with* — in the window and moved recently — not merely
+   * whether it exists, so it goes false both when the pointer leaves and
+   * when it has been parked for `HOVER_QUIET`.
+   *
+   * Deliberately not routed through `setTouches`: a hover has no end, and a
+   * cursor resting on the glass entered as a contact would hold
+   * `touchAnyDown` true for ever and park main.ts's own tap recogniser
+   * mid-gesture. Nothing here draws a touch ring for it either — the OS is
+   * already drawing a cursor there, and the emitter's rings are the
+   * response.
+   *
+   * A device with no mouse never calls this, and the hover emitter then sits
+   * inactive at zero life for the whole session, spawning nothing.
+   */
+  setHover(x: number, y: number, present: boolean, speed: number): void
   /**
    * What the picture as a whole should feel from every finger on it right
    * now — docs/todo.md entry 48, and independent of `setTouches()` above:
@@ -861,6 +881,23 @@ export function createVisualiser(
     state: createEmitterState(),
   }))
   let touches: ReadonlyArray<{ contactId: number; x: number; y: number; speed: number }> = []
+  // docs/todo.md entry 112 — the mouse cursor's own emitter, outside the
+  // eight-slot pool on purpose. The pool is keyed by contact id and recycles
+  // its oldest member when a ninth finger arrives; a hover has no contact id
+  // and no end, so putting it in there would let four fingers evict it
+  // mid-sweep and would spend a slot a real touch might want. It is one
+  // emitter, it is always the same one, and it costs a slot nobody else can
+  // use only on a device that has a mouse.
+  const hoverEmitter: EmitterState = createEmitterState()
+  // The last reading `setHover` was given. Plain values rather than a
+  // `HoverState`: `hover.ts` owns the cursor's own position, smoothing and
+  // quiet window, and it lives in main.ts where the pointer events are —
+  // this file is handed the answer, exactly as it is handed `motionTiltX`
+  // and the rest, and never asks the question itself.
+  let hoverX = 0
+  let hoverY = 0
+  let hoverSpeed = 0
+  let hoverActive = false
   // docs/todo.md entry 48. What main.ts's dispatchTouches() last reported
   // about the picture as a whole (contact, hold, drag speed), independent of
   // the positioned per-touch emitters above — the atmospheric views have no
@@ -1313,6 +1350,29 @@ export function createVisualiser(
         free.contactId = t.contactId
         updateEmitter(free.state, ripples, now, true, t.x, t.y, t.speed, moonAbundance, emitterGravity, emitterHalfExtent)
       }
+
+      // docs/todo.md entry 112 — the mouse cursor, ticked here in the same
+      // loop and on the same clock as the pool above, so a hover spawns on
+      // the same cadence a held finger does. Ticked unconditionally rather
+      // than only while active: that is what runs the afterlife down when
+      // the cursor parks or leaves, so the rings already alive thin out over
+      // the emitter's own remaining life instead of stopping dead. On a
+      // device with no mouse this is one call a frame on a state that is
+      // inactive with zero life, which `updateEmitter` leaves after two
+      // comparisons.
+      updateEmitter(
+        hoverEmitter,
+        ripples,
+        now,
+        hoverActive,
+        hoverX,
+        hoverY,
+        hoverSpeed,
+        moonAbundance,
+        emitterGravity,
+        emitterHalfExtent,
+        HOVER_CHARGE_CAP,
+      )
       for (let i = 0; i < MAX_RIPPLES; i++) {
         const o = i * 4 // stride must match ripples.ts's own STRIDE
         uniforms.uRipples.value[i].set(
@@ -1558,6 +1618,18 @@ export function createVisualiser(
       // toward, kept separate from uTumble's own (oscillating) offset above.
       slipAccelX = t.accelX
       slipAccelY = t.accelY
+    },
+
+    setHover(x, y, present, speed) {
+      // Recorded, not acted on: render() is what ticks the emitter, for the
+      // same reason the pool is ticked there rather than in setTouches —
+      // one wall-clock tick per rendered frame is what makes the spawn
+      // cadence mean seconds rather than mouse-event rate. A mouse can fire
+      // far more than 60 pointermoves a second.
+      hoverX = x
+      hoverY = y
+      hoverSpeed = speed
+      hoverActive = present
     },
 
     setTouches(next) {

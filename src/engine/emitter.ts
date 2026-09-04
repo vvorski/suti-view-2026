@@ -177,7 +177,17 @@ function charge(contactSeconds: number): number {
 }
 
 function lifeFor(c: number, moonAbundance: number): number {
-  const t = (c - CHARGE_FLOOR) / (1 - CHARGE_FLOOR) // 0 at the floor, 1 at full charge
+  // Floored at 0 for docs/todo.md entry 112. Every contact-driven charge is
+  // at least CHARGE_FLOOR by construction, so this clamp cannot fire for a
+  // finger and changes nothing on that path — but a hovering cursor's
+  // `chargeCap` deliberately puts `c` *below* the floor, and without this
+  // the arithmetic runs `t` negative and hands back a life of 0.05s, or a
+  // negative one, which the release branch reads as already dead. That would
+  // have silently deleted the afterlife entry 112 explicitly asks to keep:
+  // "the rings thin out over the emitter's own remaining life instead of
+  // stopping dead, which is exactly what a lifted finger already does".
+  // Floored, a hover gets LIFE_MIN, which is exactly that.
+  const t = Math.max(0, (c - CHARGE_FLOOR) / (1 - CHARGE_FLOOR)) // 0 at the floor, 1 at full charge
   const swing = 1 + MOON_LIFE_SWING * moonAbundance
   return (LIFE_MIN + (LIFE_MAX - LIFE_MIN) * t) * swing
 }
@@ -201,6 +211,10 @@ function lifeFor(c: number, moonAbundance: number): number {
  * `halfExtent` is the frame's own half-width/half-height in this same uv
  * space (scene.ts already has both, from the canvas's own client size), so a
  * fall bounces off the edge actually on screen rather than an assumed one.
+ * `chargeCap` is docs/todo.md entry 112's hovering mouse cursor: 1 for every
+ * contact a finger makes, and 0.35 for a hover, which has no end and would
+ * otherwise charge to full and stay there — see the comment at the charge
+ * line itself for why it scales rather than clamps.
  */
 export function updateEmitter(
   state: EmitterState,
@@ -213,6 +227,7 @@ export function updateEmitter(
   moonAbundance = 0,
   gravity: { x: number; y: number } = { x: 0, y: 0 },
   halfExtent: { x: number; y: number } = { x: 0.5, y: 0.5 },
+  chargeCap = 1,
 ): void {
   const dt = Math.max(0, now - state.lastTick)
   state.lastTick = now
@@ -231,7 +246,19 @@ export function updateEmitter(
     state.active = true
     state.x = x
     state.y = y
-    const c = Math.min(1, charge(now - (state.contactStart ?? now)) + speed * SPEED_LEVEL_SCALE)
+    // docs/todo.md entry 112 — `chargeCap` scales the whole charge rather
+    // than clamping it, and that is the difference between the entry's two
+    // requirements both holding and only one of them holding. A hovering
+    // cursor is capped at 0.35, below CHARGE_FLOOR, because charge only
+    // accumulates while active and an uncapped hover would sit at 1.0 —
+    // louder than any deliberate hold a finger can give it — for as long as
+    // the mouse kept moving. But `speed` reaches the picture through this
+    // one expression and nowhere else, so a `Math.min(chargeCap, …)` would
+    // have pinned every hover at exactly 0.35 and made "a fast sweep throws
+    // brighter rings" quietly false. Scaled, a hover runs 0.21 still to 0.35
+    // swept, always under the 0.616 a 0.1s tap is worth. The default of 1 is
+    // an exact multiplication, so every existing call is byte-identical.
+    const c = Math.min(1, charge(now - (state.contactStart ?? now)) + speed * SPEED_LEVEL_SCALE) * chargeCap
     state.life = lifeFor(c, moonAbundance)
     state.totalLife = state.life
     state.releaseCharge = c

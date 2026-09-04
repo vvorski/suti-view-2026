@@ -18,6 +18,9 @@
  *                one module here that is not about listening: the spectrum
  *                feeds it, but what it models is the phone's own gravity.
  *   tilt.ts      what counts as "flat", for the two features that ask
+ *   hover.ts     a mouse cursor moving over the picture, as a thing the
+ *                picture answers — docs/todo.md entry 112. Deliberately not
+ *                a synthesised touch; see its own comment for why.
  *   touch.ts     the touch → atmospheric-stream envelope — docs/todo.md
  *                entry 48. A different shape of "turn a contact into a
  *                number" from ripples.ts/emitter.ts: no position, since the
@@ -72,7 +75,10 @@ export type { RippleState } from './ripples.ts'
 export { createEmitterState, updateEmitter } from './emitter.ts'
 export type { EmitterState } from './emitter.ts'
 
-export { createTouchField, toShaderUv } from './touches.ts'
+export { createHoverState, moveHover, hoverLeft, updateHover, HOVER_QUIET, HOVER_CHARGE_CAP } from './hover.ts'
+export type { HoverState, HoverReading } from './hover.ts'
+
+export { createTouchField, toShaderUv, VELOCITY_SMOOTH } from './touches.ts'
 export type { Touch, TouchField, TouchFieldEvent, TouchEventKind } from './touches.ts'
 
 export { createTouchStreamState, updateTouchStream } from './touch.ts'

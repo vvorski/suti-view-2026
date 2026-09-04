@@ -40,8 +40,13 @@ const MAX_TOUCHES = 4
 /** Light exponential smoothing on velocity, so one noisy sample between two
  *  pointermove events doesn't spike drag speed for a single frame. **Mine**:
  *  the entries that read velocity (46, 48, 50) all want "how fast is this
- *  drag", not "what was the instantaneous vector of the last two events". */
-const VELOCITY_SMOOTH = 0.3
+ *  drag", not "what was the instantaneous vector of the last two events".
+ *
+ *  Exported since docs/todo.md entry 112: a hovering mouse cursor smooths
+ *  its speed the same way a drag does, and it is the same filter for the
+ *  same reason, so `hover.ts` reads this rather than carrying a second 0.3
+ *  that would then be tuned apart from it. */
+export const VELOCITY_SMOOTH = 0.3
 
 export interface Touch {
   readonly id: number

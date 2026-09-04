@@ -11,7 +11,18 @@ import { bindKeyboard } from './keyboard'
 import { DEFAULT_GEO_COLOUR, parseGeoColour, type GeoColour } from './geo-colour'
 import { startCamera, type CameraSource } from './camera'
 import { createHud, TAP_SLOP_PX } from './hud'
-import { createTouchField, MAPPINGS, toShaderUv, type Mapping, type MappingName, type VisualParams } from './engine'
+import {
+  createHoverState,
+  createTouchField,
+  hoverLeft,
+  MAPPINGS,
+  moveHover,
+  toShaderUv,
+  updateHover,
+  type Mapping,
+  type MappingName,
+  type VisualParams,
+} from './engine'
 import {
   DEFAULT_ATM_MERGE_MODE,
   DEFAULT_MERGE_MODE,
@@ -1201,6 +1212,12 @@ async function main(): Promise<void> {
   const isChip = (t: EventTarget | null): boolean => t instanceof Element && t.closest('.hud-chip') !== null
 
   const touchField = createTouchField()
+  // docs/todo.md entry 112 — the mouse cursor's own state, owned here beside
+  // the touch field because this is where the pointer events are. The
+  // hover never enters `touchField`: a cursor resting on the glass would be
+  // a finger permanently down, holding `touchAnyDown` true for ever and
+  // parking the tap recogniser below mid-gesture.
+  const hover = createHoverState()
 
   // Contact ids for the geometric emitter's pool (scene.ts) — docs/todo.md
   // entry 57. `touchField`'s own id is a *pointer* id, which the platform
@@ -1234,7 +1251,29 @@ async function main(): Promise<void> {
     const rect = canvas.getBoundingClientRect()
     const [x, y] = toShaderUv(e.clientX, e.clientY, rect)
     touchField.move(performance.now() / 1000, e.pointerId, x, y, e.clientX, e.clientY)
+    // docs/todo.md entry 112. A mouse only, over a `(hover: hover)` media
+    // query: it is a per-event fact needing no query, a pen hovering is
+    // deliberately excluded because it has its own press, and a tablet with
+    // a mouse attached is a mouse and should work. The chip test is the same
+    // one `pointerdown` uses — running the pointer over the HUD must not
+    // spray rings underneath it — and it is applied per move rather than
+    // stored, because a hover has no `down` to store it at.
+    if (e.pointerType !== 'mouse') return
+    if (isChip(e.target)) {
+      hoverLeft(hover)
+      return
+    }
+    moveHover(hover, performance.now() / 1000, x, y)
   })
+  // docs/todo.md entry 112 — the cursor leaving. `relatedTarget === null` is
+  // what distinguishes leaving the *window* from merely crossing between two
+  // elements inside it, which fires `pointerout` constantly and must not stop
+  // anything. `blur` covers the case `pointerout` cannot see at all: a
+  // window switched away from with the cursor still over it.
+  document.addEventListener('pointerout', (e) => {
+    if (e.pointerType === 'mouse' && e.relatedTarget === null) hoverLeft(hover)
+  })
+  window.addEventListener('blur', () => hoverLeft(hover))
   document.addEventListener('pointerup', (e) => touchField.up(e.pointerId))
   document.addEventListener('pointercancel', (e) => touchField.cancel(e.pointerId))
   // A lost capture (another element or the browser chrome stealing it
@@ -1409,6 +1448,13 @@ async function main(): Promise<void> {
       active.push({ contactId, x: t.x, y: t.y, speed })
     }
     visualiser.setTouches(active)
+
+    // docs/todo.md entry 112 — asked here rather than at the event, because
+    // "has the cursor been parked" is a question about elapsed time and
+    // nothing answers it until a frame goes by. `updateHover` is what
+    // applies HOVER_QUIET; this file only forwards its verdict.
+    const cursor = updateHover(hover, now)
+    visualiser.setHover(cursor.x, cursor.y, cursor.active, cursor.speed)
 
     // Defensive rather than load-bearing: dispatchTouches only ever runs
     // after Start (frame() is not scheduled before it), so the gate should
