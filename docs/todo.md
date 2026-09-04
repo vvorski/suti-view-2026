@@ -3716,3 +3716,146 @@ probe); `transient: 1` produces a moving band of altered spacing whose radius
 grows at `0.6` uv/s between two screenshots. On a phone: hold and sweep,
 let go, tap somewhere else.
 **Verify** — as 134's. **Hard stops** — as 134's.
+
+
+### 137. Every release opens on its own seed, and the seed becomes writable
+`status: ready` · added 2026-09-05 · independent of the rest of the queue
+
+**Do** — derive the opening `uSeed` from `RELEASE_NAME` instead of
+`Math.random()`, add a `?seed=` parameter that restores it, and print the whole
+look as one copyable string in the `?debug` readout.
+
+**Why** — Victor: *"I guess there is a set of values which seed the animation,
+are we able to write it out as a DNA string? in any case let's have each
+release start at it's own unique seed."*
+
+**Recon: most of the DNA already exists and already travels; exactly one gene
+is missing.** `?geometric= ?atmospheric= ?view= ?rgb= ?mix= ?mapping= ?auto=`
+are already parameters, already parsed at `main.ts:112`, and already restore a
+look from a link. The one part of the picture with **no representation
+anywhere** is `uSeed` — `Math.random()` at three sites (`scene.ts:647` on
+construction, `:1336` on a structural boundary, `:1667` in `randomise()`),
+recorded by nothing. So a shape you liked is currently unrecoverable, and
+"write it out" is mostly a matter of finishing a string that is already
+three-quarters written.
+
+**And there is a reasoned refusal in the way of the obvious place to put it.**
+`share.ts:9` — *"Query and hash are dropped. A share is an invitation to the
+piece, not to the exact settings of the tab it was sent from — and `?debug` in
+particular has no business travelling to somebody else's phone."* That is a
+decision, not an oversight, so this entry does **not** put the DNA on the QR or
+the share button. See Decided.
+
+**There is no hash function in the codebase** — grepped, none — so the release
+seed needs one small pure function, and that is the only new code the second
+half requires.
+
+**Decided**
+- **The DNA string *is* the URL, completed** → a `?seed=` parameter joins the
+  seven that already exist, and the readout prints the full link. **Mine**,
+  over inventing a compact bespoke encoding: CLAUDE.md says *"a shared link is
+  how this thing travels"* and *"New parameters are free"*, and a novel string
+  would need a decoder written, documented and kept in step with a format that
+  already works, reaches the app through a path already tested, and can be
+  pasted into a phone.
+- **`?seed=` is exactly 16 hex characters** — four 16-bit components, four
+  characters each, e.g. `seed=3f2a9c14e0b7d582`. **Mine**: `uSeed`'s coarsest consumer is
+  `SYMMETRY = 4 + floor(uSeed.y * 6)`, so a 16-bit quantisation is finer than
+  the visible difference by four orders of magnitude, and hex round-trips
+  without locale or float-formatting hazards. Invalid or malformed values fall
+  back to the release seed rather than throwing, the same way every other
+  parameter already falls back.
+- **The opening seed comes from `RELEASE_NAME`, not the build number** →
+  **Mine**: the build number moves on every commit, so a seed keyed to it would
+  change the opening look for builds that changed nothing visual; the name
+  changes exactly once per release **by rule** (CLAUDE.md: *"Changed in the
+  same commit as the work it names"*), which is precisely the cadence "each
+  release starts at its own seed" asks for. It also makes the name and the look
+  the same fact — the chip says `says i am` and that build always opens the
+  same way.
+- **The hash is FNV-1a, written out, not imported** → a dozen lines in
+  `release-name.ts` beside the name it hashes, producing four components from
+  one pass with four different offset bases. **Mine**: a runtime dependency for
+  this would be absurd against CLAUDE.md's 117 KB budget, and FNV-1a is chosen
+  over a hand-rolled multiply-xor because it is a named, specified function
+  someone can check rather than a magic constant nobody can audit.
+- **The QR and the share button stay bare** → unchanged, and `shareUrl()` keeps
+  dropping the query. **Mine**, and the reason is quoted above from the file
+  itself: a share is an invitation to the piece. The `?debug` hazard that
+  comment names is real and would be re-created the moment the share carried
+  the query. **If Victor wants the QR to carry the whole picture, that is a
+  deliberate reversal of a documented decision and belongs in its own entry
+  with his word in it** — it is one line, and it is not this entry's to take.
+- **The DNA is printed in the `?debug` readout** → one line, the full URL with
+  every look parameter and the seed. **Mine**, over adding a copy control: the
+  control surface is circular and text-free by a non-negotiable, and the
+  readout is the one surface in this app that already prints strings. It is
+  also where somebody debugging a look is already looking.
+- **The seed is not stored in `Prefs`** → render-time only. **Mine**, and it is
+  what keeps the two halves from cancelling: a persisted seed would restore
+  your last shape on every load and the release's own seed would be seen once,
+  by people with empty storage, and never again. Adding a field would have been
+  *safe* under Hard Stop 1 — this declines it on behaviour, not on risk.
+- **A re-roll still goes somewhere random** → `randomise()` and the structural
+  boundary keep `Math.random()`. **Mine**: the release seed is where a session
+  *opens*, not a rail it runs on, and a shake that returned to the same shape
+  every time would be the opposite of what entries 27 and 35 built.
+- **Precedence, stated once** → `?seed=` beats the release seed, and any
+  re-roll beats both. **Mine**, matching how `?rgb=` already outranks a stored
+  colour at `main.ts:686`.
+- **The gate's shuffle is untouched** → `main.ts:711`'s `shuffled(SHUFFLE_VIEWS,
+  …)` still picks a not-yours *view and colour* for the start screen; this
+  entry only fixes which four numbers the shader's own shape starts from, and
+  the two compose without either knowing about the other. **Mine** to state it,
+  because "the gate shows a random look" and "the release has a fixed seed"
+  read as contradictory until you notice they are different values.
+- **The known cost** → everyone on a build opens on the same shape, so if a
+  release's hash lands on an unlovely one, that is what greets every visitor
+  until the music crosses a boundary or somebody shakes. Acceptable and
+  bounded: both of those happen within seconds of real sound, and the next
+  release re-rolls it by rule. Stated rather than discovered.
+
+**Identity when off** — this deliberately changes one thing, so the claim is
+narrower than usual and worth being exact about: **after any re-roll, and for
+every parameter other than the opening four numbers, behaviour is unchanged.**
+`randomise()`, the boundary re-roll, the shuffle, every stored preference and
+every existing URL parameter are byte-identical. A link with no `?seed=` gets
+the release seed; a link with one gets what it names; nothing else moves. There
+is no branch to disable, because the change is which four numbers are written
+once at construction.
+
+**Lands in** — `src/release-name.ts` (the FNV-1a hash and a `releaseSeed()`
+returning four 0-1 numbers, beside `RELEASE_NAME`); `src/scene.ts:647` (the
+construction value, from options rather than `Math.random()`) and the
+`VisualiserOptions` field that carries it; `src/main.ts:112` (parsing
+`?seed=`) and `:718` (passing it); the `?debug` readout's own line.
+`scripts/probe-name-decode.ts` is untouched; a new `scripts/probe-seed.ts` and
+`pnpm probe:seed`.
+
+**Done when** — `pnpm probe:seed` asserts: `releaseSeed()` is **deterministic**
+(same name, same four numbers, across calls and processes); all four components
+are in `[0, 1)`; **every name in `RELEASE_NAMES` produces a distinct
+four-tuple** — that is the "unique per release" claim, checked against the
+whole history rather than asserted; the hex encoder and parser round-trip every
+component to within 1/65536; and a malformed `?seed=` (wrong length,
+non-hex, empty) yields exactly the release seed rather than throwing. In the
+browser: loading with no `?seed=` twice in a row gives the **same** opening
+shape, which is the whole point and is the thing today's build cannot do;
+`?debug` prints a link that, pasted into a fresh tab, reproduces the same
+picture; and a shake still changes the shape.
+
+**Verify** — `pnpm build`, `pnpm lint`, `pnpm probe:seed`, and `pnpm probe`
+unchanged. Then a browser: copy the DNA line, open it in a private window, and
+compare the two side by side — that round trip is the only test of whether the
+string actually carries what it claims, and reading the parser cannot answer
+it. Then confirm the QR still encodes the bare URL, since the entry's own
+refusal above is the thing a careless edit to `share.ts` would undo. No HUD
+surface changes, so no 320×568 pass is owed.
+
+**Hard stops** — prefs **no** (nothing stored changes; the seed is deliberately
+render-time) · url **a new parameter, which CLAUDE.md makes free**: *"New
+parameters are free. Renaming or repurposing one breaks links already in the
+world"* — `?seed=` renames nothing and repurposes nothing, and every existing
+link keeps working, gaining only a deterministic opening shape where it used to
+get a random one · capture no · dependency **no** — the hash is written out
+rather than imported, for exactly this reason.
