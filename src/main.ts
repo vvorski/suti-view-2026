@@ -1818,6 +1818,10 @@ async function main(): Promise<void> {
           posture.posture,
           latestShake.tilt.x,
           latestShake.tilt.y,
+          // docs/todo.md entry 120 — read every frame, not captured at
+          // arming: the first sample can land after the gate, and this hands
+          // over to the posture path the moment data starts.
+          shake.hasMotionData(),
         )
         if (!arm.armed) {
           cameraMode = false

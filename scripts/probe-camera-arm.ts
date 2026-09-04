@@ -29,7 +29,17 @@ interface Result {
   armedAtEnd: boolean
 }
 
-function run(seconds: number, tiltAt: (t: number) => { x: number; y: number }): Result {
+/** `motionAt` is docs/todo.md entry 120's sixth argument — whether a
+ *  `devicemotion` sample has ever arrived. A function of time rather than a
+ *  flag, so a run can start with a silent sensor and have data begin
+ *  part-way through, which is what a real iOS grant looks like. Defaults to
+ *  "always reporting", so every case written before entry 120 keeps exactly
+ *  the meaning it had. */
+function run(
+  seconds: number,
+  tiltAt: (t: number) => { x: number; y: number },
+  motionAt: (t: number) => boolean = () => true,
+): Result {
   const state = createCameraArmState()
   armCamera(state, 0)
   let disarmedAt = -1
@@ -37,7 +47,7 @@ function run(seconds: number, tiltAt: (t: number) => { x: number; y: number }): 
   let armedAtEnd = true
   while (t < seconds) {
     const tilt = tiltAt(t)
-    const reading = updateCameraArm(state, t, 'still', tilt.x, tilt.y)
+    const reading = updateCameraArm(state, t, 'still', tilt.x, tilt.y, motionAt(t))
     if (!reading.armed && disarmedAt < 0) disarmedAt = t
     armedAtEnd = reading.armed
     t += DT
@@ -98,6 +108,40 @@ check(
   ceiling.disarmedAt >= 300 - DT && ceiling.disarmedAt < 300 + 1,
   `disarmed at ${ceiling.disarmedAt}s`,
 )
+
+// docs/todo.md entry 120 — the case there was no case for, which is how a
+// mode that always died in fifteen seconds on every desktop shipped and
+// passed. Every existing case above supplies tilt readings; none asked what
+// happens when the sensor never speaks at all.
+console.log()
+console.log('A device that never reports motion — the entry-120 case:\n')
+{
+  const silent = run(320, () => ({ x: 0, y: 0 }), () => false)
+  check(
+    'with no motion data, the arm survives to the five-minute ceiling',
+    silent.disarmedAt >= 300 - DT && silent.disarmedAt < 300 + 1,
+    `disarmed at ${silent.disarmedAt.toFixed(2)}s`,
+  )
+  // The regression this fixes, stated as its own assertion so the number
+  // that was wrong is written down: it used to die at QUIET_S.
+  check(
+    'and specifically not at fifteen seconds, which is what it did before',
+    silent.disarmedAt > 60,
+    `disarmed at ${silent.disarmedAt.toFixed(2)}s`,
+  )
+}
+{
+  // The handover. A sensor that starts reporting part-way through must open
+  // the quiet window from *then*, not from arming — otherwise a grant
+  // arriving at 20s would expire the arm instantly on a phone already lying
+  // flat, which is a different bug in the same place.
+  const late = run(60, () => ({ x: 0, y: 0 }), (t) => t >= 20)
+  check(
+    'motion starting at 20s expires the arm at 35s, not at 20s',
+    late.disarmedAt >= 35 - DT * 2 && late.disarmedAt < 35 + 1,
+    `disarmed at ${late.disarmedAt.toFixed(2)}s`,
+  )
+}
 
 console.log()
 console.log(

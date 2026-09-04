@@ -54,11 +54,18 @@ jobs:
         run: pnpm build
 
       # The headless probes. None of these touch the network or a browser, and
-      # they are the regression guards for three things that each shipped
-      # broken and silent once already — so they belong somewhere that runs
-      # without anyone remembering to.
+      # they are the regression guards for things that each shipped broken and
+      # silent once already — so they belong somewhere that runs without
+      # anyone remembering to.
+      #
+      # docs/todo.md entry 120 added probe:camera-arm, and the reason is the
+      # entry itself: armed camera mode died after fifteen seconds on every
+      # device with no motion data, from build 372 to build 419, and the probe
+      # that would have caught it existed the whole time — it simply had no
+      # case for a silent sensor and was not run here.
       - name: Probes
         run: |
           pnpm probe
           pnpm probe:shake
           pnpm probe:fullscreen
+          pnpm probe:camera-arm

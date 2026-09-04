@@ -30,12 +30,18 @@ import { isFlatTilt } from './tilt.ts'
 
 /** How long the phone can read as neither `handled` nor tilted before the
  *  arm expires. Decided's own figure — "a phone flat and still for fifteen
- *  seconds ... is someone who has moved on". */
+ *  seconds ... is someone who has moved on".
+ *
+ *  Never reached on a device with no motion data: it would fire fifteen
+ *  seconds after arming, every time, having measured nothing — see
+ *  `updateCameraArm`'s own note on entry 120. */
 const QUIET_S = 15
 
 /** The absolute ceiling regardless of posture — Decided's own figure,
  *  "five minutes, whatever the posture", so a phone propped up and
- *  vibrating on a table cannot hold the mode open indefinitely. */
+ *  vibrating on a table cannot hold the mode open indefinitely. It is also
+ *  the *only* bound on a device that reports no motion at all (entry 120),
+ *  which is the same clause read literally rather than a second rule. */
 const CEILING_S = 5 * 60
 
 export interface CameraArmState {
@@ -74,16 +80,59 @@ export interface CameraArmReading {
   armed: boolean
 }
 
-/** Call once per rendered frame while camera mode is armed. `tiltX`/`tiltY`
- *  are `shake.ts`'s own uncapped `tilt()` pair. */
+/**
+ * Call once per rendered frame while camera mode is armed. `tiltX`/`tiltY`
+ * are `shake.ts`'s own uncapped `tilt()` pair.
+ *
+ * `motionAvailable` is `shake.ts`'s `hasMotionData()` — whether a
+ * `devicemotion` sample has ever arrived in this session. Read live every
+ * frame rather than captured when the mode was armed: the first sample can
+ * land a few hundred milliseconds after the gate, and a per-frame reading
+ * hands over to the posture path the moment data starts, with no state to
+ * reset.
+ *
+ * **Why it has to be a parameter at all — docs/todo.md entry 120.** Entry
+ * 109 replaced a wall clock with this posture-and-tilt machine, and on a
+ * device that never delivers a `devicemotion` event posture sits at its
+ * initial `'still'` and tilt is a frozen zero, so `aimed` is never true, the
+ * quiet window opens the instant the mode is armed, and the arm dies after
+ * `QUIET_S`. Measured: 15.02s on a device with no motion data against
+ * 300.00s on one reporting it. On a desktop it was therefore *always*
+ * fifteen seconds and could never be more, and on iOS the same whenever the
+ * motion permission was declined. The failure is indistinguishable from the
+ * feature being absent — frame a shot, and the tap that should take it plays
+ * a ripple instead.
+ *
+ * It is a parameter rather than something this module reads for itself so
+ * the module stays pure and the probe can set it directly, which is the same
+ * discipline `posture.ts` and `motion-bias.ts` keep.
+ */
 export function updateCameraArm(
   state: CameraArmState,
   now: number,
   posture: Posture,
   tiltX: number,
   tiltY: number,
+  motionAvailable: boolean,
 ): CameraArmReading {
   if (!state.armed) return { armed: false }
+
+  // A device that has never reported motion cannot be asked whether it is
+  // being held, so the quiet path is not merely unreliable here — it is
+  // reading a constant. Only the ceiling applies, which is entry 109's own
+  // "five minutes, whatever the posture": a device that cannot report a
+  // posture is exactly the case that clause describes, and a second figure
+  // for it would be a third clock on one mode. Five minutes armed on a
+  // laptop is not a hazard — arming is deliberate, the glyph is showing, and
+  // the next click on the picture exits.
+  if (!motionAvailable) {
+    // Left null rather than stamped, so that if data does start arriving the
+    // quiet window begins from *then* rather than from a stale mark laid
+    // down while the sensor was silent.
+    state.quietSince = null
+    if (now - state.armedAt >= CEILING_S) state.armed = false
+    return { armed: state.armed }
+  }
 
   // The tilt half of this was this module's own `AIM_TILT_MIN` until entry
   // 110 needed the identical question answered for Strata's sand. Same
