@@ -221,6 +221,13 @@ export interface Hud {
        *  recognised, or the arm expiring) and "the menu won't open" has two
        *  more (the hold not reaching 3.5s, or drifting past its slop). */
       arm?: { armed: boolean; hold: number; blocked: boolean; sinceDisturbed: number }
+      /** docs/todo.md entry 133 — which branch the opening name decode took,
+       *  how long it has been running and how far it got. "The animation
+       *  isn't showing" and "it ran and you left before it finished" are the
+       *  same report from outside; these three numbers are what separate
+       *  them, and three of this animation's four reports were diagnosed by
+       *  guessing instead. */
+      decode?: { branch: string; elapsedMs: number; resolved: number; total: number }
     },
   ): void
   /** Adopt a change decided elsewhere — the autopilot (director.ts) or a
@@ -1496,6 +1503,12 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
         ...(s.camera === undefined
           ? []
           : [`cam   ${!s.camera.open ? 'closed' : s.camera.live ? 'live' : 'frozen'}`]),
+        ...(s.decode === undefined
+          ? []
+          : [
+              `name  ${s.decode.branch}  ${(s.decode.elapsedMs / 1000).toFixed(1)}s  ` +
+                `${s.decode.resolved}/${s.decode.total}`,
+            ]),
         ...(s.arm === undefined
           ? []
           : [

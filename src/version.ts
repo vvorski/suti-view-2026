@@ -321,6 +321,34 @@ export function renderLockFrame(target: string, locked: number): string {
   return out
 }
 
+/**
+ * One frame of the reduced-motion path — docs/todo.md entry 133.
+ *
+ * The whole name, always: resolved characters as themselves, unresolved ones
+ * as *the same characters* at reduced opacity. Never a scramble, which is
+ * what keeps entry 99's protection intact — its argument is that resolving
+ * characters carry no motion vector while rapid churn is closer to flashing
+ * content than to an animation, and a dimmed character brightening is a fade
+ * rather than a flicker.
+ *
+ * Written into the DOM rather than returned as a string because the two
+ * halves need different opacities; the caller owns the element, so this owns
+ * only what goes inside it. The element's width is the finished name's width
+ * from the first frame, which is what stops the gate reflowing as it fills —
+ * and `.gate-name`'s own `min-width: 18ch` (entry 55) already reserved that
+ * space for the full path's own flip.
+ */
+export function renderReducedFrame(el: HTMLElement, target: string, locked: number): void {
+  el.textContent = ''
+  if (locked > 0) el.append(target.slice(0, locked))
+  if (locked < target.length) {
+    const tail = document.createElement('span')
+    tail.className = 'name-pending'
+    tail.textContent = target.slice(locked)
+    el.append(tail)
+  }
+}
+
 /** How many characters are locked at a given elapsed time into phase two —
  *  pure, so the timing itself (not just the per-frame render above) is
  *  probeable without a `requestAnimationFrame` loop or a DOM. */
@@ -328,20 +356,36 @@ export function lockedCountAt(elapsedSincePhaseTwoMs: number, targetLength: numb
   return Math.min(targetLength, Math.max(0, Math.floor(elapsedSincePhaseTwoMs / NAME_LOCK_STEP_MS)))
 }
 
-/** docs/todo.md entry 99 (absorbing entry 94)'s reduced-motion path, re-anchored
- *  to the shared step by entry 113. It used to run at a hardcoded 3 characters
- *  a second, deliberately *slower* than the normal path's 18 — and slowing only
- *  the normal path would have inverted that, making reduced motion the fast
- *  decode and contradicting `mountReleaseName`'s own "`prefers-reduced-motion`
- *  gets a slower decode, not none."
+/**
+ * How fast the reduced-motion path resolves, in milliseconds a character —
+ * docs/todo.md entries 99, 113 and 133.
  *
- *  Sharing `NAME_LOCK_STEP_MS` preserves the ordering by making the two equal,
- *  and 550ms a character is strictly less churn than the 333ms it had before —
- *  so this path comes out more compliant than it went in, not less. What
- *  actually protects it is unchanged and is not a rate at all: it **never
- *  scrambles**, it types (`.slice`, not `renderLockFrame`). */
+ * Entry 99 set 3 characters a second. Entry 113 tied this to
+ * `NAME_LOCK_STEP_MS` so that slowing the full path tenfold would not leave
+ * reduced motion as the *faster* branch — sound arithmetic, wrong model, and
+ * that call was mine. Entry 133 puts it back, and the reasoning is the
+ * difference between the two branches rather than a preference between two
+ * numbers:
+ *
+ * The full path **scrambles in place**. Every character is present from the
+ * first frame and merely unresolved, so the name is legible as a shape at
+ * every instant and the animation can afford to be long. The reduced path
+ * **reveals**, and a reveal is only legible once it has arrived — so 550ms a
+ * character meant a median name took 6.6 seconds to become readable on a gate
+ * a phone user leaves in two.
+ *
+ * What actually protects the reduced path is not its rate and never was: it
+ * does not scramble. Entry 99's argument is that resolving characters carry
+ * no motion vector but rapid churn is closer to flashing content than to an
+ * animation, and a dimmed character brightening is a fade, not a flicker.
+ */
+const REDUCED_STEP_MS = 1000 / 3
+
+/** docs/todo.md entry 99 (absorbing entry 94)'s reduced-motion rate — "about
+ *  3 characters resolving per second", restored by entry 133. Exported for
+ *  the same reason `lockedCountAt` is. */
 export function reducedLockedCountAt(elapsedMs: number, targetLength: number): number {
-  return Math.min(targetLength, Math.max(0, Math.floor(elapsedMs / NAME_LOCK_STEP_MS)))
+  return Math.min(targetLength, Math.max(0, Math.floor(elapsedMs / REDUCED_STEP_MS)))
 }
 
 /**
@@ -417,6 +461,33 @@ function fadeInName(el: HTMLElement, text: string): void {
  * else — the disc is live and pressable from the very first frame, and
  * pressing it mid-decode is not a special case, it just leaves.
  */
+/**
+ * What the opening decode actually did — docs/todo.md entry 133.
+ *
+ * This animation has now been reported invisible four times (entries 65, 94,
+ * 99 and 133) and three of those were diagnosed by guessing. The rule that
+ * history wrote is CLAUDE.md's own: the app is where the problem is reported,
+ * so it is where the diagnosis belongs — "the animation isn't showing" and
+ * "the animation ran and you left before it finished" are the same report
+ * from outside, and only these numbers separate them.
+ *
+ * `branch` also answers the question `#motion-glyph` answers at a glance, in
+ * writing, for anyone reading a screenshot rather than holding the phone.
+ */
+export interface NameDecodeStatus {
+  branch: 'reduced' | 'full' | 'instant'
+  /** Milliseconds since the decode began. */
+  elapsedMs: number
+  resolved: number
+  total: number
+}
+
+let decodeStatus: NameDecodeStatus = { branch: 'full', elapsedMs: 0, resolved: 0, total: 0 }
+
+export function nameDecodeStatus(): NameDecodeStatus {
+  return decodeStatus
+}
+
 export function mountReleaseName(): void {
   const el = document.getElementById('release-name')
   const glyph = document.getElementById('motion-glyph')
@@ -443,17 +514,41 @@ export function mountReleaseName(): void {
 
   const n = RELEASE_NAMES.length
   if (n === 0) {
+    decodeStatus = { branch: 'instant', elapsedMs: 0, resolved: RELEASE_NAME.length, total: RELEASE_NAME.length }
     fadeInName(el, RELEASE_NAME)
     return
   }
 
   const target = RELEASE_NAME
   const start = performance.now()
+  decodeStatus = { branch: reduced ? 'reduced' : 'full', elapsedMs: 0, resolved: 0, total: target.length }
 
   if (reduced) {
+    // docs/todo.md entry 133. This used to write `target.slice(0, locked)`,
+    // which at elapsed 0 is `slice(0, 0)` — an empty string — directly under
+    // the comment below saying an unstarted decode must never leave the span
+    // empty. So on any device matching `prefers-reduced-motion` the name was
+    // blank for a full character-step before the first letter appeared, and
+    // entry 113 stretched that window from 333ms to 550ms.
+    //
+    // On Android that is not an edge case: entry 99 established that both
+    // Battery Saver and Accessibility → Remove animations set the query, and
+    // a phone that has been running a WebGL visualiser is exactly a phone
+    // with Battery Saver on. Desktop Chrome almost never matches it, which is
+    // precisely the "looks nice on browser, doesn't show on mobile" split
+    // that was reported — the fourth report of this animation being
+    // invisible, and the fourth time the cause was a masker rather than a
+    // missing feature.
+    //
+    // Now the whole name is present from the first frame and resolves in
+    // place: the unresolved tail is the target's *own* characters at reduced
+    // opacity, never a scramble. An empty element is indistinguishable from a
+    // broken one, and the element's width is the name's width from frame
+    // zero, so the gate cannot reflow as it fills.
     const step = (now: number): void => {
       const locked = reducedLockedCountAt(now - start, target.length)
-      el.textContent = target.slice(0, locked)
+      decodeStatus = { branch: 'reduced', elapsedMs: now - start, resolved: locked, total: target.length }
+      renderReducedFrame(el, target, locked)
       if (locked < target.length) {
         requestAnimationFrame(step)
       } else {
@@ -480,6 +575,7 @@ export function mountReleaseName(): void {
     }
     // Phase two — entry 94's own lock, absorbed by 99.
     const locked = lockedCountAt(elapsed - NAME_FLIP_MS, target.length)
+    decodeStatus = { branch: 'full', elapsedMs: elapsed, resolved: locked, total: target.length }
     if (locked >= target.length) {
       // Exact, rather than trusting the last scrambled frame's rounding to
       // have already landed on it.

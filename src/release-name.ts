@@ -165,6 +165,7 @@ export const RELEASE_NAMES: readonly string[] = [
   'room arrives',
   'touch returns',
   'sand out',
+  'name shows',
 ]
 
 /** The current release's name — derived as the list's last element, so

@@ -20,6 +20,7 @@ import {
   lockedCountAt,
   reducedLockedCountAt,
   renderLockFrame,
+  renderReducedFrame,
   NAME_FLIP_MS,
   NAME_LOCK_STEP_MS,
 } from '../src/version.ts'
@@ -108,25 +109,32 @@ function check(name: string, ok: boolean, detail: string): void {
 {
   const len = RELEASE_NAME.length
   check('reduced: 0 characters locked at elapsed 0', reducedLockedCountAt(0, len) === 0, String(reducedLockedCountAt(0, len)))
-  // docs/todo.md entry 113 re-anchored this path to the shared step rather
-  // than its own hardcoded 1000/3, so the two rates are now equal rather
-  // than the reduced one being three times faster than the normal one would
-  // have become. What makes the reduced path reduced is that it never
-  // scrambles — it types — and that is asserted in `mountReleaseName`'s own
-  // code path, not by a rate here.
+  // docs/todo.md entry 133 puts this path back to entry 99's own 3 characters
+  // a second, undoing entry 113's decision to tie it to NAME_LOCK_STEP_MS.
+  // The two branches are not the same kind of animation: the full path
+  // scrambles in place and is legible at every instant, while this one
+  // reveals and is legible only once it has arrived. 550ms a character meant
+  // a median name took 6.6s to become readable on a gate people leave in two.
   check(
-    'reduced: one character locked after one step',
-    reducedLockedCountAt(NAME_LOCK_STEP_MS + 1, len) === Math.min(len, 1),
-    String(reducedLockedCountAt(NAME_LOCK_STEP_MS + 1, len)),
+    'reduced: about 3 characters locked after one second, as entry 99 set it',
+    reducedLockedCountAt(1000, len) === Math.min(len, 3),
+    String(reducedLockedCountAt(1000, len)),
   )
-  check(
-    'reduced: the two paths now share a step and agree at every millisecond tested',
-    Array.from({ length: 400 }, (_, i) => i * 137).every(
-      (ms) => reducedLockedCountAt(ms, len) === lockedCountAt(ms, len),
-    ),
-    'the reduced and full-motion paths disagreed',
-  )
-  const reducedFullyLockedMs = len * NAME_LOCK_STEP_MS + NAME_LOCK_STEP_MS
+  // Swept rather than sampled at one instant: the two step sizes coincide at
+  // some elapsed times by arithmetic (both read 1 at exactly 550ms), so a
+  // single sample can say "still tied" about a path that is not. What is
+  // actually claimed is that reduced never falls behind and does get ahead.
+  {
+    const points = Array.from({ length: 60 }, (_, i) => i * 100)
+    const behind = points.filter((ms) => reducedLockedCountAt(ms, len) < lockedCountAt(ms, len))
+    const ahead = points.filter((ms) => reducedLockedCountAt(ms, len) > lockedCountAt(ms, len))
+    check(
+      'reduced: no longer tied to the full path’s step — never behind it, often ahead',
+      behind.length === 0 && ahead.length > 0,
+      `behind at ${behind.length} points, ahead at ${ahead.length}`,
+    )
+  }
+  const reducedFullyLockedMs = (len / 3) * 1000 + 500
   check(
     'reduced: the full name is fully locked shortly after its own expected typing time',
     reducedLockedCountAt(reducedFullyLockedMs, len) === len,
@@ -181,6 +189,64 @@ check(
       `(${NAME_FLIP_MS / 1000}s flip + ${RELEASE_NAME.length} x ${NAME_LOCK_STEP_MS}ms), ` +
       `and ${((NAME_FLIP_MS + longest.length * NAME_LOCK_STEP_MS) / 1000).toFixed(1)}s for the longest name on record ("${longest}").`,
   )
+}
+
+// docs/todo.md entry 133 — the regression itself, stated as the thing the eye
+// failed at rather than as a timing property. `mountReleaseName`'s reduced
+// branch called `step()` synchronously and rendered `target.slice(0, 0)`, an
+// empty string, directly under a comment saying an unstarted decode must
+// never leave the span empty. On any device matching `prefers-reduced-motion`
+// the name was therefore blank for a full character-step — 333ms when entry
+// 99 shipped it, 550ms after entry 113 — and that is what four separate
+// reports of "the animation doesn't show" were looking at.
+{
+  // A minimal element stand-in: this file has no DOM, and the render only
+  // needs `textContent`, `append` and a child that can carry a class.
+  const made: { className: string; textContent: string }[] = []
+  const el = {
+    textContent: '',
+    append(...parts: unknown[]): void {
+      for (const p of parts) {
+        this.textContent += typeof p === 'string' ? p : (p as { textContent: string }).textContent
+      }
+    },
+  }
+  ;(globalThis as { document?: unknown }).document = {
+    createElement: () => {
+      const node = { className: '', textContent: '' }
+      made.push(node)
+      return node
+    },
+  }
+
+  const target = RELEASE_NAME
+  renderReducedFrame(el as unknown as HTMLElement, target, 0)
+  check(
+    'reduced: at elapsed 0 the full name is on screen, not an empty span',
+    el.textContent.length === target.length && el.textContent !== '',
+    `rendered ${JSON.stringify(el.textContent)}`,
+  )
+  check(
+    'reduced: and it is the name itself, dimmed — never a scramble',
+    el.textContent === target,
+    `rendered ${JSON.stringify(el.textContent)} for ${JSON.stringify(target)}`,
+  )
+  check(
+    'reduced: the unresolved tail is marked so CSS can dim it',
+    made.length === 1 && made[0].className === 'name-pending' && made[0].textContent === target,
+    made.map((m) => `${m.className}:${m.textContent}`).join(', '),
+  )
+
+  // Every intermediate frame keeps the full width, which is what stops the
+  // gate reflowing as it fills.
+  let widthHeld = true
+  for (let locked = 0; locked <= target.length; locked++) {
+    el.textContent = ''
+    made.length = 0
+    renderReducedFrame(el as unknown as HTMLElement, target, locked)
+    if (el.textContent !== target) widthHeld = false
+  }
+  check('reduced: every frame renders the whole name, so the width never changes', widthHeld, 'a frame was short')
 }
 
 console.log(failures === 0 ? '\nall name-decode checks passed' : `\n${failures} check(s) failed`)

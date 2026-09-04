@@ -66,7 +66,7 @@ import { requestLocation, type GeoLocation } from './geo-location'
 import { hasMotionPermissionGate, intensity, startShake, STILL_FRAME, type ShakeFrame } from './shake'
 import { confirmBuzz, doubleBuzz, hapticStatus } from './haptics'
 import { IdlePreview } from './idle-preview'
-import { mountReleaseName, mountVersionHud, versionHudRunning } from './version'
+import { mountReleaseName, mountVersionHud, nameDecodeStatus, versionHudRunning } from './version'
 import { mountQueuePanel } from './queue-panel'
 import { mountPowder } from './powder'
 import {
@@ -2007,6 +2007,8 @@ async function main(): Promise<void> {
         // explain. Read fresh from cameraSource every tick, not cached,
         // since isLive() is itself continuously updated.
         camera: cameraSource ? { open: true, live: cameraSource.isLive() } : { open: false, live: false },
+        // docs/todo.md entry 133 — the opening decode's own three numbers.
+        decode: nameDecodeStatus(),
         // docs/todo.md entry 115 — CLAUDE.md's "two identical symptoms need
         // two different numbers", applied before the symptom appears. "The
         // camera doesn't arm" will otherwise be indistinguishable from "the

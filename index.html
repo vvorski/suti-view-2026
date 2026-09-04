@@ -415,6 +415,16 @@
         text-shadow: 0 1px 14px rgba(5, 6, 10, 0.95);
         line-height: 1;
       }
+      /* docs/todo.md entry 133 — the reduced-motion decode's unresolved tail.
+         Present from the first frame at reduced opacity rather than absent,
+         so the name is legible as a shape immediately and the element never
+         changes width as it fills. A dimmed character brightening is a fade,
+         which is what `prefers-reduced-motion` asks for; the alternative that
+         shipped was an empty span, which is indistinguishable from a broken
+         one and was reported as exactly that, four times. */
+      .name-pending {
+        opacity: 0.32;
+      }
       .gate-name {
         font: 500 calc(clamp(0.95rem, 4.4vw, 1.3rem) * var(--gate-type-scale))/1 ui-monospace,
           SFMono-Regular, Menlo, monospace;
