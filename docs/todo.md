@@ -680,7 +680,7 @@ one thing no probe can answer.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 109. Camera mode ends when you put the phone down, not when a clock runs out
-`status: done` · added 2026-09-02 · build 372 · follows the build-369 fix · gap found at build 373 — see 120
+`status: done` · added 2026-09-02 · build 372 · follows the build-369 fix · **gap found at build 373, fixed by 120 at build 419** — the arm died after 15s on any device with no motion data
 
 **Do** — replace the armed mode's wall-clock timeout with one that reads
 whether the phone is still being held and aimed, and make the expiry visible
@@ -1897,7 +1897,7 @@ groups open); then a phone in landscape.
 surface stays circular — this moves chips along the arc they are already on.
 
 ### 120. Armed camera mode dies after 15 seconds on any device with no motion data
-`status: building` · added 2026-09-04 · started 2026-09-05 · found at build 373 from the same "there is no camera" report · follows 109 · independent of the rest of the queue
+`status: done` · added 2026-09-04 · build 419 · found at build 373 from the same "there is no camera" report · follows 109
 
 **Do** — teach `camera-arm.ts` the difference between "the phone reads as put
 down" and "the phone has never reported anything", and in the second case run
@@ -2721,3 +2721,113 @@ marker. No HUD surface changes, so no 320×568 pass is owed.
 **Hard stops** — prefs no · url no · capture no (the space bar reaches no
 capture path; entry 117's left click is what arms, and 125's gate — once built
 — makes a held space bar *block* arming rather than assist it) · dependency no.
+
+### 127. The sun chip goes; the clock keeps the sky
+`status: ready` · added 2026-09-05 · **retires the control built by 71** · helps 119 rather than conflicting with it
+
+**Do** — remove the sun chip and the manual sky override behind it. The
+automatic clock-driven day/night stays exactly as it is.
+
+**Why** — Victor, asked whether the chip earns its place: **yes, remove it.**
+It is the only chip that corrects a guess rather than doing something you asked
+for, and the guess is right nearly all the time.
+
+**Recon: this project already has a way to retire a stored preference, and it
+is in the same file.** `prefs.ts:105` carries a `day` boolean marked
+*"Superseded by `skyOverride` below (entry 71) and no longer written"* — kept in
+the shape, still validated, simply never set. `skyOverride` follows it. That is
+what keeps this **out of Hard Stop 1 entirely**: no field is removed, retyped
+or repurposed, so no visitor's `localStorage` is reset or misread.
+
+**Counted, not recalled:** the outer ring holds **three** chips today — `num`,
+`grav`, `day` — the shutter having gone with entry 115 at build 407. After this
+it holds two.
+
+**Decided**
+- **The stored field stays; it stops being read** → `prefs.skyOverride` keeps
+  its type, its validation and its `'auto'` default, and the app behaves as if
+  it always says `'auto'`. **Mine**, over deleting the field: deleting is a
+  Hard Stop and buys nothing, and the `day` boolean two lines above it is the
+  precedent for exactly this.
+- **Anyone currently pinned is released, not stranded** → a visitor whose
+  stored value is `'day'` or `'night'` returns to automatic on their next load.
+  **Mine**, and it is the reason "leave the field and keep honouring it" is
+  wrong rather than merely lazy: with the chip gone, honouring a stored
+  `'night'` would pin someone to the dark look **permanently, with nothing on
+  screen able to undo it**. That is the worst outcome available here and it is
+  the one the laziest version produces.
+- **The override machinery goes with the control** → `setSkyOverride` off the
+  `Visualiser` interface (`scene.ts:483`), the `onSkyOverride` handler
+  (`main.ts:1168`), and the override fade at `scene.ts:1000-1002` whose
+  `overrideTarget` can now only ever be 0. **Mine**, and CLAUDE.md's *deleting
+  code deletes what it was doing* is answered explicitly: that fade existed to
+  smooth the **chip's** transition between pinned and automatic, and with no
+  chip there is no transition to smooth. The clock's own per-second sampling
+  (`SKY_SAMPLE_S`) is a different path and is untouched — it is what still
+  moves the sky.
+- **The icon goes too** → `ICONS.day` (`hud.ts:384`), the paint branch at
+  `:1265`, and the `aria-label` cycle at `:1272`. **Mine**: an icon with no
+  chip is dead weight, and this set is a deliberate visual vocabulary rather
+  than a library.
+- **The cost, stated plainly and accepted** → **there will be no way to force
+  the bright, outdoor-readable look.** If the clock says night and you are
+  standing in sunlight, the screen is hard to read and nothing will fix it.
+  That is the case the chip existed for, it is uncommon, and Victor's answer
+  above is the decision. Recorded here rather than discovered later.
+- **The ambient light sensor is not a replacement, and should not be presented
+  as one** → entry 98's sensor reads real brightness, but it drives
+  `uExposure` (dim/brighten) and not `uDay` (the ink-on-paper switch), and it
+  exists only on Chrome for Android. **Mine** to state it, so nobody closes
+  this gap by assuming the sensor already covers it. Making the sensor drive
+  `uDay` is a coherent future entry and is deliberately not this one.
+- **Entry 71 records its own retirement** → its `status:` line gains
+  `· control retired by 127`. **Mine**, per the both-ends rule: 71 built the
+  three-state override, is marked `done`, and would otherwise read as
+  describing a control that exists.
+- **This is not entry 119's fix and does not pre-empt it** → 119 makes
+  `chipPosition()` derive its arc from the viewport so no chip is clipped in
+  landscape. Removing one chip makes the crowding milder and fixes nothing:
+  the two that remain can still be clipped. **Mine**, and it is worth saying
+  because "we removed a chip" is exactly the kind of thing that gets a real
+  layout bug closed as fixed.
+
+**Identity when off** — not a modulation, but the claim it needs is stronger
+than usual: for the overwhelming majority of visitors, whose stored
+`skyOverride` is already `'auto'`, the rendered picture is **bit-identical**
+before and after, because `overrideTarget` was already 0 for them and the fade
+was already contributing nothing. Only a visitor who had actively pinned day or
+night sees a change, and that change is a return to the automatic behaviour.
+The clock, the warmth term, entry 98's exposure and every other layer are
+untouched.
+
+**Lands in** — `src/hud.ts:384` (`ICONS.day`), `:1046-1056` (`dayChip`),
+`:1265` (the paint branch), `:1272` (the label), and `onSkyOverride` off the
+handlers type; `src/main.ts:117`/`:180`/`:722` (stop threading it) and `:1168`
+(the handler); `src/scene.ts:336`/`:340`/`:483`/`:807`/`:1000-1002` (the
+option, the interface method and the fade — `:807`'s initial `uDay` seed
+becomes `skyForNow.daylight` unconditionally); `src/prefs.ts:121` (a comment
+marking the field retired, beside the `day` one that says the same thing).
+
+**Done when** — the HUD's outer ring shows **two** chips, correctly spaced, and
+no sun icon appears anywhere; the string `skyOverride` appears in `prefs.ts`
+and nowhere else in `src/`; a profile with `skyOverride: 'night'` written into
+`localStorage` by hand loads and shows the **automatic** sky rather than a
+pinned dark one, and still parses without error; and across a simulated day the
+picture still goes bright at midday and dark at 2am, which is the behaviour
+this entry must not touch.
+
+**Verify** — `pnpm build`, `pnpm lint`, `pnpm probe:sky` (the clock path, which
+must pass **unchanged** — it is the thing being kept, and a probe that changes
+here means the wrong half was removed). Then `hud-narrow.html` at **320×568 and
+360×640**, in every panel state, because the outer ring respaces and CLAUDE.md
+requires the assembled surface to be looked at rather than reasoned about —
+this is precisely the *check the assembly* case, one chip's removal changing a
+layout nobody's diff would show.
+
+**Hard stops** — prefs **no**: `skyOverride` keeps its name, type, meaning and
+default and is still validated on load; it merely stops being written and read,
+exactly as the `day` boolean above it already does · url no (there has never
+been a sky parameter — `?geometric= ?atmospheric= ?view= ?rgb= ?mix= ?mapping=
+?auto= ?debug=` is the whole list and none of them is this) · capture no ·
+dependency no. The control surface loses a control and gains none, so the
+circular constraint is not engaged.
