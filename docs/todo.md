@@ -488,10 +488,11 @@ see at all.
 point of the entry** · dependency no.
 
 ### 108. The sky's crossover is twice as long as entry 71 promised
-`status: blocked` · added 2026-08-31 · found by `/ccc` at build 355 · blocks 71's verification
+`status: ready` · added 2026-08-31 · answered 2026-09-04 · found by `/ccc` at build 355 · build before 71 is archived
 
-**Do** — nothing yet. A question for Victor, because the fix is a taste call
-about how the picture looks across a day and the colours are approved.
+**Do** — move `DAYLIGHT_ANCHORS` to dawn 05:30/07:00/08:30 and dusk
+17:45/19:30/21:45, and make `probe-sky.ts` assert the crossover *duration*
+tightly enough to have caught this.
 
 **Why** — entry 71 set out to stop the picture spending most of the day in a
 grey between-state. Its own **Done when** says *"no more than ~5 of 24 hours
@@ -516,48 +517,139 @@ not met and never could have been.
   38% reduction and the picture visibly has a noon and a night now. The claim
   that failed is the *degree*, not the direction.
 
-**The question**
-> The shipped curve spends about ten hours a day in the crossover rather than
-> the five entry 71 asked for. You have since seen it and said *"both ways has
-> good colours, finally, don't break it"*. Is ten hours what you actually want,
-> or was five?
+**The answer, 2026-09-04 — option B with a lingering dusk. Victor's call.**
+Dawn 05:30/07:00/08:30, dusk 17:45/19:30/21:45. Measured on that table:
+**4.90 h crossover**, night held 9.02 h, day held 10.08 h — against the
+shipped 9.95 / 7.02 / 7.03. Day and night become states you sit inside for
+the better part of ten hours instead of instants between two long smears.
 
-**Costed, so the answer is one choice**
-- **Keep it, and correct the entry.** The curve is approved by inspection,
-  which outranks a number written before anyone saw it. 71's Done-when gets a
-  line saying the figure was wrong and the shipped hours are deliberate.
-  **Nothing changes in the picture.** This is the safe answer and, given "don't
-  break it", the likely one.
-- **Take it to ~4.2 hours** — dawn anchors at 05:30/07:00/08:30, dusk at
-  18:00/19:30/21:00. Night and day both get longer, the crossover becomes a
-  genuine event. This is the shape 71 was actually reaching for. It also moves
-  when the picture changes, which on a phone left running is the most visible
-  edit in this list.
-- **Take it to ~5.6 hours** — dawn 05:00/07:00/09:00, dusk 17:30/19:30/21:30.
-  Meets the original figure with the gentlest move from what is on screen now.
-- Measured, all three, by scrubbing the same minute-by-minute curve; the
-  numbers above are outputs, not estimates.
+**What the answering recon added, and it is the part that settles the size of
+the move.** `skyForLocation` (`src/sky.ts:320`) does not use this table at
+all: for anyone who has granted location it maps daylight from real solar
+altitude across civil twilight, ±6°. Scrubbed minute by minute, that path's
+own crossover is **0.98 h at the equator, 1.28–1.50 h at NYC, 1.57–2.03 h at
+London, 2.23–5.70 h at Reykjavík**. So the app already spends one to two hours
+a day in crossover for most of the inhabited world, and the clock fallback was
+spending ten. The fallback had drifted five-fold from the thing it is a
+fallback for, and that — not the entry's own arithmetic — is the real argument
+for shortening it.
 
-**Decided in advance**
-- **Whatever the answer, the warmth anchors are untouched.** 71 said that curve
-  was already right and left it alone; nothing here disagrees.
+**Why not go all the way to the real sun's ~2 h.** That table was measured too
+(06:00/06:45/07:30 and 19:00/19:45/20:30 → 2.12 h) and is the wrong move, for a
+reason specific to *this* curve: the clock fallback is known to be wrong about
+the hour — the file's own opening comment says it will call 2am night in
+Reykjavík in June. A soft transition hides that error; a sharp one advertises
+it, giving a decisive dawn at a visibly wrong time. **The fallback should be
+gentler than the real path on purpose**, and roughly double is the right amount
+of gentle.
+
+**Decided**
+- Ten hours or five → **five, taken as the ~4.2 h option B rather than the
+  ~5.6 h option C.** Over keeping the shipped curve, which was the safe answer
+  and the one "don't break it" pointed at. Victor's call, made against the
+  three costed tables and the solar measurements above.
+- Symmetric or lingering → **lingering dusk.** Dawn keeps option B's 3 h
+  (05:30→08:30); dusk is stretched to 4 h (17:45→21:45), which is what takes
+  the figure from 4.22 h to 4.90 h. Over the symmetric 3+3. Victor's call:
+  evenings feel longer than mornings do, and the curve should say so.
+- Are the approved colours at risk → **no, and this is why the entry can be
+  built at all.** Only anchor *hours* move; every daylight *value* on the curve
+  is one already on screen and already approved, and `WARMTH_ANCHORS` is not
+  touched. **Mine**, because entries 68 and 70's approval is about what each
+  end looks like, and this changes only how long each end lasts.
+- What happens to `Sky.slope` and its one reader → **nothing needs
+  recalibrating.** Peak slope rises 0.244 → 0.650 daylight-units per hour, but
+  `PEAK_DAYLIGHT_SLOPE` in `engine/celestial.ts:78` is computed at module load
+  by scrubbing this very curve, so `sunRateFor` stays normalised 0–1 by
+  construction. What changes is that the sun's restlessness concentrates into
+  the dawn and dusk hours instead of smearing across the day — the same
+  improvement, appearing free in a second place. **Mine**, because it is a
+  measurement, not a taste call.
+
+**The correction this entry owes.** Its own **Lands in** said `probe-sky.ts`
+needed "an assertion on the crossover *duration*, which is the check nobody
+wrote". **That was wrong.** Check 4 at `scripts/probe-sky.ts:140-150` *does*
+assert exactly that — `midBandHours < 11` — and it passed at 9.95 h because
+the threshold was set loose enough to accommodate what had been built. The
+check was written; its number was chosen to pass rather than to hold the
+entry's promise. That is a worse failure than an absent check and the reason
+this must not close by simply loosening it again: **the new threshold is
+5.2 h**, sized to the 4.90 h the chosen table actually produces, so any future
+drift of more than a few minutes fails the gate.
+
+**Two existing probe checks fail on the new table and must be repaired, not
+deleted** — both measured, both consequences of the transitions being steeper:
+
+- **Check 2, `scripts/probe-sky.ts:78`** — "no per-minute daylight jump" asserts
+  `maxDaylightStep < 0.01`. The new peak per-minute step is **0.01083, at
+  07:44**. Raise the threshold to **0.015**. That 0.01 was never a perceptual
+  limit: it was headroom over the *old* curve's peak of 0.00407, and 0.015
+  keeps a comparable ratio over the new peak while still catching a genuine
+  discontinuity. **Mine**, because the check's purpose is "no corner", and its
+  number was always relative to whatever curve was shipped.
+- **Check 5's second half, `scripts/probe-sky.ts:165-170`** — the
+  anchor-straddling control asserts a ±5 min window across the 10:30 anchor
+  moves less than 0.001. Across the new 08:30 anchor the same window moves
+  **0.00580**, because the anchor now joins two short segments instead of two
+  long ones. **Make the check relative rather than absolute**: assert the
+  straddle is less than a tenth of the mid-transition delta measured beside it
+  — 0.00580 against 0.10789 at 07:45 is 18.6×, so it passes with margin, and
+  the check keeps its actual meaning (an anchor is flat *compared to* the
+  middle of a segment) instead of depending on a constant that only held while
+  the segments were four hours wide. **Mine**, over narrowing the window to
+  ±1 min, which passes at 0.00024 but quietly weakens what is being claimed.
+
+**Decided in advance, and unchanged by the answer**
+- **The warmth anchors are untouched.** 71 said that curve was already right
+  and left it alone; nothing here disagrees.
 - **This does not reopen PAPER, INK or the vibrance lift.** Those are frozen
   (entries 68 and 70, build 234) and the crossover's *length* is independent of
   what either end looks like. **Mine.**
-- If the answer is "keep it", this closes as `done` with the answer recorded
-  and entry 71 archived alongside it, so the discrepancy cannot be re-found and
-  re-raised a third time.
+- **`skyForLocation` is not touched.** The real-position path is the standard
+  this entry measured against, not a thing to bring into line with it.
+  **Mine.**
 
-**Lands in** `src/sky.ts` — `DAYLIGHT_ANCHORS` only, and only if the answer is
-one of the two changes; `scripts/probe-sky.ts` — an assertion on the
-crossover *duration*, which is the check nobody wrote and is what let a
-Done-when go unmet through five months of builds.
-**Done when** — Victor has answered; the answer is recorded here; and
-`probe-sky.ts` asserts the crossover duration against whichever figure is
-chosen, so this class of gap cannot recur silently.
-**Verify** — the probe for the duration. Then, if anything moved, the phone
-across an actual dawn, which is the only test of whether a crossover reads as
-an event.
+**Lands in**
+- `src/sky.ts:73-80` — `DAYLIGHT_ANCHORS`, the six hours only. Its comment
+  above (`:64-72`) names 04:00/23:00 and 10:30/15:30 as the held ends and calls
+  the hours "settled by eye"; that comment must be rewritten to the new hours
+  and to *why* they are what they are, or it becomes exactly the kind of
+  expired justification CLAUDE.md warns about.
+- `src/sky.ts:26-35` — the file header's own paragraph claiming "the crossover
+  is what it should be: an event, not most of the day". That sentence has been
+  false since it was written, by a factor of two. It becomes true with this
+  build; make it carry the measured number so it cannot go stale silently.
+- `scripts/probe-sky.ts:30-35` — the daylight anchor table in check 1.
+- `scripts/probe-sky.ts:96-115` — check 3's plateau and floor windows:
+  day 10:30–15:30 → **08:30–17:45**, night 23:00–04:00 → **21:45–05:30**.
+  Both verified to hold exactly on the new table (plateau min 1.000000, floor
+  max 0.000000).
+- `scripts/probe-sky.ts:140-150` — check 4's threshold, 11 → **5.2**.
+- `scripts/probe-sky.ts:78` and `:165-170` — the two repairs above.
+- `scripts/probe-sky.ts:158-162` and `:176-178` — checks 5 and 6 sample
+  08:25/08:35 and 08:30/10:30 as "mid-dawn" and "at an anchor". Mid-dawn is now
+  **07:45** (delta 0.10789 across ten minutes) and the anchor is **08:30**.
+
+**Done when**
+- `skyFor` scrubbed minute by minute over 24 h spends **4.90 h ± 0.05** with
+  daylight strictly between 0.1 and 0.9, and `probe-sky.ts` asserts it against
+  **5.2 h**, not 11.
+- Night is held at ≤0.001 for at least 9 h and day at ≥0.999 for at least 10 h,
+  asserted over the new windows rather than only at their edges.
+- `pnpm probe:sky` passes with every check repaired rather than removed, and
+  the count of checks does not go down.
+- Entry 71's **Done when** carries a line recording that its "~5 of 24 hours"
+  was unreachable from its own Decided anchors, that the figure is now met by
+  this entry, and that the gap survived because check 4's threshold was sized
+  to pass.
+
+**Verify** — `pnpm build`, `pnpm lint`, `pnpm probe:sky`. Then the picture:
+`views-probe.html` at a few scrubbed hours to confirm no colour moved, since
+only hours were meant to. No HUD surface is touched, so the 320×568 / 360×640
+pass is not required here. Finally, if it can be had, the phone across an
+actual dawn — the only test of whether a crossover reads as an event, and the
+one thing no probe can answer.
+
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 109. Camera mode ends when you put the phone down, not when a clock runs out
