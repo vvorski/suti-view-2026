@@ -3719,6 +3719,18 @@ unchanged.
 ### 87. Camera mode is one shot: arm, shoot, done
 `status: done` · added 2026-08-30 · started 2026-08-30 · build 273 · supersedes the mode built by 72 and 78 · verified at build 355
 
+**Read backwards, and corrected by docs/todo.md entry 115 (2026-09-04).** The
+Decided line below answers *"camera mode is not connected to the menu!!"* by
+returning to the menu after the shot. That sentence was a demand for
+separation, not a report of a missing connection: Victor's own words on
+2026-09-04 are *"I said the camera should be a totally separate thing from the
+menu."* Entry 78's title makes the same inversion one entry earlier, and entry
+72's camera chip was marked **Mine** — no entry point the camera has ever had
+was asked for. Entry 115 deletes the chip, arms on a double tap, and drops the
+`panel.open()` at the end of `exitCameraMode`. Everything else here — one shot
+per arm, the instant shutter, the untouched passthrough, the expiry — is
+unchanged and still correct.
+
 **Do** — camera mode arms a single photo. Tap the chip: the menu closes and the
 camera glyph appears. The next tap takes **one** picture and leaves the mode.
 Nothing about the picture changes while armed.

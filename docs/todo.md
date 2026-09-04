@@ -1680,3 +1680,121 @@ each of the six views, drag then tap. No HUD surface is touched, so the
 320×568 / 360×640 pass is not required.
 
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 115. The camera leaves the menu, and the menu moves to a hold
+`status: ready` · added 2026-09-04 · **supersedes the entry points built by 72, 78 and 87** · independent of 110–114
+
+**Do** — take camera mode out of the HUD entirely: delete the shutter chip,
+arm on a **double tap** of the picture, land on the plain picture after the
+shot, and move menu-opening to a **still hold** of 3.5s.
+
+**Why** — Victor: *"I said the camera should be a totally separate thing from
+the menu"*, and, on how: *"touch hold to open menu, and single tap (or double
+tap?) for camera arm."* Every entry point the camera has ever had was an
+agent's choice, not his.
+
+**Recon: this is the third reading of one instruction, and the first two are on
+the record as wrong.** Entry 87 quotes him — *"camera mode is not connected to
+the menu!!"* — and answers it three lines later with *"**After the shot, back
+to the menu.** **Mine**, and it is the direct answer to..."*. That is the
+sentence read backwards: it was a demand for separation and was taken as a
+complaint about a missing connection. Entry 78's title makes the same
+inversion a whole entry earlier (*"a door back to the menu, not a one-way
+trip"*), and entry 72's *"Entering → a camera chip on the arc"* is marked
+**Mine** — the chip was never asked for. The connection is `main.ts:1117`, one
+line: `panel.open()` at the end of `exitCameraMode`.
+
+**Decided**
+- **Double tap arms, not single tap** → **Mine**, and it is a correction to the
+  request rather than a preference. The emitter fires on every `down`
+  unconditionally (entry 50), so a single tap that also armed would arm on
+  *every* touch of the picture and the touch after it would take a photo —
+  nobody could tap twice without a capture. Double tap is free precisely
+  because the hold below takes over what it used to do.
+- **A still hold of 3.5s opens the menu** → `CHARGE_TIME + 1.0`, derived rather
+  than picked: `emitter.ts:37` saturates the charge at 2.5s, so **past 2.5s a
+  hold already buys nothing** — that is gesture space the emitter's own design
+  has vacated — and the extra second leaves a full-charge hold a moment to sit
+  at full charge before the menu claims it. Written as `CHARGE_TIME + 1.0` so
+  it moves if that constant moves. **Mine.**
+- **A hold that travels is never a menu** → the contact must stay within
+  **24px** of its `downClientX`/`downClientY` for the whole 3.5s. **Mine**: a
+  moving hold is entry 50's fling and turning it into a menu would take the
+  loudest emitter gesture away from the picture.
+- **The known cost, stated rather than hidden** → a deliberate long hold to
+  fatten rings now ends in a menu at 3.5s. That is a real loss to the play
+  gesture and there is no version of hold-opens-the-menu without it. Named
+  here so whoever reads this cold knows it was seen and accepted, not missed.
+- **No partial-open ramp during the hold** → the menu opens at 3.5s, full stop.
+  **Mine**, over fading the scrim in over the last 0.6s as an abort
+  affordance: that would put a finger and the wedge's own open animation in
+  charge of the same element at once, which is the shape of several bugs
+  already in this file's history. 3.5s is itself the affordance.
+- **The two-finger tap stays** → entry 67's second way in is untouched and
+  becomes the *fast* path to the menu, with the hold as the one-thumb path.
+  **Mine**: they do not conflict, one-handed is exactly when two fingers is
+  awkward, and removing a working way into the menu in the same entry that
+  moves the primary one is how a build ends with no way in at all.
+- **The shutter chip is deleted, with everything that existed only to serve
+  it** → `hud.ts:1137` (the chip), `:524` (the
+  `.hud-chip--shutter[aria-pressed='true']` pointer-events exception),
+  `:1603`/`:649` (`setCameraActive` and `cameraActive`), `:1354` (the
+  `id === 'shutter'` paint branch) and `:1368` (`void shutterChip`). **Mine**,
+  and it is the CLAUDE.md rule that deleting code deletes what it was doing:
+  all five exist solely to let a chip enter and report camera mode, and with
+  no chip they are not simplification, they are dead weight that would keep
+  `Hud`'s interface claiming a capability it no longer has.
+- **After the shot, the plain picture** → `panel.open()` goes from
+  `exitCameraMode` (`main.ts:1117`). That single line is the whole substance
+  of the complaint.
+- **The glyph and the arm state are unchanged** → `#shutter-glyph`, its
+  `shutter-pulse` keyframe, `camera-arm.ts`'s 15s-quiet and 5-minute expiry
+  (entries 87 and 109) all stay exactly as they are. This entry changes how
+  you get in and where you come out, and nothing about what the mode does.
+- **The `?debug` readout gains `arm`** → armed or not, and the current hold's
+  elapsed seconds. **Mine**, and it is CLAUDE.md's *two identical symptoms
+  need two different numbers* applied before the symptom appears: "the camera
+  doesn't arm" will otherwise be indistinguishable from "the double tap isn't
+  being recognised", and this feature has now been misdiagnosed from the
+  outside twice.
+
+**Identity when off** — a hold shorter than 3.5s, or one that moves past 24px,
+does exactly what it does today: charges the emitter and nothing else. A single
+tap is untouched. The saved PNG, the flash, the rate limit and the arm expiry
+are all byte-identical; only the two gestures that reach camera mode and the
+menu change.
+
+**Lands in** — `src/main.ts:1462` (the two-finger branch, unchanged, for
+context), the double-tap resolution in `resolveTapDown`'s own consumer
+(`panel.open()` → `enterCameraMode()`), a new still-hold check in the
+per-frame contact loop at `:1389` using `Touch.downFor` and
+`downClientX`/`downClientY` (both already on the sample — no new state),
+`:1117` (`panel.open()` deleted); `src/hud.ts` at the five sites listed above;
+the `?debug` readout's own line.
+
+**Done when** — on the phone: a double tap arms (glyph appears) and does
+**not** open the menu; the next tap saves exactly one frame and leaves you on
+the plain picture with no menu; a still hold of 3.5s opens the menu; a hold of
+3.0s does not; a hold that drags 40px never opens it however long it lasts; a
+two-finger tap still opens it immediately; and a single tap still plays with a
+ring under the finger. The HUD's outer ring shows **three** chips, not four,
+correctly spaced. `pnpm probe:tap` and `pnpm probe:touches` are updated to
+assert the new mapping rather than the old one — a probe still asserting that a
+double tap opens the menu is a probe asserting the bug.
+
+**Verify** — `pnpm build`, `pnpm lint`, `pnpm probe:tap`, `pnpm probe:touches`,
+`pnpm probe:camera-arm`. Then `hud-narrow.html` at 320×568 and 360×640, because
+the outer ring loses a chip and `placeChips` respaces the remaining three —
+CLAUDE.md's *check the assembly* rule is exactly about a shared surface being
+changed by work that verified only its own part. Then the phone, counting
+files: arm, shoot, arm, shoot, confirm exactly two frames and that the menu
+never appeared.
+
+**Hard stops** — prefs no · url no · **capture yes, and answered by Victor's
+own two instructions quoted above**: arming moves from a chip behind the menu
+to a double tap on the picture, which is *easier* to reach, and that is the
+change he asked for. It is kept deliberate by the double tap being a distinct
+gesture from play, by arming changing nothing except the glyph, and by every
+existing guard — one shot per arm, the rate limit, the 15s-quiet and 5-minute
+expiries — surviving untouched. Nothing new is captured, nothing leaves the
+device · dependency no.
