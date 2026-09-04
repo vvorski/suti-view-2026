@@ -45,6 +45,9 @@ whatever is in the tree, so two in flight means one ships by accident.
 ### 2. Claim, in its own commit, before touching anything
 
 ```bash
+# the number must name exactly one entry — several agents append to this
+# file at once and have produced duplicate numbers before
+test "$(grep -c "^### N\." docs/todo.md)" = 1
 # docs/todo.md: status: ready -> status: building · started YYYY-MM-DD
 git add docs/todo.md && git commit -m "todo: claim entry N"
 ```
@@ -52,6 +55,12 @@ git add docs/todo.md && git commit -m "todo: claim entry N"
 This is the entire concurrency protocol and it costs one commit. It goes
 **first** — before reading widely, before any edit — because the window it
 closes is the one where both agents pick the same entry.
+
+If the count is not 1, stop: two entries carry that number and "claim entry
+N" would be ambiguous in the log and in the file. Renumber the *later* one
+in the file to the highest-plus-one (its own `/aaa` should have caught this
+at commit; it did not), fix any reference to it, commit that on its own,
+and then claim.
 
 ### 3. Read the ground before writing any of it
 

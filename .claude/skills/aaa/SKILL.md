@@ -168,6 +168,22 @@ Append to `docs/todo.md` under `## Entries`, numbered one past the highest
 existing number. The format is specified at the top of that file — read it
 rather than reproducing it from memory here, so the two cannot drift.
 
+**Draft with a placeholder, not a number.** Write the entry to a scratch file
+with `{N}` wherever its own number would go, and let step 4 pick the number.
+Several agents capture into this one file at once, and the number you read
+during recon is stale by the time you write: one afternoon produced two 112s,
+two 113s, two 115s, two 116s, two 117s and two 118s, each pair from two
+sessions that had both read the same highest header minutes apart. The
+window that matters is between *reading the highest number* and *committing
+the file*, and drafting inside it is what made it minutes long. Nothing else
+in this step changes; only where the number comes from.
+
+If the entry has to refer to its own number in other places — 109's status
+line pointing at its follow-up, a note in `built.md` — write those with the
+same `{N}` placeholder in the same scratch file's instructions, so step 4
+substitutes them all in one pass. Never edit another file with a number you
+have not committed yet.
+
 Two fields carry the weight:
 
 - **Decided** — one line per fork, each recording what was chosen *and what it
@@ -225,12 +241,34 @@ that CLAUDE.md requires for anything touching a shared surface.
 
 ### 4. Commit, do not push
 
+One command picks the number, appends, and commits — in that order, with
+nothing between them:
+
 ```bash
-git add docs/todo.md && git commit -m "..."
+# 1. another agent mid-edit? its half-written entry must not ride in your commit
+git status --short docs/todo.md            # must be empty; if not, wait a few
+                                           # seconds and re-check, do not stash
+# 2. number, append, commit, as one step
+N=$(( $(grep -o '^### [0-9]*\.' docs/todo.md | tr -dc '0-9\n' | sort -n | tail -1) + 1 ))
+sed "s/{N}/$N/g" "$SCRATCH/entry.md" >> docs/todo.md
+git add docs/todo.md && git commit -m "todo: entry $N — ..."
+# 3. prove it: every header number appears exactly once
+grep -o '^### [0-9]*\.' docs/todo.md | sort | uniq -d   # must print nothing
 ```
 
+Step 3 is the check that makes the rest honest. If it prints a number, two
+entries share it and **yours is the later one** — the other was there when
+you read the file — so renumber yours to the new highest-plus-one, fix any
+reference you wrote to it, and `git commit --amend`. Do not renumber the
+other agent's entry: `/bbb` claims by grepping the header, and an entry that
+changes number under an agent that has already read it is the worse failure.
+
 **Committed so the queue is not left dirty** — `auto-issue-gogo` refuses to
-start on a dirty tree, and a stray note would block it.
+start on a dirty tree, and a stray note would block it. Committed *at once*
+also because the uncommitted window is the whole concurrency problem: a
+second agent that reads the file while your entry is written but not
+committed sees your number and takes the next one; one that reads before you
+write takes yours.
 
 **Not pushed**, deliberately: the build number is the commit count, so every
 pushed commit redeploys the site and burns a release name. A captured idea is
