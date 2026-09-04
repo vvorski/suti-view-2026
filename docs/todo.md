@@ -3317,3 +3317,136 @@ grain is not touched); `views-probe.html` at the two tilts; then the phone,
 **Hard stops** — prefs no (read only, same switch) · url no · capture no ·
 dependency no. **Put to Victor, not blocking this build:** should gravity stop
 being a switch? Proposal above.
+
+
+### 133. The gate's name starts blank, and on a phone that is all anyone sees
+`status: ready` · added 2026-09-05 · **corrects the reduced path re-anchored by 113** · the fourth report of this animation being invisible — see Recon
+
+**Do** — stop the reduced-motion decode from rendering an empty span on its
+first frame, return its pace to entry 99's, and put the branch it took and how
+far it got into the `?debug` readout.
+
+**Why** — Victor: *"on mobile the name animation on enter screen is not
+showing, on browser looks nice, on mobile chrome android it doesn't show?!"*
+
+**Recon: there is a real bug, at `version.ts:456`, and its own comment says it
+must not exist.** The reduced-motion branch calls `step(start)` synchronously
+with a comment reading *"an unstarted decode must never leave the span
+empty"* — and then does exactly that:
+
+```
+const locked = reducedLockedCountAt(now - start, target.length)  // floor(0 / 550) = 0
+el.textContent = target.slice(0, locked)                          // = ''
+```
+
+So on any device where `prefers-reduced-motion` matches, **the name is an empty
+string for the first character-step**, then types in one character at a time.
+That window was 333ms when entry 99 shipped it. Entry 113 (build 402)
+re-anchored the reduced step to `NAME_LOCK_STEP_MS`, making it **550ms** blank
+followed by 550ms per character — 6.6s for a median 11-character name.
+
+**Why this lands on Android specifically:** entry 99 already established that
+**Battery Saver and Accessibility → Remove animations both set
+`prefers-reduced-motion` on Android**, and a phone that has been running a
+WebGL visualiser is exactly a phone with Battery Saver on. Desktop Chrome
+almost never matches it, which is precisely the split reported.
+
+**This is the fourth time this animation has been reported invisible** —
+entries 65, 94, 99 and now this one — and every previous cause was a masker
+rather than a missing feature. CLAUDE.md's own rule from that history applies
+here and shapes the entry: *"never ask the user to inspect an OS setting"*, and
+*"if a diagnosis needs something only the device knows, put it in the on-screen
+readout."*
+
+**Three candidate causes, and the entry makes all three distinguishable rather
+than betting on one:**
+
+1. **Reduced motion, blank first frame** — the bug above. Fixed outright.
+2. **Reduced motion, too slow to read before Start is tapped** — 6.6s on a
+   gate a phone user leaves in two. Fixed by the pace decision below.
+3. **Full motion, and the gate is simply left before 113's 8.5s phase one
+   gets anywhere.** Not a bug; a 15-second animation meeting a 2-second visit.
+   Made measurable rather than fixed — see Done-when.
+
+**The diagnostic for which one already exists and needs no new work:**
+`#motion-glyph` on the gate is filled when the full path runs and hollow when
+the reduced one does (`version.ts:441`). Entry 99 built it for this exact
+question. **One glance at the gate answers it**, and nobody has to open Android
+settings.
+
+**Decided**
+- **The reduced path renders the full name from frame zero, then resolves it
+  in place** → the span carries every character immediately and each one
+  arrives at its true form on schedule, instead of the string growing from
+  nothing. **Mine**, and it is the fix the file's own comment already asked
+  for: an empty element is indistinguishable from a broken one, which is the
+  entire report. Concretely, the unresolved tail is rendered at reduced
+  opacity rather than absent, so the element's width is the name's width from
+  the first frame and the gate never reflows.
+- **Not a scramble, on that path** → the unresolved tail is the *target's own
+  characters*, dimmed, never `renderLockFrame`'s random draws. **Mine**, and it
+  keeps entry 99's actual protection intact: that entry's argument is that
+  resolving characters carry no motion vector but **rapid churn is closer to
+  flashing content than to an animation**. A dimmed character brightening is a
+  fade, not a flicker.
+- **The reduced pace returns to entry 99's 3 characters a second** →
+  `reducedLockedCountAt` gets its own step of 333ms again rather than following
+  `NAME_LOCK_STEP_MS`. **Mine**, and it corrects a call of mine in entry 113:
+  113 tied the two together to preserve an ordering ("reduced must not become
+  the *faster* path"), which was sound arithmetic and the wrong model —
+  scrambling in place is legible at every instant, so it can afford to be slow,
+  while a reveal is only legible once it has arrived. Entry 113's own status
+  line already records that the "does 15s read as deliberate" judgement was
+  never made; this changes only the reduced branch and leaves the full path's
+  8500/550 exactly as 113 shipped them, because that half is Victor's taste
+  call and he has said the browser *"looks nice"*.
+- **`?debug` gains the decode's own three numbers** → which branch ran
+  (`reduced` or `full`), milliseconds since the gate appeared, and characters
+  resolved of the total. **Mine**, and it is the rule this feature's own
+  history wrote: three of the four reports were diagnosed by guessing, and
+  *"the app is where the problem is reported, so it is where the diagnosis
+  belongs."*
+- **The `#motion-glyph` is not changed** → it already answers the branch
+  question at a glance and has since build 325. **Mine**: the fault here is
+  that nobody was told to look at it, which is a line in this entry's Verify,
+  not a code change.
+- **The full-motion path is not touched at all** → no timing, no phase
+  boundary, no scramble alphabet. **Mine**: Victor reports it looks nice, and
+  the reported fault is on the branch he cannot see from a desktop.
+
+**Identity when off** — on any device that does not match
+`prefers-reduced-motion`, which includes every desktop browser this was
+approved on, **not one line of the executed path changes**: the `reduced`
+branch is not entered, the full two-phase decode runs with entry 113's exact
+constants, and the rendered frames are identical. The `?debug` addition writes
+only into a readout that is hidden unless asked for.
+
+**Lands in** — `src/version.ts:452-467` (the reduced branch: a dimmed-tail
+render, and the synchronous first call that must now produce the full-width
+name), `:313` (`reducedLockedCountAt`'s own step, back to 333ms and its comment
+saying why it is no longer tied to `NAME_LOCK_STEP_MS`); `index.html` (a class
+for the dimmed tail, beside `.gate-name`'s own rule); the `?debug` readout's
+own line. `scripts/probe-name-decode.ts`: the reduced assertions, which
+currently encode 113's shared step.
+
+**Done when** — `pnpm probe:name-decode` asserts that at elapsed **0ms** the
+reduced path's rendered string has **the full length of the name** and is never
+`''` — that is the regression, stated as the thing the eye failed at — and that
+`reducedLockedCountAt(1000, len)` is `min(len, 3)` again. On the phone that
+reported it, with `?debug`: the readout names the branch, and **whichever
+branch it names, the name is legible on screen within 500ms of the gate
+appearing**. If it says `full`, candidate 3 is the answer and the remaining
+question is whether 113's 8.5s is too long on a phone — record the gate's
+on-screen time before Start was tapped and put that number in a follow-up
+entry rather than guessing at it here.
+
+**Verify** — `pnpm build`, `pnpm lint`, `pnpm probe:name-decode`. Then the
+gate at **320×568 and 360×640**, in **both** branches — Chrome DevTools can
+force `prefers-reduced-motion: reduce`, and the reduced branch is the one that
+has now shipped broken through two entries because nobody looked at it. Then
+the actual Android phone, glancing first at `#motion-glyph`: **filled means the
+full path, hollow means reduced**, and that one glance is the whole diagnosis.
+
+**Hard stops** — prefs no · url no · capture no (no gate *copy* changes — this
+is how an existing element resolves, not what it says, so CLAUDE.md's gate-copy
+clause is not engaged) · dependency no.
