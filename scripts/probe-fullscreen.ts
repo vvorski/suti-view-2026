@@ -230,6 +230,22 @@ function check(name: string, ok: boolean, detail: string): void {
   )
   check('no API → no attempt counted', gate.fullscreenStatus().attempts === 0, 'attempts counted')
   check('no API → not armed', gate.fullscreenStatus().armed === false, 'armed was true')
+  // docs/todo.md entry 128 — the line whose absence cost every iPhone its
+  // touch response for a hundred and fifty builds. `main.ts`'s tap gate is
+  // `want && !document.fullscreenElement`, and on a platform with no element
+  // Fullscreen API the second half can never become false, so a `want` set
+  // here holds that gate shut for the life of the page: no emitter, no
+  // stream, no tap resolution, on every geometric view.
+  //
+  // The two checks above were already here and passed throughout, because
+  // neither asserts the fact the gate actually reads. A check that has never
+  // failed has never been shown to test anything — this one was watched
+  // failing against the unfixed build before the fix went in.
+  check(
+    'no API → no want recorded, so the tap gate can never latch shut',
+    gate.fullscreenStatus().want === false,
+    'want was true on a platform that can never provide it',
+  )
 }
 
 // 5. The regression guard proper: the request is made inside the click

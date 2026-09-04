@@ -2833,7 +2833,7 @@ dependency no. The control surface loses a control and gains none, so the
 circular constraint is not engaged.
 
 ### 128. On an iPhone, no tap on the picture has played since build 277
-`status: building` · added 2026-09-05 · started 2026-09-05 · found at build 416 while checking touch response · independent of the rest of the queue
+`status: done` · added 2026-09-05 · build 429 · found at build 416 while checking touch response
 
 **Do** — stop `goFullscreen()` recording a *want* for fullscreen on a platform
 that has no element Fullscreen API, so entry 80's tap gate can never be held

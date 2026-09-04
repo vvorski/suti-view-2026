@@ -95,7 +95,9 @@ type FullscreenState = 'unsupported' | 'active' | 'refused' | 'exited' | 'unaske
  *  gesture, or the powder's third tap), false only if that never happened.
  *  Nothing here ever sets it back to false: "leaving the egg does not leave
  *  fullscreen" (entry 61) and there is no other deliberate-exit gesture in
- *  this app that should stop the retry from trying again. */
+ *  this app that should stop the retry from trying again. Still true after
+ *  docs/todo.md entry 128, which does not set it false anywhere — it
+ *  declines to set it true on a platform with no Fullscreen API at all. */
 let wantFullscreen = false
 let fsState: FullscreenState = 'unasked'
 let fsError = ''
@@ -214,12 +216,26 @@ function armFullscreenRetry(): void {
 }
 
 export function goFullscreen(): void {
-  wantFullscreen = true
   const target = document.documentElement
+  // docs/todo.md entry 128 — the API test comes *before* `wantFullscreen` is
+  // set, and the order is the whole fix. Setting the desire first and then
+  // discovering the platform cannot serve it left `want` true for the life of
+  // the page on iPhone Safari, which has no element Fullscreen API. `main.ts`
+  // reads `want && !document.fullscreenElement` as "a tap owes itself to
+  // fullscreen" and drops every non-chip tap on that basis — and on that
+  // platform `document.fullscreenElement` is always undefined, so the gate
+  // could never reopen. Every geometric view was touch-dead on an iPhone from
+  // build 277 to build 429.
+  //
+  // Fixed here rather than by teaching `fsBlocking` about `'unsupported'`:
+  // `want` is documented below as "the one desire", and a desire for
+  // something the platform cannot provide is not a state every reader should
+  // have to know how to read around.
   if (!target.requestFullscreen) {
     setFsState('unsupported')
     return
   }
+  wantFullscreen = true
   watchFullscreen()
   fsAttempts++
   // The first ask carries `navigationUI: 'hide'`; every retry after it asks
