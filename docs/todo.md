@@ -2447,7 +2447,7 @@ is the HUD's and already wraps.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 125. The menu is a double tap again, and no gesture fires while the phone is moving
-`status: building` · added 2026-09-05 · started 2026-09-05 · **swaps the two assignments entry 115 shipped at build 407** · 117 is unaffected in substance — see Decided
+`status: done` · added 2026-09-05 · build 415 · **swaps the two assignments entry 115 shipped at build 407** · the calm gate is unverifiable off a phone — see build note
 
 **Do** — put the menu back on the double tap, move camera arming to the still
 hold, delete the two-finger opener, and refuse both gestures while the phone is

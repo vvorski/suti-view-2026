@@ -33,13 +33,13 @@ import { CHARGE_TIME } from '../src/engine/emitter.ts'
 // Mirrors main.ts's own constants — see this file's own docstring.
 const TAP_RESOLVE_MS = 400
 const DOUBLE_TAP_RADIUS_PX = 30
-// docs/todo.md entry 115. CHARGE_TIME + 1.0, and imported rather than
+// docs/todo.md entries 115 and 125. CHARGE_TIME + 1.0, and imported rather than
 // re-typed as 3.5 — main.ts derives it from the emitter's own saturation
 // point, so a copy here would stop meaning "just past full charge" the
 // moment that moved. The two above stay hand-mirrored (see the docstring);
 // this one did not have to be.
-const HOLD_MENU_S = CHARGE_TIME + 1.0
-const HOLD_MENU_SLOP_PX = 24
+const HOLD_ARM_S = CHARGE_TIME + 1.0
+const HOLD_ARM_SLOP_PX = 24
 
 interface LastTap {
   x: number
@@ -53,11 +53,11 @@ function makeResolver() {
   let opened = 0
   let armed = 0
 
-  // docs/todo.md entry 115 — the double tap arms the camera now; the menu
-  // moved to the still hold below. Counted separately from `opened` rather
-  // than renaming it, because both outcomes still exist and a probe that
-  // could not tell them apart would pass just as happily with the two wired
-  // to each other.
+  // docs/todo.md entry 125 — the double tap opens the menu again and the
+  // hold arms the camera, swapping what entry 115 shipped. Counted
+  // separately rather than renamed, because both outcomes exist and a probe
+  // that could not tell them apart would pass just as happily with the two
+  // wired to each other — which is exactly the mistake a swap invites.
   const down = (pointerId: number, x: number, y: number, now: number): void => {
     if (
       lastTap !== null &&
@@ -65,28 +65,31 @@ function makeResolver() {
       Math.hypot(x - lastTap.x, y - lastTap.y) <= DOUBLE_TAP_RADIUS_PX
     ) {
       lastTap = null
-      armed++
+      if (!calm) return
+      opened++
       return
     }
     lastTap = { x, y, t: now, pointerId }
   }
 
   /**
-   * docs/todo.md entry 115's still hold, mirroring main.ts's own check in
-   * the per-frame sample loop: a contact held past HOLD_MENU_S without
-   * travelling past HOLD_MENU_SLOP_PX opens the menu once, and once only,
-   * however long the finger stays down after that.
+   * The still hold, mirroring main.ts's own check in the per-frame sample
+   * loop: a contact held past HOLD_ARM_S without travelling past
+   * HOLD_ARM_SLOP_PX arms the camera once, and once only, however long the
+   * finger stays down after that. It opened the menu at build 407; entry 125
+   * swapped it.
    */
-  let holdOpenedBy: number | null = null
+  let holdFiredBy: number | null = null
   const hold = (pointerId: number, downFor: number, travelPx: number): void => {
-    if (holdOpenedBy !== null) return
-    if (downFor < HOLD_MENU_S || travelPx > HOLD_MENU_SLOP_PX) return
-    holdOpenedBy = pointerId
+    if (holdFiredBy !== null) return
+    if (downFor < HOLD_ARM_S || travelPx > HOLD_ARM_SLOP_PX) return
+    if (!calm) return
+    holdFiredBy = pointerId
     lastTap = null
-    opened++
+    armed++
   }
   const release = (pointerId: number): void => {
-    if (holdOpenedBy === pointerId) holdOpenedBy = null
+    if (holdFiredBy === pointerId) holdFiredBy = null
   }
 
   // Mirrors cancelPendingTap: a drag (or a cancelled contact) forgets its
@@ -95,16 +98,13 @@ function makeResolver() {
     if (lastTap !== null && lastTap.pointerId === pointerId) lastTap = null
   }
 
-  // docs/todo.md entry 78 — the separate two-finger-simultaneous open path
-  // (unrelated to the proximity-matched double above: this one fires the
-  // instant a second contact is down at all, wherever it lands), mirroring
-  // the fix's own `lastTap = null` before opening. A first finger's earlier
-  // `down` may already be sitting here as a remembered tap; left in place,
-  // it could still pair with some later, unrelated tap after the menu has
-  // opened.
-  const openTwoFinger = (): void => {
-    lastTap = null
-    opened++
+  // docs/todo.md entry 125's calm gate. `main.ts` derives this from
+  // `latestShake.disturb` against GESTURE_CALM_MAX and a 0.4s settle; here it
+  // is simply set, because what is under test is that both gestures consult
+  // it, not how the disturbance is measured (which is probe-shake.ts's).
+  let calm = true
+  const setCalm = (v: boolean): void => {
+    calm = v
   }
 
   return {
@@ -112,7 +112,7 @@ function makeResolver() {
     cancel,
     hold,
     release,
-    openTwoFinger,
+    setCalm,
     opened: () => opened,
     armed: () => armed,
     remembered: () => lastTap !== null,
@@ -134,8 +134,8 @@ function check(name: string, ok: boolean, detail: string): void {
   // The first tap's own release at 90ms — well within TAP_SLOP_PX, so no
   // cancel() call, exactly as a clean single-finger tap would produce.
   r.down(2, 102, 101, 240) // second tap's down, a different pointerId, 240ms later
-  check('a real double (down 0, up 90, down 240) arms the camera', r.armed() === 1, `armed=${r.armed()}`)
-  check('and does not open the menu', r.opened() === 0, `opened=${r.opened()}`)
+  check('a real double (down 0, up 90, down 240) opens the menu', r.opened() === 1, `opened=${r.opened()}`)
+  check('and does not arm the camera', r.armed() === 0, `armed=${r.armed()}`)
   check('nothing is left remembered once the pair has resolved', !r.remembered(), 'still remembered')
 }
 
@@ -148,8 +148,8 @@ function check(name: string, ok: boolean, detail: string): void {
   for (let i = 0; i < 10; i++) {
     r.down(i, 100, 100, i * (TAP_RESOLVE_MS + 50))
   }
-  check('ten independent, unpaired taps arm the camera zero times', r.armed() === 0, `armed=${r.armed()}`)
-  check('and open the menu zero times', r.opened() === 0, `opened=${r.opened()}`)
+  check('ten independent, unpaired taps open the menu zero times', r.opened() === 0, `opened=${r.opened()}`)
+  check('and arm the camera zero times', r.armed() === 0, `armed=${r.armed()}`)
 }
 
 // 3. A second tap arriving too late (past the window) does not pair — it is
@@ -158,7 +158,7 @@ function check(name: string, ok: boolean, detail: string): void {
   const r = makeResolver()
   r.down(1, 100, 100, 0)
   r.down(2, 101, 100, TAP_RESOLVE_MS + 50)
-  check('a late second tap does not arm', r.armed() === 0, `armed=${r.armed()}`)
+  check('a late second tap does not open the menu', r.opened() === 0, `opened=${r.opened()}`)
   check('the late tap is now what is remembered, not nothing', r.remembered(), 'nothing remembered')
 }
 
@@ -169,7 +169,7 @@ function check(name: string, ok: boolean, detail: string): void {
   const r = makeResolver()
   r.down(1, 50, 50, 0)
   r.down(2, 50 + DOUBLE_TAP_RADIUS_PX + 1, 50, 100)
-  check('a second tap outside the radius does not arm', r.armed() === 0, `armed=${r.armed()}`)
+  check('a second tap outside the radius does not open the menu', r.opened() === 0, `opened=${r.opened()}`)
   check('only the second tap remains remembered', r.remembered(), 'nothing remembered')
 }
 
@@ -182,60 +182,81 @@ function check(name: string, ok: boolean, detail: string): void {
   r.cancel(1)
   check('a cancelled (dragged-away) tap leaves nothing remembered', !r.remembered(), 'still remembered')
   r.down(2, 100, 100, 100) // a second tap at the same spot, well inside the window
-  check('and so cannot pair with a later tap at the same spot', r.armed() === 0, `armed=${r.armed()}`)
+  check('and so cannot pair with a later tap at the same spot', r.opened() === 0, `opened=${r.opened()}`)
 }
 
-// 6. docs/todo.md entry 78's own bug: a first finger lands, is still short
-//    of its own window, and a second finger landing elsewhere opens the
-//    menu — the first finger's remembered tap must not survive to pair with
-//    some later, unrelated tap after the menu has already opened.
+// 6. docs/todo.md entry 125 deleted entry 78's two-finger opener, so the bug
+//    it guarded against — a first finger's remembered tap surviving the menu
+//    opening and pairing with a later, unrelated one — is now the double
+//    tap's own to answer. Two fingers do nothing at all, which is the
+//    replacement assertion: the gesture is gone, not merely gated.
 {
   const r = makeResolver()
-  r.down(1, 100, 100, 0) // finger 1's own down — remembered as a candidate
-  r.openTwoFinger() // finger 2 lands 150ms later, the ordinary two-finger open
-  check('the two-finger open itself opens exactly once', r.opened() === 1, `opened=${r.opened()}`)
-  check('finger 1 has nothing left remembered', !r.remembered(), 'still remembered')
-  r.down(3, 100, 100, 200) // a later, unrelated tap at the same spot
-  check('it does not retroactively pair into a second open', r.opened() === 1, `opened=${r.opened()}`)
+  r.down(1, 100, 100, 0)
+  r.down(2, 300, 300, 150) // a second finger elsewhere, well outside the radius
+  check('two fingers landing apart open nothing', r.opened() === 0, `opened=${r.opened()}`)
+  check('and arm nothing', r.armed() === 0, `armed=${r.armed()}`)
 }
 
-// docs/todo.md entry 115 — the still hold that replaced the double tap as
-// the way into the menu. Every clause of its Done-when that is a property
-// of the gesture rather than of a phone.
+// docs/todo.md entry 125 — the still hold arms the camera. Every clause of
+// its Done-when that is a property of the gesture rather than of a phone.
 {
   const r = makeResolver()
   r.hold(1, 3.0, 0)
-  check('a 3.0s hold does not open the menu', r.opened() === 0, `opened=${r.opened()}`)
-  r.hold(1, HOLD_MENU_S, 0)
-  check(`a ${HOLD_MENU_S}s still hold does`, r.opened() === 1, `opened=${r.opened()}`)
+  check('a 3.0s hold does not arm', r.armed() === 0, `armed=${r.armed()}`)
+  r.hold(1, HOLD_ARM_S, 0)
+  check(`a ${HOLD_ARM_S}s still hold does`, r.armed() === 1, `armed=${r.armed()}`)
   r.hold(1, 6.0, 0)
-  check('and holding on past that does not open it again', r.opened() === 1, `opened=${r.opened()}`)
+  check('and holding on past that does not arm again', r.armed() === 1, `armed=${r.armed()}`)
+  check('and the menu never opened', r.opened() === 0, `opened=${r.opened()}`)
 }
 {
   const r = makeResolver()
   r.hold(1, 10.0, 40)
-  check('a hold that has drifted 40px never opens the menu, however long', r.opened() === 0, `opened=${r.opened()}`)
+  check('a hold that has drifted 40px never arms, however long', r.armed() === 0, `armed=${r.armed()}`)
   r.hold(1, 60.0, 25)
-  check('nor one a single pixel past the slop', r.opened() === 0, `opened=${r.opened()}`)
+  check('nor one a single pixel past the slop', r.armed() === 0, `armed=${r.armed()}`)
 }
 {
   const r = makeResolver()
   r.down(1, 100, 100, 0)
   check('a hold begins as an ordinary remembered tap', r.remembered(), 'nothing remembered')
-  r.hold(1, HOLD_MENU_S, 2)
-  check('opening the menu supersedes the tap still waiting to pair', !r.remembered(), 'still remembered')
-  check('and it did not also arm the camera', r.armed() === 0, `armed=${r.armed()}`)
+  r.hold(1, HOLD_ARM_S, 2)
+  check('arming supersedes the tap still waiting to pair', !r.remembered(), 'still remembered')
+  check('and it did not also open the menu', r.opened() === 0, `opened=${r.opened()}`)
 }
 {
-  // The latch is per-contact: a finger still resting on the glass after the
-  // menu is dismissed must not reopen it, but the *next* hold must work.
+  // The latch is per-contact: a finger still resting on the glass must not
+  // arm twice, but the next contact must work.
   const r = makeResolver()
-  r.hold(1, HOLD_MENU_S, 0)
+  r.hold(1, HOLD_ARM_S, 0)
   r.hold(1, 20.0, 0)
-  check('one contact opens the menu once', r.opened() === 1, `opened=${r.opened()}`)
+  check('one contact arms once', r.armed() === 1, `armed=${r.armed()}`)
   r.release(1)
-  r.hold(2, HOLD_MENU_S, 0)
-  check('a fresh contact opens it again', r.opened() === 2, `opened=${r.opened()}`)
+  r.hold(2, HOLD_ARM_S, 0)
+  check('a fresh contact arms again', r.armed() === 2, `armed=${r.armed()}`)
+}
+
+// docs/todo.md entry 125's calm gate — the part that answers the actual
+// report. The stillness test above cannot see a shake, because the finger
+// and the screen move together; these are the assertions that would fail
+// against a build without the gate.
+{
+  const r = makeResolver()
+  r.setCalm(false)
+  r.hold(1, 10.0, 0) // a perfectly still thumb on a violently shaken phone
+  check('a thumb held on a shaken phone does not arm', r.armed() === 0, `armed=${r.armed()}`)
+  r.down(1, 100, 100, 0)
+  r.down(2, 101, 100, 200) // two bounces inside entry 67's window
+  check('and a double tap mid-shake does not open the menu', r.opened() === 0, `opened=${r.opened()}`)
+  // The gate opens again the moment the phone settles, and the same
+  // gestures work — a gate that latched would be worse than no gate.
+  r.setCalm(true)
+  r.hold(3, 10.0, 0)
+  check('once it settles, the hold arms', r.armed() === 1, `armed=${r.armed()}`)
+  r.down(4, 200, 200, 1000)
+  r.down(5, 201, 200, 1200)
+  check('and the double tap opens the menu', r.opened() === 1, `opened=${r.opened()}`)
 }
 
 console.log(failures === 0 ? '\nall tap checks passed' : `\n${failures} failed`)

@@ -1370,8 +1370,15 @@ async function main(): Promise<void> {
   const DOUBLE_TAP_RADIUS_PX = 30
 
   /**
-   * How long a still contact must be held before the menu opens — docs/todo.md
-   * entry 115, where menu-opening moved off the double tap.
+   * How long a still contact must be held before the camera arms — docs/todo.md
+   * entries 115 and 125.
+   *
+   * Entry 115 put the *menu* here and the camera on the double tap; entry 125
+   * swapped them back on Victor's instruction, which agrees with the choice he
+   * made first ("hold picture → armed (glyph appears) · tap picture → one
+   * photo"). Renamed with the swap: a constant named for the menu that arms a
+   * camera is exactly the sort of name that survives into being read as a
+   * decision.
    *
    * Derived rather than picked: `emitter.ts` saturates its charge at
    * `CHARGE_TIME`, so **past that point a hold already buys nothing** — it is
@@ -1380,18 +1387,60 @@ async function main(): Promise<void> {
    * claims it. Written against the constant so it moves if that moves.
    *
    * The known cost, stated rather than hidden: a deliberate long hold to
-   * fatten rings now ends in a menu at 3.5s. That is a real loss to the play
-   * gesture and there is no version of hold-opens-the-menu without it.
+   * fatten rings now ends in the camera arming at 3.5s. That is a real loss to
+   * the play gesture and there is no version of hold-does-something without
+   * it.
    */
-  const HOLD_MENU_S = CHARGE_TIME + 1.0
+  const HOLD_ARM_S = CHARGE_TIME + 1.0
   /**
-   * A hold that travels is never a menu — it is entry 50's fling, and turning
-   * that into a menu would take the loudest emitter gesture away from the
+   * A hold that travels is never an arm — it is entry 50's fling, and turning
+   * that into a mode would take the loudest emitter gesture away from the
    * picture. Measured against the contact's *original* touchdown point rather
    * than the previous frame's, so a slow drift out and back cannot creep past
    * it unnoticed.
+   *
+   * **This test cannot see a shake, and that is what entry 125 exists for.**
+   * It measures the finger's travel *relative to the screen*, and during a
+   * shake the finger and the screen move together — so a thumb resting on a
+   * violently shaken phone travels approximately zero and satisfies this
+   * perfectly. The 24px is not a weak guard against that; it is not a guard
+   * against it at all. The calm gate below is.
    */
-  const HOLD_MENU_SLOP_PX = 24
+  const HOLD_ARM_SLOP_PX = 24
+
+  /**
+   * How disturbed the phone may be before gestures stop being answered —
+   * docs/todo.md entry 125. Victor: "shake is getting good, we don't want the
+   * menu coming up accidentally."
+   *
+   * 0.35 because `shake.ts` records its own measurement in a comment —
+   * "walking peaks at disturb 0.15, well under LEVEL" — so this clears an
+   * ordinary gait by better than twice while a deliberate shake, which
+   * saturates `disturb` near 1.0, is blocked decisively. Derived from a number
+   * already in the file rather than picked.
+   */
+  const GESTURE_CALM_MAX = 0.35
+  /**
+   * How long the gate stays shut after `disturb` was last above the line.
+   * Long enough that the dying swing of a shake cannot re-open it between two
+   * beats of the same gesture, short enough that the menu is there the moment
+   * the phone stops.
+   */
+  const GESTURE_SETTLE_S = 0.4
+  /** When `disturb` last exceeded `GESTURE_CALM_MAX`. `-Infinity` until it
+   *  ever has, so a phone that has never moved — and a machine with no
+   *  accelerometer, which reports `disturb` 0 for ever — is never gated. */
+  let lastDisturbedAt = -Infinity
+  /**
+   * Whether a deliberate gesture should be answered right now.
+   *
+   * Guards the menu *and* the arm, not only the one that was reported: a
+   * double tap is harder to trigger by accident than a hold, but two thumb
+   * bounces inside entry 67's window during a hard shake are not impossible,
+   * and without this the accident would simply move from the menu to the
+   * camera — where it costs a photograph rather than a panel.
+   */
+  const gesturesCalm = (now: number): boolean => now - lastDisturbedAt >= GESTURE_SETTLE_S
   /** The contact that has already opened the menu this gesture, so a finger
    *  still resting on the glass at 3.6s does not reopen it every frame. */
   let holdOpenedBy: number | null = null
@@ -1429,19 +1478,16 @@ async function main(): Promise<void> {
       Math.hypot(clientX - lastTap.x, clientY - lastTap.y) <= DOUBLE_TAP_RADIUS_PX
     ) {
       lastTap = null
-      // docs/todo.md entry 115 — the double tap arms the camera; the menu
-      // moved to the still hold below. Victor: "I said the camera should be
-      // a totally separate thing from the menu", and "touch hold to open
-      // menu, and single tap (or double tap?) for camera arm."
+      // docs/todo.md entry 125 — the menu is the double tap again, and the
+      // camera moved to the still hold. Victor: "require double tap for
+      // menu, shake is getting good, we don't want the menu coming up
+      // accidentally." That agrees with the choice he made first, before
+      // entry 115's reading of a middle instruction moved it.
       //
-      // Double rather than the single tap he offered, and that is a
-      // correction rather than a preference: the emitter fires on every
-      // `down` unconditionally (entry 50), so a single tap that also armed
-      // would arm on *every* touch of the picture and the touch after it
-      // would take a photo — nobody could tap twice without a capture. The
-      // double tap is only free because the hold has taken over what it
-      // used to do.
-      enterCameraMode()
+      // Gated on calm for the same reason the hold is: two thumb bounces
+      // inside entry 67's window during a hard shake are not impossible,
+      // and a menu opening mid-shake is the report this fixes.
+      if (gesturesCalm(performance.now() / 1000)) panel.open()
       return
     }
     lastTap = { x: clientX, y: clientY, t: performance.now(), pointerId }
@@ -1518,11 +1564,6 @@ async function main(): Promise<void> {
     // until 280ms after the fact, which the render loop cannot wait for.
     let streamAnyDown = false
     let streamMaxSpeed = 0
-    // docs/todo.md entry 67: how many non-chip fingers are down right now,
-    // for the two-finger-tap recogniser below — sampled once here rather
-    // than re-walked, since `sample(now)` already reflects a `down` that
-    // landed this same frame by the time this line runs.
-    let nonChipDown = 0
     longestStillHold = 0
     for (const t of touchField.sample(now)) {
       const speed = Math.hypot(t.vx, t.vy)
@@ -1533,7 +1574,6 @@ async function main(): Promise<void> {
       // merely "no ring". A chip contact is unaffected, exactly as Decided
       // states — the `!t.onChip` guard here is what keeps that true.
       if (!t.onChip && fsBlocking) continue
-      if (!t.onChip) nonChipDown++
       if (!t.onChip && !hudOpen) {
         streamAnyDown = true
         streamMaxSpeed = Math.max(streamMaxSpeed, speed)
@@ -1546,19 +1586,23 @@ async function main(): Promise<void> {
       // the `up` is too late. `downFor` and `downClientX`/`Y` are already on
       // the sample, so this needs no new state beyond remembering which
       // contact has already fired.
-      if (Math.hypot(t.clientX - t.downClientX, t.clientY - t.downClientY) <= HOLD_MENU_SLOP_PX) {
+      if (Math.hypot(t.clientX - t.downClientX, t.clientY - t.downClientY) <= HOLD_ARM_SLOP_PX) {
         longestStillHold = Math.max(longestStillHold, t.downFor)
       }
       if (
         holdOpenedBy === null &&
-        t.downFor >= HOLD_MENU_S &&
-        Math.hypot(t.clientX - t.downClientX, t.clientY - t.downClientY) <= HOLD_MENU_SLOP_PX
+        t.downFor >= HOLD_ARM_S &&
+        Math.hypot(t.clientX - t.downClientX, t.clientY - t.downClientY) <= HOLD_ARM_SLOP_PX &&
+        // docs/todo.md entry 125 — the stillness test above cannot see a
+        // shake, because the finger and the screen move together. This is
+        // what actually stops a thumb on a shaken phone from arming.
+        gesturesCalm(now)
       ) {
         holdOpenedBy = t.id
-        // The same supersession the two-finger path does below: a tap still
-        // waiting to pair into a double must not survive the menu opening.
+        // A tap still waiting to pair into a double must not survive the
+        // gesture that consumed this contact.
         lastTap = null
-        panel.open()
+        enterCameraMode()
       }
       const contactId = contactIdFor.get(t.id)
       // Absent only for a chip contact (never minted one) reaching here by
@@ -1620,29 +1664,27 @@ async function main(): Promise<void> {
           exitCameraMode()
           continue
         }
-        // docs/todo.md entry 67: a second way in, since the double tap was
-        // the *only* one — every `.hud-chip` is inert while the panel is
-        // closed. Fires the instant the second finger lands, which is also
-        // what keeps it from being confused with play: a single contact's
-        // own `down` never satisfies `nonChipDown === 2`.
-        if (nonChipDown === 2) {
-          // docs/todo.md entry 78: the first finger's own `down`, moments
-          // earlier, already remembered itself below (nonChipDown was 1
-          // then) as a candidate to pair into a double — left in place, it
-          // could still pair with some later, unrelated tap after the menu
-          // has opened. Opening the menu supersedes any tap still waiting
-          // to be paired.
-          lastTap = null
-          panel.open()
-          continue
-        }
+        // docs/todo.md entry 125 deleted entry 67's two-finger opener that
+        // stood here. It fired the instant the second finger landed — no
+        // duration, no stillness, no travel test of any kind — and two
+        // fingers gripping a phone that is being shaken is not an edge case,
+        // it is how a phone is held. Deleted rather than gated, as the direct
+        // reading of "require double tap for menu": entry 115 kept it on the
+        // argument that removing a working way in while moving the primary
+        // one risks leaving none, and that no longer applies now the primary
+        // is moving *to* the gesture people already know.
         // docs/todo.md entry 117 — a mouse arms on a single left click,
-        // where a finger needs a double tap. The difference is the hardware:
-        // entry 115 could not give the finger a single tap because the
-        // emitter fires on every `down`, so every touch of the picture would
-        // arm and the touch after it would shoot. A mouse does not have that
-        // problem, because it has a second button for the menu and hover for
-        // play — so the click is free.
+        // where a finger needs a 3.5s still hold. The difference is the
+        // hardware: a finger cannot have the single tap, because the emitter
+        // fires on every `down`, so every touch of the picture would arm and
+        // the touch after it would shoot. A mouse does not have that problem,
+        // because it has a second button for the menu and hover for play — so
+        // the click is free.
+        //
+        // (This said "where a finger needs a double tap" until entry 125 put
+        // the menu back on the double tap and arming on the hold. The
+        // reasoning is unchanged; only which finger gesture it contrasts
+        // with moved.)
         //
         // Reached only when `cameraMode` is false: the branch above already
         // took the armed case and shot. That is what keeps one click from
@@ -1762,6 +1804,13 @@ async function main(): Promise<void> {
       // the countdown rather than expiring it while backgrounded — entry
       // 109 leaves that question open, so freezing is the conservative
       // reading rather than a considered answer to it.
+      // docs/todo.md entry 125 — the calm gate's own clock, ticked from the
+      // `disturb` this file already samples every frame for the colour bias
+      // and the RGB slip. No new sensor path and no second opinion about how
+      // much the phone is moving, which is the drift entry 111 argued
+      // against.
+      if (latestShake.disturb > GESTURE_CALM_MAX) lastDisturbedAt = performance.now() / 1000
+
       if (cameraMode) {
         const arm = updateCameraArm(
           cameraArmState,
@@ -1901,7 +1950,15 @@ async function main(): Promise<void> {
         // misdiagnosed from the outside twice already. `hold` is the longest
         // still contact currently on the glass, so a hold that is not
         // opening the menu can be told from one that is not being seen.
-        arm: { armed: cameraMode, hold: longestStillHold },
+        arm: {
+          armed: cameraMode,
+          hold: longestStillHold,
+          // docs/todo.md entry 125 — "the menu won't open" and "the double
+          // tap wasn't recognised" are the same report from outside, and this
+          // map has changed twice in two days.
+          blocked: !gesturesCalm(performance.now() / 1000),
+          sinceDisturbed: Math.min(99, performance.now() / 1000 - lastDisturbedAt),
+        },
       })
     }
     requestAnimationFrame(frame)

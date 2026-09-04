@@ -272,7 +272,7 @@ export interface Hud {
        *  camera doesn't arm" has two candidate causes (the double tap not
        *  recognised, or the arm expiring) and "the menu won't open" has two
        *  more (the hold not reaching 3.5s, or drifting past its slop). */
-      arm?: { armed: boolean; hold: number }
+      arm?: { armed: boolean; hold: number; blocked: boolean; sinceDisturbed: number }
     },
   ): void
   /** Adopt a change decided elsewhere — the autopilot (director.ts) or a
@@ -1550,7 +1550,10 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
           : [`cam   ${!s.camera.open ? 'closed' : s.camera.live ? 'live' : 'frozen'}`]),
         ...(s.arm === undefined
           ? []
-          : [`arm   ${s.arm.armed ? 'armed' : 'off'}  hold ${s.arm.hold.toFixed(1)}s`]),
+          : [
+              `arm   ${s.arm.armed ? 'armed' : 'off'}  hold ${s.arm.hold.toFixed(1)}s` +
+                (s.arm.blocked ? '  BLOCKED' : `  calm ${s.arm.sinceDisturbed.toFixed(1)}s`),
+            ]),
       ].join('\n')
     },
 
