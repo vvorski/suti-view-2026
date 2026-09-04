@@ -4103,3 +4103,128 @@ the third view of the same idea. Then a phone. Then the atmospheric band at
 
 **Hard stops** — prefs no (a new value on an existing validated enum) · url no
 (`?atmospheric=anneal`) · capture no · dependency no.
+
+### 141. Pick up an emitter and put it down somewhere else
+`status: ready` · added 2026-09-05 · **build after 132** (it moves the anchor 132's bob hangs from) · extends 33 and 57
+
+**Do** — on the geometric views whose emitters have a fixed place on screen,
+a press that lands **on** an emitter picks it up: it follows the finger while
+held and stays where it is put down. Circles, Shards, Grid and Rose have one
+such emitter, the centre; Chorus has three to seven, its nodes.
+**Why** — Victor: *"on the circle geometric layers which have fixed emitters on
+the screen, pressing an emitter with touch or click allows dragging it."*
+Today a finger anywhere on the picture births a *new* emitter (entry 33); the
+ones the view was born with cannot be reached at all.
+
+**Recon.**
+- **Which views, counted.** Seven geometric views. Centre-anchored, one
+  emitter: `circles` (`:227`), `shards` (`:85`, `:134`), `grid` (`:92`),
+  `rose` (`:174`). Several fixed emitters: `chorus` — `3 + floor(uSeed.x·5)`
+  nodes on a ring of radius `NODE_RADIUS = 0.30` at `phase = uSeed.z·TAU`
+  (`chorus.frag.glsl:97-99`), positions computed **in the shader** from the
+  seed, so today TypeScript does not know where they are and cannot hit-test
+  them. Excluded: `tide` (born on the frame edge — nothing on screen to pick
+  up) and `drift` (its emitter wanders by design; a finger holding it would
+  fight `emitterAt`). Entries 135 (Orbits) and 136 (Moiré) are written with
+  their own hand gestures and are not touched here; Orbits' centre would
+  qualify later and should reuse this entry's anchor.
+- **Entry 132 puts the centre into TypeScript already.** Its `origin.ts` bob
+  hangs on a spring from the frame centre and is published as `uOrigin`; every
+  centre-anchored site above measures from `uOrigin` after 132. This entry
+  therefore does not add a second notion of "where the centre is" — it gives
+  132's spring an **anchor that can move**. Without 132 first, this would
+  build the `uOrigin` plumbing itself and 132 would then re-plumb it; hence
+  the build order.
+- **A contact can already be claimed by one thing.** `main.ts:1336`'s
+  dispatch has four claimants on a tap — fullscreen, camera mode, menu, play
+  — and entry 80 established that a claimed contact "counts toward nothing
+  else". A fifth claimant is the same shape.
+- **What a contact knows.** `touchField.sample(now)` gives `x, y` in shader
+  uv, `clientX/Y`, `downClientX/Y`, `downFor`, `vx, vy`, `onChip`
+  (`touches.ts:46`), all already read in the per-frame loop (`main.ts:1568`).
+
+**Decided**
+- What "on an emitter" means → **within 36 px of it on the `down`**, converted
+  from uv with the canvas rect the same way `toShaderUv` goes the other way.
+  Over a uv radius (a thumb is a fixed size; a uv radius shrinks on a big
+  screen). 36 px: smaller than a chip (48) so it is deliberate, larger than
+  the centre ring (`0.02 uv ≈ 7 px`) so it is findable. **Mine.**
+- The claim → **the contact belongs to the emitter for its whole life**: it
+  births no touch emitter (entry 33), lays no trail (57), does not resolve as
+  a tap or a double (67/125), and **cannot hold-arm the camera** (125) — a
+  finger parked on a picked-up emitter for four seconds is holding an
+  emitter, not asking for a photograph. The same exclusion pattern
+  `fsBlocking` already uses in both loops (`:1576`, `:1642`). **Mine**, by
+  reuse.
+- While held → **the emitter is at the fingertip**, no lag, no spring; its
+  audio-born rings keep firing from wherever it is, so dragging the centre
+  drags the whole family of rings with it live. Over easing toward the finger:
+  a thing you are holding is where your hand is. **Mine.**
+- On release → **it stays where it was put.** Over springing back to its
+  default. Victor's ask ("allows dragging it") describes placement, not a
+  pull; and a spring-back is entry 132's job for *gravity*, not for a hand.
+  With the `grav` chip on, 132's bob now hangs from the new anchor — the
+  centre sags below wherever you left it, which is right. **Mine.**
+- Persistence → **render-time state only**, never written to `prefs`
+  (entries 48, 58, 60 pattern). A reload puts every emitter back. A **re-roll**
+  (`uSeed` change: space, double-click, shake) also resets them: the seed
+  decides the arrangement, and a new arrangement on old positions would be
+  neither. **Mine.**
+- Chorus's nodes → **computed once in TypeScript from `uSeed`** (`scene.ts`
+  owns the seed value) and uploaded as `uNodes[8]` (vec2) plus `uNodeCount`;
+  `chorus.frag.glsl` reads them instead of recomputing from the seed. Over
+  duplicating the ring formula in TS and keeping the shader's copy — one
+  source, and the hit-test and the picture cannot disagree. The eight-slot
+  array is the shader's `nodes ≤ 7` ceiling plus one; unused slots are never
+  read. Chorus's node positions are **offsets from `uOrigin`**, so 132's bob
+  moves the whole constellation and a drag moves one node within it. **Mine.**
+- Clicks → **a mouse press within 36 px of an emitter picks it up instead of
+  arming the camera** (entry 117's left-click map). Over letting the click
+  arm as well. **Mine**: two things on one click is the fault 117 itself
+  avoids, and Victor's ask names click explicitly.
+- Two fingers on two emitters → both move; the claim is per contact and per
+  emitter. One emitter, two fingers → the first keeps it.
+- Where the state lives → `origin.ts` (132's) gains an `anchor` the drag sets
+  and a `nodes` array for Chorus; the hit-test is a pure function beside it,
+  `pickEmitter(anchor, nodes, x, y, radiusUv) → index | null`, probeable.
+  **Mine.**
+
+**Identity when off** — no contact within 36 px of an emitter means no claim,
+and every path is byte-for-byte what it was; the anchor at `(0,0)` and the
+nodes at their seeded positions render exactly as today.
+
+**Lands in**
+- `src/engine/origin.ts` (132's) — `anchor`, `nodes`, `pickEmitter`;
+  `engine/index.ts`.
+- `src/scene.ts` — node placement from `uSeed` on every re-roll (`:1418`,
+  `:1751`), `uNodes`/`uNodeCount` in the shared uniforms; `setEmitterDrag(
+  index, x, y | null)` for the caller; the bob's spring anchored at `anchor`.
+- `src/shaders/chorus.frag.glsl:97-125` — read `uNodes`; the seed-to-ring
+  formula and its comment move to `scene.ts` with the comment intact.
+- `src/main.ts` — the fifth claimant in `dispatchTouches`: on `down`, hit-test
+  against the current anchor and nodes; a claimed contact is skipped in both
+  loops exactly where `fsBlocking` is; on `up`/`cancel` the claim ends and the
+  emitter stays.
+- `scripts/probe-origin.ts` (132's) — cases for `pickEmitter` (inside, just
+  outside, nearest of two) and for an anchor set while the bob is loaded.
+
+**Done when**
+- Headless: `pickEmitter` returns the nearest emitter inside 36 px and `null`
+  outside; with the anchor moved to `(0.3, 0.1)` and gravity `(0, 1)`, the bob
+  settles at `(0.3, 0.38)`.
+- Probe page: on Circles, a synthetic contact 20 px from the centre, dragged
+  to `(0.3, 0.1)` and released, leaves the next audio ring born there (measure
+  the ring's centre), and births **no** touch ring along the way; the same
+  contact 60 px from the centre births touch rings as today and moves nothing.
+- On Chorus, dragging one node moves only that node; a re-roll puts all back.
+- On a phone: press the centre, drag it to a corner, let go; tap elsewhere and
+  the ring family is born in the corner. Hold the centre for 5 s: no camera
+  glyph.
+- Desktop: a left click 20 px from the centre drags it and does not arm.
+
+**Verify** — `pnpm build`, `pnpm lint`, `pnpm probe:origin`, `pnpm probe:tap`
+(no tap or hold path changes for unclaimed contacts), `pnpm probe:emitter`
+unchanged; the probe page with `circles` as baseline; then the phone. No HUD
+surface changes.
+
+**Hard stops** — prefs no · url no · capture no · dependency no.
