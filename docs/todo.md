@@ -1356,3 +1356,102 @@ kind.
 field is a hard stop and this needs none — it is on wherever a mouse exists and
 absent wherever one does not) · url no · capture no · dependency no. The
 control surface is unchanged; this adds no control.
+
+### 113. The gate's name decodes ten times slower
+`status: ready` · added 2026-09-04 · independent of 110–112
+
+**Do** — multiply both timing constants of the opening screen's release-name
+flip by ten: `NAME_FLIP_MS` 850 → **8500**, `NAME_LOCK_STEP_MS` 55 → **550**.
+
+**Why** — asked for. At today's numbers the whole thing is over in about 1.5
+seconds, which is less time than it takes to notice it is happening.
+
+**Recon: nothing at the landing site argues against this, and the one comment
+that could have does the opposite.** `version.ts:388` — *"Never delays Start:
+this only ever writes to `#release-name`'s own text, on a `requestAnimationFrame`
+loop that does not block or gate anything else — the disc is live and pressable
+from the very first frame, and pressing it mid-decode is not a special case, it
+just leaves."* A ten-fold slowdown costs nobody anything they cannot skip. And
+entry 99's *"total around 1.6s"* is not a defended number: `NAME_LOCK_STEP_MS`'s
+own comment says so in as many words — *"'around', not a hard ceiling this is
+tuned against."*
+
+**Decided**
+- **Both constants, not one** → phase one (the history flip, 850ms) and phase
+  two (the per-character lock, 55ms a character) both go up ten times, so the
+  two phases keep their present proportions and the handover still reads as one
+  effect slowing into another rather than as a fast half followed by a slow
+  one. **Mine** — "the flip" in the request is the whole opening animation, and
+  scaling one phase alone would change its shape as well as its speed, which is
+  not what was asked for.
+- **The reduced-motion path is re-anchored to the same step, at 550ms a
+  character** → `reducedLockedCountAt`'s hardcoded `1000 / 3` becomes
+  `NAME_LOCK_STEP_MS`. **Mine**, and this is the fork the naive version gets
+  wrong: today the reduced path is deliberately the *slower* one (about 3
+  characters a second against 18), and slowing only the normal path would
+  invert that — reduced motion would suddenly be the fast decode, contradicting
+  `mountReleaseName`'s own *"`prefers-reduced-motion` gets a slower decode, not
+  none."* Matching the two rates preserves the ordering by making them equal,
+  and it does not weaken the reduced path's actual protection, which is that it
+  **never scrambles** — it types (`.slice`, not `renderLockFrame`). 550ms a
+  character is also strictly less churn than the 333ms it has today, so the
+  reduced path comes out more compliant than it went in, not less.
+- **The reload chip's flip is not touched** → `RELOAD_FLIP_MS` stays at 600.
+  **Mine**: entry 56 gave it that number for a reason this request has nothing
+  to do with — *"a confirmation in front of an action someone is already
+  waiting on, not an arrival"* — and a six-second wait in front of a reload is
+  the one place a slow flip would actually cost something.
+- **The scramble tail keeps re-rolling every frame** → unchanged. **Mine**:
+  entry 99's argument is about the *rate* of churn, and that is set by the
+  frame loop, not by the step size — this entry changes how long the churn
+  lasts, not how fast it flickers. If fifteen seconds of a cycling tail reads
+  as broken rather than as deliberate, that is a follow-up entry with a
+  re-roll interval in it, not a guess made at build time.
+- **`NAME_LOCK_STEP_MS` gets exported and the probe imports it** →
+  `scripts/probe-name-decode.ts:28` currently reads
+  `const NAME_LOCK_STEP_MS = 55 // duplicated by eye from version.ts's own
+  constant`. **Mine**, and it is the reason this entry is not a two-character
+  edit: with the constant duplicated, changing `version.ts` alone leaves the
+  probe **green while testing nothing** — its assertions are self-consistent
+  against its own stale 55 and would keep passing forever. This is exactly
+  CLAUDE.md's *"duplication that only exists because something was not
+  exported"*, and it is load-bearing here because the probe is the only gate
+  that would otherwise catch a half-applied change.
+
+**Identity when off** — not applicable in the usual sense: this is a change to
+two existing constants, adds no uniform, no state and no branch, and costs
+nothing anywhere the flip was not already running. The `n === 0` and
+empty-history fallbacks (`version.ts:415`) are untouched, and a name that
+somehow arrives after the loop has ended still shows correctly, because both
+`lockedCountAt` and `reducedLockedCountAt` already clamp at the target length
+however long elapsed runs.
+
+**Lands in** — `src/version.ts:252` (`NAME_FLIP_MS`), `:262`
+(`NAME_LOCK_STEP_MS`, and its `export`), `:314` (`reducedLockedCountAt`'s
+`stepMs`), and the comments on all three, which state the old durations and
+must state the new ones; `scripts/probe-name-decode.ts:28` (import rather than
+duplicate), `:101` and `:110` and `:120` (the reduced-path assertions and loop
+bounds, which are written against 3 characters a second).
+
+**Done when** — `pnpm probe:name-decode` passes with the constant **imported**,
+and asserts: `lockedCountAt(551, 12) === 1`; `lockedCountAt(550 * 12 + 1, 12)
+=== 12`; `reducedLockedCountAt` and `lockedCountAt` agree at every millisecond
+tested, since they now share a step. The probe prints the total for the current
+`RELEASE_NAME` — with the median name on record at 11 characters that is
+**8500 + 6050 ≈ 14.6s**, and the longest at 16 characters gives **17.3s**. On
+screen, at the gate: the name is still visibly decoding ten seconds in, the
+Start disc is pressable within the first second and pressing it leaves
+immediately rather than waiting for the decode, and the name that finally lands
+is the real one with no leftover scramble characters.
+
+**Verify** — `pnpm build`, `pnpm lint`, `pnpm probe:name-decode`. Then the gate
+itself at 320×568 and 360×640, since it is a shared surface and the span is
+laid out inside the gate's own type: the widest name must still not reflow
+(`release-name.ts:19` reserves the width for exactly this), and the real
+question a probe cannot answer is whether fifteen seconds of a cycling tail
+reads as deliberate or as a page that has failed to load. Look at it before
+committing.
+
+**Hard stops** — prefs no · url no · capture no · dependency no. No gate *copy*
+changes, so CLAUDE.md's gate-copy clause is not engaged — this changes how long
+an existing element takes to resolve, not what it says.
