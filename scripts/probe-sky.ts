@@ -23,16 +23,16 @@ function check(name: string, ok: boolean, detail: string): void {
 const dateAt = (h: number, m = 0, s = 0): Date => new Date(2026, 0, 1, h, m, s)
 const near = (a: number, b: number, eps = 1e-6): boolean => Math.abs(a - b) < eps
 
-// 1. Each anchor lands exactly — daylight's six, warmth's four (unchanged
-//    by entry 71: that shape was already right).
+// 1. Each anchor lands exactly — daylight's six (re-timed by entry 108),
+//    warmth's four (unchanged by entry 71: that shape was already right).
 {
   const daylightAnchors: [number, number, number][] = [
-    [4, 0, 0.0],
-    [6, 30, 0.35],
-    [10, 30, 1.0],
-    [15, 30, 1.0],
+    [5, 30, 0.0],
+    [7, 0, 0.35],
+    [8, 30, 1.0],
+    [17, 45, 1.0],
     [19, 30, 0.4],
-    [23, 0, 0.0],
+    [21, 45, 0.0],
   ]
   for (const [h, m, daylight] of daylightAnchors) {
     const s = skyFor(dateAt(h, m))
@@ -55,7 +55,7 @@ const near = (a: number, b: number, eps = 1e-6): boolean => Math.abs(a - b) < ep
 //    typical rate of change. A genuine step would show as an outlier tens
 //    of times larger than its neighbours; smoothstep's zero derivative at
 //    each anchor means even the anchors themselves should not stand out —
-//    including the two adjacent pairs (23:00/04:00, 10:30/15:30) that now
+//    including the two adjacent pairs (21:45/05:30, 08:30/17:45) that now
 //    hold a flat plateau between them rather than crossing anything.
 {
   const samples: { daylight: number; warmth: number }[] = []
@@ -70,12 +70,15 @@ const near = (a: number, b: number, eps = 1e-6): boolean => Math.abs(a - b) < ep
     maxDaylightStep = Math.max(maxDaylightStep, Math.abs(samples[i].daylight - samples[i - 1].daylight))
     maxWarmthStep = Math.max(maxWarmthStep, Math.abs(samples[i].warmth - samples[i - 1].warmth))
   }
-  // The steepest anchor-to-anchor span is 4 hours (240 minutes, 06:30 ->
-  // 10:30) for a daylight range up to 1.0 — a per-minute step well under
-  // 1/100 is the generous ceiling a genuine discontinuity (which would jump
-  // by a large fraction of the whole range in one step) would blow past
-  // easily.
-  check('no per-minute daylight jump anywhere in 24h (incl. midnight)', maxDaylightStep < 0.01, `worst step ${maxDaylightStep}`)
+  // Entry 108 shortened every dawn/dusk span from ~4 hours to 1.5, so the
+  // curve rises the same 0.65-1.0 of daylight in roughly a third of the
+  // time — measured peak per-minute step 0.01083, at 07:44, against the
+  // previous table's 0.00407. 0.01 (this check's threshold before entry
+  // 108) was never a perceptual limit, only headroom over whatever curve
+  // was shipped; 0.015 keeps a comparable margin over the new peak while
+  // still catching a genuine discontinuity, which would blow past either
+  // number easily.
+  check('no per-minute daylight jump anywhere in 24h (incl. midnight)', maxDaylightStep < 0.015, `worst step ${maxDaylightStep}`)
   check('no per-minute warmth jump anywhere in 24h (incl. midnight)', maxWarmthStep < 0.02, `worst step ${maxWarmthStep}`)
 
   // Midnight specifically, since it is the seam a naive 0..23 table would
@@ -95,46 +98,41 @@ const near = (a: number, b: number, eps = 1e-6): boolean => Math.abs(a - b) < ep
 //    actual point of the six-anchor table: day and night are states held
 //    for hours, not instants touched once. Sampled throughout each window,
 //    not only at its own boundary, since a plateau that only holds at its
-//    labelled edges is not a plateau.
+//    labelled edges is not a plateau. Windows re-timed by entry 108 to
+//    08:30-17:45 and 21:45-05:30 — both verified to still hold exactly
+//    (plateau min 1.000000, floor max 0.000000).
 {
   let minInDayWindow = Infinity
-  for (let mins = 10 * 60 + 30; mins <= 15 * 60 + 30; mins++) {
+  for (let mins = 8 * 60 + 30; mins <= 17 * 60 + 45; mins++) {
     minInDayWindow = Math.min(minInDayWindow, skyFor(dateAt(Math.floor(mins / 60), mins % 60)).daylight)
   }
-  check('the day plateau (10:30-15:30) never dips below 0.999', minInDayWindow >= 0.999, String(minInDayWindow))
+  check('the day plateau (08:30-17:45) never dips below 0.999', minInDayWindow >= 0.999, String(minInDayWindow))
 
   let maxInNightWindow = -Infinity
-  // 23:00 through 23:59, then 00:00 through 04:00 — the floor wraps midnight.
-  for (let mins = 23 * 60; mins <= 24 * 60 - 1; mins++) {
-    maxInNightWindow = Math.max(maxInNightWindow, skyFor(dateAt(23, mins - 23 * 60)).daylight)
-  }
-  for (let mins = 0; mins <= 4 * 60; mins++) {
+  // 21:45 through 23:59, then 00:00 through 05:30 — the floor wraps midnight.
+  for (let mins = 21 * 60 + 45; mins <= 24 * 60 - 1; mins++) {
     maxInNightWindow = Math.max(maxInNightWindow, skyFor(dateAt(Math.floor(mins / 60), mins % 60)).daylight)
   }
-  check('the night floor (23:00-04:00) never rises above 0.001', maxInNightWindow <= 0.001, String(maxInNightWindow))
+  for (let mins = 0; mins <= 5 * 60 + 30; mins++) {
+    maxInNightWindow = Math.max(maxInNightWindow, skyFor(dateAt(Math.floor(mins / 60), mins % 60)).daylight)
+  }
+  check('the night floor (21:45-05:30) never rises above 0.001', maxInNightWindow <= 0.001, String(maxInNightWindow))
 }
 
 // 4. The mid-band's total width — daylight strictly between 0.1 and 0.9,
-//    summed across the whole day. Down from the original four-anchor
-//    curve's own measured 16 hours (every anchor a peak or a valley, so the
-//    whole day between them was neither day nor night) to a genuine
-//    minority of it.
+//    summed across the whole day. This is the check that should have caught
+//    entry 71's own miscount and did not: it asserted `< 11`, loose enough
+//    to pass at the 9.95 hours that table actually produced against a
+//    Done-when promising "no more than ~5". A threshold sized to pass
+//    whatever ships is a worse failure than no check at all — see entry
+//    108, which found the gap.
 //
-//    Honest finding, not the entry's own figure: its Decided section
-//    estimates "~2.5 hours at each end of the day", ~5 total. Measured here
-//    (and reproducible with the one-line scrub the entry's own Verify
-//    credits), each transition is closer to 4.6-5.3 hours, ~9.9 total —
-//    the entry's anchor *hours and values* are exact and are what is
-//    implemented; the "~5" was evidently an eyeballed estimate of what
-//    those anchors would produce, not re-derived from them, and it is off
-//    by roughly a factor of two. **Mine to measure and report, not to
-//    silently correct** — the anchors themselves are the entry's own
-//    explicit "Mine as to the hours" choice, so the fix for a wrong estimate
-//    is a corrected number here, not a change to the anchors it was
-//    estimating. The qualitative claim ("day and night are states, not
-//    instants") holds regardless: 9.9 hours of transition against 14.1
-//    hours of held plateau/floor is still the entry's own point, made
-//    correctly even where its own arithmetic wasn't.
+//    Entry 108 re-timed the same six anchors (shorter dawn/dusk spans, same
+//    held values) for a measured 4.90 hours here. The new threshold, 5.2, is
+//    sized to that figure with a few minutes of headroom for arithmetic
+//    slack across leap years and DST-free clock math — not to whatever the
+//    table happens to produce — so any future drift of more than a few
+//    minutes fails the gate the way 9.95 always should have.
 {
   let midBandMinutes = 0
   for (let mins = 0; mins < 24 * 60; mins++) {
@@ -143,38 +141,52 @@ const near = (a: number, b: number, eps = 1e-6): boolean => Math.abs(a - b) < ep
   }
   const midBandHours = midBandMinutes / 60
   check(
-    `mid-band is a genuine minority of the day (${midBandHours.toFixed(2)}h of 24, down from the old curve's 16h)`,
-    midBandHours < 11,
+    `mid-band is a genuine minority of the day (${midBandHours.toFixed(2)}h of 24, down from entry 71's shipped 9.95h)`,
+    midBandHours < 5.2,
     `${midBandHours}h`,
   )
 }
 
 // 5. A ten-minute window during an active transition shows a visible
 //    difference, per the entry's own Done-when example. Tested at the
-//    steepest point of the 06:30->10:30 dawn segment (its midpoint, ~08:30)
-//    rather than at either anchor: 06:30 and 10:30 both have a zero
-//    derivative by construction (smoothstep's whole reason for existing,
-//    which is what "no corner" above requires), making each anchor the
-//    single flattest point on its own neighbouring curve.
+//    steepest point of the 07:00->08:30 dawn segment rather than at either
+//    anchor: entry 108's re-timed table peaks near 07:45 (delta 0.10789
+//    across ten minutes either side of it) rather than the old table's
+//    ~08:30, because the dawn span is now half as long and its middle
+//    moved with it.
 {
-  const before = skyFor(dateAt(8, 25))
-  const after = skyFor(dateAt(8, 35))
+  const before = skyFor(dateAt(7, 40))
+  const after = skyFor(dateAt(7, 50))
   check('a ten-minute window mid-transition is visibly different', Math.abs(after.daylight - before.daylight) > 0.01, `${before.daylight} vs ${after.daylight}`)
 
-  const straddleAnchor = Math.abs(skyFor(dateAt(10, 35)).daylight - skyFor(dateAt(10, 25)).daylight)
+  // The anchor-straddling window used to be flat to under 0.001 absolute,
+  // because the old segments either side were four-plus hours wide and an
+  // anchor's zero derivative dominated a ±5 minute window completely. Entry
+  // 108's segments are 1.5 hours wide, so the same window now moves 0.00580
+  // — a real, measured effect of the shorter segments, not a regression.
+  // Made relative rather than loosening the absolute number: the check's
+  // actual meaning is "an anchor is flat *compared to* the middle of a
+  // segment", and 0.00580 against the 0.10789 mid-transition delta above is
+  // 18.6x, which is what that comparison should show regardless of segment
+  // width.
+  const straddleAnchor = Math.abs(skyFor(dateAt(8, 35)).daylight - skyFor(dateAt(8, 25)).daylight)
+  const midTransitionDelta = Math.abs(after.daylight - before.daylight)
   check(
-    'confirms the anchor-straddling case is the flat one, not a bug in the check above',
-    straddleAnchor < 0.001,
-    String(straddleAnchor),
+    'confirms the anchor-straddling case is flat relative to a mid-transition window, not a bug in the check above',
+    straddleAnchor < midTransitionDelta / 10,
+    `${straddleAnchor} vs ${midTransitionDelta / 10}`,
   )
 }
 
 // 6. Smoothstep's own signature: the rate of change near an anchor is
 //    slower than at the midpoint of a segment, which is what "eases in and
-//    out" means and what tells this apart from a linear ramp.
+//    out" means and what tells this apart from a linear ramp. Re-timed to
+//    the day-plateau anchor (08:30) and the steepest point of the dawn
+//    segment (07:45, per check 5 above) rather than the old 10:30/08:30
+//    pair.
 {
-  const nearAnchor = Math.abs(skyFor(dateAt(10, 31)).daylight - skyFor(dateAt(10, 30)).daylight)
-  const midSegment = Math.abs(skyFor(dateAt(8, 31)).daylight - skyFor(dateAt(8, 30)).daylight) // ~midpoint of 6:30-10:30
+  const nearAnchor = Math.abs(skyFor(dateAt(8, 31)).daylight - skyFor(dateAt(8, 30)).daylight)
+  const midSegment = Math.abs(skyFor(dateAt(7, 46)).daylight - skyFor(dateAt(7, 45)).daylight) // steepest point, dawn segment
   check('the rate of change eases near an anchor rather than staying constant', nearAnchor < midSegment, `${nearAnchor} vs ${midSegment}`)
 }
 

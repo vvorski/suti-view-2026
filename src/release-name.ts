@@ -148,6 +148,8 @@ export const RELEASE_NAMES: readonly string[] = [
   'quiet quarter',
   'run of rings',
   'still framing',
+  'says i am',
+  'brief crossing',
 ]
 
 /** The current release's name — derived as the list's last element, so

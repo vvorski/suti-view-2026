@@ -27,13 +27,18 @@
  * 24 hours: four anchors smoothstepped pairwise cannot produce a plateau —
  * every anchor is a peak or a valley, so "day" and "night" were each an
  * instant, not a state, and the picture spent sixteen of the twenty-four
- * hours in between. Daylight now has six anchors — a night floor held from
- * 23:00 to 04:00, a day plateau held from 10:30 to 15:30, and the original
- * warm dawn/dusk anchors carrying the transitions between them — so day and
- * night are states again and the crossover is what it should be: an event,
- * not most of the day. Warmth keeps its original four anchors unchanged;
- * that curve was already right, and this entry's finding was about the
- * shape of daylight specifically.
+ * hours in between. Daylight now has six anchors — a night floor and a day
+ * plateau, each held flat, with the original warm dawn/dusk anchors
+ * carrying the transitions between them — so day and night are states
+ * again. Entry 71 shipped six anchors that held the floor and plateau for
+ * only 4.9 hours combined — measured, later, at 9.95 hours of actual
+ * crossover, because six and a half hours of rise and seven and a half of
+ * fall is most of the day smoothstepped, whatever the anchors either side
+ * hold flat at. Entry 108 re-timed the same six anchors — dawn and dusk
+ * three hours each rather than six-plus — for a measured 4.90-hour
+ * crossover, which is what "an event, not most of the day" actually needs
+ * to mean. Warmth keeps its original four anchors unchanged; both entries'
+ * findings were about the shape of daylight specifically.
  *
  * A pure function of a `Date`, so it can be scrubbed through 24 hours in a
  * headless harness (`scripts/probe-sky.ts`) exactly like `probe-slow.ts` and
@@ -63,20 +68,29 @@ interface Anchor {
 }
 
 /** Six anchors, holding both ends rather than only touching them — entry
- *  71's own finding. 04:00 and 23:00 are both 0.0 (adjacent, so the curve
- *  between them holds flat at the night floor rather than easing anywhere);
- *  10:30 and 15:30 are both 1.0 for the same reason, at the day plateau.
- *  06:30 and 19:30 are the original dawn/dusk anchors, unmoved, carrying the
- *  shape of the rise and fall between the two held ends. Hours settled by
- *  eye, per this file's own house style — see the original ANCHORS comment
- *  this table replaces. **Mine** as to the specific hours. */
+ *  71's own finding. Re-timed by entry 108: entry 71's own **Done when**
+ *  promised a crossover of "no more than ~5 of 24 hours", but its **Decided**
+ *  anchors (04:00/23:00 night, 10:30/15:30 day) produce 9.95 h, scrubbed
+ *  minute by minute — the two halves of that entry disagreed with each
+ *  other, and the probe it shipped with asserted the anchors rather than the
+ *  duration, so nothing caught it. This table gives dawn and dusk three
+ *  hours each rather than six and a half/seven and a half, for a measured
+ *  4.90 h crossover — chosen deliberately short of the ~2 h a real sun
+ *  produces (see `skyForLocation` below): the clock this file reads is known
+ *  to be wrong about the hour outside the tropics (this file's own header),
+ *  and a sharp transition would advertise that error at a decisive, visibly
+ *  wrong moment where a softer one hides it. Dusk is stretched a further
+ *  hour past dawn's — 17:45–21:45 against 05:30–08:30 — because evenings
+ *  read as longer than mornings; the day/night *values* this holds between
+ *  are unchanged from entry 71's approval, only the hours moved. **Mine** as
+ *  to the specific hours. */
 const DAYLIGHT_ANCHORS: readonly Anchor[] = [
-  { hour: 4, value: 0.0 },
-  { hour: 6.5, value: 0.35 },
-  { hour: 10.5, value: 1.0 },
-  { hour: 15.5, value: 1.0 },
+  { hour: 5.5, value: 0.0 },
+  { hour: 7, value: 0.35 },
+  { hour: 8.5, value: 1.0 },
+  { hour: 17.75, value: 1.0 },
   { hour: 19.5, value: 0.4 },
-  { hour: 23, value: 0.0 },
+  { hour: 21.75, value: 0.0 },
 ]
 
 /** Warm at both ends, coolest in the small hours — what a sky actually

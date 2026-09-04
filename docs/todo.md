@@ -350,6 +350,16 @@ machinery.
 night-at-noon in two taps and back to auto in one more; a DST-sized clock jump
 takes ~3s on screen rather than one frame; and a stored `day: true` from before
 the change still lands in forced day.
+
+**Correction, entry 108, 2026-09-04** — the "~5 of 24 hours" line above was
+unreachable from this entry's own **Decided** anchors: 04:00/23:00 and
+10:30/15:30, smoothstepped, produce 9.95 hours of mid-band, not ~5 — the two
+sections were written in the same sitting and disagreed with each other, and
+`probe-sky.ts`'s check 4 asserted `< 11`, loose enough to pass at the real
+number, so nothing caught it before `/ccc` did at build 355. Entry 108 re-times
+the same six anchors (dawn/dusk spans shortened from ~4 hours each to 1.5) for a
+measured 4.90 hours, tightens the probe's threshold to 5.2, and this line is
+now genuinely met rather than merely unflagged.
 **Verify** — `probe-sky.ts` for the curve and the migration; the phone across
 an actual evening for whether 10:30/15:30/23:00/04:00 are the right hours,
 which a probe cannot answer and the original anchors' own comment ("settled by
@@ -494,7 +504,7 @@ disclaimer, no list of senses, no live/available-only-if-granted logic: the
 plainest of the three options on offer.
 
 ### 108. The sky's crossover is twice as long as entry 71 promised
-`status: building` · added 2026-08-31 · answered 2026-09-04 · started 2026-09-04 · found by `/ccc` at build 355 · build before 71 is archived
+`status: done` · added 2026-08-31 · answered 2026-09-04 · build 376 · found by `/ccc` at build 355
 
 **Do** — move `DAYLIGHT_ANCHORS` to dawn 05:30/07:00/08:30 and dusk
 17:45/19:30/21:45, and make `probe-sky.ts` assert the crossover *duration*
