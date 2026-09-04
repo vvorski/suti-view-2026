@@ -1230,3 +1230,129 @@ check above; then a phone with motion granted, to confirm the 15-second quiet
 window still fires when it is genuinely laid flat.
 
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 112. The cursor is a finger, while it is moving and while it is on the glass
+`status: ready` · added 2026-09-04 · independent of 110 and 111
+
+**Do** — on desktop, let a moving mouse drive a geometric emitter at the cursor,
+so passing the pointer across the canvas changes the picture; a cursor that has
+left the window, or that has been parked, drives nothing.
+
+**Why** — a desktop visit currently has no way to play with the thing at all
+short of clicking. The emitter, the ripples and the whole gesture vocabulary
+are already built and a mouse never reaches any of it.
+
+**Recon: hover already reaches the code and is thrown away.** `main.ts:1233`
+forwards every `pointermove` to `touchField.move()`, including hover moves with
+no button down — and `touches.ts:225` drops them on the floor, because
+`slots.get(id)` is empty for a pointer that never sent a `down`. So the events
+are arriving; nothing is listening for them. That is what makes this small.
+
+**Decided**
+- **A separate hover emitter, not a synthesised touch** → the hover path never
+  enters `touchField` at all. **Mine**, and it is the load-bearing call: making
+  a hover into a real contact would give the app a finger that is *permanently
+  down*, which would hold `touchAnyDown` true forever (`scene.ts:1465`), park
+  the tap/double-tap recogniser mid-gesture (`main.ts:1325`), and charge to a
+  full 2.5s hold within three seconds of the mouse entering the window. Every
+  one of those is a regression on the touch path, bought for nothing.
+- **A parked cursor goes quiet; a moving one is answered immediately** → the
+  emitter is active only while the cursor has moved within `HOVER_QUIET`, and
+  **1.5 seconds** is that window. This is not taste, it is
+  `docs/the-toy-wants-to-be-played-with.md`'s own rule applied: *"restraint
+  belongs in what persists, generosity belongs in what responds"* — a moving
+  mouse is a person responding and gets no threshold and no delay, and a cursor
+  abandoned on the glass is a thing changing on its own while nobody is
+  touching it, which the same page says must be quiet. 1.5s is long enough that
+  a pause to look does not cut the emitter off mid-thought and short enough
+  that a laptop left open goes still. **Mine.**
+- **It stops by going inactive, not by being deleted** → both the parked case
+  and the left-the-window case set `active` false and let entry 102's afterlife
+  run. **Mine**: the rings thin out over the emitter's own remaining life
+  instead of stopping dead, which is exactly what a lifted finger already does,
+  and it costs no new code. On desktop `emitterGravity` is zero (no
+  accelerometer), so the dying emitter simply fades where it was left rather
+  than falling — consistent with entry 102 rather than an exception to it.
+- **A hover is quieter than a press** → `updateEmitter` gains a
+  `chargeCap = 1` parameter and the hover path passes **0.35**. **Mine**, and
+  it fixes a fault the naive version would have: `CHARGE_TIME` is 2.5s and
+  charge only ever accumulates while active, so an uncapped hover would sit at
+  charge 1.0 — *louder than any deliberate hold a finger can give it* — for as
+  long as the mouse kept moving. 0.35 sits below `CHARGE_FLOOR`'s 0.6, so a
+  passing cursor is quieter than the briefest tap, which is the right ordering:
+  a click is still worth more than a hover. The default of 1 is what keeps
+  every existing call byte-identical.
+- **Speed rides along, as it does for a finger** → the smoothed cursor speed
+  feeds `updateEmitter`'s existing `speed` parameter, so a fast sweep throws
+  brighter rings exactly as entry 50's fling does. **Mine** — it is the same
+  parameter, already there, and it is most of what "moving the mouse changes
+  the image" means.
+- **Its own pure-state module, `src/engine/hover.ts`** → position, smoothed
+  speed and last-moved time, with `createHoverState` / `updateHover` / 
+  `hoverLeft`, no DOM and no clock of its own. **Mine**: it is the shape
+  `touches.ts`, `ripples.ts` and `emitter.ts` already have, it is where
+  `HOVER_QUIET` belongs, and it is the only way the 1.5s timeout gets a
+  headless probe instead of being tested by waiting.
+- **`VELOCITY_SMOOTH` gets exported from `touches.ts:44` rather than copied** →
+  the hover's speed smoothing is the same filter a touch's is, and a second
+  0.3 in a second file is precisely CLAUDE.md's *"duplication that only exists
+  because something was not exported"*. **Mine.**
+- **Mouse pointers only** → gated on `e.pointerType === 'mouse'`, over a
+  `(hover: hover)` media query. **Mine**: it is a per-event fact needing no
+  query, a pen hovering is deliberately excluded (it has its own press), and a
+  tablet with a mouse attached is a mouse and should work.
+- **Chips are excluded, exactly as they are for touch** → the existing
+  `isChip(e.target)` test (`main.ts:1202`) gates the hover path too, so running
+  the pointer over the HUD does not spray rings underneath it. **Mine.**
+- **No touch ring is drawn for the cursor** → the hover feeds neither
+  `setTouches` nor `setTouchStream`. **Mine**: the OS already draws a cursor
+  there, and a second marker under it is a duplicate, not a response. The
+  emitter's rings are the feedback.
+
+**Identity when off** — a touch-only phone never fires a `pointermove` with
+`pointerType === 'mouse'`, so `present` is never true, `updateEmitter` is
+called with `active: false` on a state whose `life` is 0, and it returns
+without spawning. Nothing is added to any uniform and nothing changes in any
+shader. The `chargeCap` default of 1 leaves all eight existing emitter slots
+arithmetically identical. Idle behaviour is unchanged too — `main.ts:832`
+already resumes the frame chain on `pointermove` and this entry does not touch
+that listener.
+
+**Lands in** — `src/engine/hover.ts` (new); `src/engine/touches.ts:44`
+(`VELOCITY_SMOOTH` exported); `src/engine/emitter.ts:205` (the `chargeCap`
+parameter and the charge line it clamps); `src/engine/index.ts` (the two new
+exports); `src/main.ts:1233` (the hover branch on the existing `pointermove`
+listener) and a new `pointerout` listener whose `relatedTarget` is `null`, plus
+`window` `blur`, both calling `hoverLeft`; `src/scene.ts:812` (a
+`hoverEmitter: EmitterState` beside `emitterSlots`), `:1184` (ticked in the
+same loop), `:406` (a `setHover(x, y, present, speed)` on the interface) and
+`:1461`; `package.json` (`probe:hover`); `scripts/probe-hover.ts` (new).
+
+**Done when** — on a desktop browser, moving the mouse across the canvas spawns
+rings that follow the cursor, at the same cadence a held finger gets; parking
+the cursor stops new rings **within 1.5s plus one spawn interval** and the
+rings already alive fade out rather than vanishing; moving the pointer off the
+window stops new rings on the next frame; and hovering a HUD chip spawns
+nothing. `pnpm probe:hover` asserts, headless: a hover that never moves after
+entering produces exactly one active period ending at 1.5s; `hoverLeft` makes
+the emitter inactive on the next tick regardless of how recently it moved; a
+hover's ring birth level is **strictly below** that of a 0.1s finger tap on the
+same view (charge 0.35 against `CHARGE_FLOOR` 0.6); and a hover that has never
+happened leaves `updateEmitter`'s output bit-identical to a build without this
+entry. `pnpm probe:emitter` and `pnpm probe:touches` must pass **unchanged** —
+that is what proves the `chargeCap` default and the `VELOCITY_SMOOTH` export
+changed nothing on the touch path.
+
+**Verify** — `pnpm build`, `pnpm lint`, `pnpm probe:hover`, `pnpm probe:emitter`,
+`pnpm probe:touches`, `pnpm probe:tap` (the recogniser this deliberately does
+not feed). Then a desktop browser, which for once is the device the entry is
+*about* rather than a stand-in: sweep the pointer over the canvas in each
+geometric view, park it, leave the window, come back. No HUD surface changes,
+so no 320×568 pass is owed — but check on a phone that touch is unaffected,
+since the emitter path is shared and a touch regression here is the expensive
+kind.
+
+**Hard stops** — prefs no (deliberately not a stored toggle: a new `Prefs`
+field is a hard stop and this needs none — it is on wherever a mouse exists and
+absent wherever one does not) · url no · capture no · dependency no. The
+control surface is unchanged; this adds no control.
