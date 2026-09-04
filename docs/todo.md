@@ -1897,7 +1897,7 @@ groups open); then a phone in landscape.
 surface stays circular — this moves chips along the arc they are already on.
 
 ### 120. Armed camera mode dies after 15 seconds on any device with no motion data
-`status: ready` · added 2026-09-04 · found at build 373 from the same "there is no camera" report · follows 109 · independent of the rest of the queue
+`status: building` · added 2026-09-04 · started 2026-09-05 · found at build 373 from the same "there is no camera" report · follows 109 · independent of the rest of the queue
 
 **Do** — teach `camera-arm.ts` the difference between "the phone reads as put
 down" and "the phone has never reported anything", and in the second case run
