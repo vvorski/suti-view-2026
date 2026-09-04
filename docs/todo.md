@@ -2571,3 +2571,153 @@ direction**: arming moves from a double tap to a 3.5s still hold *plus* the new
 calm gate, so a photograph becomes strictly harder to reach than it is at build
 407, not easier. Every existing guard survives — one shot per arm, the rate
 limit, the 15s quiet disarm, the five-minute ceiling · dependency no.
+
+### 126. The space bar is a shake, and holding it is a shake that keeps going
+`status: ready` · added 2026-09-05 · replaces the space bar's direct re-seed · interacts with 125 — see Decided
+
+**Do** — make the space bar synthesise accelerometer samples into the real
+`Tumble`, so it tumbles, disperses and re-seeds exactly as a shake does; held
+down, it keeps shaking for as long as it is held.
+
+**Why** — Victor: *"in desktop make spacebar act like a shake, a continuously
+pressed spacebar like a repeating hard shake."* Today it calls
+`visualiser.randomise()` and nothing else — the one thing a shake does that
+leaves no trace of having been a shake.
+
+**Recon: the injection point already exists and is already live on desktop.**
+`requestMotionAccess()` (`shake.ts:873`) returns `true` on any browser where
+`DeviceMotionEvent` is defined and carries no permission gate — which is
+desktop Chrome — so `startShake(true)` builds a **real `Tumble`** and attaches
+a `devicemotion` listener that simply never fires. The springs, `disturb`, the
+gravity estimator and the STRONG/DOUBLE detector are all constructed and
+ticking on a laptop right now, receiving nothing. Feeding them one synthetic
+sample per frame is therefore the whole feature: the tumble, the RGB slip
+(entries 76/104/111), the colour bias (58), the re-seed and the double-shake
+scramble all follow with no further wiring.
+
+**Two things that would go wrong if it were only that, and both are found
+rather than guessed:**
+
+- **`hasMotionData()` must stay false.** It reads the sample count, and entry
+  110's Strata uses it to tell *"lying flat"* from *"there is no sensor here"*,
+  with the interface comment naming entry 116's camera-arm as the identical
+  test. Synthetic samples would tell both that a laptop has an accelerometer.
+- **The gravity-free feed is safe, and the file says so.** `onMotion`'s own
+  comment: *"the estimator converges on whatever DC the signal has, which for a
+  gravity-free feed is ~0, and it subtracts that."* So injecting pure AC needs
+  no special case — and with `az` at 0 the tilt stays (0, 0), which is what
+  keeps entry 30's gravity offset and entry 102's falling emitters from
+  acquiring a fake "down" on a machine that has none.
+
+**Decided**
+- **Synthesised samples into the existing `Tumble`, not a parallel effect** →
+  **Mine**, over reproducing a tumble from the keyboard: every motion consumer
+  in the app reads `disturb` or the `ShakeFrame`, so one injection point gives
+  all of them the real behaviour, and any consumer added later gets it for
+  free. Reproducing it would be a second definition of what a shake is.
+- **Driven per frame, not by key auto-repeat** → `keydown` sets a held flag
+  (ignoring `e.repeat`), `keyup` clears it, and the synthesis runs from the
+  render loop. **Mine**: auto-repeat rate is an OS setting, so a shake built on
+  it would be a different shake on every machine.
+- **`window` `blur` ends the shake** → **Mine**, and it is the specific bug
+  this shape always has: a key released while the tab is not focused sends no
+  `keyup`, and without this the picture shakes forever with nothing on screen
+  explaining why and no way to stop it but a reload.
+- **26 m/s², and the number is derived** → `STRONG_UP` is 18, but entry 88's
+  adaptive bar *rises* to `STRONG_UP_BUSY` = 20 as the phone reads busy — and a
+  held space bar is precisely what makes it busy. An amplitude that only just
+  cleared 18 would fire once and then go quiet as the bar climbed past it,
+  which reads as the feature breaking after the first press. 26 clears the busy
+  bar by 30%. **Mine.**
+- **5 Hz** → `shake.ts`'s own probe table already calibrates *"deliberate shake
+  (28 m/s², 4 Hz)"* and *"violent shake (45 m/s², 6 Hz)"*; 5 Hz sits between
+  them, so the synthetic gesture lands inside the range the detector was
+  actually tuned against rather than outside it. **Mine.**
+- **A tap is one burst of 0.35s; holding simply does not stop** → about two
+  cycles at 5 Hz, enveloped so it rises and falls rather than starting and
+  stopping at full amplitude. **Mine**, and the held case needs no repeat logic
+  of its own: a continuous 26 m/s² at 5 Hz *is* a repeating hard shake, and how
+  often it re-seeds is then governed by `shake.ts`'s existing cooldown and
+  double-window rather than by a new rate limit invented here.
+- **A new in-plane bearing per press, held for that press** → **Mine**: the RGB
+  slip holds a direction (entry 104) and needs one that stays put across a
+  gesture, and a bearing re-rolled every frame is exactly the oscillating input
+  entry 104 was written to stop reading.
+- **The direct `visualiser.randomise()` call goes** → the space bar re-seeds
+  *through* the shake, because a hard shake already re-seeds. **Mine**, and it
+  is the request: a space bar that re-seeded directly *and* shook would fire
+  two re-seeds for one press. Note the consequence plainly — **holding space
+  will now scramble the look repeatedly, not merely re-seed once**, because a
+  double shake is a full scramble (`main.ts:1648`). That is what "repeating
+  hard shake" means, and it is intended rather than overlooked.
+- **`startShake` builds the real `Tumble` even when motion is refused** → today
+  a refused or absent `DeviceMotionEvent` returns a stub whose `frame()` is a
+  constant, and the space bar would do nothing there. **Mine**: only the
+  *listener* should be conditional, never the machinery, and `hasMotionData()`
+  keeps reporting the truth about the sensor either way.
+- **`hasMotionData()` reads a flag set only in `onMotion`** → not the sample
+  count. **Mine**, and see Recon: it is the one line that keeps a synthetic
+  shake from telling Strata and the camera arm that a laptop has an
+  accelerometer.
+- **`?debug` marks synthetic samples** → the existing `motion N ev` readout
+  gains a `key` marker while the space bar is driving. **Mine**, CLAUDE.md's
+  *two identical symptoms need two different numbers*: "the space bar does
+  nothing" is otherwise indistinguishable from "the samples arrive but never
+  clear the bar", which is exactly the failure the 26 m/s² decision above
+  exists to avoid.
+- **Its own pure module** → `src/engine/synth-shake.ts`, `createSynthShake` /
+  `updateSynthShake(state, dt, held)` returning a sample or `null`. **Mine**:
+  the amplitude, the envelope and the bearing are the parts that can be wrong,
+  and none of them is testable inside a `keydown` listener. `pnpm
+  probe:synth-shake` drives a **real `Tumble`** with them, which is the only
+  assertion that actually proves the feature works.
+
+**Identity when off** — `updateSynthShake` returns `null` on every frame the
+space bar is not held, and nothing is pushed, so the `Tumble` receives exactly
+what it receives today: nothing on a desktop, real events on a phone. A phone
+with no keyboard sends no `keydown` and is untouched. `hasMotionData()` is
+unchanged for every real device, because the flag it now reads is set in the
+same handler that used to be the only thing incrementing the count.
+
+**Interaction with entry 125, stated rather than left to be discovered** — 125
+(`ready`) blocks the menu and the camera arm while `disturb` exceeds 0.35, and
+its Identity section reasons that *"a machine with no accelerometer reports
+`disturb` 0 forever, so the gate is permanently open on desktop."* This entry
+makes that no longer true: while space is held, `disturb` saturates and the
+gate closes on desktop too. That is correct — you are shaking — and it clears
+0.4s after release. Whoever builds the later of the two should correct 125's
+Identity paragraph rather than either behaviour.
+
+**Lands in** — `src/engine/synth-shake.ts` (new); `src/engine/index.ts` (its
+exports); `src/shake.ts:964` (the stub path keeps the real `Tumble`; a
+`pushSample` on `ShakeSensor`; `hasMotionData` reads its own flag);
+`src/keyboard.ts` (`keyAction`'s `'randomise'` becomes `'shake'`,
+`KeyboardHandlers` gains start/end, the `blur` listener); `src/main.ts:1188`
+(the handler) and its render loop (the per-frame push); the `?debug` line.
+`scripts/probe-keyboard.ts` (the renamed action) and
+`scripts/probe-synth-shake.ts` (new), plus `package.json`.
+
+**Done when** — `pnpm probe:synth-shake` asserts, headless, against a **real
+`Tumble`**: a single 0.35s burst produces **exactly one** `strong` event; two
+seconds held produces **at least three**; an unheld state produces **zero**
+samples and leaves `disturb` at exactly 0; the peak magnitude reaches at least
+26 m/s²; the held bearing does not reverse through a burst (the property entry
+104 asserts for a real shake); and `hasMotionData()` is **false** throughout,
+which is the assertion that would fail if the sample count were reused.
+`pnpm probe:keyboard` still passes with the action renamed. On a desktop
+browser: one press tumbles the picture, disperses the colour channels and
+re-seeds; holding scrambles repeatedly; releasing settles within about a
+second; and pressing space, switching tabs, releasing it there and coming back
+leaves the picture still — the `blur` case.
+
+**Verify** — `pnpm build`, `pnpm lint`, `pnpm probe:synth-shake`,
+`pnpm probe:keyboard`, and `pnpm probe:shake` **unchanged** — that last one is
+what proves a real phone's shake is untouched, which is the regression this
+entry could most easily cause and the one no desktop check would catch. Then a
+desktop browser, watching the picture rather than the console. Then a phone,
+confirming a real shake still behaves and that `?debug` does not show the `key`
+marker. No HUD surface changes, so no 320×568 pass is owed.
+
+**Hard stops** — prefs no · url no · capture no (the space bar reaches no
+capture path; entry 117's left click is what arms, and 125's gate — once built
+— makes a held space bar *block* arming rather than assist it) · dependency no.
