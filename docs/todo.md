@@ -494,7 +494,7 @@ disclaimer, no list of senses, no live/available-only-if-granted logic: the
 plainest of the three options on offer.
 
 ### 108. The sky's crossover is twice as long as entry 71 promised
-`status: ready` · added 2026-08-31 · answered 2026-09-04 · found by `/ccc` at build 355 · build before 71 is archived
+`status: building` · added 2026-08-31 · answered 2026-09-04 · started 2026-09-04 · found by `/ccc` at build 355 · build before 71 is archived
 
 **Do** — move `DAYLIGHT_ANCHORS` to dawn 05:30/07:00/08:30 and dusk
 17:45/19:30/21:45, and make `probe-sky.ts` assert the crossover *duration*
