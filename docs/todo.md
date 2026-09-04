@@ -1455,3 +1455,122 @@ committing.
 **Hard stops** — prefs no · url no · capture no · dependency no. No gate *copy*
 changes, so CLAUDE.md's gate-copy clause is not engaged — this changes how long
 an existing element takes to resolve, not what it says.
+
+### 114. The lattice bends toward the cursor
+`status: ready` · added 2026-09-04 · **build after 112**
+
+**Do** — on desktop, contract the lattice's space toward the mouse pointer: a
+smooth local lens centred on the cursor, fading to nothing at its edge and to
+nothing when the cursor is gone.
+
+**Why** — asked for. The lattice is the one view whose whole geometry is a
+space you are looking *into*, and a pointer that bends that space is the most
+direct thing a mouse could possibly do to it.
+
+**Recon: two findings, and both make this smaller than it looks.**
+
+1. **The pointer position needs no conversion at all.** `toShaderUv`
+   (`touches.ts:143`) returns `(clientX − centre) / min(w, h)` with y up, and
+   `lattice.frag.glsl:131` computes its own `uv` as
+   `(gl_FragCoord.xy − 0.5 * uResolution) / min(uResolution.x, uResolution.y)`.
+   Those are the *same space*, already. The cursor's coordinates can go
+   straight into the uniform.
+2. **Nothing but the geometric layer has ever had a pointer.** `uRipples` is
+   read by seven geometric programmes (circles, drift, chorus, grid, shards,
+   tide, rose — counted, not recalled) and by no atmospheric one; the lattice
+   declares fifteen uniforms and not one of them is a touch. So this is the
+   first time a pointer reaches the atmospheric layer, which is why it needs a
+   uniform rather than a parameter.
+
+**Decided**
+- **A local lens, not a moved centre** → the mandala stays centred and the
+  cursor bends space around itself. **Mine**, and a reasoned comment is what
+  decides it: the shader's own header calls the lattice *"radial symmetry — a
+  kaleidoscopic fold gives the mandala structure and the single central focus
+  his compositions are built around."* Dragging the log-polar singularity
+  around under the cursor would be a coherent effect and a different work; it
+  overrides a stated composition decision, and CLAUDE.md is explicit that such
+  a comment outranks an entry that did not know about it. If the moved centre
+  is what was actually wanted, that is a new entry and it should say so.
+- **A radial scale about the pointer, not a displacement along a normal** →
+  `uv = P + (uv − P) * (1.0 + PULL * presence * w)`, with
+  `w = smoothstep(1.0, 0.0, length(uv − P) / REACH)`. **Mine**, over
+  `uv += normalize(uv − P) * PULL * w`: the normalised form is singular exactly
+  where the cursor is, which is the one place the effect is strongest and the
+  one place a NaN would be most visible. The scale form has no singularity, is
+  conformal, and a conformal warp is the right kind for a shader whose entire
+  construction rests on log-polar being conformal (`lattice.frag.glsl:216`).
+  Scaling the sample coordinates *outward* is what makes the *picture* contract
+  toward the cursor, which is the direction "warp towards" asks for.
+- **`PULL = 0.8` and `REACH = 0.45`, and the number that bounds them** →
+  the map stays injective (space compresses, never folds back on itself) while
+  `PULL < 4`: `f(d) = d(1 + k·w(d/R))` has `f'(d) = 1 + k(w + t·w')`, and
+  `w + t·w'` bottoms out at −0.25 for a `smoothstep`, so `f' ≥ 1 − 0.25k`. At
+  0.8 that is `f' ≥ 0.8` — a fifth of a margin, five times under the fold. Peak
+  apparent displacement is about 9% of the short screen dimension, roughly 58px
+  in a 640px-tall window. **Mine**: the fold bound is the only hard constraint
+  here and 0.8 sits well inside it, chosen visible rather than tasteful because
+  the last motion effect to ship was reported as too subtle (entry 111). `REACH`
+  0.45 is just under half the short dimension, so the lens is a local event on
+  the picture and not a whole-frame zoom.
+- **Applied after the break/surge scale, with the pointer scaled to match** →
+  `lattice.frag.glsl:134` already does `uv *= 1.0 + uBreak*0.35 − uSurge*0.28`,
+  and the lens goes after it with `P` multiplied by the same factor. **Mine**:
+  that keeps the lens centred under the cursor's actual screen position even
+  mid-break, where applying it first would slide the lens up to 35% away from
+  the pointer exactly when the picture is moving most.
+- **`uPointer` is a `vec3`, xy position and z presence** → added to the shared
+  uniforms object at `scene.ts:564`, which its own comment says is *"shared by
+  both layers"*. **Mine**: one uniform carries the whole state, presence
+  multiplies `PULL` so the identity is arithmetic rather than a branch, and the
+  eased presence means a cursor entering the window does not snap the picture.
+- **Presence eases over 0.25s, in entry 112's `hover.ts`** → the hover module
+  gains an eased `presence` alongside its position and speed. **Mine**, and it
+  is why this entry says *build after 112*: that entry already decides what
+  "the cursor is here" means — mouse pointers only, chips excluded, parked for
+  1.5s counts as gone, off-window counts as gone — and a second answer to the
+  same question in this entry would be two cursors that disagree.
+- **The lattice only, and no touch equivalent** → the uniform is shared and
+  every other programme could read it, and none does here. **Mine**: one
+  implementation behind a boundary is a guess about the future, and CLAUDE.md
+  names speculative reorganisation ahead of a second tenant as the same mistake
+  in the other direction. A finger warping the lattice on a phone is a separate
+  taste question and is deliberately not answered by this entry.
+
+**Identity when off** — presence 0 gives `uv = P + (uv − P) * 1.0`, which is
+`uv` exactly, for every pixel, with no clamp and no branch protecting it. A
+phone never raises presence above 0 (entry 112 gates the whole hover path on
+`pointerType === 'mouse'`), so the lattice on a phone is bit-identical to today
+and the other twelve programmes are bit-identical everywhere, since none of
+them reads the uniform.
+
+**Lands in** — `src/shaders/lattice.frag.glsl:52` (the `uPointer` declaration)
+and `:134` (the lens, immediately after the break/surge scale and before
+`radius` is taken); `src/scene.ts:564` (the uniform) and its per-frame write
+beside the other pointer-derived values; `src/engine/hover.ts` (entry 112's
+module — the eased `presence`); `src/engine/index.ts` if the ease constant is
+exported for the probe.
+
+**Done when** — rendered side by side in `views-probe.html` from identical
+synthetic audio, the lattice with `uPointer = (0.25, 0.0, 1.0)` differs
+visibly from the same lattice with presence 0 *inside* the lens, and is
+**pixel-identical outside it**: the pixel at uv (−0.4, 0.35) is 0.738 from the
+pointer, well past `REACH` 0.45, and must match byte for byte. `pnpm probe:hover`
+(entry 112's) additionally asserts that presence reaches 0.95 within 0.75s of
+the cursor arriving and returns below 0.05 within 0.75s of it leaving. On a
+desktop browser, moving the pointer across the lattice visibly draws the
+network toward it, and the warp follows continuously rather than in steps.
+
+**Verify** — `pnpm build`, `pnpm lint`, `pnpm probe:hover`. Then
+`views-probe.html`, which CLAUDE.md names as the tool for exactly this — every
+atmospheric view side by side from identical synthetic audio, with the existing
+views as the baseline — and **look at it**, because a conformal warp that
+compiles and passes a pixel check can still bead or shear the fold the way
+`Fringe`'s hyperbolae did. Specifically: check the kaleidoscopic fold's seams
+where the lens crosses a sector boundary, since the fold uses `abs()` and a
+warp that is smooth in screen space is not automatically smooth across a
+mirror line. No HUD surface changes, so no 320×568 pass is owed; do confirm on
+a phone that the lattice is unchanged.
+
+**Hard stops** — prefs no · url no · capture no · dependency no. The control
+surface is unchanged; this adds no control.
