@@ -3859,3 +3859,247 @@ world"* — `?seed=` renames nothing and repurposes nothing, and every existing
 link keeps working, gaining only a deterministic opening shape where it used to
 get a random one · capture no · dependency **no** — the hash is written out
 rather than imported, for exactly this reason.
+
+
+### 138. Umbra — the first view that subtracts light instead of adding it
+`status: ready` · added 2026-09-05 · a new atmospheric view · independent of 139 and 140, and of 110
+
+**Do** — add an atmospheric view, **Umbra**: one bright source behind a drift
+of solid, opaque bodies, seen as silhouettes with lit rims and light leaking
+through the gaps between them.
+
+**Why** — asked for, and it fills the one hole the registry's own taxonomy
+makes visible. `views.ts:112` names the organising principle of each existing
+view — *"Field is cloud, Lattice is symmetry, Spectrogram is a diagram and
+Aurora is a place; these are focused light, superposed waves, and divided
+space."* **All seven are emissive.** `lattice.frag.glsl:16` states the house
+default outright: *"everything is additive. No surfaces, no shading, no
+lighting model — only emission."* Nothing in this app has ever cast a shadow,
+so **occlusion** is an unclaimed principle rather than a variation on a claimed
+one.
+
+**Decided**
+- **The principle is occlusion, and it is the whole point** → bodies are
+  genuinely opaque: where one covers the source, the frame goes dark. **Mine**,
+  over a dark-tinted additive fake, which is what every other view would
+  produce if asked for shadow and is why none of them reads as solid.
+- **One source, off-centre, behind everything** → a single bright disc at a
+  fixed offset from centre, never in front. **Mine**: two sources is Fringe's
+  territory and a centred source is Lattice's; one off-centre source is what
+  makes the silhouettes lean and gives the rim light a direction.
+- **The bodies are a signed-distance field of a few large blobs**, drifting on
+  `uFlow` and merged smoothly, so they read as one moving mass rather than as
+  circles. **Mine**: smooth-minimum merging is what stops it looking like a
+  lava lamp's separate bubbles, and an SDF is what makes a true rim available —
+  the rim is the distance to the body's own edge, which no noise field can give
+  you.
+- **The music, three couplings, chosen so they are separable on screen**:
+  **`uLow` swells the bodies** (bass eclipses the source — the frame darkens on
+  a kick, which no existing view does); **`uTransient` flares the source**
+  (a hit blows light through every gap at once); **`uHigh` sharpens and
+  brightens the rim** (treble is the hard edge of the silhouette). **Mine**,
+  and separability is the criterion: entry 32's lesson is that a view is
+  judged by whether one input can be *seen* moving on its own, so each of the
+  three acts on a different part of the image — area, source, edge.
+- **The eclipse is bounded** → the bodies' total swell is capped so the frame
+  can never go fully black. **Mine**: a view that can extinguish itself on a
+  bass note is indistinguishable from a crash, and this is the same ceiling
+  argument `shake.ts`'s `MAX_ANGLE` and entry 32's refusal of whole-frame scale
+  both make.
+- **Colour comes from the layer filter, as everywhere else** → the shader
+  draws luminance only. **Mine**, matching `views.ts`'s own contract and every
+  geometric shader's stated habit.
+
+**Identity when off** — a new view changes nothing until it is chosen; the
+other seven and both defaults are untouched. Within the view, silence still
+draws: the source burns steadily and the bodies drift on `uFlow`'s own floor
+(`0.06`, `scene.ts:1316`), so a quiet room gets slow eclipses rather than a
+black screen — which every existing atmospheric view also does, and which is
+the difference between "calm" and "broken".
+
+**Lands in** — `src/shaders/umbra.frag.glsl` (new); `src/views.ts:21-30` (the
+import) and `:130` (the registry entry, appended — the registry's order is the
+order the HUD offers, and its own comment says the first four remain the ones
+worth meeting first).
+
+**Done when** — in `views-probe.html`, side by side with the existing seven
+from identical synthetic audio: a `uLow` sweep 0→1 **visibly grows the dark
+area** and the mean frame luminance falls monotonically; a `uTransient` spike
+**raises luminance in the gaps** while the bodies stay dark, so the two are
+distinguishable rather than both reading as "brighter"; a `uHigh` sweep changes
+the **rim** without changing the body area; and at `uLow = 1` with everything
+else at 1 the frame is **not** fully black — the cap holds. Against real music:
+a kick reads as the light being blocked, not as a colour change.
+
+**Verify** — `pnpm build`, `pnpm lint`, then `views-probe.html` and **look at
+it**, because this is exactly CLAUDE.md's `Fringe` case: a shader that
+compiles, passes a centre-pixel readback and draws the wrong thing. The
+specific failure to look for is the bodies reading as *dark blobs added on top*
+rather than as things in front of a light — if the rim is not brighter than the
+body's interior at every edge, the occlusion is fake and the view has no reason
+to exist. Then a phone, for fill rate: an SDF with a smooth-minimum over
+several blobs is the most expensive thing here per pixel, and mobile is the
+target. Then the HUD's atmospheric band at **320×568 and 360×640** — this is
+the eighth notch on that arc (ninth with 110's Strata), and nobody has checked
+what that arc looks like past seven.
+
+**Hard stops** — prefs no (a new value on an existing validated enum, as Fringe
+and Rose were) · url no (`?atmospheric=umbra` is a new value, not a new
+parameter) · capture no · dependency no.
+
+### 139. Filings — a field with poles, and the music moves them
+`status: ready` · added 2026-09-05 · a new atmospheric view · independent of 138 and 140, and of 110
+
+**Do** — add an atmospheric view, **Filings**: iron filings on glass over a
+handful of magnetic poles, drawn as the curved field lines that run between
+them, with the poles placed and signed by the spectrum.
+
+**Why** — asked for. Against the registry's taxonomy this is a **vector field
+with sources and sinks**, which nothing claims: Caustics focuses light, Fringe
+superposes two scalar waves, Field warps noise. None of them has *topology* —
+lines that must start somewhere, end somewhere, and re-route entirely when a
+pole flips.
+
+**Decided**
+- **The lines are contours of a potential, computed per pixel** → sum
+  `q_i / distance` over the poles, then draw the level sets. **Mine**, over
+  advecting particles: particles need per-agent state and a texture (the shape
+  110's Strata needs), while a potential is a closed-form sum a fragment shader
+  evaluates in one pass with no feedback buffer at all — which is the
+  difference between a view and a subsystem.
+- **Six poles, one per band of a six-band reduction** → each band's energy is
+  its pole's strength. **Mine**: six is enough for the field to have interesting
+  topology and few enough that the per-pixel loop stays cheap on a phone, and
+  reusing a band reduction means the view reads the spectrum without inventing
+  a second way to look at it.
+- **Polarity flips on a transient, and that is the view's signature event** →
+  a hit inverts the sign of one pole, chosen by the seed, and the entire line
+  structure snaps and re-routes. **Mine**, and it is the answer to "respond to
+  music well": every other view responds *continuously*, so a hit is a swell or
+  a flash. This one has a response that is **discontinuous in structure but
+  continuous in pixels** — the lines re-route smoothly because the potential is
+  smooth, but where they *go* changes completely. Nothing else here does that.
+- **Pole positions drift on `uFlow`, and spectral tilt spreads them** → bright,
+  treble-led passages push the poles apart (a wide, open field), bass-led ones
+  draw them together (a tight, knotted one). **Mine**: it gives the slowest
+  audio feature the slowest visual parameter, which is the pairing entry 130
+  argues for in the lattice.
+- **Contours are drawn with a screen-space derivative so they hold a constant
+  width** → `fwidth`-style normalisation on the level-set function. **Mine**,
+  and it is the detail that decides whether this looks like filings or like a
+  bad gradient: without it the lines are thin near a pole and fat far away,
+  which is the artefact, not the phenomenon.
+- **The poles themselves are never drawn** → no dots, no markers. **Mine**: a
+  filings photograph shows the field, not the magnet, and drawing the source
+  would turn a field into a diagram — which is Spectrogram's claimed principle.
+- **Colour comes from the layer filter** → luminance only, as everywhere else.
+
+**Identity when off** — a new view, so nothing existing changes. In silence the
+six poles sit at their drift positions with near-equal weak strengths and the
+field is a calm, slowly-turning lattice of lines — present, quiet, and not
+black.
+
+**Lands in** — `src/shaders/filings.frag.glsl` (new); `src/views.ts` (import
+and registry entry, appended).
+
+**Done when** — in `views-probe.html`: raising one band's energy alone
+**visibly pulls the lines toward that pole's position**, and the effect is
+localised rather than global; a `uTransient` spike **re-routes the line
+structure** — measurable as more than 20% of sampled pixels changing which side
+of a contour they fall on, between the frame before and the frame after — while
+the frame-to-frame pixel difference stays smooth rather than flashing; a
+`uTilt` sweep visibly changes how spread the field is; and line width measured
+near a pole and at the frame edge is **within 30%**, which is the artefact
+check. Against real music: a snare reads as the picture re-organising, not as a
+brightness pulse.
+
+**Verify** — `pnpm build`, `pnpm lint`, `views-probe.html` side by side with
+the other views, **looked at** — the failure mode to hunt is the one Fringe
+actually had: a formula that factors into something regular and beads into
+dots or a moire, which at a glance reads as an artefact and at second glance
+is the whole image. Then a phone for fill rate — a six-pole loop per pixel is
+this view's whole cost and is the number that decides whether it ships. Then
+the atmospheric band at **320×568 and 360×640**.
+
+**Hard stops** — prefs no (a new value on an existing validated enum) · url no
+(`?atmospheric=filings`) · capture no · dependency no.
+
+### 140. Anneal — glass under load, seen through crossed polarisers
+`status: ready` · added 2026-09-05 · a new atmospheric view · independent of 138 and 139, and of 110
+
+**Do** — add an atmospheric view, **Anneal**: a sheet of stressed glass between
+crossed polarisers, showing the oily rainbow fringes of photoelasticity and the
+dark brushes that sweep across them as the stress axis turns.
+
+**Why** — asked for. The principle is **a material under load**, and it is the
+only one of the three that puts *colour* in the shader rather than taking it
+from the layer filter — because in this phenomenon the colour **is** the
+measurement: fringe order is stress magnitude, and that relationship is the
+image.
+
+**Decided**
+- **Colour is computed in the shader, and this view is the documented
+  exception** → **Mine**, and it needs saying loudly because every other
+  atmospheric view takes colour from `uAtmColour` and several shaders carry
+  comments saying so. Photoelastic colour is not a palette choice; the sequence
+  from grey through yellow, red, blue and green *is* the readout of retardation,
+  and a view that filtered it to one hue would be showing stress with the stress
+  removed. The layer filter still multiplies on top, so a user who kills a
+  channel still gets their filter — the shader's own colour is what it filters.
+- **The stress field is a few point loads plus a slow background shear** →
+  concentrators where the fringes crowd into tight closed loops, which is what
+  makes the phenomenon legible. **Mine**: an even stress gives even fringes and
+  no image.
+- **The music, three couplings, on three separate visual axes**: **`uLevel` is
+  the load** — louder crowds more fringe orders into the same space, so the
+  rainbow bands multiply; **`uTransient` is a hammer blow** that sends a stress
+  wave outward from one concentrator, visible as a travelling compression of
+  the fringes; **`uRoughness` sets how jagged the field is** — smooth tones give
+  clean concentric loops, noisy ones give a fractured, granular stress pattern.
+  **Mine**, and separable by construction: count of bands, a travelling front,
+  and the smoothness of the contours.
+- **The isoclinic brushes rotate on `uFlow`** → the dark bands that mark where
+  the stress axis aligns with a polariser sweep slowly across the frame,
+  independent of the fringes. **Mine**: it is the second, slower motion that
+  keeps the view alive during a static passage, and it is the thing that makes
+  it unmistakably *this* phenomenon rather than a rainbow gradient.
+- **`uRoughness` is clamped at the point of use** → `clamp(uRoughness, 0, 1)`.
+  **Mine**, and it is the same trap entry 130 found: this project's features
+  deliberately return out-of-band values to mean *no answer* — CLAUDE.md names
+  `spectralFlatness` returning **-1 on silence** — and an unclamped negative
+  would invert the jaggedness in a quiet room, invisibly to any test that only
+  plays music.
+- **The named risk: this must not look like Fringe** → both draw banded curves.
+  They differ in kind — Fringe's hyperbolae are open and run off the frame,
+  Anneal's are **closed loops around concentrators**, and Anneal is polychrome
+  where Fringe is monochrome. **Mine** to name it, and Done-when tests it
+  rather than trusting it, because CLAUDE.md's own account of Fringe is that
+  it *"drew a lattice of dots instead of the hyperbolae it was supposed to"*
+  and nearly shipped because the artefact looked plausible.
+
+**Identity when off** — a new view; nothing existing changes. In silence the
+background shear alone holds a few wide fringes and the brushes keep turning on
+`uFlow`'s floor, so the sheet is quiet and coloured rather than blank.
+
+**Lands in** — `src/shaders/anneal.frag.glsl` (new); `src/views.ts` (import and
+registry entry, appended).
+
+**Done when** — in `views-probe.html`: a `uLevel` sweep 0→1 **increases the
+number of colour bands** crossed along a fixed radial line, counted rather than
+eyeballed; a `uTransient` spike produces a **front that moves outward** across
+consecutive frames; a `uRoughness` sweep changes contour smoothness without
+changing band count; `uRoughness = -1` renders **identically to 0**; and the
+fringes form **closed loops** — a contour traced from a concentrator returns to
+itself rather than leaving the frame, which is the test that separates this
+from Fringe. Against real music: a sustained loud passage reads as the sheet
+being squeezed.
+
+**Verify** — `pnpm build`, `pnpm lint`, then `views-probe.html` with **Fringe
+placed immediately beside it** and both looked at, because "these two are
+different enough" is a judgement no probe can make and the whole entry rests on
+it. If they read as siblings on screen, say so and stop rather than shipping
+the third view of the same idea. Then a phone. Then the atmospheric band at
+**320×568 and 360×640**.
+
+**Hard stops** — prefs no (a new value on an existing validated enum) · url no
+(`?atmospheric=anneal`) · capture no · dependency no.
