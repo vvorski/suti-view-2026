@@ -1953,3 +1953,129 @@ changes, so no 320×568 pass is owed.
 
 **Hard stops** — prefs no (`showStats` is an existing validated field; no field
 is added, retyped or repurposed) · url no · capture no · dependency no.
+
+### 117. A mouse gets its own map: right click opens the menu, left click arms the camera
+`status: ready` · added 2026-09-04 · **build after 112 and 115** · does not supersede 115 — 115 is the finger's map, this is the mouse's
+
+**Do** — on a mouse, right click opens the menu and left click enters camera
+mode; the next left click takes the picture and leaves. Touch keeps entry 115's
+map unchanged.
+
+**Why** — Victor: *"in desktop mode right click should open the menu, single
+click should enter camera mode."* A mouse has buttons and hover; a finger has
+neither, and one map cannot serve both.
+
+**Recon: three findings, and the third is a live oddity nobody has hit yet.**
+
+1. **Nothing in the app handles a mouse button.** There is no `contextmenu`
+   listener and no `e.button` check anywhere in `src/` — counted, not recalled.
+   Right click currently opens the *browser's* menu over the picture.
+2. **Left click is currently the only way to play on desktop**, which is why
+   this entry cannot ship before 112. Entry 112 puts play on hover; without it,
+   giving the click to the camera leaves a desktop visitor with no play gesture
+   at all.
+3. **Every mouse button already reaches the touch field.** `main.ts:1216`
+   forwards `pointerdown` with no button filter, so a *right* click today
+   spawns an emitter and increments `nonChipDown` — which means right-then-left
+   satisfies `nonChipDown === 2` at `main.ts:1462` and opens the menu by
+   accident. Middle click does the same. This entry fixes that as part of
+   routing buttons at all.
+
+**Also found, and fixed here because this entry is the one that makes them
+newly wrong:** three comments claim the seed re-rolls on gestures that no
+longer exist — `lattice.frag.glsl:143` and `scene.ts:627` both say *"space bar,
+double-tap, double-click"*, and `main.ts:1550` says *"the same action the space
+bar and a vertical swipe already perform"*. Double-tap has opened the menu
+since entry 103, double-click has never had a handler, and entry 27 deleted the
+vertical swipe. CLAUDE.md's *a comment's assumption expires; the comment does
+not*, three times in one feature.
+
+**Decided**
+- **Two maps, split by `pointerType`, not one map with exceptions** → the whole
+  routing is `e.pointerType === 'mouse'`, the same gate entry 112 established.
+  **Mine**: a mouse has two buttons and a hover state and a finger has neither,
+  so the maps differ because the hardware does. Entry 115's finger map — single
+  tap plays, double tap arms, 3.5s hold opens the menu, two fingers open the
+  menu — is untouched, and a touchscreen laptop gets whichever map the actual
+  contact came from.
+- **The mouse map, in full** → left click arms; the next left click shoots and
+  leaves; right click opens the menu; hover plays (112); moving the mouse warps
+  the lattice (114); `d` toggles the numbers (116); space re-seeds. **No hold
+  on the mouse** — entry 115's 3.5s hold is the finger's way to the menu
+  because a finger has no second button, and a mouse has one. **Mine**: two
+  gestures for one action on the same device is how a map stops being learnable.
+- **Left click still plays** → the emitter fires on `pointerdown` exactly as it
+  does today, arming or not. **Mine**: entry 87's rule is that *arming* changes
+  nothing on screen, not that the gesture which arms must stop doing what it
+  did — and a click that produced no ring on a machine where merely hovering
+  produces rings would read as broken rather than as a mode.
+- **Right click while armed disarms and opens the menu, without taking a
+  picture** → **Mine**, and it is entry 72's own principle applied to the
+  device that now has a second button: *"two fingers always means get me out of
+  what I am in."* Entry 87 locks the menu out during the mode; that was right
+  when the mode's only exit was the shot, and a mode whose only exits are a
+  photo or a 15-second timeout is one a right click should be able to leave.
+- **`contextmenu` is prevented on the canvas only** → not on the document.
+  **Mine**: a right click on a `.hud-chip` or on the gate keeps the browser's
+  own menu, which is the escape hatch for anyone who needs it, and the picture
+  is the only surface this entry claims.
+- **Buttons other than 0 and 2 are ignored entirely** → middle click and the
+  back/forward buttons reach neither the touch field nor the menu. **Mine**,
+  and it is the fix for finding 3 above rather than a new rule: they currently
+  play and can pair into a spurious two-contact menu open.
+- **The routing is a pure function, in `touches.ts`** → `pointerAction({
+  pointerType, button })` returning `'play' | 'menu' | 'ignore'`, beside
+  `toShaderUv`. **Mine**: `touches.ts` is already the module that translates a
+  DOM pointer event into this app's terms, it is where `toShaderUv` lives for
+  the same reason, and `pnpm probe:touches` already exists — so this needs no
+  new file and no new probe script, only new assertions in one that runs today.
+- **The 15-second expiry is the bound on accidental captures, and it does work
+  on a desktop** → `camera-arm.ts`'s `QUIET_S` disarms after 15s of the phone
+  reading flat and unhandled, and a machine with no accelerometer reports
+  exactly that from the first frame, so an armed desktop always disarms in 15s.
+  **Mine** to state it; the behaviour is entry 109's and is unchanged. Worth
+  stating because "two clicks anywhere is a photo" is otherwise unbounded, and
+  the thing that bounds it is a module written for a phone.
+
+**Identity when off** — a touchscreen device never produces
+`pointerType === 'mouse'`, so `pointerAction` returns `'play'` for every
+contact it sees and the dispatch is exactly entry 115's, unchanged. On a mouse
+with no click, nothing fires. The saved PNG, the flash, the rate limit and the
+arm expiry are all untouched; this entry only routes which input reaches which
+existing path.
+
+**Lands in** — `src/engine/touches.ts:143` (`pointerAction`, beside
+`toShaderUv`); `src/main.ts:1216` (the `pointerdown` listener routes on it),
+`:1462` (the two-contact branch, now unreachable from a mouse), and a
+`contextmenu` listener on the canvas; `src/shaders/lattice.frag.glsl:143`,
+`src/scene.ts:627` and `src/main.ts:1550` (the three stale comments);
+`scripts/probe-touches.ts` (the new assertions).
+
+**Done when** — `pnpm probe:touches` asserts: `pointerAction` gives `'menu'`
+for a mouse button 2, `'play'` for a mouse button 0, `'ignore'` for mouse
+buttons 1, 3 and 4, and `'play'` for a touch or pen contact **whatever the
+button reads**. On a desktop browser: a right click opens the menu and the
+browser's own context menu never appears over the picture; a left click shows
+the camera glyph and a ring, and the *next* left click saves exactly one frame
+and leaves you on the plain picture; a right click while the glyph is showing
+opens the menu and saves **nothing**; an armed session left alone for 15
+seconds disarms and the glyph fades; and a right-click-drag no longer spawns an
+emitter. On a phone, entry 115's map is unchanged in every one of its cases.
+
+**Verify** — `pnpm build`, `pnpm lint`, `pnpm probe:touches`,
+`pnpm probe:tap`, `pnpm probe:camera-arm`. Then a desktop browser, counting
+files in the download folder across a deliberate arm-shoot-arm-shoot and a
+minute of ordinary clicking around — the second half is the real test, because
+this entry makes a capture two clicks away and the question is whether an
+ordinary session produces any. Then a phone, to confirm the finger map did not
+move. No HUD surface changes, so no 320×568 pass is owed.
+
+**Hard stops** — prefs no · url no · **capture yes, and answered by Victor
+twice**: *"single click should enter camera mode"* (2026-09-04) and, in entry
+87, *"Enter camera mode display camera icon next click takes picture exits
+camera mode."* Captures become materially easier to reach on a mouse — two
+clicks, no menu — and that is the change he asked for. It is bounded by the
+existing 15-second disarm, by right click leaving the mode without a shot, and
+by every other guard surviving untouched: one shot per arm, the rate limit, the
+five-minute ceiling. Nothing new is captured and nothing leaves the device ·
+dependency no.
