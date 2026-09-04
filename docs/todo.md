@@ -669,7 +669,7 @@ one thing no probe can answer.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 109. Camera mode ends when you put the phone down, not when a clock runs out
-`status: done` · added 2026-09-02 · build 372 · follows the build-369 fix
+`status: done` · added 2026-09-02 · build 372 · follows the build-369 fix · gap found at build 373 — see 113
 
 **Do** — replace the armed mode's wall-clock timeout with one that reads
 whether the phone is still being held and aimed, and make the expiry visible
@@ -1034,3 +1034,199 @@ pass is owed.
 **Hard stops** — prefs no · url no · capture no · dependency no. The frozen
 constants of entry 76 are overridden, with Victor's word quoted above and by
 the mechanism entry 76 itself specifies.
+
+### 112. In landscape, the Camera mode chip is drawn above the top of the screen
+`status: ready` · added 2026-09-04 · found at build 373 from a "there is no camera" report · independent of 110, 111 and 113
+
+**Do** — make `chipPosition()` derive the arc's usable angular span from the
+viewport it is given, on both the left edge and the top edge, so no chip on
+either ring can be placed outside the screen at any aspect ratio.
+**Why** — on every landscape viewport the last chip on the outer ring — the
+one that arms camera mode — is placed with its top edge 42–44 px above `y = 0`.
+The chip exists, is wired, and cannot be tapped.
+
+**The finding, measured on the real `hud-probe.html` in iframes** (the only way
+to get a true viewport here, per CLAUDE.md — `resize_window` lies):
+
+| viewport | Camera mode chip `top` | |
+|---|---|---|
+| 320×568, 360×640, 390×844, 414×896, 768×1024 | 204, 237, 412, 440, 225 | on screen |
+| **568×320, 640×360, 844×390, 896×414** | **−44, −43, −42, −42** | **off the top** |
+| 900×700, 1024×768, 1280×800, 1440×900 | −33, −31, −29, −26 | off the top |
+
+At phone-landscape sizes it takes `Sky: auto` with it (−14 to −17) and at
+568×320 `Listening` too (−8). Every portrait size is clean.
+
+**The mechanism, exactly.** `chipPosition()` (`hud.ts:141-152`) hinges every
+arc at `(w + 10, h + 10)` and uses `base = min(w, h)` for the radius, so in
+landscape the outer ring's radius is `1.22 × h` swung from below the bottom
+edge — the far end of that arc is above the screen by construction. At 844×390:
+`r = 475.8`, step `6.38°`, start `222.4°`, the fourth chip lands at `241.6°`,
+`y = 400 + 475.8·sin(241.6°) = −18.6`, top `= −42.6`. Matches the measurement.
+**The left edge already has a guard** — `CHIP_ARC_MIN_START = 209°`
+(`hud.ts:129`), added when a seventh chip pushed the leading one off the left
+(entry 19) and kept after entry 77 split the row into two rings of four with
+the note *"neither ring should ever reach it again."* True of the left edge;
+**nothing has ever guarded the top**, and landscape is a supported state
+(`hud.ts` rebuilds on `orientationchange`). The shutter chip is last on the
+outer arc, so it is the first casualty every time — a hand-tuned constant
+standing in for layout, which is the exact failure CLAUDE.md's refactor rule
+names.
+
+**Decided**
+- Fix the geometry or special-case landscape → **the geometry.** Both edges
+  become analytic bounds on the angle: for a chip of size `s` at radius `r`
+  from hinge `(cx, cy)`, it is inside the left edge when
+  `cos a ≥ (s/2 − cx) / r` and inside the top edge when
+  `sin a ≥ (s/2 − cy) / r`; on the 180°–270° quadrant the first gives
+  `a_min` and the second gives `a_max`. Centre the row on `CHIP_ARC_MID`
+  (232°, unchanged) and clamp it into `[a_min, a_max]`. Over an
+  `if (w > h)` branch, which would fix the four sizes measured and none of the
+  ones not measured. **Mine.** Worked at 568×320 for the outer ring:
+  `a_min = 180°` (the left edge is nowhere near), `a_max = 231.6°`, the row
+  needs `23.4°` — it fits with room, and only because the left bound is now
+  computed rather than the fixed 209°, which would have left `22.6°`.
+- `CHIP_ARC_MIN_START` → **deleted, replaced by the computed `a_min`.** Over
+  keeping it as a floor under the computation. **Mine**: at 320×568 the
+  computed left bound is 218.3° for the outer ring and 207.7° for the inner,
+  and the rows already start at 220.3° and 218.8° — so the constant was never
+  what kept them on screen; centring was. Two guards for one edge is how the
+  next person stops trusting either.
+- If the span is still too short for the row → **compress the step until the
+  chips touch (`CHIP_GAP` → 0), and only then shrink `r`.** A ladder, so the
+  order is checkable: natural spacing, then tighter spacing, then a smaller
+  ring. Over overlapping chips or dropping one. **Mine.** No tested viewport
+  reaches the second rung; the rule exists so the next chip added does not
+  reopen this entry.
+- A safety margin inside the edge → **4 px** beyond `s/2`, so a chip's own
+  border is not the pixel touching the screen edge. **Mine.**
+- Portrait must not move → **positions at 320×568 and 360×640 change by at
+  most 1 px** on every chip. The three verified-and-approved HUD passes all
+  happened in portrait; this entry is not licensed to shift them.
+- Make it testable → **`chipPosition` takes `(w, h)` as parameters instead of
+  reading `window.innerWidth/innerHeight` itself**, so a headless probe can
+  scrub aspect ratios. Same move `camera-arm.ts` made for the same reason:
+  a control that can only be exercised by a real viewport will not be
+  exercised. `placeChips` passes the window's numbers, so behaviour is
+  unchanged. **Mine.**
+
+**Lands in**
+- `src/hud.ts:98-129` — `R_CHIPS_INNER`, `R_CHIPS_OUTER`, `CHIP_ARC_MID`,
+  `CHIP_GAP` stay; `CHIP_ARC_MIN_START` and its comment go, the comment's
+  history (entries 19 and 77) folded into the new one.
+- `src/hud.ts:141-152` — `chipPosition`, rewritten as above and exported for
+  the probe.
+- `src/hud.ts:1171-1184` — `placeChips`, passes `(innerWidth, innerHeight)`.
+- `scripts/probe-hud-arc.ts` — new: scrubs every ring at 320×568, 360×640,
+  390×844, 414×896, 768×1024, 568×320, 640×360, 844×390, 896×414, 1024×768,
+  1280×800, 1440×900 and asserts every chip's box is inside the viewport with
+  the margin; also asserts the portrait positions against the current build's
+  numbers (recorded in the probe as the baseline) to within 1 px.
+- `.github/workflows/checks.yml:62-64` — add `pnpm probe:hud-arc`. Only
+  `probe`, `probe:shake` and `probe:fullscreen` run there today.
+- `hud-narrow.html` — two more frames, 568×320 and 844×390, so the
+  `escaped` count it already reports covers landscape; today it only asks
+  about portrait, which is why this was never seen.
+
+**Done when**
+- `probe-hud-arc.ts` passes: zero chips outside the viewport at all twelve
+  sizes, and every portrait position within 1 px of today's.
+- `hud-narrow.html` reports `escaped 0` at all four of its frames.
+- On a phone turned sideways with the HUD open, all eight chips are visible
+  and the Camera mode chip arms the mode when tapped.
+
+**Verify** — `pnpm build`, `pnpm lint`, `pnpm probe:hud-arc`; `hud-narrow.html`
+at all four frames, looked at, in every state the HUD has (each of the four
+groups open); then a phone in landscape.
+
+**Hard stops** — prefs no · url no · capture no · dependency no. The control
+surface stays circular — this moves chips along the arc they are already on.
+
+### 113. Armed camera mode dies after 15 seconds on any device with no motion data
+`status: ready` · added 2026-09-04 · found at build 373 from the same "there is no camera" report · follows 109 · independent of 111 and 112; shares one export with 110
+
+**Do** — teach `camera-arm.ts` the difference between "the phone reads as put
+down" and "the phone has never reported anything", and in the second case run
+only the five-minute ceiling.
+**Why** — entry 109 (build 372) replaced the 60-second wall clock with a
+posture-and-tilt state machine. On a device that never delivers a
+`devicemotion` event, posture sits at its initial `'still'`
+(`engine/posture.ts:123`) and tilt is the frozen zero reading
+(`shake.ts:832`, `:939`), so `aimed` is never true, the quiet window starts the
+instant the chip is tapped, and the arm expires after `QUIET_S`.
+
+**Measured**, driving `camera-arm.ts` headless with exactly that input:
+
+```
+no motion data (posture 'still', tilt 0,0):   arm survives 15.02 s
+phone reporting motion (posture 'handled'):   arm survives 300.00 s
+```
+
+On desktop it is therefore **always 15 seconds and can never be more**. On iOS
+it is 15 seconds whenever the motion permission was declined or never asked.
+Before build 372 it was 60. The failure is indistinguishable from the feature
+being absent: tap the chip, frame the shot, and the tap that should take the
+photo plays a ripple instead. `scripts/probe-camera-arm.ts` has four cases and
+every one supplies tilt readings; there is no case for a device that reports
+none, which is how this passed. **`probe:camera-arm` is also not in CI** —
+`checks.yml:62-64` runs only `probe`, `probe:shake` and `probe:fullscreen`.
+
+**Decided**
+- What "no motion data" means → **no `devicemotion` sample has ever arrived
+  in this session**, read live on every frame — not a permission query, not a
+  flag captured at arming time. Over checking at arm time only. **Mine**: the
+  first sample can land a few hundred milliseconds after the gate, and a
+  reading taken per frame hands over to the posture path the moment data
+  starts, with no state to reset.
+- Where that fact comes from → **`shake.ts` exposes it once**, from the
+  `samples` counter it already keeps (`shake.ts:468`, incremented `:576`,
+  printed as `motion N ev` at `hud.ts:1507`). Entry 110's portrait-down
+  fallback reads the same export; **whichever of 110 and 113 builds first
+  adds it, the other reuses it.** **Mine.**
+- What the arm does without motion → **the quiet path is disabled and only
+  `CEILING_S` (five minutes) applies.** Over restoring the 60-second clock.
+  **Mine**: entry 109's own Decided calls the ceiling *"five minutes, whatever
+  the posture"*, and a device that cannot report a posture is precisely the
+  case that clause describes. A separate 60 s figure would be a third clock
+  for the same mode. Five minutes armed on a laptop is not a hazard: arming
+  is deliberate, the glyph is showing, and the next tap on the picture exits.
+- Signature → **`updateCameraArm(state, now, posture, tiltX, tiltY,
+  motionAvailable: boolean)`**, a sixth argument, so the module stays pure and
+  the probe can set it directly. Over reading `shake` from inside the module,
+  which would give it a dependency `posture.ts` and `motion-bias.ts` do not
+  have. **Mine.**
+- Entry 109's record → its `status:` line gets the clause CLAUDE.md's
+  *Shipping part of an entry* requires: `· gap found at build 373 — see 113`.
+  109 shipped believing it covered every device; it did not, and the entry
+  should say so where the queue is read.
+
+**Lands in**
+- `src/engine/camera-arm.ts:33-45` — the constants' comments gain the
+  no-motion clause; `:80-105` `updateCameraArm` gains the argument and the
+  branch: when `!motionAvailable`, skip the quiet bookkeeping entirely and
+  test only `armedElapsed >= CEILING_S`.
+- `src/shake.ts` — one exported reader of `samples > 0` (name it for what it
+  answers: whether the sensor has ever spoken, not whether permission was
+  granted — those differ on Android, where no permission exists).
+- `src/main.ts:1577-1583` — the call site passes it.
+- `scripts/probe-camera-arm.ts` — a fifth case: `'still'`, tilt `(0, 0)`,
+  `motionAvailable = false`, must survive to `CEILING_S` and expire there; and
+  the existing four pass `true` so their meaning is unchanged.
+- `.github/workflows/checks.yml:62-64` — add `pnpm probe:camera-arm`.
+- `docs/todo.md` — entry 109's status line, as above.
+
+**Done when**
+- The probe's new case reads armed at 299 s and disarmed at 300 s ± one frame;
+  the four existing cases produce the same numbers they do today.
+- The probe runs in CI.
+- Headless, a run that starts with `motionAvailable = false` and switches to
+  `true` with `'still'`/`(0, 0)` at 20 s expires at 35 s — the quiet window
+  begins when data begins, not before.
+- On a desktop browser: tap the shutter chip, wait 60 s, tap the picture — a
+  photo is saved and the mode exits.
+
+**Verify** — `pnpm build`, `pnpm lint`, `pnpm probe:camera-arm`; the desktop
+check above; then a phone with motion granted, to confirm the 15-second quiet
+window still fires when it is genuinely laid flat.
+
+**Hard stops** — prefs no · url no · capture no · dependency no.
