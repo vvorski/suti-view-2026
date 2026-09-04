@@ -2121,7 +2121,7 @@ surface changes, so the 320×568 / 360×640 pass is not required.
 capture **yes — licensed, quoted in Decided** · dependency no.
 
 ### 118. The gate stops saying "i am"
-`status: ready` · added 2026-09-04 · **reverses the answer recorded in 107** · independent of 110–117
+`status: building` · added 2026-09-04 · started 2026-09-04 · **reverses the answer recorded in 107** · independent of 110–117
 
 **Do** — remove the `i am` line from the gate: the `<p class="gate-aware">` and
 the `.gate-aware` rule that exists only for it.
