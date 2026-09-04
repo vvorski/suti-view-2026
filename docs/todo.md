@@ -1173,7 +1173,7 @@ absent wherever one does not) · url no · capture no · dependency no. The
 control surface is unchanged; this adds no control.
 
 ### 113. The gate's name decodes ten times slower
-`status: building` · added 2026-09-04 · started 2026-09-04 · independent of 110–112
+`status: done` · added 2026-09-04 · build 402 · independent of 110–112 · the "does 15s read as deliberate" judgement is Victor's and could not be made here — see build note
 
 **Do** — multiply both timing constants of the opening screen's release-name
 flip by ten: `NAME_FLIP_MS` 850 → **8500**, `NAME_LOCK_STEP_MS` 55 → **550**.

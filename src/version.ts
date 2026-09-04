@@ -250,20 +250,41 @@ function watchForNewBuild(button: HTMLButtonElement): void {
  * one-line call.
  */
 /** Milliseconds phase one (the history flip) runs for, start to handover —
- *  docs/todo.md entries 55 and 99. Shortened from entry 55's original 1.4s
- *  now that a second phase follows it: "fast through the early history,
- *  decelerating" is still phase one's whole job, but it no longer has to
- *  carry the flip all the way to the real name — phase two (below) does
- *  that — so it hands over sooner, into the phase that has to fit after it. */
-const NAME_FLIP_MS = 850
+ *  docs/todo.md entries 55, 99 and 113. Entry 55 gave this 1.4s; entry 99
+ *  cut it to 850ms once a second phase followed it, since "fast through the
+ *  early history, decelerating" no longer had to carry the flip all the way
+ *  to the real name. Entry 113 multiplied that by ten, by request: at 850ms
+ *  the whole opening was over in about 1.5 seconds, which is less time than
+ *  it takes to notice it is happening. Phase two below is scaled by the same
+ *  factor, so the two keep their proportions and the handover still reads as
+ *  one effect slowing into another rather than a fast half followed by a
+ *  slow one.
+ *
+ *  Nothing waits on this. See `mountReleaseName`'s own note: the Start disc
+ *  is live and pressable from the first frame, and pressing it mid-decode
+ *  just leaves. That is what makes a ten-fold slowdown cost nobody
+ *  anything.
+ *
+ *  Exported alongside `NAME_LOCK_STEP_MS` for the probe, which reports the
+ *  whole animation's length and cannot do that from one of the two phases. */
+export const NAME_FLIP_MS = 8500
 
-/** Milliseconds phase two's own per-character lock advances at — docs/
- *  todo.md entry 99's own "about 55ms apart". At the longest name on
- *  record (16 characters) this phase alone runs ~880ms; combined with
- *  phase one above, a typical name lands close to entry 99's own "total
- *  around 1.6s", and the longest lands a little past it — "around", not a
- *  hard ceiling this is tuned against. */
-const NAME_LOCK_STEP_MS = 55
+/** Milliseconds phase two's own per-character lock advances at — entry 99's
+ *  own "about 55ms apart", multiplied by ten for docs/todo.md entry 113
+ *  alongside phase one. At the longest name on record (16 characters) this
+ *  phase alone now runs ~8.8s; combined with phase one above, a typical
+ *  11-character name lands at about 14.6s and the longest at about 17.3s.
+ *  Entry 99's "total around 1.6s" is superseded rather than broken — that
+ *  comment said in as many words that it was "'around', not a hard ceiling
+ *  this is tuned against".
+ *
+ *  Exported for `scripts/probe-name-decode.ts`, which used to carry its own
+ *  copy of this number "duplicated by eye". That is the specific failure
+ *  this entry had to fix before it could change anything: with the constant
+ *  duplicated, editing this line alone leaves the probe green while testing
+ *  nothing, since its assertions are self-consistent against its own stale
+ *  copy and would keep passing for ever. */
+export const NAME_LOCK_STEP_MS = 550
 
 /** The characters phase two's unresolved positions may show while
  *  cycling — docs/todo.md entry 99's own "drawn from the letters that
@@ -307,12 +328,20 @@ export function lockedCountAt(elapsedSincePhaseTwoMs: number, targetLength: numb
   return Math.min(targetLength, Math.max(0, Math.floor(elapsedSincePhaseTwoMs / NAME_LOCK_STEP_MS)))
 }
 
-/** docs/todo.md entry 99 (absorbing entry 94)'s reduced-motion rate — "about
- *  3 characters resolving per second". Exported for the same reason
- *  `lockedCountAt` is. */
+/** docs/todo.md entry 99 (absorbing entry 94)'s reduced-motion path, re-anchored
+ *  to the shared step by entry 113. It used to run at a hardcoded 3 characters
+ *  a second, deliberately *slower* than the normal path's 18 — and slowing only
+ *  the normal path would have inverted that, making reduced motion the fast
+ *  decode and contradicting `mountReleaseName`'s own "`prefers-reduced-motion`
+ *  gets a slower decode, not none."
+ *
+ *  Sharing `NAME_LOCK_STEP_MS` preserves the ordering by making the two equal,
+ *  and 550ms a character is strictly less churn than the 333ms it had before —
+ *  so this path comes out more compliant than it went in, not less. What
+ *  actually protects it is unchanged and is not a rate at all: it **never
+ *  scrambles**, it types (`.slice`, not `renderLockFrame`). */
 export function reducedLockedCountAt(elapsedMs: number, targetLength: number): number {
-  const stepMs = 1000 / 3
-  return Math.min(targetLength, Math.max(0, Math.floor(elapsedMs / stepMs)))
+  return Math.min(targetLength, Math.max(0, Math.floor(elapsedMs / NAME_LOCK_STEP_MS)))
 }
 
 /**
