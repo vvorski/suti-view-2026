@@ -14,6 +14,10 @@
  *   touches.ts   one owner of every finger on the picture, up to four at
  *                once — docs/todo.md entry 49. Feeds `emitter.ts`, among
  *                others; does not replace it.
+ *   sediment.ts  Strata's falling-sand grid — docs/todo.md entry 110. The
+ *                one module here that is not about listening: the spectrum
+ *                feeds it, but what it models is the phone's own gravity.
+ *   tilt.ts      what counts as "flat", for the two features that ask
  *   touch.ts     the touch → atmospheric-stream envelope — docs/todo.md
  *                entry 48. A different shape of "turn a contact into a
  *                number" from ripples.ts/emitter.ts: no position, since the
@@ -85,6 +89,16 @@ export type { Posture, PostureState, PostureReading } from './posture.ts'
 
 export { createCameraArmState, armCamera, disarmCamera, updateCameraArm } from './camera-arm.ts'
 export type { CameraArmState, CameraArmReading } from './camera-arm.ts'
+
+export { isFlatTilt, FLAT_TILT_MIN } from './tilt.ts'
+
+export {
+  createSedimentState,
+  updateSediment,
+  sedimentGridFor,
+  SEDIMENT_SHORT_SIDE,
+} from './sediment.ts'
+export type { SedimentState } from './sediment.ts'
 
 export { celestialFor, CELESTIAL_IDENTITY } from './celestial.ts'
 export type { CelestialInfluence } from './celestial.ts'

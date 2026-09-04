@@ -26,11 +26,7 @@
  */
 
 import type { Posture } from './posture.ts'
-
-/** Below this, per-axis tilt magnitude (`shake.ts`'s own -1..1 = sin(angle))
- *  reads as "flat", not "held up to aim". About 11.5° of tilt on either
- *  axis. **Mine** — the entry says "flat" without a number. */
-const AIM_TILT_MIN = 0.2
+import { isFlatTilt } from './tilt.ts'
 
 /** How long the phone can read as neither `handled` nor tilted before the
  *  arm expires. Decided's own figure — "a phone flat and still for fifteen
@@ -89,7 +85,11 @@ export function updateCameraArm(
 ): CameraArmReading {
   if (!state.armed) return { armed: false }
 
-  const aimed = posture === 'handled' || Math.hypot(tiltX, tiltY) >= AIM_TILT_MIN
+  // The tilt half of this was this module's own `AIM_TILT_MIN` until entry
+  // 110 needed the identical question answered for Strata's sand. Same
+  // number, same meaning, now named once in `tilt.ts` — see its own comment
+  // for why the second reader is what moved it.
+  const aimed = posture === 'handled' || !isFlatTilt(tiltX, tiltY)
 
   if (aimed) {
     state.quietSince = null

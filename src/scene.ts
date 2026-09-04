@@ -22,6 +22,7 @@ import {
   OrthographicCamera,
   PlaneGeometry,
   RedFormat,
+  RGBAFormat,
   RepeatWrapping,
   Scene,
   ShaderMaterial,
@@ -43,16 +44,20 @@ import {
   createMotionBiasState,
   createRgbSlipState,
   createRippleState,
+  createSedimentState,
   createTouchStreamState,
   Envelope,
   MAX_RIPPLES,
+  sedimentGridFor,
   updateEmitter,
   updateMotionBias,
   updateRgbSlip,
   updateRipples,
+  updateSediment,
   updateTouchStream,
   type EmitterState,
   type MotionBias,
+  type SedimentState,
 } from './engine'
 import { MAX_OFFSET, overscanFor, type TumbleState } from './shake'
 import { skyFor, skyForLocation } from './sky'
@@ -360,8 +365,16 @@ export interface Visualiser {
    * into a small continuous bias on `geoColour`/`atmColour` once per frame,
    * on top of whatever `setLayerColour()` last stored — never written back
    * into it.
+   *
+   * `hasMotion` is `shake.ts`'s own `hasMotionData()` — false only when no
+   * `devicemotion` sample has ever arrived. Defaulted rather than required,
+   * unlike `setLayerColour`'s `colour`, because the safe value here is the
+   * *honest* one: a caller that does not know whether the sensor has spoken
+   * is a caller that has not heard from it. Added for Strata (docs/todo.md
+   * entry 110), which is the first thing here that has to tell a phone
+   * lying flat apart from a laptop with no accelerometer at all.
    */
-  setMotion(tiltX: number, tiltY: number, disturb: number): void
+  setMotion(tiltX: number, tiltY: number, disturb: number, hasMotion?: boolean): void
   /**
    * docs/todo.md entry 102 — a released touch emitter's own acceleration.
    * `g`, when given, is `shake.gravity()` (the same capped, in-plane pair
@@ -551,6 +564,24 @@ export function createVisualiser(
   historyTexture.wrapT = ClampToEdgeWrapping
   historyTexture.needsUpdate = true
 
+  // docs/todo.md entry 110 — Strata's sand, and the only view state that
+  // survives between frames. Created on the first frame Strata is actually
+  // showing rather than at construction: the other fifteen views never touch
+  // it, and neither a 64 KB upload buffer nor a 16k-cell sweep is free on a
+  // phone. Until then the uniform points at a single transparent texel, which
+  // is what every other view is sampling from it anyway (nothing).
+  let sediment: SedimentState | null = null
+  let sedimentTexture: DataTexture | null = null
+  const sedimentBlank = new DataTexture(new Uint8Array(4), 1, 1, RGBAFormat, UnsignedByteType)
+  sedimentBlank.needsUpdate = true
+  // The spectrum reduced to bands, for the pour. Read straight out of the
+  // history ring buffer's newest column rather than reduced again here:
+  // `historyBins` above is already a log-spaced band reduction of this very
+  // spectrum, computed every frame whether Strata is showing or not, and a
+  // second decimation living in this file is the exact thing this file has
+  // been warned about accumulating. Allocated once; refilled in place.
+  const sedimentBands = new Float32Array(HISTORY_H)
+
   // docs/todo.md entry 96 — read once, at construction, for the same
   // reason skyForNow below is: the first frame should match the moon it
   // is actually loaded under, not default to new-moon-equivalent for a
@@ -584,6 +615,12 @@ export function createVisualiser(
     uBeatConfidence: { value: 0 },
     uSpectrum: { value: spectrumTexture },
     uHistory: { value: historyTexture },
+    // docs/todo.md entry 110. rgb is a grain's colour and alpha is whether
+    // there is a grain there at all; the grid dimensions come along so the
+    // shader can work in cell space, which GLSL1 gives it no way to ask a
+    // sampler for.
+    uSediment: { value: sedimentBlank },
+    uSedimentGrid: { value: new Vector2(1, 1) },
     // Where "now" sits in the ring buffer, 0-1. The shader walks backwards from
     // here to read into the past.
     uHistoryHead: { value: 0 },
@@ -785,6 +822,10 @@ export function createVisualiser(
   let sinceChange = 0
   let historyHead = 0
   let historyAccum = 0
+  // Which atmospheric programme is on screen. Held because one of them —
+  // Strata — costs something per frame and must not be paid for by the
+  // fifteen that do not need it; nothing else here has ever had to know.
+  let atmosphericViewName: AtmosphericViewName = options.atmosphericView
   let contextLost = false
   const ripples = createRippleState()
   // docs/todo.md entries 33 and 49. What main.ts's pointer recogniser last
@@ -836,6 +877,12 @@ export function createVisualiser(
   let motionTiltX = 0
   let motionTiltY = 0
   let motionDisturb = 0
+  // Whether any `devicemotion` sample has ever arrived — docs/todo.md entry
+  // 110. A tilt of (0, 0) means two entirely different things on a phone
+  // lying face-up and on a laptop that has no accelerometer at all, and
+  // Strata is the first thing here that has had to tell them apart: it holds
+  // its sand still for the first and assumes portrait-down for the second.
+  let motionHasData = false
   // docs/todo.md entry 102 — recorded here by setGravity, read by the
   // emitter loop below. `{0,0}` (its own default) means every released
   // emitter simply never accelerates, the same "reads a sensor, never
@@ -1154,6 +1201,48 @@ export function createVisualiser(
         historyTexture.needsUpdate = true
       }
 
+      // docs/todo.md entry 110 — Strata's sand, ticked only while Strata is
+      // the programme on screen. Every other view is a from-scratch render
+      // each frame and pays nothing for this; selecting Strata is what starts
+      // the frame filling, and leaving it is what freezes the pile exactly
+      // where it stood, ready for coming back to.
+      if (atmosphericViewName === 'strata') {
+        const grid = sedimentGridFor(drawSize.x, drawSize.y)
+        if (!sediment || sediment.width !== grid.width || sediment.height !== grid.height) {
+          // Only a genuine change of *shape* lands here — the grid is sized
+          // from the aspect alone, so the resolution ladder moving the pixel
+          // ratio up or down leaves it alone. A rotation does rebuild it, and
+          // does empty the frame; that is the honest outcome, since the pile
+          // a portrait frame holds has nowhere to be in a landscape one.
+          sedimentTexture?.dispose()
+          sediment = createSedimentState(grid.width, grid.height)
+          sedimentTexture = new DataTexture(
+            sediment.pixels,
+            grid.width,
+            grid.height,
+            RGBAFormat,
+            UnsignedByteType,
+          )
+          // Linear, so a cell has a soft shoulder rather than a hard square
+          // edge — the atmospheric layer is a field, and the shader pulls the
+          // edge back in from there.
+          sedimentTexture.minFilter = LinearFilter
+          sedimentTexture.magFilter = LinearFilter
+          sedimentTexture.wrapS = ClampToEdgeWrapping
+          sedimentTexture.wrapT = ClampToEdgeWrapping
+          uniforms.uSediment.value = sedimentTexture
+          uniforms.uSedimentGrid.value.set(grid.width, grid.height)
+        }
+        // The newest column the ring buffer wrote, which is one behind the
+        // head it is about to write next.
+        const newest = (historyHead + HISTORY_W - 1) % HISTORY_W
+        for (let r = 0; r < HISTORY_H; r++) {
+          sedimentBands[r] = historyData[r * HISTORY_W + newest] / 255
+        }
+        updateSediment(sediment, dt, motionTiltX, motionTiltY, motionHasData, sedimentBands)
+        if (sedimentTexture) sedimentTexture.needsUpdate = true
+      }
+
       // A break stalls the motion rather than merely dimming it.
       const churn =
         0.06 + params.level * 0.95 + params.transient * 0.6 + params.surge * 1.5
@@ -1424,6 +1513,7 @@ export function createVisualiser(
     },
 
     setAtmosphericView(name) {
+      atmosphericViewName = name
       startViewDip(atmViewDip, geoViewDip, () => {
         const next = new ShaderMaterial({
           vertexShader,
@@ -1492,10 +1582,11 @@ export function createVisualiser(
       }
     },
 
-    setMotion(tiltX, tiltY, disturb) {
+    setMotion(tiltX, tiltY, disturb, hasMotion = false) {
       motionTiltX = tiltX
       motionTiltY = tiltY
       motionDisturb = disturb
+      motionHasData = hasMotion
     },
 
     setGravity(g) {
@@ -1574,6 +1665,8 @@ export function createVisualiser(
       atmosphereTarget.dispose()
       spectrumTexture.dispose()
       historyTexture.dispose()
+      sedimentTexture?.dispose()
+      sedimentBlank.dispose()
       compositeUniforms.uCamera.value?.dispose()
       renderer.dispose()
     },

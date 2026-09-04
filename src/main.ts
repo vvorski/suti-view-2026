@@ -1624,7 +1624,12 @@ async function main(): Promise<void> {
       // above: that draws synthetic params and a preview colour rather
       // than anything the shuffle/director/HUD have actually stored, and
       // every Done-when here describes the running app.
-      visualiser.setMotion(latestShake.tilt.x, latestShake.tilt.y, latestShake.disturb)
+      visualiser.setMotion(
+        latestShake.tilt.x,
+        latestShake.tilt.y,
+        latestShake.disturb,
+        shake.hasMotionData(),
+      )
       dispatchTouches(performance.now() / 1000)
       // The discrete gesture stands down while the panel is open — a
       // shuffle rewrites the values someone currently has a finger on, the

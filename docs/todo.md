@@ -750,7 +750,7 @@ that saves becomes harder to leave armed by accident, never easier ·
 dependency no.
 
 ### 110. Strata: the picture is sand between two panes of glass
-`status: building` · added 2026-09-04 · started 2026-09-04 · a new atmospheric view · independent of 108
+`status: done` · added 2026-09-04 · build 386 · a new atmospheric view · the view is complete; the autopilot cannot reach it and that conflict is entry 118, not an omission from this one
 
 **Do** — add an atmospheric view, **Strata**, in which the audio pours coloured
 sand from whichever edge is up, the grains sift down under the phone's own
@@ -1798,3 +1798,74 @@ gesture from play, by arming changing nothing except the glyph, and by every
 existing guard — one shot per arm, the rate limit, the 15s-quiet and 5-minute
 expiries — surviving untouched. Nothing new is captured, nothing leaves the
 device · dependency no.
+
+### 118. The autopilot cannot reach Strata, and the obvious fix hands it a black screen
+`status: blocked` · added 2026-09-04 · found while building 110 · needs Victor
+
+**Do** — nothing yet. This is a question for Victor, raised because entry 110
+shipped a view the director can never choose, and the standing rule in
+`director.ts` says that is the worse of the two available failures while
+Strata's own warm-up says otherwise.
+
+**Why** — `viewFor()` (`src/director.ts:324-330`) is a hand-written
+seven-bucket tree naming each atmospheric view literally, and its own doc
+comment (`:288-323`) states the rule plainly: *"An unreachable programme is a
+worse failure than a branch that sometimes picks the second-best of two
+plausible answers."* Strata is the eighth view and has no bucket, so the
+autopilot will never once show it — it is reachable only by someone going
+looking through the HUD. By that rule alone, the fix is obvious and small.
+
+**What stops it being obvious.** Every other view is a full picture on its
+first frame. Strata starts **empty** and stays nearly empty for the better
+part of a minute: entry 110 sized the pour so a loud passage fills about a
+fifth of the frame in ninety seconds, deliberately, because "the frame filling
+is not a failure — a sand frame that has all its sand at the bottom is
+finished". Measured on the shipped model, thirty seconds of loud audio covers
+about 7 % of the frame. So an autopilot switch to Strata gives the viewer a
+black screen with a scatter of falling dots on it, for around a minute, having
+just taken away a picture that was already working. **`director.ts`'s rule was
+written when every view was instant, and it has never had to price a view with
+a warm-up.**
+
+**The question**
+> Should the director be able to choose Strata at all, and if so, on what
+> terms — knowing it hands over a nearly-empty frame for about a minute?
+
+**What the answer changes**
+- **Leave it unreachable.** Strata is a thing you choose, like turning an
+  hourglass over, and the autopilot never touches it. One comment in
+  `director.ts` recording the exception and why, so the next person to count
+  the buckets does not read it as an oversight. Costs: the rule above gets its
+  first exception, and a view most people never open the HUD to find is a view
+  most people never see.
+- **A bucket, and it keeps its empty minute.** The honest version of the
+  standing rule: the director picks Strata for the material it suits and the
+  viewer watches it fill. Grainy, non-rhythmic, non-bright material is the
+  natural home — `c.noisy` is the tiebreaker `director.ts` already prefers —
+  which would take some traffic from `['field', 'fringe']`.
+- **A bucket, but only once it has something to show.** The director may
+  select Strata only when its pile is already past some fraction of the frame,
+  which means it can be *returned* to but never arrived at cold. More faithful
+  to both rules and the only option that needs new plumbing: the director
+  currently knows nothing about any view's internal state, and this would be
+  the first time it asked.
+
+**Decided in advance, so the answer is one choice and not a design session**
+- Whatever the answer, **the pour rate is not reopened.** Ninety seconds to a
+  fifth of the frame is entry 110's own decided figure and the reason the
+  layers mean anything; making Strata fill faster to suit the autopilot would
+  trade the feature for its own delivery mechanism. **Mine.**
+- If it is a bucket, it splits on an axis already in use (`rhythmic`, `dense`,
+  `bright`, `noisy`), per `director.ts`'s own constraint. No new character
+  dimension. **Mine.**
+
+**Lands in** `src/director.ts:324-330` — `viewFor`, and its doc comment either
+way, since a deliberate exception to the rule stated there has to be recorded
+there.
+**Done when** — Victor has answered, the answer is written here, and either
+the bucket exists or the exception is documented in `director.ts`.
+**Verify** — `pnpm build`, `pnpm lint`, and the director's own probe if a
+bucket lands; then a real session long enough for the autopilot to actually
+make the choice, which is the only test of whether an empty frame arriving
+unasked reads as a gift or as a fault.
+**Hard stops** — prefs no · url no · capture no · dependency no.

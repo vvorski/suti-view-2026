@@ -31,6 +31,7 @@ import latticeFrag from './shaders/lattice.frag.glsl?raw'
 import roseFrag from './shaders/rose.frag.glsl?raw'
 import shardsFrag from './shaders/shards.frag.glsl?raw'
 import spectrogramFrag from './shaders/spectrogram.frag.glsl?raw'
+import strataFrag from './shaders/strata.frag.glsl?raw'
 import tideFrag from './shaders/tide.frag.glsl?raw'
 
 export interface View {
@@ -127,6 +128,19 @@ export const ATMOSPHERIC_VIEWS = {
     label: 'Cells',
     description: 'The frame divided. Each cell lit by its own slice of the spectrum.',
     fragmentShader: cellsFrag,
+  },
+  // The eighth, and the only one whose subject is not the audio — docs/todo.md
+  // entry 110. Every view above draws whatever the last few milliseconds of
+  // sound say; this one draws what an entire session of it left behind, under
+  // the phone's own gravity. It is also the only view that keeps state between
+  // frames (engine/sediment.ts, uploaded as uSediment), and the only one where
+  // holding the phone differently is the whole interaction rather than a
+  // nudge. Last, as always, because the registry's order is the HUD's order
+  // and the ones worth meeting first stay first.
+  strata: {
+    label: 'Strata',
+    description: 'Sand between two panes of glass. Pours from the top edge, piles at the bottom, and rains back down when you turn the phone over.',
+    fragmentShader: strataFrag,
   },
 } satisfies Record<string, View>
 

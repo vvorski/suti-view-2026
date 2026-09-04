@@ -920,6 +920,24 @@ export interface ShakeSensor {
    *  entry 88), and events discarded as unusable. For the numeric readout
    *  only. See Tumble. */
   diagnostics(): { samples: number; peak: number; bar: number; rejected: number }
+  /**
+   * Whether this device has ever produced a `devicemotion` sample.
+   *
+   * The count itself has been available through `diagnostics()` since entry
+   * 88, but that is documented "for the numeric readout only" and reads as a
+   * debug surface; asking it a yes/no question at a call site that is not
+   * the readout hides the question behind a field nobody expects to be
+   * load-bearing. This is that question, named once — docs/todo.md entry
+   * 110, which needs it because a tilt of (0, 0) means "lying flat" on a
+   * phone and "there is no sensor here" on a laptop, and Strata behaves
+   * differently for each.
+   *
+   * docs/todo.md entry 116 — armed camera mode dying after its quiet window
+   * on any device with no motion data, because a missing sensor reads as a
+   * phone that has been put down — is the identical test. It should read
+   * this when it is built rather than growing its own.
+   */
+  hasMotionData(): boolean
   close(): void
 }
 
@@ -938,6 +956,7 @@ export function startShake(granted: boolean): ShakeSensor {
       gravity: () => ({ x: 0, y: 0 }),
       tilt: () => ({ x: 0, y: 0 }),
       diagnostics: () => ({ samples: 0, peak: 0, bar: STRONG_UP_CALM, rejected: 0 }),
+      hasMotionData: () => false,
       close: () => {},
     }
   }
@@ -1013,6 +1032,7 @@ export function startShake(granted: boolean): ShakeSensor {
     gravity: () => tumble.gravity(),
     tilt: () => tumble.tilt(),
     diagnostics: () => ({ ...tumble.diagnostics(), rejected }),
+    hasMotionData: () => tumble.diagnostics().samples > 0,
     close: () => window.removeEventListener('devicemotion', onMotion),
   }
 }
