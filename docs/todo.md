@@ -3084,7 +3084,7 @@ changes, so no 320×568 pass is owed.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 131. Strata comes out: the sand was a misreading
-`status: ready` · added 2026-09-05 · **reverts 110 (build 386) and closes 124** · build before 132
+`status: building` · added 2026-09-05 · started 2026-09-05 · **reverts 110 (build 386) and closes 124** · build before 132
 
 **Do** — remove the Strata view and everything that exists only for it, and
 leave in place the two things entry 110 built that other entries now depend
