@@ -2445,3 +2445,129 @@ untouched, so the 320×568 / 360×640 pass is only for the readout line, which
 is the HUD's and already wraps.
 
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 125. The menu is a double tap again, and no gesture fires while the phone is moving
+`status: ready` · added 2026-09-05 · **swaps the two assignments entry 115 shipped at build 407** · 117 is unaffected in substance — see Decided
+
+**Do** — put the menu back on the double tap, move camera arming to the still
+hold, delete the two-finger opener, and refuse both gestures while the phone is
+being shaken.
+
+**Why** — Victor: *"require double tap for menu, shake is getting good, we
+don't want the menu coming up accidentally."*
+
+**Recon: the hold's stillness test cannot see a shake, and that is the whole
+bug.** `main.ts:1549` measures the hold as
+`hypot(clientX − downClientX, clientY − downClientY) <= HOLD_MENU_SLOP_PX` —
+the finger's travel **relative to the screen**. During a shake the finger and
+the screen move together, so a thumb resting on a violently shaken phone
+travels approximately zero and satisfies that test *perfectly*. The 24px slop
+is not a weak guard against this; it is not a guard against it at all. Three
+and a half seconds of shaking with a thumb down opens the menu every time.
+
+**And the two-finger path is worse.** `main.ts:1628` fires on
+`nonChipDown === 2` the instant the second finger lands — no duration, no
+stillness, no travel test of any kind. Two fingers gripping a phone that is
+being shaken is not an edge case; it is how a phone is held.
+
+**Recon also reconciles three instructions rather than picking the newest.**
+Asked directly on 2026-09-04, Victor chose *"hold picture → armed (glyph
+appears) · tap picture → one photo"* from a list. He then wrote *"touch hold to
+open menu, and single tap (or double tap?) for camera arm"*, which entry 115
+built. Today's instruction agrees with the **first** of those, not the second:
+the menu on the double tap puts arming back on the hold, exactly where he first
+put it. The middle instruction is the outlier, and this entry is a return to
+the choice on either side of it rather than a reversal of a settled one.
+
+**Decided**
+- **Double tap opens the menu; the still hold arms the camera** → the two
+  assignments entry 115 shipped swap places, and nothing else about either
+  gesture changes: 3.5s and 24px stay exactly as they are, and the double tap
+  keeps entry 67's down-to-down window and radius. `HOLD_MENU_S` and
+  `HOLD_MENU_SLOP_PX` are renamed to `HOLD_ARM_S`/`HOLD_ARM_SLOP_PX`, since a
+  constant named for the menu that arms a camera is the kind of name that
+  survives into being read as a decision. **Mine** as to the rename only; the
+  swap is Victor's.
+- **The two-finger tap stops opening the menu, and is not replaced** →
+  deleted, not gated. **Mine**, and it is the direct reading of *"require
+  double tap"*: a second way in that needs no duration and no stillness is
+  exactly the accidental opener he is describing. Entry 115 kept it on the
+  argument that *"removing a working way into the menu in the same entry that
+  moves the primary one is how a build ends with no way in at all"* — that was
+  right then and does not apply now, because the primary is moving **to** the
+  gesture people already know rather than away from it.
+- **Neither gesture fires while the phone is disturbed** → a shared gate:
+  `disturb > 0.35` blocks both the menu and the arm, and keeps blocking for
+  **0.4s** after it was last exceeded. **Mine**, and it is the part that
+  answers his stated *reason* rather than only his stated fix — a double tap is
+  harder to trigger by accident than a hold, but two thumb bounces inside entry
+  67's window during a hard shake are not impossible, and without this the
+  accident simply moves from the menu to the camera, where it costs a
+  photograph instead of a panel.
+- **0.35, because walking peaks at 0.15** → `shake.ts:255` records that
+  measurement in its own comment (*"walking peaks at disturb 0.15, well under
+  LEVEL"*), so 0.35 clears an ordinary gait by better than 2× while a
+  deliberate shake — which saturates `disturb` near 1.0 — is blocked
+  decisively. **Mine**, and derived from a number already in the file rather
+  than picked.
+- **0.4s of settle** → long enough that the dying swing of a shake does not
+  re-open the gate between two beats of the same gesture, short enough that the
+  menu is there the moment the phone stops. **Mine.**
+- **The gate reads `latestShake.disturb`, which `main.ts` already holds** → no
+  new sensor path, no new module, no change to `shake.ts`. **Mine**: the value
+  is already sampled every frame for the colour bias and the slip, and a second
+  opinion about how much the phone is moving is the exact drift entry 111's own
+  Decided argued against.
+- **`?debug` gains the gate** → the readout says whether gestures are currently
+  blocked, and how long since `disturb` last exceeded the threshold. **Mine**,
+  and it is CLAUDE.md's *two identical symptoms need two different numbers*:
+  "the menu won't open" will otherwise be indistinguishable from "the double
+  tap wasn't recognised", and this map has now changed twice in two days.
+- **Entry 117 needs no change in substance** → its desktop map (right click
+  opens the menu, left click arms) is untouched by any of this, and its *"no
+  hold on the mouse"* decision still holds for the reason it gave — a mouse has
+  a second button. Only that clause's aside about the finger's hold being the
+  menu path goes stale. 117 is `status: building` as this is written, so it is
+  deliberately **not edited here**; whoever finishes it should fix the aside
+  and nothing else. **Mine.**
+
+**Identity when off** — on a still phone `disturb` is 0, because `FLOOR` in
+`shake.ts` is 1.2 m/s² and a phone at rest reads under it, so the gate is open
+and both gestures behave exactly as they do today apart from the swap. **A
+machine with no accelerometer reports `disturb` 0 forever**, so the gate is
+permanently open on desktop and entry 117's mouse map pays nothing for this
+existing — the guard is invisible everywhere it is not needed, and that falls
+out of what a missing sensor already reports rather than from a platform check.
+
+**Lands in** — `src/main.ts`: `HOLD_MENU_S`/`HOLD_MENU_SLOP_PX` renamed, and
+their `panel.open()` at `:1561` becomes `enterCameraMode()`; the double-tap
+resolution's `enterCameraMode()` becomes `panel.open()`; the
+`nonChipDown === 2` branch at `:1628` deleted, and the `nonChipDown` counter at
+`:1525`/`:1536` with it **if nothing else reads it** — check before removing,
+per CLAUDE.md's *deleting code deletes what it was doing*; the new calm gate
+and its two constants; the `?debug` line. `scripts/probe-tap.ts` and
+`scripts/probe-touches.ts`: every assertion about which gesture opens the menu
+is now asserting the old map and must be swapped, not merely extended.
+
+**Done when** — on the phone, the case that prompted this: **shake it hard for
+five seconds with a thumb resting on the screen, and neither the menu opens nor
+the camera arms** — `?debug` shows the gate blocked throughout. Then, standing
+still: a double tap opens the menu; a 3.5s still hold shows the camera glyph
+and the next tap saves exactly one frame; two fingers do nothing at all; a
+single tap still plays. Walking on the spot while double-tapping still opens
+the menu — that is the case 0.35 is chosen to let through, and the one a
+tighter threshold would silently break. `pnpm probe:tap` and
+`pnpm probe:touches` assert the swapped map and fail against the old one.
+
+**Verify** — `pnpm build`, `pnpm lint`, `pnpm probe:tap`, `pnpm probe:touches`,
+`pnpm probe:camera-arm`, `pnpm probe:shake` (which must pass unchanged — this
+reads `disturb` and must not alter it). Then the phone, shaken, which is the
+only place the report can be reproduced and the only place the fix can be
+believed: a desktop browser reports `disturb` 0 forever and therefore cannot
+exercise the gate at all. No HUD surface changes, so no 320×568 pass is owed.
+
+**Hard stops** — prefs no · url no · **capture yes, and in the safe
+direction**: arming moves from a double tap to a 3.5s still hold *plus* the new
+calm gate, so a photograph becomes strictly harder to reach than it is at build
+407, not easier. Every existing guard survives — one shot per arm, the rate
+limit, the 15s quiet disarm, the five-minute ceiling · dependency no.
