@@ -3450,3 +3450,269 @@ full path, hollow means reduced**, and that one glance is the whole diagnosis.
 **Hard stops** — prefs no · url no · capture no (no gate *copy* changes — this
 is how an existing element resolves, not what it says, so CLAUDE.md's gate-copy
 clause is not engaged) · dependency no.
+
+### 134. Strings: a lines view you pluck, fret and strum
+`status: ready` · added 2026-09-05 · new geometric view, lines · independent of 135 and 136; the three share nothing but the registry and the probe count
+
+**Do** — a geometric view of nine taut strings spanning the frame, each tuned
+to a spectrum band, that vibrate when hit; a finger that lands on one **pulls
+it to the fingertip** while held and **releases it as a pluck**; a drag across
+them **strums**.
+**Why** — Victor: *"one based on lines … be creative … design a great
+interaction with touch."* Every geometric view today is a mark *thrown from an
+origin* — ring, shard, cell front, spoke. None is a thing you take hold of.
+
+**What every geometric view can read about a finger** (recon, counted at build
+416, shared by entries 134–136): sixteen touch slots in `uRipples[8..23]`, each
+`(birth, level, x, y)` in the shader's own uv, written by `spawnAt`
+(`ripples.ts:105`) every **0.15 s** a finger is down or every **0.05 uv** it
+moves (`emitter.ts:53,60`), and for a 2–4 s afterlife after release. `level`
+is charge (0.6 at a tap, 1.0 after 2.5 s) plus drag speed. There is **no live
+finger uniform on a phone**: `uPointer` (`lattice.frag.glsl:58`, entry 114) is
+the mouse and its presence never rises above 0 on touch (entry 112). So **the
+newest touch slot with `age < 0.3 s` is the live finger** — a held finger
+refreshes it every 0.15 s, and it goes stale within two spawn intervals of
+release. Drag *direction* is not stored; a drag's consecutive slots are
+consecutive indices born ≤ 0.25 s apart, so the vector from slot `i−1` to `i`
+is the finger's direction when their births are that close. Both derivations
+are the entries' own, marked **Mine** where used. The `geometric-variation`
+agent's own notes are the builder's guide, with one stale line: it says
+`MAX_RIPPLES = 8`; it is **24** (`ripples.ts:28`), eight audio and sixteen
+touch. `probe-ripples.ts:79` counts seven geometric shaders and must count ten
+once all three land.
+
+**The picture.** Nine straight strings, evenly spaced across the **short**
+axis and running the full long axis, so portrait gives nine verticals and
+landscape nine horizontals (`uResolution` decides; no orientation flag).
+Hard-edged, `px`-wide, `ring()`-style antialiasing over 1.5 px. String `k`
+listens to spectrum band `k` (bass at the thumb edge, treble at the far edge
+— nine of `bandVector`'s bands read from `uSpectrum`). Each string's shape is
+a standing wave: `x(y) = A · sin(π·m·y/L) · cos(ω·t) · e^{−t/τ}`, first mode
+by default (`m = 1`), amplitude `A` from the hit, `ω` from the band's index
+(higher strings ring faster: `ω_k = 6 + 2k` rad/s), `τ = 1.4 s`. In silence
+every string hums at the `px`-scale amplitude its band's energy gives it, so
+the view is never black.
+
+**Hits.** An audio slot (`i < 8`) plucks the string nearest its `level`
+mapped across the nine — a loud hit plucks the bass end, a quiet one the
+treble — with `A = 0.06 · level` uv. **Mine** on the mapping: a hit has no
+position, and level-to-string keeps a loud passage on the bass strings, which
+is where the eye expects weight.
+
+**The interaction, in three verbs**
+- **Pull.** While the live-finger slot (definition above) is within 0.05 uv of
+  a string, that string is drawn **bent to the fingertip**: two straight
+  segments from each end to the finger, not a curve — a pulled string is two
+  lines, and it is what makes the pull read as tension. The string it grabs is
+  fixed at first contact and kept while held, even if the finger crosses others.
+- **Release.** The frame the live slot goes stale, the string plucks with `A`
+  equal to the pull displacement (capped 0.15 uv) and mode `m = 1 + floor(3 ·
+  |y_finger − L/2| / (L/2))` — pulled at the middle it rings in the fundamental,
+  pulled near an end it rings in a higher mode with a node — the physics a
+  guitarist knows, and free once `m` is a parameter.
+- **Strum.** A drag whose consecutive slots cross a string plucks it at `A =
+  0.04 · level` the frame it is crossed, so a fast swipe across all nine
+  sounds nine plucks in order. Crossing is `sign(x_{i−1} − s_k) ≠ sign(x_i −
+  s_k)`, the same consecutive-slot pairing the shared note describes.
+
+**Decided**
+- Lines, not a lattice or a grid → **strings**, because a line that vibrates
+  is the one line that answers a hit *and* a hand. **Mine.**
+- Nine → over six (too sparse to strum) and twelve (thinner than a thumb can
+  pick). Spacing at 360 px is 40 px, one string per thumb width. **Mine.**
+- Two segments while pulled, not a bent curve → tension reads as a corner.
+  **Mine.**
+- Damping `τ = 1.4 s` → a pluck is audible-length; six strums a second stack
+  legibly. **Mine.**
+- `uSeed` → re-rolls which end is bass and a ±15 % irregularity in spacing, so
+  a re-roll restructures rather than recolours. **Mine.**
+- Combine → `max()`, per the layer's rule; nine strings never overlap anyway.
+
+**Lands in** — `src/shaders/strings.frag.glsl` (new), `src/views.ts` (one line,
+appended after `tide`), `scripts/probe-ripples.ts:79` (count), and the
+`geometric-variation` agent's own verify ritual — a probe page with `circles`
+as the baseline in the same harness, every run.
+**Done when** — in the probe page: silence shows nine hairlines; `transient: 1`
+bends one visibly within a frame and it is back within `px` of straight by
+4 s; a synthetic held slot 0.03 uv off string 4 draws two segments meeting at
+the slot; making the slot stale rings string 4 at the pull amplitude; a
+synthetic drag of six slots across strings 2–7 plucks all six. On a phone:
+pull a string and let go.
+**Verify** — `pnpm build`, `pnpm lint`, `pnpm probe:ripples`; the probe page,
+screenshots at two ages, `read_console_messages` for the compile; then the
+phone. No HUD change — the `geo` band gains an option.
+**Hard stops** — prefs no (new value on a validated enum) · url no (new value) ·
+capture no · dependency no.
+
+### 135. Orbits: bodies you fling into orbit around the centre
+`status: ready` · added 2026-09-05 · new geometric view, circles · independent of 134 and 136
+
+**Do** — a geometric view in which each hit is a small circle set orbiting the
+frame's centre, leaving a thin arc of its recent path; a finger **flings a
+body** into orbit with the drag's own direction and speed, and a **held**
+finger is a second mass the orbits bend around.
+**Why** — Victor: *"two on circles … quite different from existing ones."*
+Every circle in the layer today expands from where it was born and dies at the
+rim. Orbits' circles keep their size and **move**; the path they leave is the
+circle.
+
+**What every geometric view can read about a finger** (recon, counted at build
+416, shared by entries 134–136): sixteen touch slots in `uRipples[8..23]`, each
+`(birth, level, x, y)` in the shader's own uv, written by `spawnAt`
+(`ripples.ts:105`) every **0.15 s** a finger is down or every **0.05 uv** it
+moves (`emitter.ts:53,60`), and for a 2–4 s afterlife after release. `level`
+is charge (0.6 at a tap, 1.0 after 2.5 s) plus drag speed. There is **no live
+finger uniform on a phone**: `uPointer` (`lattice.frag.glsl:58`, entry 114) is
+the mouse and its presence never rises above 0 on touch (entry 112). So **the
+newest touch slot with `age < 0.3 s` is the live finger** — a held finger
+refreshes it every 0.15 s, and it goes stale within two spawn intervals of
+release. Drag *direction* is not stored; a drag's consecutive slots are
+consecutive indices born ≤ 0.25 s apart, so the vector from slot `i−1` to `i`
+is the finger's direction when their births are that close. Both derivations
+are the entries' own, marked **Mine** where used. The `geometric-variation`
+agent's own notes are the builder's guide, with one stale line: it says
+`MAX_RIPPLES = 8`; it is **24** (`ripples.ts:28`), eight audio and sixteen
+touch. `probe-ripples.ts:79` counts seven geometric shaders and must count ten
+once all three land.
+
+**The picture.** Each of the 24 slots that is alive is a body: a `ring()` of
+radius `0.012 + 0.02 · level` uv at angle `θ = θ₀ + ω · age` on a circle of
+radius `r` about the centre, with `ω = 1.6 · r^{−1.5}` rad/s — Kepler's law,
+so inner bodies race and outer ones drift, and a fast one lapping a slow one
+is the picture's rhythm. Behind each body, its **trail**: the same orbit circle
+drawn only over the last 40° of arc behind it (the angular window scaled so a
+fast body's trail is as long on screen as a slow one's), fading linearly to
+nothing at the tail. Lifetime `3.2 · uMoonLife` s like Circles', fading from
+`FADE_FROM`. In silence a single faint body of radius 0.008 orbits at `r =
+0.3` — the sun's own planet, so the view is never black — and the centre is
+marked by a `px` ring of radius 0.02.
+
+**Hits.** Audio slot `i` gets `r = 0.12 + 0.55 · (1 − level)` — a loud hit is
+a close, fast orbit; a quiet one is far and slow — and `θ₀` from
+`hash(birth)`. **Mine** on inverting level: weight belongs near the centre.
+
+**The interaction**
+- **Fling.** A touch slot's body starts **at the finger** (`r = |xy|`, `θ₀ =
+  atan(y, x)`) and orbits prograde. When the previous slot is a consecutive
+  drag sample (shared note), the fling direction is the vector between them:
+  the body's orbit is the **ellipse** with the finger's position and that
+  velocity — closed-form, eccentricity from the speed (`level`'s speed term),
+  so a slow release is a circle and a fast swipe is a long ellipse that swings
+  out to the rim and back. Drawn as the ellipse's own arc behind the body.
+- **Hold.** While the live-finger slot is present, it is drawn as a mass — a
+  `px` ring at the fingertip — and every body's angular speed is scaled by
+  `1 + 0.8 · e^{−d/0.15}` where `d` is its distance to the finger: bodies
+  passing near the finger **slingshot**, visibly quickening and leaving a
+  tighter trail. Over bending the orbit's shape, which needs per-pixel
+  integration. **Mine**: a speed change is a one-line closed form and reads as
+  gravity; a path change does not fit a fragment shader's budget.
+
+**Decided**
+- Kepler over uniform speed → the exponent is the whole feel. **Mine.**
+- Prograde for every body, anticlockwise → a re-roll (`uSeed`) flips the
+  direction for the whole system and the trail length (25–60°), which
+  restructures without recolouring. **Mine.**
+- Trails `max()`-combined; bodies `max()` too. Twenty-four thin arcs cannot
+  flood, and entry 122's budget is not needed here.
+- Ellipses only for flung bodies; audio bodies are circles → the eye then
+  reads *shape* as "a person did that". **Mine.**
+
+**Lands in** — `src/shaders/orbits.frag.glsl` (new), `src/views.ts` (one line),
+`scripts/probe-ripples.ts:79`. Per-pixel cost: 24 slots × (one ring + one arc
+window) — below Circles' two loops with a wake ladder.
+**Done when** — probe page: silence shows the centre mark and one orbiting
+body; `transient: 1` births a body whose angle advances by `ω · dt` between
+two screenshots 0.5 s apart (measure the angle); two consecutive synthetic
+slots 0.05 uv apart born 0.1 s apart produce an ellipse (the trail's radius
+from centre varies along it); a held live slot at `(0.3, 0)` measurably
+quickens a body passing within 0.1 uv of it versus the same body with the
+slot absent. On a phone: fling, then hold a finger in a body's path.
+**Verify** — as 134's. **Hard stops** — as 134's.
+
+### 136. Moiré: two ring fields, and the finger holds the second centre
+`status: ready` · added 2026-09-05 · new geometric view, circles · independent of 134 and 135
+
+**Do** — a geometric view made of two dense fields of concentric hairline
+circles whose centres differ, so the frame is an interference pattern; a hit
+**pulses the ring spacing** outward as a wave; a finger **holds the second
+centre**, so dragging sweeps the whole moiré, and letting go **springs it
+back**.
+**Why** — the other two circle views are made of a few circles. This one is
+made of hundreds, and the picture is not the circles but what happens
+*between* them — the one thing no view here has done, and a thing a hand
+changes more than a hit does.
+
+**What every geometric view can read about a finger** (recon, counted at build
+416, shared by entries 134–136): sixteen touch slots in `uRipples[8..23]`, each
+`(birth, level, x, y)` in the shader's own uv, written by `spawnAt`
+(`ripples.ts:105`) every **0.15 s** a finger is down or every **0.05 uv** it
+moves (`emitter.ts:53,60`), and for a 2–4 s afterlife after release. `level`
+is charge (0.6 at a tap, 1.0 after 2.5 s) plus drag speed. There is **no live
+finger uniform on a phone**: `uPointer` (`lattice.frag.glsl:58`, entry 114) is
+the mouse and its presence never rises above 0 on touch (entry 112). So **the
+newest touch slot with `age < 0.3 s` is the live finger** — a held finger
+refreshes it every 0.15 s, and it goes stale within two spawn intervals of
+release. Drag *direction* is not stored; a drag's consecutive slots are
+consecutive indices born ≤ 0.25 s apart, so the vector from slot `i−1` to `i`
+is the finger's direction when their births are that close. Both derivations
+are the entries' own, marked **Mine** where used. The `geometric-variation`
+agent's own notes are the builder's guide, with one stale line: it says
+`MAX_RIPPLES = 8`; it is **24** (`ripples.ts:28`), eight audio and sixteen
+touch. `probe-ripples.ts:79` counts seven geometric shaders and must count ten
+once all three land.
+
+**The picture.** Field A: rings about the centre, spacing `s = 0.03` uv (about
+30 rings across a portrait frame), each a `px` hairline (`ring()` on
+`fract(dist / s)`). Field B: the same rings about a second centre `c`, resting
+at `(0.12, 0.08)` (from `uSeed`, radius 0.1–0.2, any angle). Combined with
+`max()`. The two fields beat: hyperbolic bands of light and dark cross the
+frame, and any movement of `c` sweeps them — a 0.01 uv move of the centre
+moves the bands by a whole spacing, which is why a finger on `c` feels like
+turning a large wheel with a small one. In silence the pattern stands; `uFlow`
+turns `c` about its rest point at 0.05 rad/s so the bands creep. Never black.
+
+**Hits.** An audio slot at `age` adds a radial **spacing wave** to field A: `s`
+is stretched by `0.25 · level · e^{−((dist − v·age)/0.06)²}` at the front's
+current radius (`v = 0.6` uv/s) — the rings bunch and spread as the front
+passes, and the moiré bands ripple outward with it. Sixteen touch slots do the
+same to field **B** from the finger's position, so a tap **anywhere** sends the
+pattern rippling from *there*. `max()` of the stretch terms, not a sum.
+
+**The interaction**
+- **Hold and sweep.** While the live-finger slot is present, `c` **is** the
+  fingertip: field B's centre follows the finger and the entire pattern
+  reorganises around wherever it goes. This is the cheapest possible
+  interaction to draw — one `vec2` — and the largest visible change any view
+  here has to a finger, because every pixel depends on `c`.
+- **Let go.** When the slot goes stale, `c` **springs back** to its rest point
+  over ~1.5 s with one overshoot (a critically-ish damped return computed in
+  the shader from the last held position and its release time — both are in
+  the stale slot: `xy` and `birth`). Over staying where it was left: the moiré
+  at rest is the composition, and the spring is what makes the release a
+  gesture rather than a drop. **Mine.**
+- **Re-roll** (`uSeed`) moves the rest point and picks the spacing in
+  `[0.024, 0.04]` — the coarse-versus-fine character of the whole view.
+
+**Decided**
+- Two fields, not three → three beat into a texture with no readable bands.
+  Tried on paper; the rule is one pair. **Mine.**
+- Hairlines at `px`, not thicker → moiré is a hairline phenomenon; at 2 px the
+  bands blur into grey. **Mine.**
+- The finger moves B, not A → A is the frame's own centre and the audio's home;
+  the hand takes the second voice. **Mine.**
+- Spacing wave on hits over a brightness pulse → the layer is drawn, not lit; a
+  spacing change is geometry. **Mine.**
+- Cost → two `fract`s and two `ring()`s per pixel plus a 24-slot loop of one
+  exponential each. Cheaper than Circles.
+
+**Lands in** — `src/shaders/moire.frag.glsl` (new), `src/views.ts` (one line),
+`scripts/probe-ripples.ts:79`.
+**Done when** — probe page: silence shows crossing bands; a synthetic held slot
+at `(0.3, 0.2)` recentres field B there (measure: the pixel at `(0.3, 0.2)` is
+a ring centre — dark inside the first `px` ring); making it stale returns `c`
+to rest within 2 s with exactly one overshoot (sample `c`'s implied position
+from the pattern at 0.5 s steps, or expose it in a debug uniform for the
+probe); `transient: 1` produces a moving band of altered spacing whose radius
+grows at `0.6` uv/s between two screenshots. On a phone: hold and sweep,
+let go, tap somewhere else.
+**Verify** — as 134's. **Hard stops** — as 134's.
