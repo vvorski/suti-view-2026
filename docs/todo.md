@@ -759,7 +759,7 @@ that saves becomes harder to leave armed by accident, never easier ·
 dependency no.
 
 ### 110. Strata: the picture is sand between two panes of glass
-`status: done` · added 2026-09-04 · build 386 · a new atmospheric view · the view is complete; the autopilot cannot reach it and that conflict is entry 118, not an omission from this one
+`status: done` · added 2026-09-04 · build 386 · a new atmospheric view · the view is complete; the autopilot cannot reach it and that conflict is entry 124, not an omission from this one
 
 **Do** — add an atmospheric view, **Strata**, in which the audio pours coloured
 sand from whichever edge is up, the grains sift down under the phone's own
@@ -1506,7 +1506,7 @@ existing guard — one shot per arm, the rate limit, the 15s-quiet and 5-minute
 expiries — surviving untouched. Nothing new is captured, nothing leaves the
 device · dependency no.
 
-### 118. The autopilot cannot reach Strata, and the obvious fix hands it a black screen
+### 124. The autopilot cannot reach Strata, and the obvious fix hands it a black screen
 `status: blocked` · added 2026-09-04 · found while building 110 · needs Victor
 
 **Do** — nothing yet. This is a question for Victor, raised because entry 110
