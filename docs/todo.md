@@ -923,3 +923,114 @@ option seats under the notch.
 **Hard stops** — prefs no (a new value on an existing validated enum, as
 Fringe and Rose were) · url no (`?atmospheric=strata`, a new value not a new
 parameter) · capture no · dependency no. The control surface is unchanged.
+
+### 111. The slip goes further, and further still when the phone has been moving
+`status: ready` · added 2026-09-04 · unfreezes 76 · build after nothing
+
+**Do** — raise the RGB slip's cap, put a response curve on its target so
+ordinary handling reaches a visible fraction of that cap, and let the cap
+itself stretch with how much the phone has been moving lately.
+
+**Why** — the effect is built, correct and passing its probe, and Victor's
+report is that it "doesn't appear strong". It isn't: at a nudge it is 3.3px of
+total red-to-blue separation on a 1080px phone, along the same axis the tumble
+is simultaneously sliding the whole picture 59px down.
+
+**The freeze is lifted, by name.** Entry 76 is `done · FROZEN` and says the
+four constants are "not to be retuned… If a future request wants the effect
+changed, that is a new entry with Victor's word in it, not a tweak." This is
+that entry, and the word is: **"make it stronger, also can you detect ongoing
+motion then it should stretch further"** (2026-09-04). `MAX_SLIP` and the
+target curve are in scope. `STIFF = 400` and `DAMP = 14` are **not** — the
+ζ 0.35 overshoot is what "flicks apart and bounces back" means and nothing in
+the request is about the spring's feel.
+
+**Decided**
+- **How much stronger, and why the old ceiling was mis-calibrated** → `MAX_SLIP`
+  0.006 → **0.010** uv. **Mine**, and this is the load-bearing recon finding:
+  entry 76 justified 0.006 as "about two to four pixels on a phone… past a few
+  pixels line art stops looking dispersed and starts looking broken." Entry 104
+  then measured it and found the *comment* wrong, not the geometry — 0.006 uv
+  is 6.5px per channel, **13px total**, because the compositor's `uv` spans the
+  full frame width. So the "broken" ceiling was never tested at 3–4px; the
+  approved-and-liked picture has been sitting at 13px the whole time, and the
+  argument that 13px is the limit is an argument that was actually made about a
+  number three times smaller. 0.010 uv is 21.6px total at the cap — a real
+  increase, still under twice what has already been looked at and approved.
+- **A curve on the target, not only a bigger cap** → the magnitude spring
+  chases `pow(disturb, 0.6)` rather than `disturb`. **Mine**, because raising
+  the cap alone barely changes what anyone feels: `disturb` is
+  `(mag − 1.2) / (14 − 1.2)`, so a nudge at 8 m/s² asks for 0.53 of the range
+  and a hand tremor asks for nothing at all. The exponent front-loads exactly
+  the small-`disturb` regime ordinary handling lives in — the same shape and
+  the same reason `shake.ts`'s `busyness()` takes `sqrt(calm)` — without
+  touching `FLOOR`, which is what keeps a phone lying on a table at zero.
+- **"Ongoing motion" is `busyness()`, which already exists** → the cap becomes
+  `MAX_SLIP + busyness * SUSTAIN_SLIP`, with `SUSTAIN_SLIP = 0.010`. **Mine**,
+  over inventing a second slow envelope inside `rgb-slip.ts`: entry 88 already
+  built precisely this signal — `calm`, an EMA of `disturb` at `CALM_TAU = 25s`,
+  read as `sqrt(calm)` — for the adaptive shake bar, and a second one at a
+  different time constant would drift from it and give the app two disagreeing
+  opinions about how busy the phone is. It is `shake.ts:502`, currently
+  `private`.
+- **The stretch holds during a shake rather than compounding** → `updateCalm`
+  freezes while a detection is in progress or cooling down, and that freeze is
+  inherited unchanged. **Mine**: the request is that *ongoing* motion stretches
+  the slip, and a gesture inflating its own cap mid-gesture is the same
+  self-eating fault entry 88's freeze was written to prevent.
+- **Exposed as a per-frame fact, not a clearing accessor** → `busyness: number`
+  joins `ShakeFrame` (`shake.ts:900`) beside `disturb`, `Tumble.busyness()`
+  becomes public, `STILL_FRAME` reports 0, and it reaches the shader path
+  through `setMotion`'s existing call in `main.ts:1627` gaining a fourth
+  argument. **Mine** — it is exactly as much a per-frame fact as `disturb` is,
+  and `ShakeFrame`'s own comment is explicit that non-clearing per-frame values
+  belong there so two watchers see the same reading.
+- **The whole magnitude stays in `rgb-slip.ts`** → `updateRgbSlip` gains a
+  `busyness` parameter and computes its own cap; `MAX_SLIP` keeps its name and
+  its export so `engine/index.ts:80` and the probe are unchanged in shape.
+  **Mine**, over computing a cap in `scene.ts` and passing it in — `scene.ts`
+  accumulating analysis is the specific drift CLAUDE.md's refactor rule names.
+- **Direction, spring feel and the still-phone identity are untouched** → the
+  held direction, `PEAK_RATIO`, `PEAK_TAU`, `STIFF` and `DAMP` are all entry
+  104's and entry 76's and stay exactly as they are.
+
+**Identity when off** — exactly nothing changes on a still phone, and it falls
+out of the maths rather than a guard: `pow(0, 0.6)` is 0, so the spring's
+target is 0, so `amount` is 0, so `magnitude` is 0 and `updateRgbSlip` returns
+`{x: 0, y: 0}` before the cap is ever consulted. `busyness` at 0 leaves the cap
+at exactly `MAX_SLIP`, so a device that has never moved is byte-identical to a
+build with `SUSTAIN_SLIP` deleted.
+
+**Lands in** — `src/engine/rgb-slip.ts` (the curve, `SUSTAIN_SLIP`, the new
+`busyness` parameter and the cap it computes; `MAX_SLIP` 0.006 → 0.010, and its
+own comment, which entry 104 has already corrected once and which must state
+the new pixel figure); `src/shake.ts:502` (`busyness()` public), `:768` and
+`:900` and `:833` (`ShakeFrame`, the returned frame, `STILL_FRAME`);
+`src/main.ts:1627` (`setMotion` call); `src/scene.ts:838` and `:1287` (the
+stored value and the `updateRgbSlip` call); `scripts/probe-rgb-slip.ts` (the
+handling table, which must now be printed at three busyness levels).
+
+**Done when** — `pnpm probe:rgb-slip`'s handling table prints, at `busyness`
+0: a peak of **at least 1.8× today's** printed figure for the *nudge*
+(0.00307), *jolt* (0.00368) and *sustained low agitation* (0.00171) rows; a
+cap of 0.010 uv, which the probe's own pixel line reports as **21.6px total
+red-to-blue separation** at 1080px wide. At `busyness` 0.5 the cap is 0.015
+(32.4px) and at 1.0 it is 0.020 (43.2px). The still-on-a-table and
+hand-tremor rows still print **0.00000 at every busyness level** — the curve
+must not lower the floor. Entry 104's four assertions still pass unchanged:
+zero direction reversals through a knock's decay up to 120 m/s², zero through
+a 5 Hz, 3 Hz and 2 Hz sustained shake, a cross-aimed second hit re-aims the
+axis, and every case settles back to zero.
+
+**Verify** — `pnpm build`, `pnpm lint`, `pnpm probe:rgb-slip` and
+`pnpm probe:shake` (the latter because `busyness()` changing visibility must
+not change the adaptive bar it feeds — the walking-then-shake case is the
+one that would catch it). Then the phone, which is the only place the actual
+question is answered: nudge it once and look for colour on the edges, then
+carry it around for a minute and nudge it again — the second nudge must be
+visibly further apart than the first. No HUD surface changes, so no 320×568
+pass is owed.
+
+**Hard stops** — prefs no · url no · capture no · dependency no. The frozen
+constants of entry 76 are overridden, with Victor's word quoted above and by
+the mechanism entry 76 itself specifies.

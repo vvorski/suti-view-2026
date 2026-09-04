@@ -4108,6 +4108,13 @@ constants look arbitrary enough to invite adjustment. They are not arbitrary —
 dispersed. If a future request wants the effect changed, that is a new entry
 with Victor's word in it, not a tweak.
 
+**Partially unfrozen 2026-09-04 by docs/todo.md entry 111**, through exactly
+that mechanism: Victor asked for it stronger, and entry 111 quotes him. What it
+lifts is `MAX_SLIP` (0.006 → 0.010) and the shape of the spring's *target* (a
+0.6 power curve on `disturb`). `STIFF = 400` and `DAMP = 14` remain frozen —
+the overshoot at ζ 0.35 is the feel this freeze was protecting, and nothing
+in the request touches it.
+
 **Do** — move the picture apart into its red, green and blue when the phone
 moves, and let them spring back together when it stops. Its own module, its own
 spring, its own uniform — sharing nothing with the tumble or with entry 58's
