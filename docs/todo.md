@@ -2896,3 +2896,60 @@ on an iPhone, with the readout on, the fullscreen line reads
 and after); then an iPhone. No HUD surface is touched.
 
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 129. The tap after a hold is a shutter, not a play — is that the price?
+`status: blocked` · added 2026-09-05 · found at build 416 with the entry above · **needs Victor** · concerns 115 and 125
+
+**Do** — nothing yet. This puts a cost to Victor that entries 115 and 125 each
+recorded and neither put to him.
+**Why** — since build 415 a finger held still on the picture for **3.5 s**
+(`HOLD_ARM_S = CHARGE_TIME + 1.0`, within 24 px, phone calm) arms camera
+mode. The confirmation is a 1.4 px-stroke circle at **25 % opacity** over a
+moving picture. **The next tap on the picture then saves a PNG and exits;
+it does not play.** `main.ts:1390`'s own comment: *"fatten rings now ends in
+the camera arming at 3.5s. That is a real loss to the play gesture and there
+is no version of hold-does-something without it."* Pressing and holding is
+also exactly how the picture was tested yesterday, and the tap after such a
+hold looks like a mode that has stopped answering.
+
+**The question**
+> A still 3.5 s hold arms the camera, and the following tap takes a photo
+> instead of playing. That is a deliberate trade both 115 and 125 made on your
+> behalf. Is the trade right, and if not, which side of it moves?
+
+**Costed, so the answer is one choice**
+- **Keep it, and make the armed state impossible to miss.** The gesture map
+  stands; `#shutter-glyph` goes from 0.25 to something that reads across a
+  room (0.7, with the existing 180 ms pulse on arm), so the "dead" tap is
+  never a surprise. Cheapest; changes nothing about what a hold means.
+- **Lengthen the hold.** `HOLD_ARM_S` to 5 s: a casual rest of the thumb no
+  longer arms, a deliberate one still does. Costs the hold gesture nothing it
+  has not already lost — charge is full at 2.5 s either way — but "hold to
+  arm" gets slower to reach, and this is the third value the constant would
+  have had in three days.
+- **Arming does not eat the next tap.** The shot fires *and* the tap plays: a
+  ring is born at the finger as the frame is saved, so the picture always
+  answers and the photograph is a bonus. Entry 87's *"one shot, then done"*
+  stays; only the ring is added back. Changes what a photograph of a tap
+  contains — it will contain the ring.
+- **Move arming off the hold altogether.** There is no fourth finger gesture
+  left that is not already spoken for (tap plays, double tap opens the menu,
+  press+shake is entry 121's), so this means the HUD again or a desktop-only
+  camera; 115 removed the chip on your instruction. Recorded for completeness;
+  not recommended.
+
+**Decided in advance**
+- Whatever the answer, the calm gate (125) and the desktop map (117) are
+  untouched — neither is the cost being asked about.
+- If the answer is "keep it", the glyph change is a one-line CSS edit and this
+  entry closes as `done` with the answer recorded, so the cost is not
+  re-found and re-raised.
+
+**Lands in** — depends on the answer: `index.html:217-229` (`#shutter-glyph`
+opacity) for the first; `main.ts:1394` for the second; `main.ts:1655-1670`
+(the `cameraMode` branch's `continue`) for the third.
+**Done when** — Victor has answered and the answer is recorded here; then the
+chosen change's own check: on a phone, hold 3.5 s, then tap — what happens is
+what he chose, and he can see the armed state from arm's length.
+**Verify** — `pnpm build`, `pnpm lint`, `pnpm probe:tap`; then the phone.
+**Hard stops** — prefs no · url no · capture no · dependency no.
