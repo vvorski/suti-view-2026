@@ -33,8 +33,15 @@
 
 import { spawnAt, type RippleState } from './ripples.ts'
 
-/** Seconds of continuous contact before charge saturates at 1.0. */
-const CHARGE_TIME = 2.5
+/** Seconds of continuous contact before charge saturates at 1.0.
+ *
+ *  Exported since docs/todo.md entry 115, which derives the still-hold that
+ *  opens the menu from it rather than picking a number: past this point a
+ *  hold already buys nothing here, so that is the gesture space the menu can
+ *  take without cost. Read there, not copied — a second 2.5 in main.ts is
+ *  the duplication CLAUDE.md names, and it would silently stop being
+ *  "just past full charge" the moment this moved. */
+export const CHARGE_TIME = 2.5
 /** Charge at the very first qualifying instant, not 0 — so the briefest tap
  *  still visibly does something. Raised from 0.4 to 0.6 by entry 50: it used
  *  to be chosen as "the briefest hold that clears the gesture threshold",

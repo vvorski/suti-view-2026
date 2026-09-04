@@ -97,8 +97,8 @@ const BAND_R = [0.88, 0.75, 0.63, 0.53, 0.43, 0.33]
  *  edits: `geo`, `atm`, `cam`, `ear`. */
 const R_CHIPS_INNER = 1.08
 /** docs/todo.md entry 77. The outer icon arc, outside the inner one — the
- *  four global toggles that never change what the bands mean: `num`,
- *  `grav`, `day`, `shutter`. Wider so the two rings read as concentric
+ *  global toggles that never change what the bands mean: `num`,
+ *  `grav`, `day`. Wider so the two rings read as concentric
  *  rather than overlapping. **Mine**, per that entry's own "Mine" on the
  *  exact radius and size factor. */
 const R_CHIPS_OUTER = 1.22
@@ -267,6 +267,12 @@ export interface Hud {
        *  identical when the room itself is still. `open` without `live` is
        *  exactly the failure this entry exists to name. */
       camera?: { open: boolean; live: boolean }
+      /** docs/todo.md entry 115 — whether camera mode is armed, and how long
+       *  the longest still contact has been held. Two numbers because "the
+       *  camera doesn't arm" has two candidate causes (the double tap not
+       *  recognised, or the arm expiring) and "the menu won't open" has two
+       *  more (the hold not reaching 3.5s, or drifting past its slop). */
+      arm?: { armed: boolean; hold: number }
     },
   ): void
   /** Adopt a change decided elsewhere — the autopilot (director.ts) or a
@@ -322,15 +328,6 @@ export interface Hud {
    *  all. */
   close(): void
   /**
-   * Whether camera mode is on right now — docs/todo.md entry 78, so the
-   * shutter chip can show which state it is in, the way `day` already
-   * shows its own cycle. main.ts calls this at every point its own
-   * `cameraMode` boolean actually changes, including the asynchronous
-   * revert on a refused or absent camera — the chip only ever shows the
-   * truth, never an optimistic guess about a permission not yet answered.
-   */
-  setCameraActive(active: boolean): void
-  /**
    * Whether the numeric readout is showing this session — docs/todo.md
    * entry 31. Not the same as `prefs.showStats`: a `?debug` load shows the
    * readout for that load only, without writing the choice back, so a
@@ -366,16 +363,6 @@ interface Handlers {
    *  scene.ts render setting with its own fade, so it needs an explicit
    *  call rather than a value polled every frame. */
   onSkyOverride(state: SkyOverride): void
-  /**
-   * Arm camera mode — docs/todo.md entries 72 and 87. One shot: the next
-   * tap anywhere on the picture takes a photo and leaves the mode on its
-   * own, so this only ever *enters* — main.ts's own `enterCameraMode` is a
-   * no-op while already armed, which is what makes a second tap on this
-   * same chip harmless rather than needing its own case here. The panel is
-   * already closed by the time this fires (the chip's own onTap calls
-   * `setOpen(false)` directly).
-   */
-  onCameraMode(): void
   /** Fired on every change the user makes by hand, so the autopilot can get
    *  out of the way. Not fired for `adopt`. */
   onManualChange(): void
@@ -406,13 +393,6 @@ const ICONS: Record<string, string> = {
     '<path d="M1.4 2.6h6v3.4H4.8v12H7.4v3.4h-6z"/>' +
     '<path d="M22.6 2.6h-6V6h2.6v12h-2.6v3.4h6z"/>' +
     '<circle cx="12" cy="12" r="5.6"/>',
-  // A shutter button, not a camera body — deliberately distinct from `cam`
-  // above (the passthrough band's own group, opened to adjust a mix) since
-  // this chip does something different: it enters a mode rather than
-  // opening a control. docs/todo.md entry 72.
-  shutter:
-    '<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/>' +
-    '<circle cx="12" cy="12" r="4.6"/>',
   // Three concentric arcs, like sound arriving — chosen over the old
   // diagonal-and-blocks glyph (which read as "settings", the mistake this
   // group's rename fixes) and over a level meter (already the numeric
@@ -514,14 +494,6 @@ const CSS = `
    meant to open the thing. Nothing visible happened, which is the worst
    version of that bug. */
 .hud-scrim:not(.open) .hud-chip { pointer-events: none; }
-/* docs/todo.md entry 78 — the one exception: the shutter chip stays live
-   while camera mode is on, closed panel and all, since it is the only way
-   back to the menu now that the two-finger exit is gone. Gated on
-   aria-pressed (set by the same paint() loop every other chip's state
-   already goes through) rather than a second class, so there is exactly
-   one place "is camera mode on" is decided. Every other chip is untouched
-   by this rule and stays inert while closed, exactly as before. */
-.hud-scrim:not(.open) .hud-chip--shutter[aria-pressed='true'] { pointer-events: auto; }
 /* docs/todo.md entry 77: the button itself is the touch target and stays a
    fixed 3rem always — a hand doesn't get less thumb-safe for being on the
    outer ring. Everything drawn (the circle, the border, the icon) lives on
@@ -639,15 +611,6 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
    *  Starts from the stored preference or, for this load only, `?debug`;
    *  only the `num` chip below ever writes it back to `prefs`. */
   let showStats = debugFromUrl || prefs.showStats
-  /** docs/todo.md entry 78 — whether camera mode is currently on, so the
-   *  shutter chip can show which state it is in, the way `day` already does
-   *  for its own cycle. Not `prefs` — camera mode is deliberately render-time
-   *  only (entry 72's own hard stop) — so this exists purely to paint the
-   *  chip, set by `setCameraActive` whenever main.ts's own boolean changes,
-   *  including the asynchronous case where a refused or absent camera
-   *  reverts it moments after entry looked like it had succeeded. */
-  let cameraActive = false
-
   const stats = document.createElement('pre')
   stats.className = 'hud-stats'
   stats.hidden = !showStats
@@ -1129,33 +1092,19 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
     },
     'outer',
   )
-  // docs/todo.md entries 72 and 87. A momentary action again — 87 dropped
-  // 78's toggle, since the mode now ends itself at the next tap on the
-  // picture (or a 10s timeout) rather than persisting until a second tap on
-  // this chip. Closes the panel itself, directly, the same "one tap arms
-  // and closes the panel" gesture entry 72 shipped.
-  const shutterChip = mkChip(
-    'shutter',
-    'Camera mode',
-    '#9d9bf0',
-    () => {
-      setOpen(false)
-      handlers.onCameraMode()
-    },
-    'outer',
-  )
-  // docs/todo.md entries 78 and 87 — the one chip allowed to stay live
-  // while the panel is closed, but only while armed; see the
-  // `.hud-chip--shutter[aria-pressed='true']` exception above. Kept from 78
-  // unchanged: a tap here while already armed reaches `handlers.onCameraMode`
-  // same as any other, and `enterCameraMode`'s own no-op-while-armed guard
-  // is what makes that harmless rather than needing a case here too.
-  shutterChip.classList.add('hud-chip--shutter')
+  // docs/todo.md entry 115 deleted the shutter chip that stood here.
+  // Camera mode is reached by a double tap on the picture now and has no
+  // presence in the HUD at all — "I said the camera should be a totally
+  // separate thing from the menu". Everything that existed only to serve
+  // this chip went with it: the pointer-events exception above, the
+  // `cameraActive` flag, `setCameraActive`, and the paint branch. Deleting
+  // the chip without them would have left `Hud` claiming a capability it no
+  // longer has.
 
   /**
    * Lay the icons along their own arc — now two, docs/todo.md entry 77:
    * `geo`/`atm`/`cam`/`ear` on the inner ring against the wedge, since
-   * those choose what it edits; `num`/`grav`/`day`/`shutter` on the wider,
+   * those choose what it edits; `num`/`grav`/`day` on the wider,
    * smaller ring outside, since those toggle something about the whole app
    * and never change what the bands mean. Split by `dataset.ring` — set
    * once in `mkChip` — rather than by array position, so the grouping
@@ -1351,9 +1300,7 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
             ? prefs.gravity
             : id === 'day'
               ? prefs.skyOverride !== 'auto'
-              : id === 'shutter'
-                ? cameraActive
-                : group === id
+              : group === id
       chip.setAttribute('aria-pressed', String(on))
     }
     // docs/todo.md entry 71: the day chip says which of its three states it
@@ -1365,7 +1312,6 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
     )
     void statsChip
     void gravChip
-    void shutterChip
   }
 
   build()
@@ -1587,6 +1533,9 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
         ...(s.camera === undefined
           ? []
           : [`cam   ${!s.camera.open ? 'closed' : s.camera.live ? 'live' : 'frozen'}`]),
+        ...(s.arm === undefined
+          ? []
+          : [`arm   ${s.arm.armed ? 'armed' : 'off'}  hold ${s.arm.hold.toFixed(1)}s`]),
       ].join('\n')
     },
 
@@ -1599,10 +1548,6 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
     showingStats: () => showStats,
     open: () => setOpen(true),
     close: () => setOpen(false),
-    setCameraActive: (active) => {
-      cameraActive = active
-      paint()
-    },
 
     adopt(next, colourRampS) {
       if (next.geometricView) {

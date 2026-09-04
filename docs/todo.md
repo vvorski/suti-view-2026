@@ -1391,7 +1391,7 @@ a phone that the lattice is unchanged.
 surface is unchanged; this adds no control.
 
 ### 115. The camera leaves the menu, and the menu moves to a hold
-`status: building` · added 2026-09-04 · started 2026-09-04 · **supersedes the entry points built by 72, 78 and 87** · independent of 110–114
+`status: done` · added 2026-09-04 · build 407 · **supersedes the entry points built by 72, 78 and 87**
 
 **Do** — take camera mode out of the HUD entirely: delete the shutter chip,
 arm on a **double tap** of the picture, land on the plain picture after the

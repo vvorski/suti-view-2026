@@ -72,7 +72,7 @@ export type { Character } from './slow.ts'
 export { createRippleState, updateRipples, spawnAt, MAX_RIPPLES, AUDIO_RIPPLES } from './ripples.ts'
 export type { RippleState } from './ripples.ts'
 
-export { createEmitterState, updateEmitter } from './emitter.ts'
+export { createEmitterState, updateEmitter, CHARGE_TIME } from './emitter.ts'
 export type { EmitterState } from './emitter.ts'
 
 export {

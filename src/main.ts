@@ -12,6 +12,7 @@ import { DEFAULT_GEO_COLOUR, parseGeoColour, type GeoColour } from './geo-colour
 import { startCamera, type CameraSource } from './camera'
 import { createHud, TAP_SLOP_PX } from './hud'
 import {
+  CHARGE_TIME,
   createHoverState,
   createTouchField,
   hoverLeft,
@@ -1096,7 +1097,6 @@ async function main(): Promise<void> {
   function enterCameraMode(): void {
     if (cameraMode) return
     cameraMode = true
-    panel.setCameraActive(true)
     const glyph = document.getElementById('shutter-glyph')
     if (glyph) {
       window.clearTimeout(glyphFadeTimeout)
@@ -1106,26 +1106,31 @@ async function main(): Promise<void> {
     armCamera(cameraArmState, performance.now() / 1000)
   }
 
-  // docs/todo.md entry 87 — the post-shot return; also reached by a manual
-  // exit (a second tap on the chip while armed, `cameraActive`'s own toggle
-  // in hud.ts is unaffected by this entry). Never the automatic-expiry
-  // path, which leaves camera mode from inside the frame loop below
-  // precisely so it does not also reopen the menu.
+  // The post-shot return — docs/todo.md entries 87 and 115.
+  //
+  // The comment that stood here described "a manual exit (a second tap on
+  // the chip while armed)", which entry 87 had already removed one entry
+  // earlier: `onCameraMode` is `enterCameraMode`, whose own early return
+  // makes a second tap a no-op. Entry 115 then deleted the chip outright,
+  // so the ways out are now exactly two — the next tap on the picture takes
+  // the shot and calls this, or entry 109's expiry ends the mode from
+  // inside the frame loop without reopening anything.
   function exitCameraMode(): void {
     if (!cameraMode) return
     cameraMode = false
     disarmCamera(cameraArmState)
-    panel.setCameraActive(false)
     window.clearTimeout(glyphFadeTimeout)
     const glyph = document.getElementById('shutter-glyph')
     if (glyph) {
       glyph.classList.remove('fading')
       glyph.hidden = true
     }
-    // docs/todo.md entry 78 overturns entry 72's "exit goes to the normal
-    // picture rather than opening the panel" — every other chip leaves you
-    // where you were, and the trip being one-way was the whole complaint.
-    panel.open()
+    // docs/todo.md entry 115 removes the `panel.open()` that stood here.
+    // Entry 78 had added it, reading "camera mode is not connected to the
+    // menu!!" as a complaint about a missing connection when it was a
+    // demand for separation; entry 87 then repeated the inversion. This one
+    // line was the whole substance of the complaint, three times over. The
+    // shot lands you back on the plain picture.
   }
 
   // docs/todo.md entry 83. The render-time-override seam entries 48, 58 and
@@ -1175,12 +1180,6 @@ async function main(): Promise<void> {
     onPassthrough: applyPassthrough,
     onSolo: soloLayer,
     onUnsolo: unsoloLayer,
-    // docs/todo.md entry 87 drops entry 78's toggle: the chip only arms.
-    // `enterCameraMode`'s own `if (cameraMode) return` already makes a tap
-    // on an already-armed chip a harmless no-op rather than an exit — the
-    // mode ends at the next tap on the picture (or the automatic expiry —
-    // docs/todo.md entry 109), never at a second tap on the chip.
-    onCameraMode: enterCameraMode,
     onManualChange: () => director.suspend(),
   }, new URLSearchParams(window.location.search).has('debug'))
 
@@ -1313,6 +1312,37 @@ async function main(): Promise<void> {
   // separate taps start pairing by accident.
   const TAP_RESOLVE_MS = 400
   const DOUBLE_TAP_RADIUS_PX = 30
+
+  /**
+   * How long a still contact must be held before the menu opens — docs/todo.md
+   * entry 115, where menu-opening moved off the double tap.
+   *
+   * Derived rather than picked: `emitter.ts` saturates its charge at
+   * `CHARGE_TIME`, so **past that point a hold already buys nothing** — it is
+   * gesture space the emitter's own design has vacated — and the extra second
+   * leaves a full-charge hold a moment to sit at full charge before the menu
+   * claims it. Written against the constant so it moves if that moves.
+   *
+   * The known cost, stated rather than hidden: a deliberate long hold to
+   * fatten rings now ends in a menu at 3.5s. That is a real loss to the play
+   * gesture and there is no version of hold-opens-the-menu without it.
+   */
+  const HOLD_MENU_S = CHARGE_TIME + 1.0
+  /**
+   * A hold that travels is never a menu — it is entry 50's fling, and turning
+   * that into a menu would take the loudest emitter gesture away from the
+   * picture. Measured against the contact's *original* touchdown point rather
+   * than the previous frame's, so a slow drift out and back cannot creep past
+   * it unnoticed.
+   */
+  const HOLD_MENU_SLOP_PX = 24
+  /** The contact that has already opened the menu this gesture, so a finger
+   *  still resting on the glass at 3.6s does not reopen it every frame. */
+  let holdOpenedBy: number | null = null
+  /** The longest still contact on the glass right now, in seconds — for the
+   *  `?debug` readout only. Recomputed each frame in `dispatchTouches`; 0
+   *  when nothing qualifies. */
+  let longestStillHold = 0
   let lastSaveAt = -Infinity
   // docs/todo.md entry 72: camera mode's own rate limit. Every tap in here
   // is a deliberate shutter press, not one entry 52 needed protecting from
@@ -1343,7 +1373,19 @@ async function main(): Promise<void> {
       Math.hypot(clientX - lastTap.x, clientY - lastTap.y) <= DOUBLE_TAP_RADIUS_PX
     ) {
       lastTap = null
-      panel.open()
+      // docs/todo.md entry 115 — the double tap arms the camera; the menu
+      // moved to the still hold below. Victor: "I said the camera should be
+      // a totally separate thing from the menu", and "touch hold to open
+      // menu, and single tap (or double tap?) for camera arm."
+      //
+      // Double rather than the single tap he offered, and that is a
+      // correction rather than a preference: the emitter fires on every
+      // `down` unconditionally (entry 50), so a single tap that also armed
+      // would arm on *every* touch of the picture and the touch after it
+      // would take a photo — nobody could tap twice without a capture. The
+      // double tap is only free because the hold has taken over what it
+      // used to do.
+      enterCameraMode()
       return
     }
     lastTap = { x: clientX, y: clientY, t: performance.now(), pointerId }
@@ -1425,6 +1467,7 @@ async function main(): Promise<void> {
     // than re-walked, since `sample(now)` already reflects a `down` that
     // landed this same frame by the time this line runs.
     let nonChipDown = 0
+    longestStillHold = 0
     for (const t of touchField.sample(now)) {
       const speed = Math.hypot(t.vx, t.vy)
       // docs/todo.md entry 80: a non-chip contact this file is currently
@@ -1440,6 +1483,27 @@ async function main(): Promise<void> {
         streamMaxSpeed = Math.max(streamMaxSpeed, speed)
       }
       if (t.onChip || hudOpen) continue
+      // docs/todo.md entry 115 — a still hold opens the menu. Checked here,
+      // in the per-frame contact loop, because "has this finger been down
+      // for three and a half seconds without moving" is a question about
+      // elapsed time that no event can answer: the `down` is too early and
+      // the `up` is too late. `downFor` and `downClientX`/`Y` are already on
+      // the sample, so this needs no new state beyond remembering which
+      // contact has already fired.
+      if (Math.hypot(t.clientX - t.downClientX, t.clientY - t.downClientY) <= HOLD_MENU_SLOP_PX) {
+        longestStillHold = Math.max(longestStillHold, t.downFor)
+      }
+      if (
+        holdOpenedBy === null &&
+        t.downFor >= HOLD_MENU_S &&
+        Math.hypot(t.clientX - t.downClientX, t.clientY - t.downClientY) <= HOLD_MENU_SLOP_PX
+      ) {
+        holdOpenedBy = t.id
+        // The same supersession the two-finger path does below: a tap still
+        // waiting to pair into a double must not survive the menu opening.
+        lastTap = null
+        panel.open()
+      }
       const contactId = contactIdFor.get(t.id)
       // Absent only for a chip contact (never minted one) reaching here by
       // a stale id, which should not happen given the exclusion above —
@@ -1534,6 +1598,7 @@ async function main(): Promise<void> {
       // contact, which never had a remembered tap to begin with.
       if (e.kind === 'cancel') {
         cancelPendingTap(e.id)
+        if (holdOpenedBy === e.id) holdOpenedBy = null
         continue
       }
       // The tap-versus-drag distinction entry 50 explicitly names as not
@@ -1544,6 +1609,12 @@ async function main(): Promise<void> {
       if (Math.hypot(e.clientX - e.downClientX, e.clientY - e.downClientY) > TAP_SLOP_PX) {
         cancelPendingTap(e.id)
       }
+      // docs/todo.md entry 115 — the hold that opened the menu has ended, so
+      // the next one is free to open it again. Cleared on the release rather
+      // than when the menu closes: it is a property of the *contact*, and a
+      // finger still resting on the glass after the menu is dismissed should
+      // not immediately reopen it.
+      if (holdOpenedBy === e.id) holdOpenedBy = null
     }
 
     visualiser.setTouchStream(streamBegan, streamAnyDown, streamMaxSpeed)
@@ -1630,7 +1701,6 @@ async function main(): Promise<void> {
         )
         if (!arm.armed) {
           cameraMode = false
-          panel.setCameraActive(false)
           fadeOutGlyph()
         }
       }
@@ -1753,6 +1823,14 @@ async function main(): Promise<void> {
         // explain. Read fresh from cameraSource every tick, not cached,
         // since isLive() is itself continuously updated.
         camera: cameraSource ? { open: true, live: cameraSource.isLive() } : { open: false, live: false },
+        // docs/todo.md entry 115 — CLAUDE.md's "two identical symptoms need
+        // two different numbers", applied before the symptom appears. "The
+        // camera doesn't arm" will otherwise be indistinguishable from "the
+        // double tap isn't being recognised", and this feature has been
+        // misdiagnosed from the outside twice already. `hold` is the longest
+        // still contact currently on the glass, so a hold that is not
+        // opening the menu can be told from one that is not being seen.
+        arm: { armed: cameraMode, hold: longestStillHold },
       })
     }
     requestAnimationFrame(frame)
