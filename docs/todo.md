@@ -680,7 +680,7 @@ one thing no probe can answer.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 109. Camera mode ends when you put the phone down, not when a clock runs out
-`status: done` · added 2026-09-02 · build 372 · follows the build-369 fix · **gap found at build 373, fixed by 120 at build 419** — the arm died after 15s on any device with no motion data
+`status: done` · added 2026-09-02 · build 372 · follows the build-369 fix · **gap found at build 373, fixed by 120 at build 420** — the arm died after 15s on any device with no motion data
 
 **Do** — replace the armed mode's wall-clock timeout with one that reads
 whether the phone is still being held and aimed, and make the expiry visible
@@ -1897,7 +1897,7 @@ groups open); then a phone in landscape.
 surface stays circular — this moves chips along the arc they are already on.
 
 ### 120. Armed camera mode dies after 15 seconds on any device with no motion data
-`status: done` · added 2026-09-04 · build 419 · found at build 373 from the same "there is no camera" report · follows 109
+`status: done` · added 2026-09-04 · build 420 · found at build 373 from the same "there is no camera" report · follows 109
 
 **Do** — teach `camera-arm.ts` the difference between "the phone reads as put
 down" and "the phone has never reported anything", and in the second case run
