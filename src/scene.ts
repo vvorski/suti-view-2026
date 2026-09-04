@@ -439,10 +439,18 @@ export interface Visualiser {
    * already drawing a cursor there, and the emitter's rings are the
    * response.
    *
+   * `presence` is docs/todo.md entry 114's eased 0-1 — `present` smoothed
+   * over a quarter second, which is what `lattice.frag.glsl` multiplies its
+   * lens by so an arriving cursor bends the picture over a moment rather
+   * than on one frame. Defaulted to 0, so a caller that does not know about
+   * it cannot accidentally warp anything.
+   *
    * A device with no mouse never calls this, and the hover emitter then sits
-   * inactive at zero life for the whole session, spawning nothing.
+   * inactive at zero life for the whole session, spawning nothing. The
+   * lattice is bit-identical there too: presence 0 makes the lens term
+   * exactly zero, and every other programme ignores the uniform.
    */
-  setHover(x: number, y: number, present: boolean, speed: number): void
+  setHover(x: number, y: number, present: boolean, speed: number, presence?: number): void
   /**
    * What the picture as a whole should feel from every finger on it right
    * now — docs/todo.md entry 48, and independent of `setTouches()` above:
@@ -645,6 +653,14 @@ export function createVisualiser(
     // there is a grain there at all; the grid dimensions come along so the
     // shader can work in cell space, which GLSL1 gives it no way to ask a
     // sampler for.
+    // docs/todo.md entry 114 — the mouse cursor, xy in the shaders' own uv
+    // space and z the eased presence. Only `lattice.frag.glsl` reads it. It
+    // sits in this shared object because that is where every uniform both
+    // layers can see lives, and because this is the first pointer that has
+    // ever reached the atmospheric layer at all — deliberately not offered
+    // to the other twelve programmes, which is a second tenant's decision to
+    // make and not this one's.
+    uPointer: { value: new Vector3(0, 0, 0) },
     uSediment: { value: sedimentBlank },
     uSedimentGrid: { value: new Vector2(1, 1) },
     // Where "now" sits in the ring buffer, 0-1. The shader walks backwards from
@@ -1620,7 +1636,7 @@ export function createVisualiser(
       slipAccelY = t.accelY
     },
 
-    setHover(x, y, present, speed) {
+    setHover(x, y, present, speed, presence = 0) {
       // Recorded, not acted on: render() is what ticks the emitter, for the
       // same reason the pool is ticked there rather than in setTouches —
       // one wall-clock tick per rendered frame is what makes the spawn
@@ -1630,6 +1646,11 @@ export function createVisualiser(
       hoverY = y
       hoverSpeed = speed
       hoverActive = present
+      // docs/todo.md entry 114. Written straight to the uniform rather than
+      // stored and copied in render(): it is already the eased value — the
+      // easing is hover.ts's, on hover.ts's own clock — so there is nothing
+      // for a frame boundary to add.
+      uniforms.uPointer.value.set(x, y, presence)
     },
 
     setTouches(next) {
