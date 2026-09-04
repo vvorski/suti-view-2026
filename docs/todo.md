@@ -1869,3 +1869,87 @@ bucket lands; then a real session long enough for the autopilot to actually
 make the choice, which is the only test of whether an empty frame arriving
 unasked reads as a gift or as a fault.
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 116. `d` toggles the numbers
+`status: ready` · added 2026-09-04 · independent of 110–115
+
+**Do** — pressing `d` toggles the numeric readout, exactly as the `num` chip
+does, through the same one path.
+
+**Why** — asked for. On a desktop the readout is the debugging surface and it
+currently costs a double tap, a menu and a chip to reach.
+
+**Recon: "in desktop mode" needs no desktop gate.** `keyboard.ts` already
+exists — one `keydown` listener, bound unconditionally, carrying the space bar
+that entry 27 gave desktop as its re-seed (a phone has the shake instead). It
+has no platform check and needs none: a device with no keyboard sends no
+`keydown`. A phone with a Bluetooth keyboard attached would get `d`, and that
+is correct rather than a leak.
+
+**Decided**
+- **One toggle, not a second copy of it** → `hud.ts:1080`'s chip handler body
+  moves to a `toggleStats()` on the `Hud` interface, and the chip calls it.
+  **Mine**, and it is the reason this is not a four-line entry: that handler
+  does five things — flips `showStats`, writes `prefs.showStats`, hides the
+  element, clears its text, `save()` and `paint()` — and a key that reimplements
+  four of them is a state that disagrees with the chip's own pressed paint the
+  first time anyone touches both. CLAUDE.md's *duplication that only exists
+  because something was not exported*, caught before the second copy rather
+  than after.
+- **`e.key`, not `e.code`** → matched as `e.key.toLowerCase() === 'd'`.
+  **Mine**: the space bar uses `e.code === 'Space'` because space is a
+  *position* on every layout, but "pressing d" means the key that types a d,
+  which on AZERTY or Dvorak is not where `KeyD` sits. A letter binding follows
+  the character.
+- **Modifiers are never this app's** → any of `ctrlKey`, `metaKey` or `altKey`
+  held means the key belongs to the browser or the OS, and the handler returns
+  before doing anything. **Mine**, and it is a fix as well as a rule: the space
+  bar has no such guard today, so Ctrl+Space — an IME switch on Windows and a
+  Spotlight binding on macOS — currently re-rolls the seed as a side effect.
+  Both keys share the one guard.
+- **It persists, because the chip does** → `d` writes `prefs.showStats` the
+  same way a tap does. **Mine**, over a session-only toggle: two ways to
+  change one setting that disagree about whether it is remembered is worse
+  than either behaviour on its own. On a `?debug` load the interaction is
+  unchanged from today — `showStats` starts true from the URL, and pressing
+  `d` writes the result to prefs exactly as tapping the chip already would.
+- **The decision is extracted and made pure** → `keyAction(e)` returns
+  `'randomise' | 'stats' | null` from `{ key, code, ctrlKey, metaKey, altKey,
+  targetTag }`, and `bindKeyboard` becomes a listener that calls it and
+  dispatches. **Mine**: the target-tag exclusion and the modifier rule are
+  exactly the logic that gets a key binding wrong, and neither is testable
+  while it lives inside an event listener. It is also the pure-state shape
+  every other module here already has.
+- **No new chip, no HUD change** → the readout keeps its chip; this is a
+  second way to reach the same toggle. **Mine**: the control surface is
+  unchanged, so the circular-surface constraint is not engaged at all.
+
+**Identity when off** — a build where nobody presses a key is byte-identical:
+`keyAction` returns `null` for every other key and `bindKeyboard` binds the
+same single listener it binds today. The readout's own default is untouched,
+and `prefs.showStats` is an existing validated field whose type and meaning do
+not change — nothing stored is reshaped.
+
+**Lands in** — `src/keyboard.ts` (the `keyAction` extraction, the `d` case, the
+shared modifier guard, `KeyboardHandlers` gaining `onToggleStats`);
+`src/hud.ts:1080` (the chip handler's body becomes `toggleStats`) and `:341`
+(the `Hud` interface, beside `showingStats`); `src/main.ts:1176` (the
+`bindKeyboard` call gains the handler); `package.json` and
+`scripts/probe-keyboard.ts` (new, `pnpm probe:keyboard`).
+
+**Done when** — `pnpm probe:keyboard` asserts, headless: `d` and `D` both give
+`'stats'`; `Ctrl+d`, `Cmd+d` and `Alt+d` all give `null`; `d` with
+`targetTag: 'INPUT'` gives `null`; `Space` still gives `'randomise'` and
+`Ctrl+Space` now gives `null` where it previously re-rolled; every other key
+gives `null`. On a desktop browser: pressing `d` shows the numbers, pressing it
+again hides them and clears their text, the `num` chip's pressed state agrees
+with the keyboard in both directions, and the choice survives a reload.
+
+**Verify** — `pnpm build`, `pnpm lint`, `pnpm probe:keyboard`. Then a desktop
+browser with the panel open, pressing `d` while the `num` chip is visible —
+that is the one check that catches the chip and the key disagreeing, and it is
+the failure this entry's first decision exists to prevent. No HUD surface
+changes, so no 320×568 pass is owed.
+
+**Hard stops** — prefs no (`showStats` is an existing validated field; no field
+is added, retyped or repurposed) · url no · capture no · dependency no.
