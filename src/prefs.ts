@@ -109,14 +109,21 @@ export interface Prefs {
    */
   day: boolean
   /**
-   * 'auto' follows the local clock (see `sky.ts`); 'day'/'night' pin the
-   * picture toward full daylight or full night regardless of the hour —
+   * 'auto' follows the local clock (see `sky.ts`); 'day'/'night' used to pin
+   * the picture toward full daylight or full night regardless of the hour —
    * docs/todo.md entry 71, replacing `day`'s one-way "pin bright" with a
-   * cycle that can also pin dark, for a phone in a dark room at 2pm just as
-   * much as a phone outdoors at 2am. Defaults to `'auto'`; a stored
+   * cycle that could also pin dark. Defaults to `'auto'`; a stored
    * `day: true` from before this field existed is read once, in
    * `loadPrefs`, as `'auto'`'s replacement value `'day'` — never the other
    * way around, and never rewriting `day` itself.
+   *
+   * Superseded by nothing, retired by entry 127 the same way `day` above was
+   * retired by this field: the sun chip that read and wrote it is gone
+   * (Victor — asked whether it earned its place — "yes, remove it"), and this
+   * stays exactly where it is, still validated on load, simply never read or
+   * written any more. A visitor whose stored value was `'day'` or `'night'`
+   * therefore returns to automatic on their next load rather than being
+   * stranded pinned with no control left to unpin them.
    */
   skyOverride: SkyOverride
 }

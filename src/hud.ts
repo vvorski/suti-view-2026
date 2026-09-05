@@ -42,7 +42,7 @@ import {
 import { MERGE_MODES, type MergeModeName } from './merge-modes'
 import { MAPPINGS, type MappingName, type VisualParams } from './engine'
 import { type GeoColour } from './geo-colour'
-import { savePrefs, type Prefs, type SkyOverride } from './prefs'
+import { savePrefs, type Prefs } from './prefs'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 import { chipPosition } from './chip-arc.ts'
@@ -185,10 +185,11 @@ export interface Hud {
         periodicHz: number
         periodicStrength: number
       }
-      /** The clock's own current pair, and the outdoor-reading override's
-       *  own fade position — docs/todo.md entry 53. `located` — entry 97 —
-       *  is whether that pair is coming from a real granted coordinate. */
-      sky?: { daylight: number; warmth: number; override: number; located: boolean }
+      /** The clock's own current pair — docs/todo.md entry 53. `located` —
+       *  entry 97 — is whether that pair is coming from a real granted
+       *  coordinate. The outdoor-reading override this once also reported
+       *  was retired by entry 127. */
+      sky?: { daylight: number; warmth: number; located: boolean }
       /** The moon's own current fields — docs/todo.md entry 96, "report it
        *  in the readout" — so what night the app thinks it is is checkable
        *  without waiting a month. */
@@ -336,11 +337,6 @@ interface Handlers {
    * to 0 on a refusal rather than sitting somewhere untrue.
    */
   onPassthrough(a: number): Promise<number>
-  /** The sky override — docs/todo.md entries 47 and 71. Unlike `gravity`,
-   *  which main.ts reads from `prefs` itself once per frame, this is a
-   *  scene.ts render setting with its own fade, so it needs an explicit
-   *  call rather than a value polled every frame. */
-  onSkyOverride(state: SkyOverride): void
   /** Fired on every change the user makes by hand, so the autopilot can get
    *  out of the way. Not fired for `adopt`. */
   onManualChange(): void
@@ -400,22 +396,9 @@ const ICONS: Record<string, string> = {
     '<path d="M8 1.4h8v2.6H8z"/>' +
     '<path d="M11.2 4v7.4h1.6V4z"/>' +
     '<circle cx="12" cy="16.4" r="6.2"/>',
-  // A filled disc with eight rays — docs/todo.md entry 47. Named for what
-  // turning the chip *on* does, not a moon: the icon set is already a
-  // visual vocabulary (three wedges for geo, stacked waves for atm,
-  // concentric arcs for the ear) and a sun needs no explaining next to them.
-  day:
-    '<circle cx="12" cy="12" r="4.6"/>' +
-    '<g stroke="currentColor" stroke-width="2" stroke-linecap="round">' +
-    '<line x1="12" y1="0.8" x2="12" y2="3.4"/>' +
-    '<line x1="12" y1="20.6" x2="12" y2="23.2"/>' +
-    '<line x1="0.8" y1="12" x2="3.4" y2="12"/>' +
-    '<line x1="20.6" y1="12" x2="23.2" y2="12"/>' +
-    '<line x1="4.2" y1="4.2" x2="6.1" y2="6.1"/>' +
-    '<line x1="17.9" y1="17.9" x2="19.8" y2="19.8"/>' +
-    '<line x1="4.2" y1="19.8" x2="6.1" y2="17.9"/>' +
-    '<line x1="17.9" y1="6.1" x2="19.8" y2="4.2"/>' +
-    '</g>',
+  // docs/todo.md entry 127 removed the `day` icon (a filled disc with eight
+  // rays, entry 47) along with the sun chip it drew for — the manual sky
+  // override it toggled is gone, and an icon with no chip is dead weight.
 }
 
 const CSS = `
@@ -1054,31 +1037,20 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
     },
     'outer',
   )
-  // docs/todo.md entries 47, 53 and 71. A three-way cycle on one chip
-  // rather than a band or a second chip, same precedent gravity set at
-  // entry 30 for a single boolean — the circular surface is the
-  // non-negotiable, and a second chip would spend scarce arc on the same
-  // concept. Unlike gravity, this is a scene.ts render setting with its
-  // own fade rather than something main.ts polls from prefs each frame, so
-  // the toggle also calls handlers.onSkyOverride() explicitly. The `id` is
-  // left as `day`: renaming it would touch the stored-shape Hard Stop for
-  // no reason anyone would see on screen, and prefs.day itself is no
-  // longer written here at all — entry 71 supersedes it with
-  // prefs.skyOverride, and leaves the old field exactly where it was found
-  // (see prefs.ts's own comment on why).
-  const dayChip = mkChip(
-    'day',
-    'Sky: auto',
-    '#9d9bf0',
-    () => {
-      prefs.skyOverride = prefs.skyOverride === 'auto' ? 'day' : prefs.skyOverride === 'day' ? 'night' : 'auto'
-      handlers.onSkyOverride(prefs.skyOverride)
-      save()
-      paint()
-    },
-    'outer',
-  )
-  // docs/todo.md entry 115 deleted the shutter chip that stood here.
+  // docs/todo.md entry 127 deleted the sun chip that stood here (entries 47,
+  // 53 and 71's own three-way cycle): asked directly whether it earned its
+  // place, Victor said remove it — it was the only chip that corrected a
+  // guess rather than doing something asked for, and the guess is right
+  // nearly all the time. The stored field it read/wrote (`prefs.skyOverride`)
+  // stays exactly where it is, keeps its type and its `'auto'` default, and
+  // simply stops being read or written — the same retirement `prefs.day`
+  // itself already went through for entry 71, and the reason this is not a
+  // Hard Stop 1: no field changed shape, so no visitor's `localStorage` is
+  // reset or misread. `onSkyOverride` goes with it off `Handlers` — see
+  // scene.ts/main.ts for the rest of the override machinery this take with
+  // it, and prefs.ts for the comment marking the field retired.
+  //
+  // docs/todo.md entry 115 deleted the shutter chip that stood here before it.
   // Camera mode is reached by a double tap on the picture now and has no
   // presence in the HUD at all — "I said the camera should be a totally
   // separate thing from the menu". Everything that existed only to serve
@@ -1090,9 +1062,10 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
   /**
    * Lay the icons along their own arc — now two, docs/todo.md entry 77:
    * `geo`/`atm`/`cam`/`ear` on the inner ring against the wedge, since
-   * those choose what it edits; `num`/`grav`/`day` on the wider,
-   * smaller ring outside, since those toggle something about the whole app
-   * and never change what the bands mean. Split by `dataset.ring` — set
+   * those choose what it edits; `num`/`grav` on the wider, smaller ring
+   * outside (`day` retired with it — docs/todo.md entry 127), since those
+   * toggle something about the whole app and never change what the bands
+   * mean. Split by `dataset.ring` — set
    * once in `mkChip` — rather than by array position, so the grouping
    * survives whatever order the calls above happen to run in.
    *
@@ -1284,18 +1257,9 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
           ? showStats
           : id === 'grav'
             ? prefs.gravity
-            : id === 'day'
-              ? prefs.skyOverride !== 'auto'
-              : group === id
+            : group === id
       chip.setAttribute('aria-pressed', String(on))
     }
-    // docs/todo.md entry 71: the day chip says which of its three states it
-    // is currently in, since "pressed or not" can no longer distinguish
-    // pinned-day from pinned-night — both are simply "pressed".
-    dayChip.setAttribute(
-      'aria-label',
-      prefs.skyOverride === 'day' ? 'Outdoor' : prefs.skyOverride === 'night' ? 'Night' : 'Sky: auto',
-    )
     void statsChip
     void gravChip
   }
@@ -1386,16 +1350,6 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
           : [
               `sky   day ${s.sky.daylight.toFixed(2)}  ` +
                 `warm ${s.sky.warmth >= 0 ? '+' : ''}${s.sky.warmth.toFixed(2)}` +
-                // docs/todo.md entry 71: override now swings both ways —
-                // positive is the outdoor-reading pin toward day, negative
-                // is the new pin toward night, and only one direction can
-                // ever be active (setSkyOverride sets one target, never
-                // both), so a single line still says which.
-                (s.sky.override > 0
-                  ? `  outdoor ${Math.round(s.sky.override * 100)}%`
-                  : s.sky.override < 0
-                    ? `  night ${Math.round(-s.sky.override * 100)}%`
-                    : '') +
                 // docs/todo.md entry 97 — which of the two curves fed the
                 // pair above, since they can print near-identical numbers
                 // near the equinox and the difference is otherwise invisible.

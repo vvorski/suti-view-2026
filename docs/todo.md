@@ -2729,7 +2729,7 @@ capture path; entry 117's left click is what arms, and 125's gate — once built
 — makes a held space bar *block* arming rather than assist it) · dependency no.
 
 ### 127. The sun chip goes; the clock keeps the sky
-`status: building` · added 2026-09-05 · started 2026-09-05 · **retires the control built by 71** · helps 119 rather than conflicting with it
+`status: done` · added 2026-09-05 · build 454 · **retires the control built by 71** · helps 119 rather than conflicting with it
 
 **Do** — remove the sun chip and the manual sky override behind it. The
 automatic clock-driven day/night stays exactly as it is.

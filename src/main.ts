@@ -728,7 +728,6 @@ async function main(): Promise<void> {
     atmMergeMode: gateLook?.atmMergeMode ?? prefs.atmMergeMode,
     geoAlpha: prefs.geoAlpha,
     atmAlpha: prefs.atmAlpha,
-    skyOverride: prefs.skyOverride,
   })
 
   // Flipped by the real loop taking over, which is what stops the idle frames.
@@ -1222,7 +1221,6 @@ async function main(): Promise<void> {
   const panel = createHud(prefs, {
     onGeometricView: (name: GeometricViewName) => visualiser.setGeometricView(name),
     onColour: (layer, colour, rampS) => visualiser.setLayerColour(layer, colour, rampS),
-    onSkyOverride: (state) => visualiser.setSkyOverride(state),
     onAtmosphericView: (name: AtmosphericViewName) => visualiser.setAtmosphericView(name),
     onMergeMode: (layer, mode: MergeModeName) => visualiser.setMergeMode(layer, mode),
     onAlpha: (layer, a) => {

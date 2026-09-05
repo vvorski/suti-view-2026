@@ -63,7 +63,6 @@ import { skyFor, skyForLocation } from './sky'
 import { moonFor, moonForLocation, type Moon } from './moon'
 import { requestLocation, type GeoLocation } from './geo-location'
 import { requestAmbientLight, luminanceFromLux, type AmbientLight } from './ambient-light'
-import type { SkyOverride } from './prefs'
 import compositeFrag from './shaders/composite.frag.glsl?raw'
 import vertexShader from './shaders/fullscreen.vert.glsl?raw'
 import {
@@ -76,14 +75,6 @@ import {
 /** Texels in the instantaneous spectrum texture. 128 reads smoothly. */
 const SPECTRUM_SIZE = 128
 
-/** Seconds for the day-mode chip's override to fade fully on or off —
- *  docs/todo.md entry 53. Entry 47 originally built this control as the
- *  chip's own on/off fade at 400ms and suggested entry 53 reuse that
- *  constant; entry 53's own Decided text instead states 1.2s explicitly
- *  for this specific transition ("Toggling that override crossfades over
- *  1.2s"), which is the later and more specific number, so it wins here —
- *  a conflict worth naming rather than silently picking one. */
-const DAY_OVERRIDE_FADE_S = 1.2
 /** How often the clock is sampled — docs/todo.md entry 53. "Over a minute
  *  the change is invisible... sampling once a second is ample; per-frame
  *  would be waste." */
@@ -189,8 +180,8 @@ const STRUCTURE_COOLDOWN = 8
  * going at a fixed rate, rather than an exponential decay (`Envelope`'s own
  * shape, used a few hundred lines below for exposure): "about two seconds"
  * has to be a duration a change actually takes, the same reasoning
- * `DAY_OVERRIDE_FADE_S`'s own `overrideCurrent` chase already uses for the
- * day/night fade — an exponential asymptotically approaches its target
+ * `SKY_CHASE_RATE`'s own `skyDaylight` chase already uses for a sky reading
+ * that jumps — an exponential asymptotically approaches its target
  * without quite reaching it, which would leave a settled frame never
  * *quite* pixel-identical to what it is settling toward. `duration` lives on
  * the ramp itself, set fresh by whichever call started it, since a HUD drag,
@@ -329,13 +320,6 @@ export interface VisualiserOptions {
   geoAlpha: number
   /** 0-1. The atmospheric layer's opacity, applied before the merge mode. */
   atmAlpha: number
-  /** The sky override's starting state — docs/todo.md entries 47, 53 and
-   *  71. Seeded directly rather than always starting at `'auto'` and fading
-   *  in via `setSkyOverride()`, so a session that left day or night pinned
-   *  finds it already there, not fading in on every load. The picture's
-   *  actual brightness the rest of the time comes from the local clock
-   *  (see `sky.ts`), not from this field. */
-  skyOverride: SkyOverride
 }
 
 export interface Visualiser {
@@ -460,19 +444,6 @@ export interface Visualiser {
   /** 0-1, the atmospheric layer's opacity. */
   setAtmAlpha(a: number): void
   /**
-   * The sky override — docs/todo.md entries 47, 53 and 71. Originally "day
-   * mode on/off"; entry 53 repurposed the chip into an override that pins
-   * the clock-driven daylight to 1; entry 71 makes the override symmetric,
-   * pinning to 0 for `'night'` just as it pins to 1 for `'day'`, with
-   * `'auto'` returning it to the clock. A named state in, not a boolean or
-   * a number: the chip is a three-way cycle, and the fade between whichever
-   * two states it moves between over about 1.2s is `render()`'s own job,
-   * ticked once per frame the same way every other per-frame quantity here
-   * is, so the transition rides the render loop's own clock rather than a
-   * CSS transition or a second timer.
-   */
-  setSkyOverride(state: SkyOverride): void
-  /**
    * Attach or detach the passthrough camera, and set how much of it shows.
    *
    * `source` null detaches and frees the texture. Passing a source with mix 0
@@ -498,7 +469,7 @@ export interface Visualiser {
      *  `located` — docs/todo.md entry 97 — is whether that pair came from
      *  a real granted coordinate (`skyForLocation`) or the clock-only
      *  fallback (`skyFor`), so the readout can say which one is live. */
-    sky: { daylight: number; warmth: number; override: number; located: boolean }
+    sky: { daylight: number; warmth: number; located: boolean }
     /** docs/todo.md entry 96 — the moon's own current fields, over the
      *  same "testable without waiting" reasoning as sky above: what night
      *  the app thinks it is, without waiting a month to check the math. */
@@ -776,20 +747,16 @@ export function createVisualiser(
     // down, so a session that never raises it pays nothing for this uniform
     // existing.
     uExposure: { value: 1 },
-    // Day mode — docs/todo.md entries 47, 53 and 71. Entry 47 built this as
-    // a chip's own on/off value; entry 53 made it continuous, driven by the
-    // local clock (see skyFor()) every second, with the chip repurposed
-    // into an override that pins it to 1 for reading the screen outdoors at
-    // any hour; entry 71 makes the override symmetric — 'night' pins it to
-    // 0 just as 'day' pins it to 1, for a phone in a dark room at 2pm just
-    // as much as a phone outdoors at 2am. 0 is still identity and
-    // everything this ever is at 2am with the override at 'auto'. Seeded
-    // from the clock's own value right now (or the pinned end, if the
-    // override was left on) rather than 0, so the first frame matches what
-    // the hour actually is rather than defaulting to night.
-    uDay: {
-      value: options.skyOverride === 'day' ? 1 : options.skyOverride === 'night' ? 0 : skyForNow.daylight,
-    },
+    // Day mode — docs/todo.md entries 47, 53 and 71, with the chip and its
+    // override retired by entry 127 (Victor: the chip corrected a guess
+    // rather than doing something asked for, and the guess is right nearly
+    // all the time). Entry 47 built this as a chip's own on/off value;
+    // entry 53 made it continuous, driven by the local clock (see skyFor())
+    // every second — the part that survives. Seeded from the clock's own
+    // value right now rather than 0, so the first frame matches what the
+    // hour actually is rather than defaulting to night. 0 is still identity
+    // and everything this ever is at 2am.
+    uDay: { value: skyForNow.daylight },
     // The clock's own two numbers, for the ground's warmth tint —
     // docs/todo.md entry 53. One uniform rather than two: they are always
     // computed together from one clock and always meant to be read
@@ -969,19 +936,6 @@ export function createVisualiser(
   let baseAtmAlpha = options.atmAlpha
   const geoViewDip = createViewDip()
   const atmViewDip = createViewDip()
-  // Day mode — docs/todo.md entries 47, 53 and 71. `overrideTarget` is what
-  // the chip last asked for, now on -1..1: -1 pins toward night, 0 is
-  // 'auto' (no pin at all), 1 pins toward day. `overrideCurrent` chases it
-  // over DAY_OVERRIDE_FADE_S, ticked in render() the same way every other
-  // per-frame quantity here is — the chase logic itself is unchanged by the
-  // extra direction, since Math.min/Math.max already move toward a target
-  // from either side. `uDay` each frame mixes the clock's own `skyDaylight`
-  // toward 1 when `overrideCurrent` is positive and toward 0 when it is
-  // negative — see render()'s own comment on the exact split. Seeded from
-  // options.skyOverride, not 0 — a session that left day or night pinned
-  // should find it already there, not fading in.
-  let overrideTarget = options.skyOverride === 'day' ? 1 : options.skyOverride === 'night' ? -1 : 0
-  let overrideCurrent = overrideTarget
   // docs/todo.md entry 71: `skyDaylightSample` is what the clock said as of
   // the last once-a-second read, below; `skyDaylight` — what uDay actually
   // reads — chases it at a bounded rate instead of snapping to it, so a
@@ -1463,34 +1417,18 @@ export function createVisualiser(
       }
       // Chased at a bounded rate rather than assigned — entry 71's own
       // finding: a DST jump, a timezone change in flight, or a tab resumed
-      // hours later would otherwise land as a one-frame step in `uDay`,
-      // which the override fade below does nothing to smooth, since that
-      // fade only covers the *chip's* own transitions. Full-scale over
-      // ~3s, every frame, not gated behind the once-a-second sample above.
+      // hours later would otherwise land as a one-frame step in `uDay`.
+      // Full-scale over ~3s, every frame, not gated behind the once-a-second
+      // sample above.
       const daylightStep = dt * SKY_CHASE_RATE
       skyDaylight =
         skyDaylightSample > skyDaylight
           ? Math.min(skyDaylightSample, skyDaylight + daylightStep)
           : Math.max(skyDaylightSample, skyDaylight - daylightStep)
-      // A fixed rate rather than an exponential envelope, so "1.2s" is a
-      // duration the toggle actually takes rather than a time constant it
-      // asymptotically approaches.
-      const overrideStep = dt / DAY_OVERRIDE_FADE_S
-      overrideCurrent =
-        overrideTarget > overrideCurrent
-          ? Math.min(overrideTarget, overrideCurrent + overrideStep)
-          : Math.max(overrideTarget, overrideCurrent - overrideStep)
-      // The override pins daylight to 1 for 'day', to 0 for 'night', fading
-      // in over its own transition rather than snapping, regardless of what
-      // the clock itself says right now. Two branches, not one formula: a
-      // positive overrideCurrent mixes skyDaylight up toward 1 exactly as
-      // entry 53 always did; a negative one mixes it down toward 0 instead
-      // — the same shape, the other direction. Both collapse to plain
-      // skyDaylight at overrideCurrent = 0, so 'auto' costs nothing extra.
-      compositeUniforms.uDay.value =
-        overrideCurrent >= 0
-          ? skyDaylight + (1 - skyDaylight) * overrideCurrent
-          : skyDaylight * (1 + overrideCurrent)
+      // docs/todo.md entry 127 removed the sun chip and the override it
+      // pinned uDay to — uDay now simply is the clock's own chased reading,
+      // with nothing left to mix it toward.
+      compositeUniforms.uDay.value = skyDaylight
       compositeUniforms.uSky.value.set(skyDaylight, skyWarmth)
 
       // docs/todo.md entry 92 — colour ramps step every frame regardless of
@@ -1687,10 +1625,6 @@ export function createVisualiser(
       baseAtmAlpha = Math.min(1, Math.max(0, a))
     },
 
-    setSkyOverride(state) {
-      overrideTarget = state === 'day' ? 1 : state === 'night' ? -1 : 0
-    },
-
     setPassthrough(source, mix) {
       const current = compositeUniforms.uCamera.value
       const wantVideo = source?.video ?? null
@@ -1728,7 +1662,7 @@ export function createVisualiser(
       frameMs,
       pixelRatio: RATIO_LADDER[rung],
       motion: { posture: lastMotion.posture, disturbance: lastMotion.disturbance, agitation: lastMotion.agitation },
-      sky: { daylight: skyDaylight, warmth: skyWarmth, override: overrideCurrent, located: geoLocation !== null },
+      sky: { daylight: skyDaylight, warmth: skyWarmth, located: geoLocation !== null },
       moon: { illuminated: moonState.illuminated, waxing: moonState.waxing, presence: moonState.presence },
       ambient: {
         available: ambientLight !== null,
