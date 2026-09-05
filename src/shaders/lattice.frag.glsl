@@ -202,7 +202,22 @@ void main() {
   // slow sine on top is a permanent breath, independent of any reshape, so
   // the tunnel is never perfectly still even through a long unchanging
   // stretch of the track.
-  float DEPTH = 1.6 + 1.6 * fract(uSeed.x * 2.3 + uSeed.z * 0.7) + 0.18 * sin(uFlow * 0.07);
+  //
+  // docs/todo.md entry 130 — the same diagnosis as entry 32, one tier up:
+  // uTilt/uNovelty/uRoughness all landed on hue and nowhere on geometry, so
+  // a bright, gritty passage and a dark, smooth one drew the same tunnel in
+  // different colours. uRoughness adds shell density additively, on top of
+  // the permanent breath above rather than replacing it — up to +0.55 shells
+  // against a 1.6-3.2 base is the same order as the seed's own range, not a
+  // new extreme, and a noisy signal packing the tunnel tighter is what
+  // "gritty texture" ought to read as. Clamped, not merely additive: this
+  // shader's own spectral features refuse to answer on silence (see
+  // features.ts's -1 convention), and an unclamped negative roughness would
+  // make the tunnel *thinner* than its own base in a silent room — the
+  // opposite of the intent, and invisible to anything that only ever plays
+  // music.
+  float DEPTH =
+    1.6 + 1.6 * fract(uSeed.x * 2.3 + uSeed.z * 0.7) + 0.18 * sin(uFlow * 0.07) + 0.55 * clamp(uRoughness, 0.0, 1.0);
 
   // --- log-polar depth ------------------------------------------------------
   // log(radius) turns "scale" into "distance", so a fixed step is a constant
@@ -216,8 +231,15 @@ void main() {
   // the shape keeps moving even between reshapes. Applied before the fold, so
   // it warps which direction each shell's grid points rather than just
   // rotating the whole image (uSeed.z already does that, once, above).
+  //
+  // docs/todo.md entry 130 — uTilt tightens the rate on top of the existing
+  // breath: up to +0.10 against a 0.16 base is +63%, so a bright, treble-led
+  // passage visibly coils the lattice tighter and a bass-led one lets it run
+  // straighter. Spectral tilt is the slowest, most expressive thing this
+  // shader reads, which is what makes it right for a parameter that shapes
+  // rather than flickers. Clamped to match line 334's own use of uTilt.
   float twist = (fract(uSeed.y * 7.3 + uSeed.w * 1.9) - 0.5) * 2.4;
-  angle += depth * twist * (0.16 + 0.06 * sin(uFlow * 0.11));
+  angle += depth * twist * (0.16 + 0.06 * sin(uFlow * 0.11) + 0.10 * clamp(uTilt, 0.0, 1.0));
 
   // --- kaleidoscopic fold ---------------------------------------------------
   // Mirror within each sector rather than merely repeating: mirroring produces
