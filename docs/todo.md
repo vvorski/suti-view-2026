@@ -4632,28 +4632,40 @@ GitHub Pages, and make it the address the app is served from.
   neither Cloudflare account the MCP can reach (ten zones are; this is not one).
   DNS control begins only after the nameserver change, which is Victor's, at
   Hover. Everything after that point is one MCP call.
-- **The zone as it stands, captured authoritatively from `ns1.hover.com` on
-  2026-09-05, SOA serial `1748185620`.** `AXFR` is refused, so this is an
-  explicit enumeration and it is the baseline to diff Cloudflare's scan
-  against:
-  - `NS` → `ns1.hover.com`, `ns2.hover.com`
-  - `A @` → `162.215.121.122` (Bluehost / `unifiedlayer.com`)
-  - `MX @` → `10 mail.flyflyfly.tv`
-  - `A *` → `162.215.121.122` — a wildcard, and the important one
-  - **no `AAAA`, no `TXT` at all** (so no SPF, no DKIM, no DMARC), no `CAA`,
-    no `SRV`
-  - every host probed — `www`, `mail`, `ftp`, `cpanel`, `webmail`,
-    `autodiscover`, `_dmarc`, `default._domainkey`, `k1._domainkey`, `kiyo` —
-    answers `162.215.121.122`, which from outside is **indistinguishable from
-    the wildcard**. Which of them are real records only Cloudflare's scan, or
-    Hover's own panel, can say.
-- **The concrete failure mode, named:** `mail.flyflyfly.tv` is the `MX` target
-  and **may exist only by way of the wildcard**. If the scan does not carry the
-  wildcard across, the `MX` still resolves to a name that no longer resolves,
-  and mail stops — silently, for days. So: **create an explicit `A mail` →
-  `162.215.121.122` as well as the wildcard**, belt and braces, before the
-  nameservers move. **Mine**, and it costs one redundant record against an
-  outage nobody would notice starting.
+- **The zone as it stands, read from Hover's own panel on 2026-09-05.** This
+  supersedes an earlier version of this bullet that was assembled by probing
+  `ns1.hover.com` from outside; the panel is authoritative and it corrects the
+  probe on the one point that mattered. **This is the complete zone — four
+  records, nothing else:**
+
+  | Type | Host   | Value                 | TTL     |
+  |------|--------|-----------------------|---------|
+  | `A`  | `*`    | `162.215.121.122`     | 15 min  |
+  | `A`  | `@`    | `162.215.121.122`     | 15 min  |
+  | `MX` | `@`    | `10 mail.flyflyfly.tv`| 24 h    |
+  | `A`  | `mail` | `162.215.121.122`     | 5 min   |
+
+  No `AAAA`, no `TXT` of any kind (so no SPF, no DKIM, no DMARC), no `CAA`, no
+  `SRV`, no `NS` beyond Hover's own. No URL forwards configured, and no Hover
+  mailboxes — the Email tab is a sales page, so mail is entirely Bluehost by
+  way of that `MX`. No `kiyo` record: the name is free and answers today only
+  through the wildcard.
+- **The failure mode this entry was written around does not exist, and the real
+  one is smaller.** `A mail` is an **explicit record**, not the wildcard, so
+  the `MX` target does not depend on `*` and the earlier instruction to add a
+  belt-and-braces `A mail` is redundant — it is already there and only has to
+  survive the scan. What *is* wildcard-dependent is **`www`**: there is no
+  explicit `www` record, so `www.flyflyfly.tv` resolves solely because `A *`
+  does. **Lose the wildcard in the migration and the website's `www` breaks,
+  not the mail.** That is a visible, same-day failure rather than a silent one,
+  which is a materially better risk than the entry originally assumed — but the
+  wildcard is still the record to check first in Cloudflare's scan.
+- **The `MX` TTL is 24 hours**, against 15 minutes on everything else. Nothing
+  in this entry changes the `MX`, but it does mean a mistake involving it would
+  be the slowest thing here to walk back. **Mine**: drop the `MX` TTL to
+  15 minutes at Hover a day *before* the nameserver change, and restore it
+  afterwards. One reversible edit that buys a fast retreat on the only record
+  whose failure is invisible.
 - **Every imported record is DNS-only (grey cloud), including the apex and
   `www`.** **Mine**, and it is what makes the migration reversible: a pure
   nameserver change with byte-identical answers means the existing Bluehost
@@ -4717,8 +4729,10 @@ GitHub Pages, and make it the address the app is served from.
   and add what it missed **before** cutover; change the nameservers at Hover;
   then, in the repo's GitHub Pages settings, set the custom domain and tick
   **Enforce HTTPS** once the certificate is issued.
-- **Via the MCP, after activation:** `A mail`, `A *`, and
-  `CNAME kiyo → vvorski.github.io`, all DNS-only.
+- **Via the MCP, after activation:** confirm the four scanned records against
+  the table above — `A *` first — then add `CNAME kiyo → vvorski.github.io`.
+  All five DNS-only. Nothing needs creating except `kiyo`; everything else is a
+  check that the scan did its job.
 - `public/CNAME` — new, one line.
 - `README.md:5` and `docs/how-it-works.md:6` — the **Live** line becomes
   `kiyo.flyflyfly.tv`. Both lines are also edited by 142 and 144; this is the
@@ -4738,7 +4752,9 @@ GitHub Pages, and make it the address the app is served from.
    `162.215.121.122`, and a real message is sent to an address at the domain
    and confirmed received. Not "the record looks right" — delivered.
 3. `https://flyflyfly.tv/` and `https://www.flyflyfly.tv/` return exactly what
-   they returned before the move, with a valid certificate.
+   they returned before the move, with a valid certificate. **Check `www`
+   specifically and first**: it has no record of its own and exists only
+   through the wildcard, so it is the thing the migration can drop.
 4. `dig +short kiyo.flyflyfly.tv` returns `vvorski.github.io` and not
    `162.215.121.122`, and the record is DNS-only — `proxied: false` in the API
    response, not judged from the dashboard's colour.
