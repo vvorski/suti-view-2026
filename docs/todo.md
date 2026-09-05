@@ -2573,7 +2573,7 @@ calm gate, so a photograph becomes strictly harder to reach than it is at build
 limit, the 15s quiet disarm, the five-minute ceiling · dependency no.
 
 ### 126. The space bar is a shake, and holding it is a shake that keeps going
-`status: ready` · added 2026-09-05 · replaces the space bar's direct re-seed · interacts with 125 — see Decided
+`status: building` · added 2026-09-05 · started 2026-09-05 · replaces the space bar's direct re-seed · interacts with 125 — see Decided
 
 **Do** — make the space bar synthesise accelerometer samples into the real
 `Tumble`, so it tumbles, disperses and re-seeds exactly as a shake does; held
