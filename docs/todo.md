@@ -4235,7 +4235,7 @@ surface changes.
 
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
-### 142. The repository becomes kiyo-plays, and both old URLs keep answering
+### 142. The repository becomes kiyo-plays, and the old github.io URL keeps answering
 `status: ready` · added 2026-09-05 · overturns one Decided bullet of entry 63 ·
 **build after 144, which strikes every Cloudflare part of this entry — do not
 build those** · claim alone — the git remote changes mid-build, so this must not
