@@ -4238,7 +4238,9 @@ surface changes.
 ### 142. The repository becomes kiyo-plays, and the old github.io URL keeps answering
 `status: ready` · added 2026-09-05 · overturns one Decided bullet of entry 63 ·
 **build after 144, which strikes every Cloudflare part of this entry — do not
-build those** · claim alone — the git remote changes mid-build, so this must not
+build those** · **build before 145**, which moves the canonical address to
+`kiyo.flyflyfly.tv`; if 145 has already shipped, this entry's signpost points
+there instead of at the github.io path · claim alone — the git remote changes mid-build, so this must not
 be interleaved with another agent's push
 
 **Do** — rename `vvorski/suti-view-2026` to `vvorski/kiyo-plays`, update every
@@ -4452,9 +4454,11 @@ leaving two entries quietly disagreeing about what a held space bar does.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 144. Cloudflare leaves the repository
-`status: ready` · added 2026-09-05 · **build before 142** — it overlaps 142 on
-six files and strikes 142's Cloudflare parts, so building it second means
-renaming things this entry then deletes
+`status: ready` · added 2026-09-05 · **build before 142, then 145** — it
+overlaps 142 on six files and strikes 142's Cloudflare parts, so building it
+second means renaming things this entry then deletes · **not contradicted by
+145**: that entry brings Cloudflare back as *DNS only*, never as a host, and
+nothing removed here returns
 
 **Do** — remove every Cloudflare Pages reference from the repo: the deploy
 script, the `wrangler` dev dependency, the docs, the workflow comments and the
@@ -4605,3 +4609,161 @@ entry reaches a rendered surface, a shader, the HUD or the gate.
 **no** — this removes a publishing path and adds no request · dependency
 **no, and it removes one**: `wrangler ^3.99.0` leaves `devDependencies`,
 6.8 MB out of `node_modules`, zero runtime bytes either way.
+
+### 145. kiyo.flyflyfly.tv
+`status: ready` · added 2026-09-05 · **build after 144, then 142** — 144 purges
+Cloudflare as a *host*, 142 renames the repo, and this one brings Cloudflare
+back as *DNS only*; in any other order the three fight over the same doc lines ·
+two steps need Victor's hands and neither can be automated from here
+
+**Do** — move `flyflyfly.tv`'s DNS to Cloudflare, point `kiyo.flyflyfly.tv` at
+GitHub Pages, and make it the address the app is served from.
+**Why** — the site's address is a path under someone else's username, and
+`share.ts` exists to put that address in other people's messages.
+
+**Decided**
+- **The domain moves to Cloudflare wholesale**, over adding one `CNAME` at
+  Hover and over using a domain already on Cloudflare. Victor's call, asked at
+  capture with the mail risk on the table. **The consequence to hold on to: the
+  zone this migrates carries live mail**, and the entry is mostly about not
+  breaking it.
+- **The MCP cannot do this today, which is why this is an entry and not a
+  finished job.** Recon: `flyflyfly.tv` runs on `ns1/ns2.hover.com` and is in
+  neither Cloudflare account the MCP can reach (ten zones are; this is not one).
+  DNS control begins only after the nameserver change, which is Victor's, at
+  Hover. Everything after that point is one MCP call.
+- **The zone as it stands, captured authoritatively from `ns1.hover.com` on
+  2026-09-05, SOA serial `1748185620`.** `AXFR` is refused, so this is an
+  explicit enumeration and it is the baseline to diff Cloudflare's scan
+  against:
+  - `NS` → `ns1.hover.com`, `ns2.hover.com`
+  - `A @` → `162.215.121.122` (Bluehost / `unifiedlayer.com`)
+  - `MX @` → `10 mail.flyflyfly.tv`
+  - `A *` → `162.215.121.122` — a wildcard, and the important one
+  - **no `AAAA`, no `TXT` at all** (so no SPF, no DKIM, no DMARC), no `CAA`,
+    no `SRV`
+  - every host probed — `www`, `mail`, `ftp`, `cpanel`, `webmail`,
+    `autodiscover`, `_dmarc`, `default._domainkey`, `k1._domainkey`, `kiyo` —
+    answers `162.215.121.122`, which from outside is **indistinguishable from
+    the wildcard**. Which of them are real records only Cloudflare's scan, or
+    Hover's own panel, can say.
+- **The concrete failure mode, named:** `mail.flyflyfly.tv` is the `MX` target
+  and **may exist only by way of the wildcard**. If the scan does not carry the
+  wildcard across, the `MX` still resolves to a name that no longer resolves,
+  and mail stops — silently, for days. So: **create an explicit `A mail` →
+  `162.215.121.122` as well as the wildcard**, belt and braces, before the
+  nameservers move. **Mine**, and it costs one redundant record against an
+  outage nobody would notice starting.
+- **Every imported record is DNS-only (grey cloud), including the apex and
+  `www`.** **Mine**, and it is what makes the migration reversible: a pure
+  nameserver change with byte-identical answers means the existing Bluehost
+  site and its certificate keep serving exactly as they do now. Proxying the
+  apex would put Cloudflare in front of an origin whose TLS nobody here has
+  checked, and Flexible SSL against a origin that already redirects to HTTPS is
+  the classic infinite loop. It is also the only option for the wildcard, since
+  proxied wildcards are an Enterprise feature.
+- **`kiyo` is `CNAME` → `vvorski.github.io`, DNS-only.** **Mine**, and the grey
+  cloud is not a default here, it is required: GitHub issues its own Let's
+  Encrypt certificate for the custom domain and has to see the challenge
+  request. Proxying it is the standard cause of a certificate stuck on
+  "provisioning" and, with Flexible SSL, a redirect loop. Do not turn the cloud
+  orange and then reach for an SSL mode to fix it. The absence of any `CAA`
+  record is checked above and means nothing blocks the issuance.
+- **The record wins over the wildcard.** An explicit `CNAME kiyo` takes
+  precedence over `A *`, so no wildcard change is needed to free the name —
+  which also means `kiyo.flyflyfly.tv` **already resolves today**, to Bluehost,
+  and a stale cached answer is a thing to expect during cutover rather than a
+  fault.
+- **`public/CNAME`, one line, `kiyo.flyflyfly.tv`.** **Mine** — with an
+  Actions-based Pages deploy the custom domain has to be in the published
+  artifact or a later deploy can clear it from repo settings, and `public/` is
+  what Vite copies verbatim into `dist/`. This is the only file the entry adds.
+- **`vite.config.ts` needs no change.** Recon: `actions/configure-pages`
+  resolves `base_path` to `/` once a custom domain is set, and the config
+  already reads `BASE_PATH` with a `/` default. Stated because it looks like it
+  must change, and because entry 144 rewrites that very comment — after this
+  entry its reason holds better, not worse.
+- **Every phone loses its stored settings, and nothing is built to prevent
+  it.** This is the entry's real cost. `https://kiyo.flyflyfly.tv` is a
+  different **origin** from `https://vvorski.github.io`, so `localStorage`
+  under `suti-view:prefs` does not travel: view, colours, mapping, mix, all of
+  it returns to defaults on the new address, and microphone, motion and camera
+  permissions are asked again. There is no cross-origin read, so no migration
+  is possible — only a handoff through the URL, which would mean every visitor
+  arriving via a link they were already given. **Mine**: build nothing. The
+  stored state is a handful of taste settings that a visitor re-picks in
+  seconds, and the app re-rolls on a fresh visit by design. Note the contrast
+  with entry 142, which is free precisely because it stays on one origin — that
+  is not a reason to do this one differently, it is the reason to say the cost
+  out loud here.
+- **The old addresses are not retired and are expected to redirect
+  themselves.** GitHub redirects `<user>.github.io/<repo>/` to the custom
+  domain once one is configured, so entry 142's signpost repo still lands
+  correctly, via one extra hop. **Mine** as to relying on it rather than
+  hand-building a second redirect — and Done-when 6 checks it rather than
+  trusting it.
+- **Account → "Victors Sites"** (`d21d0e8b6fb0441ae79e0f8d2ae296dd`), where the
+  other nine zones already live, on the Free plan, which adding a zone does not
+  cost. **Mine**, obvious.
+- **Cloudflare is DNS here and never a host**, and that sentence goes into
+  `CLAUDE.md` next to entry 144's rewritten bullet. **Mine** — 144 is titled
+  "Cloudflare leaves the repository" and without this line the two entries read
+  as a reversal instead of a distinction. Nothing about `wrangler`, Pages or
+  `deploy/` comes back.
+
+**Lands in**
+- **Outside the repo, and Victor's hands:** add `flyflyfly.tv` to the "Victors
+  Sites" account; check the scan against the snapshot above, record by record,
+  and add what it missed **before** cutover; change the nameservers at Hover;
+  then, in the repo's GitHub Pages settings, set the custom domain and tick
+  **Enforce HTTPS** once the certificate is issued.
+- **Via the MCP, after activation:** `A mail`, `A *`, and
+  `CNAME kiyo → vvorski.github.io`, all DNS-only.
+- `public/CNAME` — new, one line.
+- `README.md:5` and `docs/how-it-works.md:6` — the **Live** line becomes
+  `kiyo.flyflyfly.tv`. Both lines are also edited by 142 and 144; this is the
+  last of the three and leaves them final.
+- `CLAUDE.md:243` — the deploy paragraph names the custom domain, and gains the
+  DNS-not-a-host sentence.
+- `docs/how-it-works.md`'s Deploying section (as 144 leaves it) — one paragraph
+  on where the name comes from.
+- Entry 142's signpost target, if that entry has already shipped: it should
+  point at `https://kiyo.flyflyfly.tv/`, not the github.io path.
+
+**Done when**
+1. `dig +short NS flyflyfly.tv` returns Cloudflare nameservers, and the zone
+   reads `active` in the API.
+2. **Mail still resolves and still arrives.** `dig +short MX flyflyfly.tv`
+   returns `10 mail.flyflyfly.tv`, `dig +short mail.flyflyfly.tv` returns
+   `162.215.121.122`, and a real message is sent to an address at the domain
+   and confirmed received. Not "the record looks right" — delivered.
+3. `https://flyflyfly.tv/` and `https://www.flyflyfly.tv/` return exactly what
+   they returned before the move, with a valid certificate.
+4. `dig +short kiyo.flyflyfly.tv` returns `vvorski.github.io` and not
+   `162.215.121.122`, and the record is DNS-only — `proxied: false` in the API
+   response, not judged from the dashboard's colour.
+5. `https://kiyo.flyflyfly.tv/` serves the app over HTTPS with a certificate
+   naming that host, the gate reads `kiyo · plays`, and the build number
+   matches the current `main`. Loaded on a phone, not only curled.
+6. `https://vvorski.github.io/kiyo-plays/` redirects to
+   `https://kiyo.flyflyfly.tv/`, and a link carrying `?geometric=shards&
+   mix=screen` arrives with both parameters intact.
+7. `public/CNAME` survives a deploy: after the next push to `main`, the custom
+   domain is still set in repo settings and `dist/CNAME` is in the artifact.
+
+**Verify** — `pnpm build`, `pnpm lint`, and a green **Pages** run on `main`
+after `public/CNAME` lands. Then the whole of Done-when, in order, with 2 and 3
+before anything else is celebrated. On the new origin, on a phone: the gate at
+320×568, grant the microphone, confirm the app runs and that settings changed
+there persist across a reload — a fresh origin with no stored prefs is the
+first time in a long while this project's storage path has been exercised from
+empty.
+
+**Hard stops** — prefs **no as to shape**, and **yes as to consequence**:
+`STORE_KEY` and every field are untouched, but a new origin means every
+existing install starts from defaults. Victor has approved the move that causes
+it, and Decided records that nothing is built to soften it · url **no** — no
+parameter changes; the origin moves and every parameter survives it · capture
+**no** — no new request, nothing recorded, and Cloudflare is a nameserver here,
+not a proxy in the path · dependency **no** — no runtime bytes; `public/CNAME`
+is 18 characters.
