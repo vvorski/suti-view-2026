@@ -28,6 +28,7 @@ import fieldFrag from './shaders/field.frag.glsl?raw'
 import fringeFrag from './shaders/fringe.frag.glsl?raw'
 import gridFrag from './shaders/grid.frag.glsl?raw'
 import latticeFrag from './shaders/lattice.frag.glsl?raw'
+import orbitsFrag from './shaders/orbits.frag.glsl?raw'
 import roseFrag from './shaders/rose.frag.glsl?raw'
 import shardsFrag from './shaders/shards.frag.glsl?raw'
 import spectrogramFrag from './shaders/spectrogram.frag.glsl?raw'
@@ -94,6 +95,16 @@ export const GEOMETRIC_VIEWS = {
     label: 'Strings',
     description: 'Nine taut strings tuned to the spectrum. Pull one, pluck it, or strum across.',
     fragmentShader: stringsFrag,
+  },
+  // docs/todo.md entry 135 — the less-explored axis (Rose's own header names
+  // it): the emitter, not the mark. Every view above throws a shape from an
+  // origin that expands and dies at the rim; here the shape is small,
+  // constant, and never dies of old age — it moves, on a real orbit, and a
+  // finger flings it rather than merely placing it.
+  orbits: {
+    label: 'Orbits',
+    description: 'Small bodies on Kepler orbits round the centre. Fling one, or hold a finger for it to slingshot past.',
+    fragmentShader: orbitsFrag,
   },
 } satisfies Record<string, View>
 

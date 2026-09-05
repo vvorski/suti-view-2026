@@ -74,14 +74,15 @@ for (const file of shaderFiles) {
 }
 
 // A probe that only ever passes cannot be trusted — confirm it actually
-// found the eight geometric shaders it is meant to be checking (docs/todo.md
+// found the nine geometric shaders it is meant to be checking (docs/todo.md
 // entry 101 added Rose as the seventh; entry 134 added Strings as the
-// eighth — entries 135 and 136 are not yet built, so this stays 8 rather
-// than the 10 a fully-landed set of three would reach), so a future rename
-// or a shader moved out of src/shaders/ doesn't silently make this check
-// vacuous. Bump this number by hand, same as GEOMETRIC_VIEWS in views.ts,
-// whenever the registry gains or loses a geometric view.
-check('found the eight geometric shaders that declare these constants', matched === 8, `found ${matched}`)
+// eighth; entry 135 added Orbits as the ninth — entry 136 is not yet built,
+// so this stays 9 rather than the 10 a fully-landed set of three would
+// reach), so a future rename or a shader moved out of src/shaders/ doesn't
+// silently make this check vacuous. Bump this number by hand, same as
+// GEOMETRIC_VIEWS in views.ts, whenever the registry gains or loses a
+// geometric view.
+check('found the nine geometric shaders that declare these constants', matched === 9, `found ${matched}`)
 
 // docs/todo.md entry 79's own Verify: the combine operator (screen, not
 // summation) cannot drive `ink` above 1 regardless of how many rings

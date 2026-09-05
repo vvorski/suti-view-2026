@@ -3551,7 +3551,7 @@ phone. No HUD change — the `geo` band gains an option.
 capture no · dependency no.
 
 ### 135. Orbits: bodies you fling into orbit around the centre
-`status: building` · added 2026-09-05 · started 2026-09-05 · new geometric view, circles · independent of 134 and 136
+`status: done` · added 2026-09-05 · build 463 · new geometric view, circles · independent of 134 and 136 · **the slingshot speed-up was not isolated cleanly in verification — see build note** · the phone fling/hold gesture is unverified
 
 **Do** — a geometric view in which each hit is a small circle set orbiting the
 frame's centre, leaving a thin arc of its recent path; a finger **flings a
