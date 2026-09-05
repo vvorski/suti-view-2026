@@ -3458,7 +3458,7 @@ is how an existing element resolves, not what it says, so CLAUDE.md's gate-copy
 clause is not engaged) · dependency no.
 
 ### 134. Strings: a lines view you pluck, fret and strum
-`status: building` · added 2026-09-05 · started 2026-09-05 · new geometric view, lines · independent of 135 and 136; the three share nothing but the registry and the probe count
+`status: done` · added 2026-09-05 · build 459 · new geometric view, lines · independent of 135 and 136; the three share nothing but the registry and the probe count · **live-vs-released is a level-drop heuristic, not a real signal — see build note** · the phone pull/pluck gesture and landscape orientation are unverified
 
 **Do** — a geometric view of nine taut strings spanning the frame, each tuned
 to a spectrum band, that vibrate when hit; a finger that lands on one **pulls

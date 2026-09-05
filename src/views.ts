@@ -31,6 +31,7 @@ import latticeFrag from './shaders/lattice.frag.glsl?raw'
 import roseFrag from './shaders/rose.frag.glsl?raw'
 import shardsFrag from './shaders/shards.frag.glsl?raw'
 import spectrogramFrag from './shaders/spectrogram.frag.glsl?raw'
+import stringsFrag from './shaders/strings.frag.glsl?raw'
 import tideFrag from './shaders/tide.frag.glsl?raw'
 
 export interface View {
@@ -84,6 +85,15 @@ export const GEOMETRIC_VIEWS = {
     label: 'Tide',
     description: 'Rings born on the frame edge, arriving as arcs that sweep inward.',
     fragmentShader: tideFrag,
+  },
+  // docs/todo.md entry 134 — a fourth answer to "what does a hit look like",
+  // in the Rose sense: a new mark, not another emitter variation on Circles'
+  // ring. The axis it actually explores is different again from Rose's own —
+  // direct manipulation, the one thing none of the other seven views offer.
+  strings: {
+    label: 'Strings',
+    description: 'Nine taut strings tuned to the spectrum. Pull one, pluck it, or strum across.',
+    fragmentShader: stringsFrag,
   },
 } satisfies Record<string, View>
 

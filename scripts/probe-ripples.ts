@@ -51,10 +51,13 @@ for (const file of shaderFiles) {
   const text = readFileSync(join(SHADER_DIR, file), 'utf8')
   const maxMatch = MAX_RE.exec(text)
   const audioMatch = AUDIO_RE.exec(text)
-  // Not every shader declares these — only the six geometric ones that
-  // actually spawn ripples. A shader with neither declaration is simply out
-  // of scope, not a failure; one with only one of the two is a real defect
-  // (a partial edit), so that case still gets checked and can fail.
+  // Not every shader declares these — only the geometric ones that actually
+  // spawn or read ripples (eight as of entry 134's Strings; was six when
+  // this comment was first written, then seven once Rose landed — the
+  // count below is the one that can't quietly go stale, this one already
+  // had). A shader with neither declaration is simply out of scope, not a
+  // failure; one with only one of the two is a real defect (a partial
+  // edit), so that case still gets checked and can fail.
   if (!maxMatch && !audioMatch) continue
   matched++
 
@@ -71,12 +74,14 @@ for (const file of shaderFiles) {
 }
 
 // A probe that only ever passes cannot be trusted — confirm it actually
-// found the seven geometric shaders it is meant to be checking (docs/todo.md
-// entry 101 added Rose, the seventh), so a future rename or a shader moved
-// out of src/shaders/ doesn't silently make this check vacuous. Bump this
-// number by hand, same as GEOMETRIC_VIEWS in views.ts, whenever the registry
-// gains or loses a geometric view.
-check('found the seven geometric shaders that declare these constants', matched === 7, `found ${matched}`)
+// found the eight geometric shaders it is meant to be checking (docs/todo.md
+// entry 101 added Rose as the seventh; entry 134 added Strings as the
+// eighth — entries 135 and 136 are not yet built, so this stays 8 rather
+// than the 10 a fully-landed set of three would reach), so a future rename
+// or a shader moved out of src/shaders/ doesn't silently make this check
+// vacuous. Bump this number by hand, same as GEOMETRIC_VIEWS in views.ts,
+// whenever the registry gains or loses a geometric view.
+check('found the eight geometric shaders that declare these constants', matched === 8, `found ${matched}`)
 
 // docs/todo.md entry 79's own Verify: the combine operator (screen, not
 // summation) cannot drive `ink` above 1 regardless of how many rings
