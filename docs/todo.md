@@ -3156,7 +3156,7 @@ view without an error.
 no · dependency no.
 
 ### 132. The toy feels gravity
-`status: building` · added 2026-09-05 · started 2026-09-05 · **what entry 110 should have been** · build after 131 · extends 30 and 102
+`status: done` · added 2026-09-05 · build 443 · **what entry 110 should have been** · extends 30 and 102 · **the atmosphere's weight reads the uncapped tilt, not the capped `gravity()` Lands-in named — see build note**
 
 **Do** — give the geometric layer's own centre a body that hangs under gravity
 — swinging down when the phone is raised, settling with a bounce, hanging at

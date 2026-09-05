@@ -15,6 +15,8 @@
  *                once — docs/todo.md entry 49. Feeds `emitter.ts`, among
  *                others; does not replace it.
  *   tilt.ts      what counts as "flat", for the two features that ask
+ *   origin.ts    the geometric layer's own centre, hanging on a spring under
+ *                the phone's gravity — docs/todo.md entry 132.
  *   raise-camera.ts  whether a shake with a finger down may bring the room
  *                in — docs/todo.md entry 121. The finger is what supplies
  *                the user activation `getUserMedia` needs.
@@ -105,6 +107,9 @@ export { createCameraArmState, armCamera, disarmCamera, updateCameraArm } from '
 export type { CameraArmState, CameraArmReading } from './camera-arm.ts'
 
 export { isFlatTilt, FLAT_TILT_MIN } from './tilt.ts'
+
+export { createOriginState, updateOrigin, resetOrigin, ORIGIN_SAG } from './origin.ts'
+export type { OriginState } from './origin.ts'
 
 export { shouldRaiseCamera, PRESS_SHAKE_PASSTHROUGH } from './raise-camera.ts'
 export type { RaiseCameraInput } from './raise-camera.ts'

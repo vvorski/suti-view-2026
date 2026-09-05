@@ -58,6 +58,7 @@ uniform float uMoonBloom;
 const int MAX_RIPPLES = 24;
 const int AUDIO_RIPPLES = 8;
 uniform vec4 uRipples[MAX_RIPPLES];
+uniform vec2 uOrigin; // docs/todo.md entry 132 — the geometric centre, hanging under gravity
 
 const float TAU = 6.28318530718;
 
@@ -127,7 +128,11 @@ void main() {
       : atan(uRipples[i].w, uRipples[i].z);
     vec2 dir = vec2(cos(a), sin(a));
     vec2 hit = halfExtent / max(abs(dir), vec2(1e-3));
-    vec2 origin = dir * min(hit.x, hit.y);
+    // docs/todo.md entry 132 — the edge origin is unchanged (a ring still
+    // arrives from the frame's own edge, which is where the water is), but
+    // the distance is measured in the hanging centre's frame so the whole
+    // travel reads as sweeping toward where the picture now sits.
+    vec2 origin = dir * min(hit.x, hit.y) + uOrigin;
 
     float dist = length(uv - origin);
 

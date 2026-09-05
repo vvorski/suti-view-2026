@@ -58,6 +58,7 @@ uniform float uMoonBloom;
 const int MAX_RIPPLES = 24;
 const int AUDIO_RIPPLES = 8;
 uniform vec4 uRipples[MAX_RIPPLES];
+uniform vec2 uOrigin; // docs/todo.md entry 132 — the geometric centre, hanging under gravity
 
 const float TAU = 6.28318530718;
 const float PI = 3.14159265359;
@@ -171,8 +172,12 @@ void main() {
   // hoisted fadeFrom: both loops below read it at their own opacity test.
   float fadeFrom = FADE_FROM + uMoonBloom;
 
-  float dist = length(uv);
-  float phi = atan(uv.y, uv.x); // hoisted once, shared by every audio spoke and the ladder below
+  // docs/todo.md entry 132 — the rose hangs with the geometric centre. Both
+  // the radius and the angle are measured from it, so the whole figure
+  // translates rather than shearing about a centre that stayed put.
+  vec2 rel = uv - uOrigin;
+  float dist = length(rel);
+  float phi = atan(rel.y, rel.x); // hoisted once, shared by every audio spoke and the ladder below
 
   float n = nFold(uSeed.x);
   float fold = TAU / n;

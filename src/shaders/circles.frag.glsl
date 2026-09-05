@@ -111,6 +111,7 @@ const int AUDIO_RIPPLES = 8;
 // are unused here — the wake ladder and the audio loop are both centred on
 // the frame's own centre, never on a touch's position.
 uniform vec4 uRipples[MAX_RIPPLES];
+uniform vec2 uOrigin; // docs/todo.md entry 132 — the geometric centre, hanging under gravity
 
 const float LIFESPAN = 3.2; // seconds from birth to vanishing at the rim
 const float FADE_FROM = 0.6; // fraction of LIFESPAN where fade-out begins
@@ -224,7 +225,11 @@ float hash(float x) {
 
 void main() {
   vec2 uv = (gl_FragCoord.xy - 0.5 * uResolution) / min(uResolution.x, uResolution.y);
-  float dist = length(uv);
+  // docs/todo.md entry 132 — audio-born rings measure from the hanging
+  // centre, not the frame's. Touch-born ones keep their own origin from
+  // uRipples[i].zw and are unaffected. uOrigin is exactly (0,0) with the
+  // `grav` chip off, and `uv - vec2(0.0)` is `uv`.
+  float dist = length(uv - uOrigin);
   float px = 1.0 / min(uResolution.x, uResolution.y);
   // Half the *longer* screen dimension, matching the source's
   // `finishRadius = max(innerWidth, innerHeight) / 2`. Reaching the corner

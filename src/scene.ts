@@ -42,6 +42,8 @@ import {
   createEmitterState,
   createMotionBiasState,
   createRgbSlipState,
+  createOriginState,
+  resetOrigin,
   createRippleState,
   createTouchStreamState,
   Envelope,
@@ -49,6 +51,7 @@ import {
   MAX_RIPPLES,
   updateEmitter,
   updateMotionBias,
+  updateOrigin,
   updateRgbSlip,
   updateRipples,
   updateTouchStream,
@@ -632,6 +635,12 @@ export function createVisualiser(
     // to the other twelve programmes, which is a second tenant's decision to
     // make and not this one's.
     uPointer: { value: new Vector3(0, 0, 0) },
+    // docs/todo.md entry 132 — where the geometric layer's audio-born
+    // geometry is measured from. Shared by both layers like every other
+    // uniform here; only the seven geometric programmes read it, and only
+    // for their audio-born origins — touch-born ones carry their own in
+    // uRipples[i].zw and are deliberately unaffected.
+    uOrigin: { value: new Vector2(0, 0) },
     // Where "now" sits in the ring buffer, 0-1. The shader walks backwards from
     // here to read into the past.
     uHistoryHead: { value: 0 },
@@ -750,6 +759,12 @@ export function createVisualiser(
     // vec2(0,0) at rest, and read as a plain uniform branch there, so a
     // still phone pays for nothing beyond this one vec2.
     uSlip: { value: new Vector2(0, 0) },
+    // docs/todo.md entry 132 — the phone's own in-plane gravity, for the
+    // atmosphere's weight. The same capped vector entry 30 already uses for
+    // the picture's slide, so there is no second opinion about which way is
+    // down. vec2(0,0) with the `grav` chip off, which makes the weight term
+    // in composite.frag.glsl exactly 1.0.
+    uGravity: { value: new Vector2(0, 0) },
     // Passthrough AR. Null until a camera is actually attached: Three binds a
     // default 1x1 white texture for a null sampler, which is never sampled
     // because the shader guards on uCameraMix > 0.
@@ -917,6 +932,13 @@ export function createVisualiser(
   // written back" shape motionTiltX/Y above already use.
   let emitterGravityX = 0
   let emitterGravityY = 0
+  // docs/todo.md entry 132 — the geometric layer's own centre, hanging on a
+  // spring under that same gravity. Written to `uOrigin` only while the
+  // `grav` chip is on; the moment it goes off the bob is reset and the
+  // uniform is left at exactly (0, 0), which is what makes every geometric
+  // shader's `uv - uOrigin` bit-identical to the build before this entry.
+  const originState = createOriginState()
+  let gravityOn = false
   // docs/todo.md entry 76 — ticked from the same `motionDisturb` above,
   // already recorded here every frame by `setMotion` for the colour bias.
   // No new setter: this is the "no new plumbing at all" the entry asks for.
@@ -1252,6 +1274,30 @@ export function createVisualiser(
       // space, from the canvas's own client size applySize() already
       // tracks, so a fall bounces off the edge actually on screen (a
       // landscape phone's true bottom) rather than an assumed square one.
+      // docs/todo.md entry 132 — the bob, ticked on the same clock as the
+      // emitter pool below and fed the same gravity. Only while the `grav`
+      // chip is on: with it off the uniform is never written and stays at
+      // exactly (0, 0), so the seven geometric shaders are bit-identical.
+      //
+      // The tilt is the uncapped pair (`motionTiltX/Y`), not the capped
+      // `emitterGravity` — the cap exists so a *slide* cannot expose the
+      // frame's edge, and moving the origin exposes nothing, so the bob is
+      // entitled to the full reading.
+      if (gravityOn) {
+        updateOrigin(originState, dt, motionTiltX, motionTiltY, slipAccelX, slipAccelY)
+        uniforms.uOrigin.value.set(originState.x, originState.y)
+        // The uncapped tilt, not the capped `shake.gravity()` the entry's
+        // Lands-in names — and that is a correction rather than a liberty.
+        // The entry specifies "upright, the field reads 25% denser along the
+        // bottom", which needs |g| ≈ 1; `shake.gravity()` is capped to
+        // ±0.033 for the tumble's own offset, so feeding it here gives 1.6%
+        // and the weight would be invisible. Measured before changing it.
+        //
+        // The cap exists so a *slide* cannot expose the frame's edge. A
+        // brightness gradient exposes nothing, so it is entitled to the full
+        // reading — the same reason the bob above takes the uncapped pair.
+        compositeUniforms.uGravity.value.set(motionTiltX, motionTiltY)
+      }
       const emitterGravity = { x: emitterGravityX, y: emitterGravityY }
       const emitterHalfExtent = {
         x: lastClientWidth / (2 * Math.min(lastClientWidth, lastClientHeight)),
@@ -1618,6 +1664,17 @@ export function createVisualiser(
     setGravity(g) {
       emitterGravityX = g?.x ?? 0
       emitterGravityY = g?.y ?? 0
+      // docs/todo.md entry 132. Turning the chip off puts the bob back at the
+      // centre at once rather than leaving the picture hanging off-centre
+      // with the feature disabled — and makes the next switch-on start from
+      // rest instead of from wherever it was left.
+      const on = g !== null
+      if (gravityOn && !on) {
+        resetOrigin(originState)
+        uniforms.uOrigin.value.set(0, 0)
+        compositeUniforms.uGravity.value.set(0, 0)
+      }
+      gravityOn = on
     },
 
     setGeoAlpha(a) {

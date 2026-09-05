@@ -68,6 +68,16 @@ uniform float uAtmTumbleScale;
 // gave uDay and uBeatConfidence.
 uniform vec2 uSlip;
 
+// docs/todo.md entry 132 — the phone's own in-plane tilt, -1..1 per axis:
+// unit length held upright, exactly vec2(0,0) lying flat, with the `grav`
+// chip off, and on any device with no accelerometer. That zero makes the
+// weight term below exactly 1.0 and the atmosphere bit-identical.
+//
+// The uncapped pair, not entry 30's capped `gravity()` — see scene.ts's own
+// note at the write. The cap is there so a slide cannot expose the frame's
+// edge; a brightness gradient exposes nothing.
+uniform vec2 uGravity;
+
 // Passthrough AR: the room, under everything. See camera.ts.
 //
 // A third layer rather than a third *view*, so that every existing programme
@@ -209,6 +219,31 @@ void main() {
   } else {
     atm = texture2D(uAtmosphere, uvAtm).rgb * uAtmColour;
     geo = texture2D(uGeometry, uv).rgb * uGeoColour;
+  }
+
+  // docs/todo.md entry 132 — the atmosphere has weight. Not displacement:
+  // warping the sample coordinate to pool content downward reads past the
+  // texture's edge, and ClampToEdge streaks exactly where the field is
+  // thinnest. Not per-view gravity in eight atmospheric shaders either, which
+  // would be a project and would give each field its own physics.
+  //
+  // Instead the field is simply denser along whichever edge is down. `s` is
+  // this pixel's position along the down direction, -0.5 at the up edge and
+  // +0.5 at the down edge, so upright the bottom reads about 25% denser and
+  // the top 25% thinner, and the gradient turns with the phone.
+  //
+  // `the-toy-wants-to-be-played-with.md` is what splits this from the
+  // geometry's swing: the field is what *persists*, so it gets restraint — a
+  // gradient, following the low-passed gravity directly with no spring,
+  // because a fluid settles and does not bounce. The geometry is what
+  // *responds*, so it gets the pendulum.
+  float gLen = length(uGravity);
+  if (gLen > 0.0) {
+    // uv is 0..1 with y up; the shaders' own in-plane y points the same way,
+    // so projecting the centred pixel onto the gravity direction gives the
+    // position along "down" directly.
+    float s = dot(uv - 0.5, uGravity / gLen);
+    atm *= 1.0 + 0.5 * gLen * s;
   }
 
   // docs/todo.md entry 34. The atmosphere used to be dimmed before anything

@@ -53,6 +53,7 @@ uniform float uMoonBloom;
 const int MAX_RIPPLES = 24;
 const int AUDIO_RIPPLES = 8;
 uniform vec4 uRipples[MAX_RIPPLES];
+uniform vec2 uOrigin; // docs/todo.md entry 132 — the geometric centre, hanging under gravity
 
 const float TAU = 6.28318530718;
 
@@ -148,7 +149,9 @@ void main() {
     // rather than at its seeded phase — the one branch this view needs,
     // since it already recomputes its origin per ring rather than sharing
     // one hoisted value the way Circles does.
-    vec2 origin = i < AUDIO_RIPPLES ? emitterAt(birth, halfExtent) : uRipples[i].zw;
+    // docs/todo.md entry 132 — the wandering emitter's whole path hangs with
+    // the geometric centre; it keeps wandering, around a centre that has moved.
+    vec2 origin = i < AUDIO_RIPPLES ? emitterAt(birth, halfExtent) + uOrigin : uRipples[i].zw;
     float dist = length(uv - origin);
 
     float percent = age / lifespan;
@@ -182,7 +185,7 @@ void main() {
   // wander visible. Without it the origins only exist as an inference from
   // where rings happen to appear, and the view looks like it is misfiring
   // rather than tracking something.
-  float lead = length(uv - emitterAt(uTime, halfExtent));
+  float lead = length(uv - (emitterAt(uTime, halfExtent) + uOrigin));
   float leadR = 0.012 + 0.055 * uLow;
   ink += ring(lead, leadR, px * 0.9, px) * (0.25 + 0.55 * uLow);
 

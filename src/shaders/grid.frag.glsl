@@ -45,6 +45,7 @@ uniform float uMoonBloom;
 const int MAX_RIPPLES = 24;
 const int AUDIO_RIPPLES = 8;
 uniform vec4 uRipples[MAX_RIPPLES];
+uniform vec2 uOrigin; // docs/todo.md entry 132 — the geometric centre, hanging under gravity
 
 const float LIFESPAN = 2.2;
 const float FADE_FROM = 0.5;
@@ -89,7 +90,10 @@ void main() {
     // Chebyshev distance in cells — this is what makes the fronts square —
     // now measured from each ring's own origin cell rather than a value
     // hoisted once for all twelve, since a touch ring's origin moves.
-    vec2 originCell = i < AUDIO_RIPPLES ? vec2(0.0) : floor(uRipples[i].zw / cellSize);
+    // docs/todo.md entry 132 — the audio ring spreads from the cell the
+    // hanging centre is in, so the whole figure moves by whole cells and the
+    // lattice itself never shifts out of alignment.
+    vec2 originCell = i < AUDIO_RIPPLES ? floor(uOrigin / cellSize) : floor(uRipples[i].zw / cellSize);
     float ring = max(abs(cell.x - originCell.x), abs(cell.y - originCell.y));
 
     float percent = age / lifespan;

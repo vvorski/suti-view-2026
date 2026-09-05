@@ -21,6 +21,7 @@
     "probe:keyboard": "node --experimental-strip-types scripts/probe-keyboard.ts",
     "probe:chips": "node --experimental-strip-types scripts/probe-chips.ts",
     "probe:raise-camera": "node --experimental-strip-types scripts/probe-raise-camera.ts",
+    "probe:origin": "node --experimental-strip-types scripts/probe-origin.ts",
     "probe:composite": "node --experimental-strip-types scripts/probe-composite.ts",
     "probe:nudge": "node --experimental-strip-types scripts/probe-nudge.ts",
     "probe:touches": "node --experimental-strip-types scripts/probe-touches.ts",

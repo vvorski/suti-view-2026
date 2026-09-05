@@ -70,3 +70,4 @@ jobs:
           pnpm probe:fullscreen
           pnpm probe:camera-arm
           pnpm probe:raise-camera
+          pnpm probe:origin

@@ -48,6 +48,7 @@ uniform float uMoonBloom;
 const int MAX_RIPPLES = 24;
 const int AUDIO_RIPPLES = 8;
 uniform vec4 uRipples[MAX_RIPPLES];
+uniform vec2 uOrigin; // docs/todo.md entry 132 — the geometric centre, hanging under gravity
 
 const float TAU = 6.28318530718;
 
@@ -120,7 +121,10 @@ void main() {
       ? floor(hash(birth) * nodes)
       : mod(floor((atan(uRipples[i].w, uRipples[i].z) - phase) / sector + 0.5), nodes);
     float a = phase + which * sector;
-    vec2 origin = NODE_RADIUS * vec2(cos(a), sin(a));
+    // docs/todo.md entry 132 — the whole node ring hangs with the geometric
+    // centre; the nodes keep their spacing and their fold, and the figure
+    // translates as one.
+    vec2 origin = uOrigin + NODE_RADIUS * vec2(cos(a), sin(a));
     float dist = length(uv - origin);
 
     float percent = age / lifespan;
@@ -151,8 +155,9 @@ void main() {
   // than a loop over the nodes, for the reason Shards folds its symmetry: a
   // loop would be up to seven more length() calls per pixel on a phone GPU for
   // something one modulo answers exactly.
-  float r = length(uv);
-  float folded = mod(atan(uv.y, uv.x) - phase + sector * 0.5, sector) - sector * 0.5;
+  vec2 rel = uv - uOrigin;
+  float r = length(rel);
+  float folded = mod(atan(rel.y, rel.x) - phase + sector * 0.5, sector) - sector * 0.5;
   // Law of cosines: distance from this pixel to the nearest node. The max()
   // is not decoration — rounding can push the bracket a hair below zero on the
   // node itself, and sqrt of a negative is a NaN that survives every clamp
