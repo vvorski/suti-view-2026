@@ -4237,8 +4237,9 @@ surface changes.
 
 ### 142. The repository becomes kiyo-plays, and both old URLs keep answering
 `status: ready` · added 2026-09-05 · overturns one Decided bullet of entry 63 ·
-claim alone — the git remote changes mid-build, so this must not be interleaved
-with another agent's push
+**build after 144, which strikes every Cloudflare part of this entry — do not
+build those** · claim alone — the git remote changes mid-build, so this must not
+be interleaved with another agent's push
 
 **Do** — rename `vvorski/suti-view-2026` to `vvorski/kiyo-plays`, update every
 reference to the old name, and leave a redirect standing at each of the two old
@@ -4293,24 +4294,15 @@ people's messages. That reason has not gone away; it has become the work.
   build 53, and `README.md` and `docs/how-it-works.md` have gone on advertising
   it as **Live** the whole time (`how-it-works.md:9` still says *"Both serve the
   same build. Cloudflare Pages is the primary target"*, which is false and has
-  been for roughly three hundred builds). Redirecting it is therefore a repair,
-  not a courtesy. → the existing Pages project keeps its name and gets a
-  deployment containing only `_redirects`:
-  `/* https://vvorski.github.io/kiyo-plays/:splat 301`, which preserves path
-  and query. **Mine.**
-- **`deploy/deploy.sh`'s `PROJECT_NAME` default changes to `kiyo-plays`** —
-  `deploy/deploy.sh:13` — with a comment saying why. **Mine**, and it is a trap
-  worth defusing in writing: the Pages project `suti-view-2026` is now the
-  redirect host, so leaving the default pointed at it means the next person who
-  runs `pnpm deploy` silently overwrites the redirect with the app and undoes
-  half this entry. The old name survives in that file only inside the comment
-  explaining it.
-- **Who runs the Cloudflare step → Victor, or an agent with the Cloudflare MCP
-  already connected.** **Mine**, and it is CLAUDE.md's standing rule verbatim:
-  *"Do not 'fix' this by guessing at credentials."* The builder's job is to
-  commit `deploy/redirect-stub/_redirects` and the exact one-line wrangler
-  command beside it, then stop. See **Done when** 5 for what happens if it has
-  not been run by the time the rest lands.
+  been for roughly three hundred builds). **Struck by entry 144:** Victor's
+  call is that the fossil is left exactly where it is — no `_redirects`, no
+  deletion of the Pages project, no Cloudflare action of any kind. Only the
+  github.io half of this entry's redirect work survives. The finding above is
+  kept because it is why the doc lines below are wrong and must still be fixed.
+- ~~**`deploy/deploy.sh`'s `PROJECT_NAME` default changes to `kiyo-plays`**~~
+  — **struck by entry 144**, which deletes `deploy/` entirely. Nothing to edit.
+- ~~**Who runs the Cloudflare step**~~ — **struck by entry 144**. There is no
+  Cloudflare step. Nothing in this entry needs a credential.
 - **`STORE_KEY` still does not move** — `src/prefs.ts:26` stays
   `'suti-view:prefs'`, comment intact. **Mine**, inherited from 63 and
   untouched by this: the key is invisible and changing it hands every existing
@@ -4354,9 +4346,9 @@ recalled; two more carry it and are deliberately left alone.
 - `.claude/skills/spec-to-issue/SKILL.md:3, :12, :187` (3) and
   `.claude/skills/spec-to-issue/recon-traps.md:132` (1).
 - `.claude/agents/geometric-variation.md:9` (1).
-- New: `deploy/redirect-stub/index.html` (the github.io signpost, copied into
-  the stub repository) and `deploy/redirect-stub/_redirects` (the Cloudflare
-  rule), plus a short `deploy/redirect-stub/README.md` giving the two commands.
+- New: `redirect-stub/index.html` (the github.io signpost, copied into the
+  stub repository) plus a short `redirect-stub/README.md` saying where it goes.
+  At the repository root, not under `deploy/`, which entry 144 deletes.
 - Left alone: `src/shaders/circles.frag.glsl:3`, `src/prefs.ts:26`,
   `docs/built.md` (archive; one supersede note on entry 63 only).
 - Outside this repo: the GitHub rename, and a new public repository
@@ -4371,17 +4363,14 @@ recalled; two more carry it and are deliberately left alone.
    reading the redirect's source — a redirect that drops the query looks
    identical to one that keeps it until you follow it.
 3. `grep -rn 'suti-view-2026' . --exclude-dir=node_modules --exclude-dir=.git`
-   returns only: `docs/built.md`, `src/shaders/circles.frag.glsl:3`,
-   `deploy/deploy.sh`'s explanatory comment, and `deploy/redirect-stub/`.
-   Nothing else.
+   returns only: `docs/built.md`, `src/shaders/circles.frag.glsl:3`, and
+   `redirect-stub/`. Nothing else.
 4. A phone with settings stored against the old github.io path still has them
    on the new one — same origin, so this should cost nothing, and confirming it
    is how you find out it did.
-5. `curl -sI 'https://suti-view-2026.pages.dev/?x=1'` returns a 301 to the new
-   URL. **If the Cloudflare step has not been run when the rest lands, this is
-   a partial ship**: disclose it in the commit and on this entry's `status:`
-   line, and write the follow-up entry before marking this one done —
-   CLAUDE.md's *Shipping part of an entry*, condition 3.
+5. ~~the `pages.dev` redirect~~ — **struck by entry 144**; that URL is left
+   serving its fossil by decision, so there is nothing here to check and no
+   partial ship to disclose.
 
 **Verify** — `pnpm build`, `pnpm lint`, and one full green `pages.yml` run under
 the new repository name (the rename is exactly the kind of change that breaks
@@ -4461,3 +4450,158 @@ leaving two entries quietly disagreeing about what a held space bar does.
 **Verify** — n/a until answered.
 
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 144. Cloudflare leaves the repository
+`status: ready` · added 2026-09-05 · **build before 142** — it overlaps 142 on
+six files and strikes 142's Cloudflare parts, so building it second means
+renaming things this entry then deletes
+
+**Do** — remove every Cloudflare Pages reference from the repo: the deploy
+script, the `wrangler` dev dependency, the docs, the workflow comments and the
+skill files, keeping only the two comments whose reasoning outlives the target.
+**Why** — one host has carried this site since build 53, and a repo that still
+documents two of them is describing an arrangement that has not existed for
+about three hundred and seventy builds.
+
+**Decided**
+- **`suti-view-2026.pages.dev` is left exactly as it is** — live, and serving a
+  build-53 fossil titled `suti-view` — over uploading a one-off `_redirects` to
+  point it at the new URL, and over deleting the Pages project so it 404s.
+  Victor's call, asked at capture with the fossil's status code and title on
+  the table. **This entry therefore touches Cloudflare the service not at all**;
+  every change is inside the repository, and no credential, token or dashboard
+  visit is needed to build it.
+- **That decision is recorded here and only here.** **Mine**, and it is the one
+  exception to the purge, so overturn it in one line if the silence should be
+  total. The option chosen was framed as *"no mention of Cloudflare anywhere"*
+  and I am keeping this entry's own account of it, because the queue is where
+  this project records decisions and their reasons, and once this archives to
+  `docs/built.md` it is the only place a future reader can discover why a URL
+  with this project's old name answers with an app nobody recognises. It costs
+  no runtime bytes and appears in nothing a visitor to the site reads.
+- **`.github/workflows/checks.yml` is kept; only its header comment changes.**
+  **Mine**, and CLAUDE.md already says it in as many words: *"do not delete
+  `checks.yml` to tidy up — `pages.yml` runs `pnpm build` but never `pnpm
+  lint`, so that file is the lint gate."* The new comment says what the file is
+  — lint, typecheck, build, probes — without the history of the deploy it grew
+  out of. Deleting the file is the single most destructive thing this entry
+  could do, which is why Done-when 4 checks for it in CI rather than by eye.
+- **CLAUDE.md's "Cloudflare is parked" bullet is rewritten, not deleted.**
+  `CLAUDE.md:247–251`. **Mine**, and it is this project's own *"Deleting code
+  deletes what it was doing"* rule applied to prose: that bullet is the **only**
+  place in the repo that instructs anyone not to delete `checks.yml`. Delete the
+  paragraph and the instruction goes with it, and the next tidy-up drops the
+  lint gate — the exact failure the paragraph was written to prevent. The
+  replacement keeps that sentence, drops everything about tokens, wrangler and
+  parking, and no longer reads as a decision that might be revisited.
+  `CLAUDE.md:367`'s `pnpm deploy` line leaves the Commands block entirely.
+- **`vite.config.ts`'s two Cloudflare comments are rewritten, not deleted.**
+  `:11` and `:106`. **Mine** — each explains a live decision and merely uses
+  Cloudflare as its evidence. `:11` argues the build marker is the commit count
+  rather than a timestamp; the argument survives intact, because a timestamp
+  still differs between any two builds of the same commit. `:106` argues `base`
+  comes from the environment rather than being hardcoded; the reason is now
+  that `actions/configure-pages` supplies `/<repo>/` while `pnpm dev` and
+  `vite preview` need `/`, which is a better reason than the one it has.
+  Deleting either comment would leave an odd-looking line with nothing arguing
+  for it, which is what the house style exists to prevent.
+- **`deploy/` is deleted outright**, along with `package.json:41`'s `"deploy"`
+  script, `package.json:61`'s `"wrangler": "^3.99.0"` devDependency and
+  `.gitignore:8`'s `.wrangler/`. **Mine**, and it is the opposite call to the
+  two above for a reason: unlike those comments, none of this carries reasoning
+  that outlives its target. A script that deploys to a place nobody deploys to
+  is not documentation, it is a loaded gun — and with `PROJECT_NAME` defaulting
+  to `suti-view-2026` it points straight at the fossil. Nothing in `pnpm build`,
+  `pnpm lint` or any probe imports it; the dev dependency is 6.8 MB of
+  `node_modules` and zero runtime bytes.
+- **The lockfile is regenerated, never hand-edited.** `pnpm-lock.yaml` carries
+  26 matches; run `pnpm install` and commit what it writes. **Mine** — a
+  hand-pruned lockfile passes `grep` and fails `--frozen-lockfile` in CI, which
+  is Done-when 3.
+- **`docs/how-it-works.md`'s Deploying section is rewritten to one target, and
+  this is a correction rather than a purge.** Recon: `:597` documents
+  **`.github/workflows/deploy.yml`, a file that does not exist** — it was
+  deleted when Cloudflare was parked at build 53, and the section has gone on
+  describing a two-target deploy and a token setup ever since. `:9`'s *"Both
+  serve the same build. Cloudflare Pages is the primary target"* is false in
+  both halves and goes with it, and `:6`'s **Live** line loses its `pages.dev`
+  half. **Mine.**
+- **`README.md:5`'s Live line loses its `pages.dev` half**, leaving the
+  github.io URL alone. Entry 142 makes the same edit for a different reason;
+  whichever runs first does it and the second finds it done.
+- **The `.claude/` skill files are edited too, not exempted.** **Mine** —
+  `auto-issue-gogo/SKILL.md:234–239, :246, :305` and
+  `spec-to-issue/recon-traps.md:127–131` both carry a "the CI Cloudflare deploy
+  has never worked, do not try to fix it" warning and a two-host verification
+  loop. The warning describes a thing that will no longer exist to be fixed, and
+  a loop that curls two URLs when there is one host is how an agent gets a false
+  failure. These files instruct future agents; leaving them stale is worse than
+  leaving a stale doc, because nobody proofreads an instruction they are
+  following.
+- **`docs/built.md` is untouched.** One match at `:5716`, inside shipped entry
+  63, which is a record of what was decided then and remains accurate. Shipped
+  entries are not rewritten.
+- **What this strikes from entry 142** — its `_redirects` artefact, its *"the
+  existing Pages project ... gets a deployment containing only `_redirects`"*
+  conclusion, its *"Who runs the Cloudflare step"* bullet, its
+  `deploy/deploy.sh` `PROJECT_NAME` bullet (the file will be gone), and its
+  **Done-when 5** entirely. 142's remaining github.io signpost moves from
+  `deploy/redirect-stub/` to `redirect-stub/` at the repository root, since
+  `deploy/` will not exist and a signpost is not a deploy of this app. All of
+  that is amended into 142 in place and flagged on its `status:` line, so the
+  strike is visible at both ends without reading this entry.
+
+**Lands in** — fourteen files carry `cloudflare`, `wrangler` or `pages.dev`
+outside `node_modules`; counted, not recalled. Eleven are edited, one is
+deleted, one is left alone, one is the queue itself.
+- `deploy/deploy.sh` (5 matches) — **deleted**, with the now-empty `deploy/`.
+- `package.json` — `:61` the devDependency (1 match) and `:41` the `"deploy"`
+  script, which the grep above does not catch because it names no Cloudflare
+  word. Both go.
+- `pnpm-lock.yaml` (26) — regenerated by `pnpm install`.
+- `docs/how-it-works.md` (8) — `:6`, `:9`, and the Deploying section at
+  `:592–610`.
+- `CLAUDE.md` (4) — `:247–251` rewritten per Decided, `:367` removed.
+- `.github/workflows/checks.yml` (3) — header comment only; **the file stays**.
+- `.github/workflows/pages.yml` (3) — `:3`, `:12`, `:41`, all comments.
+- `vite.config.ts` (2) — `:11`, `:106`, rewritten per Decided.
+- `.claude/skills/auto-issue-gogo/SKILL.md` (5) and
+  `.claude/skills/spec-to-issue/recon-traps.md` (3).
+- `.gitignore:8` (1) and `README.md:5` (1).
+- `docs/built.md` (1) — **untouched**.
+- `docs/todo.md` — entry 142's Cloudflare parts, amended in place.
+
+**Done when**
+1. `grep -rni 'cloudflare\|wrangler\|pages\.dev' . --exclude-dir=node_modules
+   --exclude-dir=.git` returns matches in exactly two files: `docs/built.md`
+   and `docs/todo.md`. Nothing in `src/`, `README.md`, `CLAUDE.md`,
+   `docs/how-it-works.md`, `.github/`, `.claude/`, `package.json` or
+   `vite.config.ts`.
+2. `deploy/` does not exist, and `pnpm deploy` fails with pnpm's own
+   "command not found" rather than running anything.
+3. `pnpm install --frozen-lockfile` succeeds against the committed lockfile —
+   the proof it was regenerated rather than pruned by hand.
+4. `.github/workflows/checks.yml` still exists and still runs `pnpm lint`,
+   confirmed by a **green Checks run** on the branch rather than by reading the
+   file. This is the one thing the entry can silently destroy.
+5. `CLAUDE.md` still carries a sentence forbidding the deletion of
+   `checks.yml`, and `vite.config.ts` still explains why the build marker is a
+   commit count and why `base` comes from the environment.
+6. `docs/how-it-works.md`'s Deploying section names one target and no file that
+   does not exist — every workflow path it mentions is present in
+   `ls .github/workflows/`.
+
+**Verify** — `pnpm build`, `pnpm lint`, and `pnpm install --frozen-lockfile`
+against a deleted `node_modules`. The full probe set `checks.yml` runs:
+`pnpm probe`, `probe:shake`, `probe:fullscreen`, `probe:camera-arm`,
+`probe:raise-camera`, `probe:origin`. Then one green **Checks** and one green
+**Pages** run on `main` after the merge — editing a workflow's comments is
+exactly the kind of change that can only be wrong in CI. **No on-screen check
+is required here and that is a decision, not an omission**: nothing in this
+entry reaches a rendered surface, a shader, the HUD or the gate.
+
+**Hard stops** — prefs **no** · url **no** — no parameter changes, and the
+`pages.dev` origin is deliberately left serving what it serves · capture
+**no** — this removes a publishing path and adds no request · dependency
+**no, and it removes one**: `wrangler ^3.99.0` leaves `devDependencies`,
+6.8 MB out of `node_modules`, zero runtime bytes either way.
