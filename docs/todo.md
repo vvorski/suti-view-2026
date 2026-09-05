@@ -2206,7 +2206,7 @@ than away from it: this removes a line, adds none, and the ban on
 reassurance copy is untouched · dependency no.
 
 ### 122. A drag floods the frame: sixteen touch rings need an ink budget
-`status: building` · added 2026-09-04 · started 2026-09-05 · finishes 79 · independent of the rest of the queue
+`status: done` · added 2026-09-04 · build 445 · finishes 79 · independent of the rest of the queue
 
 **Do** — weight every touch ring's opacity by `1/√n`, where `n` is the number of
 touch rings alive in that shader this frame, in the six geometric views that

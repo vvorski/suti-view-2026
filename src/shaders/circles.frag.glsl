@@ -348,6 +348,36 @@ void main() {
   // from centre, which a touch ring's own off-centre front does not cross
   // in any way the ladder's arithmetic understands, so touch rings draw the
   // same double stroke as an audio ring without also lighting rungs.
+
+  // docs/todo.md entry 122 — an ink budget for touch rings.
+  //
+  // A press-and-drag laid sixteen rings at ≥0.74 opacity on sixteen
+  // different radii, and screen-compositing that many bands is 1 almost
+  // everywhere: measured at 54-59% of the frame above 0.9 ink, which times
+  // uGeoColour is one flat colour. Entry 79 stopped the ink *exceeding* 1;
+  // it did nothing about the frame reaching 1 everywhere.
+  //
+  // 1/sqrt(n) holds total ink energy constant — the compromise audio mixing
+  // makes for the same reason — and measured, it removes the solid field
+  // while leaving coverage above 0.1 within a point of the unweighted
+  // figure: the trail is still there, it is simply no longer a wall. 1/n
+  // conserves ink linearly and leaves a drag too faint to see (mean 0.10
+  // against 0.28-0.33 here).
+  //
+  // Counted here rather than handed down as a uniform: `lifespan` is
+  // LIFESPAN * uMoonLife (entry 96) and differs per shader, so TypeScript
+  // cannot know "alive" exactly, sixteen compares a frame is nothing, and
+  // the same test in the same file cannot drift from the loop it governs.
+  //
+  // Exactly 1.0 for a lone ring by arithmetic rather than by a guard, so a
+  // single tap is bit-identical — and with no finger on the glass nothing
+  // here runs at all.
+  float touchAlive = 0.0;
+  for (int i = AUDIO_RIPPLES; i < MAX_RIPPLES; i++) {
+    float aliveAge = uTime - uRipples[i].x;
+    if (aliveAge >= 0.0 && aliveAge <= lifespan) touchAlive += 1.0;
+  }
+  float touchWeight = inversesqrt(max(touchAlive, 1.0));
   for (int i = AUDIO_RIPPLES; i < MAX_RIPPLES; i++) {
     float birth = uRipples[i].x;
     float birthLevel = uRipples[i].y;
@@ -372,7 +402,7 @@ void main() {
     float slotStroke = hash(float(i) + 11.0);
 
     float opacity = percent > fadeFrom ? 1.0 - (percent - fadeFrom) / (1.0 - fadeFrom) : 1.0;
-    opacity *= 0.35 + 0.65 * birthLevel;
+    opacity *= (0.35 + 0.65 * birthLevel) * touchWeight;
 
     float scale = (0.8 + 0.4 * birthLevel) * (0.88 + 0.24 * slotStroke);
     float outerHalf = max(radius * OUTER_STROKE * 0.5 * scale, px * 0.5);

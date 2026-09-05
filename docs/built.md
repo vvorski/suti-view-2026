@@ -547,6 +547,16 @@ per Verify's own text — is left to Victor; the browser-automation path
 remains unattempted this session, per the "two hung calls" threshold this
 queue has carried since entry 102.
 
+**Correction (2026-09-05, entry 122):** "grid/shards use a different
+(`intensity`-based) accumulation and were correctly left alone" above is
+half right. Grid's `max()` genuinely cannot accumulate density and stays
+untouched. Shards was misclassified: it draws discrete fragments and sums
+them with plain `ink +=`, the same linear accumulation this entry's own
+Circles/Drift/Tide fix targeted — it saturates the same way, more readily,
+since a burst throws several splinters per hit rather than one ring. Entry
+122 gives Shards the same screen operator, disclosed and owned there rather
+than silently folded into this note.
+
 **Do** — combine overlapping rings instead of summing them, and vary each ring
 enough that a dragged trail reads as a run of rings rather than one thick one.
 

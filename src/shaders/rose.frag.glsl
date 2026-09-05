@@ -296,6 +296,19 @@ void main() {
   // live slot, exactly as many as touches actually on screen — the `age`
   // guard already skips the rest, same as Circles' own touch loop skips the
   // extra `length()`.
+  //
+  // docs/todo.md entry 122 — an ink budget for touch rosettes, same finding
+  // and same identity as Circles' own touch loop: see its comment for the
+  // measurement. A rosette is N spokes rather than one ring, so it hits the
+  // same "sixteen simultaneous, near-opaque" flood entry 79 already screens
+  // per-spoke here — 1/sqrt(n) is what stops it filling solid as a family
+  // rather than only per-spoke.
+  float touchAlive = 0.0;
+  for (int i = AUDIO_RIPPLES; i < MAX_RIPPLES; i++) {
+    float aliveAge = uTime - uRipples[i].x;
+    if (aliveAge >= 0.0 && aliveAge <= lifespan) touchAlive += 1.0;
+  }
+  float touchWeight = inversesqrt(max(touchAlive, 1.0));
   for (int i = AUDIO_RIPPLES; i < MAX_RIPPLES; i++) {
     float birth = uRipples[i].x;
     float birthLevel = uRipples[i].y;
@@ -314,7 +327,7 @@ void main() {
 
     float percent = age / lifespan;
     float opacity = percent > fadeFrom ? 1.0 - (percent - fadeFrom) / (1.0 - fadeFrom) : 1.0;
-    opacity *= 0.35 + 0.65 * birthLevel;
+    opacity *= (0.35 + 0.65 * birthLevel) * touchWeight;
     float scale = 0.8 + 0.4 * birthLevel;
 
     // Same fold-bounded, percent-scaled width and 0.70-of-sweep trailing

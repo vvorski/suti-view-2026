@@ -73,6 +73,22 @@ void main() {
 
   float ink = 0.0;
 
+  // docs/todo.md entry 122 — an ink budget for touch bursts, same finding and
+  // identity as Circles' own touch loop: a drag's sixteen slots at ≥0.74
+  // opacity flood the frame solid; 1/sqrt(n) holds total ink energy constant
+  // instead. Counted here (touch slots only, same `age`-alive test the loop
+  // below uses) rather than handed down as a uniform, for the same reason
+  // `lifespan` above is computed once per-shader: it differs with
+  // `uMoonLife`, so TypeScript cannot know "alive" exactly. Exactly 1.0 for
+  // a lone burst, and audio bursts (`i < AUDIO_RIPPLES`) are never counted or
+  // weighted, so a single tap or an audio-only frame is bit-identical.
+  float touchAlive = 0.0;
+  for (int i = AUDIO_RIPPLES; i < MAX_RIPPLES; i++) {
+    float aliveAge = uTime - uRipples[i].x;
+    if (aliveAge >= 0.0 && aliveAge <= lifespan) touchAlive += 1.0;
+  }
+  float touchWeight = inversesqrt(max(touchAlive, 1.0));
+
   for (int i = 0; i < MAX_RIPPLES; i++) {
     float birth = uRipples[i].x;
     float birthLevel = uRipples[i].y;
@@ -123,9 +139,15 @@ void main() {
     float opacity = percent > fadeFrom
       ? 1.0 - (percent - fadeFrom) / (1.0 - fadeFrom)
       : 1.0;
-    opacity *= 0.30 + 0.70 * birthLevel;
+    opacity *= (0.30 + 0.70 * birthLevel) * (i < AUDIO_RIPPLES ? 1.0 : touchWeight);
 
-    ink += across * along * opacity;
+    // docs/todo.md entry 122 — screened, not added. Entry 79's build note
+    // (build 350) called Grid and Shards "intensity-based" and left both
+    // `+=`; true of Grid's `max()` standing wave, false here — a burst is
+    // still discrete fragments summing linearly, the same flood Circles,
+    // Rose, Drift, Tide and Chorus all had. Owned here, noted under 79 in
+    // built.md, rather than pretending 79 already covered it.
+    ink = 1.0 - (1.0 - ink) * (1.0 - across * along * opacity);
   }
 
   // A thin ring at the origin that snaps outward on the highs, so the frame is

@@ -107,6 +107,22 @@ void main() {
 
   float ink = 0.0;
 
+  // docs/todo.md entry 122 — an ink budget for touch rings, same finding and
+  // identity as Circles' own touch loop: a drag's sixteen slots at ≥0.74
+  // opacity flood the frame solid; 1/sqrt(n) holds total ink energy constant
+  // instead. Counted here (touch slots only, same `age`-alive test the loop
+  // below uses) rather than handed down as a uniform, for the same reason
+  // `lifespan` above is computed once per-shader: it differs with
+  // `uMoonLife`, so TypeScript cannot know "alive" exactly. Exactly 1.0 for
+  // a lone ring, and audio rings (`i < AUDIO_RIPPLES`) are never counted or
+  // weighted, so a single tap or an audio-only frame is bit-identical.
+  float touchAlive = 0.0;
+  for (int i = AUDIO_RIPPLES; i < MAX_RIPPLES; i++) {
+    float aliveAge = uTime - uRipples[i].x;
+    if (aliveAge >= 0.0 && aliveAge <= lifespan) touchAlive += 1.0;
+  }
+  float touchWeight = inversesqrt(max(touchAlive, 1.0));
+
   for (int i = 0; i < MAX_RIPPLES; i++) {
     float birth = uRipples[i].x;
     float birthLevel = uRipples[i].y;
@@ -148,7 +164,7 @@ void main() {
     float slotStroke = i < AUDIO_RIPPLES ? 1.0 : 0.88 + 0.24 * hash(float(i) + 11.0);
 
     float opacity = percent > fadeFrom ? 1.0 - (percent - fadeFrom) / (1.0 - fadeFrom) : 1.0;
-    opacity *= 0.35 + 0.65 * birthLevel;
+    opacity *= (0.35 + 0.65 * birthLevel) * (i < AUDIO_RIPPLES ? 1.0 : touchWeight);
 
     float scale = (0.8 + 0.4 * birthLevel) * slotStroke;
     float outerHalf = max(radius * OUTER_STROKE * 0.5 * scale, px * 0.5);

@@ -111,5 +111,140 @@ check('found the seven geometric shaders that declare these constants', matched 
   )
 }
 
+// docs/todo.md entry 122's own finding, mirrored: a headless copy of
+// Circles' touch-ring loop (`circles.frag.glsl` — `ring()`, the stroke
+// constants, the screen composite) over a 90x160 grid (9:16, the same
+// convention this repo's other probes use for a phone frame), driven by a
+// 2s drag at 0.4 uv/s through the centre. `SPAWN_DIST` (emitter.ts) fires a
+// new ring every 0.125s at that speed, faster than `SPAWN_INTERVAL`'s
+// 0.15s, so sixteen spawns land in exactly the drag's 2s and fill every
+// touch slot with none yet recycled — the "full load" case entry 122's own
+// table measures, evaluated at the instant the last one lands, when every
+// ring from the drag is still within `LIFESPAN` (3.2s > 2s).
+//
+// Arithmetic only, same convention as the screen-operator block above: this
+// cannot import the GLSL, so the shader's own constants and functions are
+// copied here by eye and mirrored, not re-derived.
+{
+  const W = 90
+  const H = 160
+  const MIN_DIM = Math.min(W, H) // 90 — matches circles.frag.glsl's uv normalisation
+  const px = 1 / MIN_DIM
+  const halfExtent = { x: 0.5, y: (0.5 * H) / MIN_DIM }
+  const maxRadius = Math.max(halfExtent.x, halfExtent.y) // uMoonReach = 1
+  const LIFESPAN = 3.2
+  const FADE_FROM = 0.6
+  const OUTER_STROKE = 0.22
+  const INNER_STROKE = 0.09
+  const INNER_RADIUS = 0.7
+  const N_TOUCH = 16
+  const SPAWN_GAP = 0.05 / 0.4 // SPAWN_DIST / drag speed — 0.125s, the binding trigger
+  const BIRTH_LEVEL = 0.8 // the entry's own figure
+
+  const hash = (x: number): number => {
+    const s = Math.sin(x * 127.1) * 43758.5453123
+    return s - Math.floor(s)
+  }
+  const smoothstep = (edge0: number, edge1: number, x: number): number => {
+    const t = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)))
+    return t * t * (3 - 2 * t)
+  }
+  const ring = (dist: number, radius: number, halfWidth: number): number => {
+    const d = Math.abs(dist - radius) - halfWidth
+    return 1 - smoothstep(0, px * 1.5, d)
+  }
+  const screenOp = (ink: number, c: number): number => 1 - (1 - ink) * (1 - c)
+
+  // Sixteen rings laid every SPAWN_GAP along a horizontal drag through the
+  // centre, oldest first — mirrors ripples.ts's ring buffer with nothing yet
+  // recycled (16 spawns, 16 slots). `birthTime` rather than a fixed `age`,
+  // so the frame can be evaluated at any instant while all sixteen are
+  // still alive (birthTime 0 .. lifespan, the drag's own last 2s).
+  const rings = Array.from({ length: N_TOUCH }, (_, i) => ({
+    birthTime: i * SPAWN_GAP,
+    x: -0.4 + 0.8 * (i / (N_TOUCH - 1)),
+    y: 0,
+    slotPhase: hash(i + 31.0),
+    slotStroke: hash(i + 11.0),
+  }))
+  const dragEnd = (N_TOUCH - 1) * SPAWN_GAP // last ring's birth — the drag's own duration
+
+  function inkAt(x: number, y: number, t: number, touchWeight: number): number {
+    let ink = 0
+    for (const r of rings) {
+      const age = t - r.birthTime
+      if (age < 0 || age > LIFESPAN) continue
+      const percent = age / LIFESPAN
+      let radius = maxRadius * percent
+      radius *= 0.98 + 0.04 * r.slotPhase
+      const scale = (0.8 + 0.4 * BIRTH_LEVEL) * (0.88 + 0.24 * r.slotStroke)
+      const outerHalf = Math.max(radius * OUTER_STROKE * 0.5 * scale, px * 0.5)
+      const innerHalf = Math.max(radius * INNER_STROKE * 0.5 * scale, px * 0.5)
+      let opacity = percent > FADE_FROM ? 1 - (percent - FADE_FROM) / (1 - FADE_FROM) : 1
+      opacity *= (0.35 + 0.65 * BIRTH_LEVEL) * touchWeight
+      const dist = Math.hypot(x - r.x, y - r.y)
+      const outer = ring(dist, radius, outerHalf)
+      const inner = ring(dist, radius * INNER_RADIUS, innerHalf)
+      ink = screenOp(ink, (outer + inner) * opacity)
+    }
+    return ink
+  }
+
+  function coverageAt(t: number, touchWeight: number): { above9: number; above1: number } {
+    let above9 = 0
+    let above1 = 0
+    for (let py = 0; py < H; py++) {
+      const uvY = (py + 0.5 - H / 2) / MIN_DIM
+      for (let px_ = 0; px_ < W; px_++) {
+        const uvX = (px_ + 0.5 - W / 2) / MIN_DIM
+        const ink = inkAt(uvX, uvY, t, touchWeight)
+        if (ink > 0.9) above9++
+        if (ink > 0.1) above1++
+      }
+    }
+    const total = W * H
+    return { above9: (100 * above9) / total, above1: (100 * above1) / total }
+  }
+
+  // "Full load" is a window, not an instant: every t from the drag's last
+  // spawn to the first ring's own death has all sixteen slots alive at
+  // once. Sampled across that window (worst frame kept) the same way the
+  // entry's own table reports a range rather than a single figure.
+  function worstOverWindow(touchWeight: number): { above9: number; above1: number } {
+    let above9 = 0
+    let above1 = 0
+    const steps = 12
+    for (let s = 0; s <= steps; s++) {
+      const t = dragEnd + (s / steps) * (LIFESPAN - dragEnd)
+      const c = coverageAt(t, touchWeight)
+      above9 = Math.max(above9, c.above9)
+      above1 = Math.max(above1, c.above1)
+    }
+    return { above9, above1 }
+  }
+
+  const unweighted = worstOverWindow(1.0)
+  const weighted = worstOverWindow(1 / Math.sqrt(N_TOUCH))
+
+  check(
+    'full-load drag, unweighted: frame above 0.9 ink exceeds 40% (the fault this entry guards against)',
+    unweighted.above9 > 40,
+    `${unweighted.above9.toFixed(1)}%`,
+  )
+  check(
+    'full-load drag, 1/sqrt(n) weighted: frame above 0.9 ink stays under 10% (unweighted clears 40%)',
+    weighted.above9 < 10,
+    `${weighted.above9.toFixed(1)}%`,
+  )
+  check(
+    'full-load drag: coverage above 0.1 ink is within 5 points weighted vs unweighted — the trail survives, only the wall does not',
+    Math.abs(weighted.above1 - unweighted.above1) <= 5,
+    `weighted ${weighted.above1.toFixed(1)}% vs unweighted ${unweighted.above1.toFixed(1)}%`,
+  )
+
+  const weight = (n: number): number => 1 / Math.sqrt(Math.max(n, 1))
+  check('weight(1) === 1 — a lone ring is bit-identical to before this entry', weight(1) === 1, String(weight(1)))
+}
+
 console.log(failures === 0 ? `\nall checks passed` : `\n${failures} check(s) failed`)
 process.exit(failures === 0 ? 0 : 1)
