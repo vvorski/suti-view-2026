@@ -409,6 +409,86 @@ function fadeInName(el: HTMLElement, text: string): void {
 }
 
 /**
+ * docs/todo.md entry 123 — the clock both decode loops advance on.
+ *
+ * Both loops used to read `now - start` directly: elapsed time since the
+ * animation *mounted*, not since it last actually drew a frame. The gap
+ * between those two is normally nothing, but `mountReleaseName()` runs
+ * synchronously ahead of `createVisualiser()` (main.ts:645) — a new
+ * `WebGLRenderer` and four `ShaderMaterial`s, whose shader programs then get
+ * compiled on the idle preview's first `render()` call. On a phone with a
+ * cold shader cache that is one to three real seconds with nothing else
+ * running, and it lands *inside* this animation's own first frame gap:
+ * phase one's flip, sometimes all of phase two's lock as well, elapses
+ * while nothing is being painted, and the very next real frame's `now -
+ * start` already reads past the whole thing. What is seen is the oldest
+ * name, a pause, then a cut straight to the real one — "it doesn't work
+ * many releases, only saw it work once or twice" (Victor), because a warm
+ * shader cache or a fast phone is the only thing that keeps the stall
+ * shorter than the animation.
+ *
+ * The fix: accumulate elapsed time frame by frame, capping what any single
+ * gap between frames is allowed to contribute. A stall longer than the cap
+ * still only advances the decode by the cap, so it *pauses* rather than
+ * skips — the animation is guaranteed to show every frame it has,
+ * regardless of what else the page was doing between two of them. Frame 1
+ * (the synchronous call made from `mountReleaseName` itself, at the same
+ * instant the clock is created) is not counted as a gap at all — see
+ * `advanceDecodeClock`'s own comment.
+ */
+export const MAX_FRAME_MS = 50 // the 20fps floor: below this, "slow" and "stalled" are not a difference a person can see
+
+export interface DecodeClockState {
+  /** `performance.now()`-space timestamp of the previous call. */
+  lastMs: number
+  /** Frames seen so far, including the synchronous mount-time call. */
+  frames: number
+  /** Accumulated elapsed time actually fed to the decode, each frame's raw
+   *  gap clamped to `MAX_FRAME_MS` before being added. */
+  elapsedMs: number
+  /** The raw (unclamped) gap between the synchronous mount-time call and
+   *  the first real callback after it — null until that second call
+   *  happens. This is the number that catches the shader-compile stall:
+   *  a healthy load reads a handful of milliseconds, a cold one reads
+   *  however long that compile actually took. */
+  firstGapMs: number | null
+  /** The largest raw gap seen between any two consecutive calls (the first
+   *  real one included), for the life of this clock. */
+  worstGapMs: number
+}
+
+/** `nowMs` is the *mount* timestamp — the same one the synchronous first
+ *  call to the decode's own `step()` is about to be made with. */
+export function createDecodeClockState(nowMs: number): DecodeClockState {
+  return { lastMs: nowMs, frames: 0, elapsedMs: 0, firstGapMs: null, worstGapMs: 0 }
+}
+
+/**
+ * Advance `state` by one frame and return the new accumulated elapsed time.
+ * Pure and DOM-free so the timing itself — not just the per-frame render —
+ * is probeable without a `requestAnimationFrame` loop.
+ *
+ * The very first call (immediately after `createDecodeClockState`, at the
+ * same `nowMs`) is frame 1: its gap is ~0 by construction and says nothing
+ * about a stall, so it is excluded from `firstGapMs`/`worstGapMs` — those
+ * exist to answer "how long between frames", and there has not yet been a
+ * second frame to measure that against. Frame 2 is the animation's first
+ * *real* callback, wherever that lands; on a cold load that is the frame
+ * the shader-compile stall shows up in whole.
+ */
+export function advanceDecodeClock(state: DecodeClockState, nowMs: number): number {
+  const gap = Math.max(0, nowMs - state.lastMs)
+  state.frames++
+  if (state.frames > 1) {
+    if (state.firstGapMs === null) state.firstGapMs = gap
+    state.worstGapMs = Math.max(state.worstGapMs, gap)
+  }
+  state.elapsedMs += Math.min(gap, MAX_FRAME_MS)
+  state.lastMs = nowMs
+  return state.elapsedMs
+}
+
+/**
  * Write the release name into the gate — docs/todo.md entries 43, 55 and 99
  * (absorbing 94).
  *
@@ -476,13 +556,28 @@ function fadeInName(el: HTMLElement, text: string): void {
  */
 export interface NameDecodeStatus {
   branch: 'reduced' | 'full' | 'instant'
-  /** Milliseconds since the decode began. */
+  /** Milliseconds since the decode began, on the bounded clock — not wall
+   *  time, so this number can lag real elapsed time during a stall rather
+   *  than jumping past frames the decode never got to show. */
   elapsedMs: number
   resolved: number
   total: number
+  /** docs/todo.md entry 123 — the gap from mount to the first real
+   *  callback, and the worst single gap seen since. Null until a second
+   *  frame has actually happened (the 'instant' branch never gets one).
+   *  See `advanceDecodeClock`'s own comment for what these catch. */
+  firstGapMs: number | null
+  worstGapMs: number | null
 }
 
-let decodeStatus: NameDecodeStatus = { branch: 'full', elapsedMs: 0, resolved: 0, total: 0 }
+let decodeStatus: NameDecodeStatus = {
+  branch: 'full',
+  elapsedMs: 0,
+  resolved: 0,
+  total: 0,
+  firstGapMs: null,
+  worstGapMs: null,
+}
 
 export function nameDecodeStatus(): NameDecodeStatus {
   return decodeStatus
@@ -514,14 +609,29 @@ export function mountReleaseName(): void {
 
   const n = RELEASE_NAMES.length
   if (n === 0) {
-    decodeStatus = { branch: 'instant', elapsedMs: 0, resolved: RELEASE_NAME.length, total: RELEASE_NAME.length }
+    decodeStatus = {
+      branch: 'instant',
+      elapsedMs: 0,
+      resolved: RELEASE_NAME.length,
+      total: RELEASE_NAME.length,
+      firstGapMs: null,
+      worstGapMs: null,
+    }
     fadeInName(el, RELEASE_NAME)
     return
   }
 
   const target = RELEASE_NAME
   const start = performance.now()
-  decodeStatus = { branch: reduced ? 'reduced' : 'full', elapsedMs: 0, resolved: 0, total: target.length }
+  const clock = createDecodeClockState(start)
+  decodeStatus = {
+    branch: reduced ? 'reduced' : 'full',
+    elapsedMs: 0,
+    resolved: 0,
+    total: target.length,
+    firstGapMs: null,
+    worstGapMs: null,
+  }
 
   if (reduced) {
     // docs/todo.md entry 133. This used to write `target.slice(0, locked)`,
@@ -546,8 +656,16 @@ export function mountReleaseName(): void {
     // broken one, and the element's width is the name's width from frame
     // zero, so the gate cannot reflow as it fills.
     const step = (now: number): void => {
-      const locked = reducedLockedCountAt(now - start, target.length)
-      decodeStatus = { branch: 'reduced', elapsedMs: now - start, resolved: locked, total: target.length }
+      const elapsed = advanceDecodeClock(clock, now)
+      const locked = reducedLockedCountAt(elapsed, target.length)
+      decodeStatus = {
+        branch: 'reduced',
+        elapsedMs: elapsed,
+        resolved: locked,
+        total: target.length,
+        firstGapMs: clock.firstGapMs,
+        worstGapMs: clock.frames > 1 ? clock.worstGapMs : null,
+      }
       renderReducedFrame(el, target, locked)
       if (locked < target.length) {
         requestAnimationFrame(step)
@@ -562,7 +680,11 @@ export function mountReleaseName(): void {
   }
 
   const step = (now: number): void => {
-    const elapsed = now - start
+    // docs/todo.md entry 123 — bounded, not `now - start`: see
+    // `advanceDecodeClock`'s own comment for why a stall between two
+    // frames (typically the shader-compile frame right after mount) must
+    // pause this clock rather than let it read straight past both phases.
+    const elapsed = advanceDecodeClock(clock, now)
     if (elapsed < NAME_FLIP_MS) {
       // Phase one — entry 55's own ease-out: steep early, flattening
       // toward the handover.
@@ -575,7 +697,14 @@ export function mountReleaseName(): void {
     }
     // Phase two — entry 94's own lock, absorbed by 99.
     const locked = lockedCountAt(elapsed - NAME_FLIP_MS, target.length)
-    decodeStatus = { branch: 'full', elapsedMs: elapsed, resolved: locked, total: target.length }
+    decodeStatus = {
+      branch: 'full',
+      elapsedMs: elapsed,
+      resolved: locked,
+      total: target.length,
+      firstGapMs: clock.firstGapMs,
+      worstGapMs: clock.frames > 1 ? clock.worstGapMs : null,
+    }
     if (locked >= target.length) {
       // Exact, rather than trusting the last scrambled frame's rounding to
       // have already landed on it.

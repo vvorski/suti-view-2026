@@ -2312,7 +2312,7 @@ each of the six views, drag then tap. No HUD surface is touched, so the
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 123. The opening name decode cannot be skipped by a slow first frame
-`status: building` · added 2026-09-04 · started 2026-09-05 · strengthens 99 · build in either order with 113 — whichever lands second re-runs `probe:name-decode`
+`status: done` · added 2026-09-04 · build 448 · strengthens 99 · build in either order with 113 — whichever lands second re-runs `probe:name-decode` · **the ten-reload phone check is unverified — see build note**
 
 **Do** — make both of `mountReleaseName()`'s decode loops advance on
 *bounded per-frame time* instead of wall-clock time since mount, and put the

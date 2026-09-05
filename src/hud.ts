@@ -227,7 +227,16 @@ export interface Hud {
        *  same report from outside; these three numbers are what separate
        *  them, and three of this animation's four reports were diagnosed by
        *  guessing instead. */
-      decode?: { branch: string; elapsedMs: number; resolved: number; total: number }
+      decode?: {
+        branch: string
+        elapsedMs: number
+        resolved: number
+        total: number
+        /** docs/todo.md entry 123 — the gap from mount to the first real
+         *  frame, and the worst gap since; null before a second frame. */
+        firstGapMs: number | null
+        worstGapMs: number | null
+      }
     },
   ): void
   /** Adopt a change decided elsewhere — the autopilot (director.ts) or a
@@ -1509,6 +1518,17 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
               `name  ${s.decode.branch}  ${(s.decode.elapsedMs / 1000).toFixed(1)}s  ` +
                 `${s.decode.resolved}/${s.decode.total}`,
             ]),
+        // docs/todo.md entry 123 — the two numbers that separate "the
+        // decode animation isn't showing" from "it showed, but a stall ate
+        // most of it before the first frame you saw" — same shape as
+        // `motion N ev  peak X/18` above, for the same reason: two
+        // candidate causes behind one symptom need two different numbers.
+        // Absent (rather than 0) until a second real frame has happened,
+        // so this line does not falsely claim "no stall" before there was
+        // anything to measure one against.
+        ...(s.decode?.firstGapMs == null
+          ? []
+          : [`decode first ${s.decode.firstGapMs.toFixed(0)}ms  worst ${(s.decode.worstGapMs ?? 0).toFixed(0)}ms`]),
         ...(s.arm === undefined
           ? []
           : [

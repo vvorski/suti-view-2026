@@ -21,8 +21,11 @@ import {
   reducedLockedCountAt,
   renderLockFrame,
   renderReducedFrame,
+  createDecodeClockState,
+  advanceDecodeClock,
   NAME_FLIP_MS,
   NAME_LOCK_STEP_MS,
+  MAX_FRAME_MS,
 } from '../src/version.ts'
 import { RELEASE_NAMES, RELEASE_NAME } from '../src/release-name.ts'
 
@@ -247,6 +250,155 @@ check(
     if (el.textContent !== target) widthHeld = false
   }
   check('reduced: every frame renders the whole name, so the width never changes', widthHeld, 'a frame was short')
+}
+
+// docs/todo.md entry 123 — the bounded clock's whole reason to exist: a
+// stall between two frames (real device symptom: mountReleaseName() runs
+// synchronously ahead of createVisualiser()'s shader compile) must pause
+// the decode rather than let `now - start` read straight past frames it
+// never painted. Mirrors phase one's own eased-index formula by eye
+// (version.ts's `step()`, not exported — the formula itself is not what
+// this entry changed) since only the clock arithmetic is under test here.
+{
+  const target = RELEASE_NAME
+  const n = RELEASE_NAMES.length
+  const phaseOneIndexAt = (elapsed: number): number => {
+    const t = Math.min(1, elapsed / NAME_FLIP_MS)
+    const eased = 1 - (1 - t) * (1 - t)
+    return Math.min(n - 1, Math.floor(eased * n))
+  }
+
+  // Synthetic frame timestamps: a 60fps run for 100ms, then one frame that
+  // arrives 2000ms late (the shader-compile stall), then 60fps again to
+  // well past the whole decode's own length — long enough to cover
+  // whichever name happens to be current, not a fixed guess. The stalled
+  // run needs extra wall time budgeted on top of that: the bounded clock
+  // only credits MAX_FRAME_MS of the 2000ms gap, so reaching the same
+  // elapsed-clock finish line costs this run about (2000 - MAX_FRAME_MS)ms
+  // of extra real frames the unstalled run never has to spend.
+  const FPS_GAP = 1000 / 60
+  const STALL_MS = 2000
+  const totalDuration = NAME_FLIP_MS + target.length * NAME_LOCK_STEP_MS + STALL_MS + 1000
+  function stalledFrames(): number[] {
+    const frames: number[] = [0]
+    let t = 0
+    while (t < 100) {
+      t += FPS_GAP
+      frames.push(t)
+    }
+    t += STALL_MS // the stall — one frame arrives 2000ms later than the last
+    frames.push(t)
+    while (t < totalDuration) {
+      t += FPS_GAP
+      frames.push(t)
+    }
+    return frames
+  }
+  function unstalledFrames(): number[] {
+    const frames: number[] = [0]
+    let t = 0
+    while (t < totalDuration) {
+      t += FPS_GAP
+      frames.push(t)
+    }
+    return frames
+  }
+
+  // Drives one frame sequence through the real bounded clock, returning the
+  // phase-one indices and phase-two locked counts actually rendered, each
+  // deduplicated to the *distinct* values reached (in order) — what a
+  // person watching the gate would say they saw, not one entry per frame.
+  function runBounded(frames: number[]): { indices: number[]; locked: number[] } {
+    const clock = createDecodeClockState(frames[0])
+    const indices: number[] = []
+    const locked: number[] = []
+    for (const t of frames) {
+      const elapsed = advanceDecodeClock(clock, t)
+      if (elapsed < NAME_FLIP_MS) {
+        const idx = phaseOneIndexAt(elapsed)
+        if (indices[indices.length - 1] !== idx) indices.push(idx)
+      } else {
+        const l = lockedCountAt(elapsed - NAME_FLIP_MS, target.length)
+        if (locked[locked.length - 1] !== l) locked.push(l)
+      }
+    }
+    return { indices, locked }
+  }
+
+  // The fault, reproduced directly: the old `now - start` arithmetic on the
+  // same stalled sequence, with nothing capping the gap. Tracked as one
+  // combined per-frame state (phase-one index, or phase-two locked count
+  // once the flip hands over) so "how many distinct things did a person
+  // watching actually see" is comparable to the bounded run above,
+  // whichever phase this particular stall happens to land in — at this
+  // repo's real NAME_FLIP_MS (8.5s), a 2.1s stall lands well inside phase
+  // one, not phase two, so it is the *index* sequence this fault skips.
+  function runUnbounded(frames: number[]): { states: number[] } {
+    const start = frames[0]
+    const states: number[] = []
+    for (const t of frames) {
+      const elapsed = t - start
+      const v =
+        elapsed < NAME_FLIP_MS
+          ? phaseOneIndexAt(elapsed)
+          : n + lockedCountAt(elapsed - NAME_FLIP_MS, target.length) // offset so the two phases can't collide
+      if (states[states.length - 1] !== v) states.push(v)
+    }
+    return { states }
+  }
+
+  const stalled = runBounded(stalledFrames())
+  const unstalled = runBounded(unstalledFrames())
+
+  check(
+    'bounded clock: phase one shows the identical sequence of names, stalled or not',
+    JSON.stringify(stalled.indices) === JSON.stringify(unstalled.indices),
+    `stalled ${JSON.stringify(stalled.indices)} vs unstalled ${JSON.stringify(unstalled.indices)}`,
+  )
+  check(
+    'bounded clock: phase two locks every character from 0 to the target length, none skipped, stalled or not',
+    JSON.stringify(stalled.locked) === JSON.stringify(unstalled.locked) &&
+      stalled.locked[0] === 0 &&
+      stalled.locked[stalled.locked.length - 1] === target.length,
+    `stalled ${JSON.stringify(stalled.locked)} vs unstalled ${JSON.stringify(unstalled.locked)}`,
+  )
+
+  // The probe is shown to detect the fault it guards: run the *old*
+  // `now - start` arithmetic over the same stalled sequence and confirm it
+  // skips. At this repo's real NAME_FLIP_MS, a 100ms + 2000ms stall lands
+  // inside phase one, so what the old arithmetic skips is names, not
+  // characters — the "the animation didn't flip, it just jumped from an
+  // old name to a much newer one" version of the same fault. `states`
+  // counts distinct renders across both phases on the same footing, so
+  // this compares directly against the bounded run's own total above.
+  const unboundedStalled = runUnbounded(stalledFrames())
+  const totalDistinctBounded = stalled.indices.length + stalled.locked.length
+  check(
+    'unbounded (old) arithmetic: the stall collapses several frames of names into one jump — the fault this entry fixes',
+    unboundedStalled.states.length < totalDistinctBounded,
+    `unbounded saw ${unboundedStalled.states.length} distinct renders across the whole decode; ` +
+      `the bounded clock saw ${totalDistinctBounded} over the identical wall-clock frames`,
+  )
+
+  // Identity — Done-when's own words: unstalled, the accumulated clock
+  // tracks wall time to within a millisecond at every frame. `MAX_FRAME_MS`
+  // never binds at 60fps (16.7ms gaps), so this is really asserting the
+  // clock adds nothing of its own; imported rather than restated so a
+  // change to the cap here cannot silently stop being tested against.
+  {
+    const frames = unstalledFrames()
+    const clock = createDecodeClockState(frames[0])
+    let worstDrift = 0
+    for (const t of frames) {
+      const elapsed = advanceDecodeClock(clock, t)
+      worstDrift = Math.max(worstDrift, Math.abs(elapsed - t))
+    }
+    check(
+      `unstalled: the bounded clock matches wall time to within 1ms at every frame (cap is ${MAX_FRAME_MS}ms, frame gap is ~${FPS_GAP.toFixed(1)}ms)`,
+      worstDrift < 1,
+      `worst drift ${worstDrift.toFixed(3)}ms`,
+    )
+  }
 }
 
 console.log(failures === 0 ? '\nall name-decode checks passed' : `\n${failures} check(s) failed`)
