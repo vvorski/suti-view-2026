@@ -4614,7 +4614,28 @@ entry reaches a rendered surface, a shader, the HUD or the gate.
 `status: ready` · added 2026-09-05 · **build after 144, then 142** — 144 purges
 Cloudflare as a *host*, 142 renames the repo, and this one brings Cloudflare
 back as *DNS only*; in any other order the three fight over the same doc lines ·
-two steps need Victor's hands and neither can be automated from here
+**the DNS half is already executed — see Progress** · the GitHub Pages half is
+not
+
+**Progress, 2026-09-05.** Done, in this order, and verified at each step:
+1. Zone `flyflyfly.tv` created in "Victors Sites"
+   (`982a8f8320d86f2d233fb2319d5e6146`), Free plan.
+2. **Cloudflare's automatic scan imported nothing — zero records.** All four
+   were created by hand from the table below, DNS-only, TTLs matched to
+   Hover's. This is the entry's central warning turning out to be true in the
+   strongest form: had the nameservers moved first, the domain would have gone
+   dark. **Create the zone and its records before touching the registrar.**
+3. Verified *before* cutover by querying `amir.ns.cloudflare.com` directly
+   while the domain still resolved through Hover: apex, `www`, `mail`, `MX`
+   and an arbitrary wildcard name all returned byte-identical answers.
+4. Nameservers changed at Hover to `amir` / `brenna.ns.cloudflare.com`. Hover
+   confirms third-party nameservers. **The `.tv` registry still delegated to
+   Hover at the time of writing** — propagation pending, nothing broken.
+
+Still to do: the registry delegation completing and the Cloudflare zone going
+`active`; the `kiyo` `CNAME`, deliberately held until GitHub Pages is
+configured, since pointing it at `vvorski.github.io` before then just serves a
+404; and the whole GitHub Pages half of this entry.
 
 **Do** — move `flyflyfly.tv`'s DNS to Cloudflare, point `kiyo.flyflyfly.tv` at
 GitHub Pages, and make it the address the app is served from.
@@ -4660,6 +4681,19 @@ GitHub Pages, and make it the address the app is served from.
   not the mail.** That is a visible, same-day failure rather than a silent one,
   which is a materially better risk than the entry originally assumed — but the
   wildcard is still the record to check first in Cloudflare's scan.
+- **The site has no HTTPS certificate of its own, and did not before any of
+  this.** Port 443 on `162.215.121.122` serves Bluehost's shared certificate
+  for `CN=*.accountservergroup.com`, which does not match `flyflyfly.tv`, so
+  `https://flyflyfly.tv/` fails verification (`curl` exit 60) while
+  `http://` returns 200 on both apex and `www`. Established while the registry
+  still pointed at Hover, so it is **pre-existing and not caused by the
+  migration**. Recorded because Done-when 3 originally asked for "a valid
+  certificate" and would have failed for a reason having nothing to do with
+  this entry. **Mine**: change nothing about it here. Once the zone is active,
+  turning the orange cloud on for apex and `www` would give that site free
+  HTTPS at Cloudflare's edge with SSL mode **Full** (not Full-strict — the
+  origin certificate does not match the name) — but that changes how a
+  different site of Victor's is served and is his call, not this entry's.
 - **The `MX` TTL is 24 hours**, against 15 minutes on everything else. Nothing
   in this entry changes the `MX`, but it does mean a mistake involving it would
   be the slowest thing here to walk back. **Mine**: drop the `MX` TTL to
@@ -4751,10 +4785,12 @@ GitHub Pages, and make it the address the app is served from.
    returns `10 mail.flyflyfly.tv`, `dig +short mail.flyflyfly.tv` returns
    `162.215.121.122`, and a real message is sent to an address at the domain
    and confirmed received. Not "the record looks right" — delivered.
-3. `https://flyflyfly.tv/` and `https://www.flyflyfly.tv/` return exactly what
-   they returned before the move, with a valid certificate. **Check `www`
-   specifically and first**: it has no record of its own and exists only
-   through the wildcard, so it is the thing the migration can drop.
+3. `http://flyflyfly.tv/` and `http://www.flyflyfly.tv/` return 200, exactly
+   as they did before the move. **Plain HTTP, not HTTPS** — see Decided: that
+   site has never had a matching certificate, and asking for one here would be
+   testing somebody else's bug. **Check `www` specifically and first**: it has
+   no record of its own and exists only through the wildcard, so it is the
+   thing the migration can drop.
 4. `dig +short kiyo.flyflyfly.tv` returns `vvorski.github.io` and not
    `162.215.121.122`, and the record is DNS-only — `proxied: false` in the API
    response, not judged from the dashboard's colour.
