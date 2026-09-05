@@ -2961,7 +2961,7 @@ what he chose, and he can see the armed state from arm's length.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 130. The lattice's timbre reaches its shape, not only its hue
-`status: ready` · added 2026-09-05 · the same diagnosis as 32, one tier up · lattice only
+`status: building` · added 2026-09-05 · started 2026-09-05 · the same diagnosis as 32, one tier up · lattice only
 
 **Do** — give the two continuous shape parameters an audio term each:
 `uRoughness` thickens the tunnel's shell density, `uTilt` tightens its spiral.
