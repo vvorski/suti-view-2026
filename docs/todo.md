@@ -4228,3 +4228,164 @@ unchanged; the probe page with `circles` as baseline; then the phone. No HUD
 surface changes.
 
 **Hard stops** — prefs no · url no · capture no · dependency no.
+
+### 142. The repository becomes kiyo-plays, and both old URLs keep answering
+`status: ready` · added 2026-09-05 · overturns one Decided bullet of entry 63 ·
+claim alone — the git remote changes mid-build, so this must not be interleaved
+with another agent's push
+
+**Do** — rename `vvorski/suti-view-2026` to `vvorski/kiyo-plays`, update every
+reference to the old name, and leave a redirect standing at each of the two old
+live URLs.
+**Why** — the app was renamed at build 219 and the repository was deliberately
+left behind, because a moved URL would break links already sitting in other
+people's messages. That reason has not gone away; it has become the work.
+
+**Decided**
+- The name → **`kiyo-plays`**, over `kiyo-play` as typed in the request.
+  Victor's call, asked and answered at capture. It matches the wordmark
+  `kiyo · plays` and `package.json`'s existing `"name": "kiyo-plays"`, so
+  nothing in the repo has to disagree with anything else. A second rename is
+  the expensive event here — it breaks the redirect chain again — which is why
+  this was worth one question rather than a guess.
+- **Entry 63's "the repository and both URLs do not move" is overturned.**
+  Victor's call: *"we're going to do it"*. 63 (`docs/built.md`) reasoned that
+  *"a Pages URL is not reliably redirected after a repo rename — so renaming
+  the repo would quietly break links already in other people's messages"*, and
+  that reasoning was correct and still is. This entry does not dispute it; it
+  pays the cost 63 declined to pay, by building the redirect 63 assumed did not
+  exist. Mark 63 partly superseded at both ends.
+- **The github.io redirect is a second repository, not Cloudflare.** **Mine**,
+  and this is the recon finding that changes the request as asked. Cloudflare
+  cannot redirect `vvorski.github.io/*`: that hostname is GitHub's and sits on
+  no Cloudflare zone, so there is nothing there for a rule to attach to. And
+  GitHub's own post-rename redirect covers `github.com/vvorski/…` and `git`
+  remote URLs — it does **not** cover a Pages project site, which is exactly
+  what 63 was right about. The only mechanism that keeps
+  `vvorski.github.io/suti-view-2026/` answering is a **new, separate public
+  repository named `suti-view-2026`** (the rename frees the name), containing
+  one `index.html`, with Pages enabled on its default branch.
+- **That stub costs GitHub's automatic redirect of the *code* URL, and that is
+  the right trade.** **Mine.** Creating a repository at the old name cancels
+  the rename redirect for `github.com/vvorski/suti-view-2026` and for any
+  `git remote` still pointing there. Take the loss: this is one developer with
+  one clone and one `git remote set-url` to run, whereas the site URL is the
+  thing `src/share.ts` exists to put into other people's messages. The code URL
+  redirect is worth approximately nothing here; the site URL is the entry.
+- **The redirect preserves the query string *and* the hash.** **Mine.** A bare
+  `<meta http-equiv="refresh">` drops `?geometric=…&atmospheric=…&mix=…`, and
+  those parameters *are* the shared link — a redirect that lands on the
+  defaults is barely better than a 404. So the stub's `index.html` is
+  `location.replace(NEW + location.search + location.hash)`, with a `<noscript>`
+  meta-refresh to the bare new URL and a plain visible anchor beneath it as the
+  floor. Nothing else is on that page: no analytics, no third-party script, no
+  fonts. It is a signpost, not a site.
+- **`suti-view-2026.pages.dev` is live and has been serving a fossil.**
+  Recon, and it reframes the Cloudflare half of the request. It returns 200
+  with `<title>suti-view</title>` — a build from *before* entry 63 renamed the
+  app at build 219, so it has been stale since Cloudflare was parked at
+  build 53, and `README.md` and `docs/how-it-works.md` have gone on advertising
+  it as **Live** the whole time (`how-it-works.md:9` still says *"Both serve the
+  same build. Cloudflare Pages is the primary target"*, which is false and has
+  been for roughly three hundred builds). Redirecting it is therefore a repair,
+  not a courtesy. → the existing Pages project keeps its name and gets a
+  deployment containing only `_redirects`:
+  `/* https://vvorski.github.io/kiyo-plays/:splat 301`, which preserves path
+  and query. **Mine.**
+- **`deploy/deploy.sh`'s `PROJECT_NAME` default changes to `kiyo-plays`** —
+  `deploy/deploy.sh:13` — with a comment saying why. **Mine**, and it is a trap
+  worth defusing in writing: the Pages project `suti-view-2026` is now the
+  redirect host, so leaving the default pointed at it means the next person who
+  runs `pnpm deploy` silently overwrites the redirect with the app and undoes
+  half this entry. The old name survives in that file only inside the comment
+  explaining it.
+- **Who runs the Cloudflare step → Victor, or an agent with the Cloudflare MCP
+  already connected.** **Mine**, and it is CLAUDE.md's standing rule verbatim:
+  *"Do not 'fix' this by guessing at credentials."* The builder's job is to
+  commit `deploy/redirect-stub/_redirects` and the exact one-line wrangler
+  command beside it, then stop. See **Done when** 5 for what happens if it has
+  not been run by the time the rest lands.
+- **`STORE_KEY` still does not move** — `src/prefs.ts:26` stays
+  `'suti-view:prefs'`, comment intact. **Mine**, inherited from 63 and
+  untouched by this: the key is invisible and changing it hands every existing
+  phone the defaults. Note also that nothing needs to migrate — old and new
+  github.io URLs are the **same origin**, `https://vvorski.github.io`, so
+  `localStorage` carries across the path change for free. That is only true of
+  the github.io pair; `pages.dev` is a different origin and its stored prefs do
+  not travel, which costs nothing because the app sitting there is a build-53
+  fossil nobody has configured.
+- **History stays true.** `src/shaders/circles.frag.glsl:3` and
+  `docs/how-it-works.md:93` both say *"suti-view-2026 grew out of
+  `~/dev/circles`"*; that sentence is about a repository as it was named then
+  and remains accurate. Shipped entries in `docs/built.md` are records and are
+  not rewritten either — the only edit there is 63's own supersede note.
+  **Mine**, and it is 63's rule, kept.
+- **The local working directory is not renamed.** `/Users/vvorski/dev/
+  suti-view-2026` stays. **Mine** — Claude Code keys its per-project memory and
+  scratchpad directories on the absolute path, so renaming the folder orphans
+  both, and the folder name is visible to nobody. The only local change is
+  `git remote set-url origin git@github.com:vvorski/kiyo-plays.git`.
+- **`vite.config.ts` needs no change.** Recon: `BASE_PATH` is supplied by
+  `actions/configure-pages`, which resolves `/<repo>/` at build time
+  (`pages.yml`, the `Build` step), so the new path is picked up automatically.
+  **Mine**, and it is stated here only because a hardcoded base path is the
+  first thing anyone will go hunting for.
+- **The `pages.dev` line is removed from both doc headers, not repointed.**
+  `README.md:5` and `docs/how-it-works.md:6` list the github.io URL alone,
+  updated to `kiyo-plays`. **Mine** — once it is a redirect it is not a place
+  to send anyone, and CLAUDE.md already says GitHub Pages is the deploy.
+  `how-it-works.md:9`'s "both serve the same build / Cloudflare is primary"
+  paragraph goes with it.
+
+**Lands in** — nine files in this repo carry the old name and are counted, not
+recalled; two more carry it and are deliberately left alone.
+- `README.md:5–6` (2 refs) and `docs/how-it-works.md:6–7, :93` (3 refs — the
+  third is the history sentence and stays).
+- `CLAUDE.md:243` (1) — the GitHub Pages deploy paragraph.
+- `deploy/deploy.sh:13` (1) — `PROJECT_NAME`, per Decided.
+- `.claude/skills/auto-issue-gogo/SKILL.md:8, :246, :299` (3 — `:246` is a
+  live-URL smoke-check loop and must point at the new URL).
+- `.claude/skills/spec-to-issue/SKILL.md:3, :12, :187` (3) and
+  `.claude/skills/spec-to-issue/recon-traps.md:132` (1).
+- `.claude/agents/geometric-variation.md:9` (1).
+- New: `deploy/redirect-stub/index.html` (the github.io signpost, copied into
+  the stub repository) and `deploy/redirect-stub/_redirects` (the Cloudflare
+  rule), plus a short `deploy/redirect-stub/README.md` giving the two commands.
+- Left alone: `src/shaders/circles.frag.glsl:3`, `src/prefs.ts:26`,
+  `docs/built.md` (archive; one supersede note on entry 63 only).
+- Outside this repo: the GitHub rename, and a new public repository
+  `vvorski/suti-view-2026` with Pages enabled serving the stub.
+
+**Done when**
+1. `git remote -v` reads `vvorski/kiyo-plays`, `https://vvorski.github.io/
+   kiyo-plays/` returns 200, and its `<title>` is `kiyo · plays`.
+2. Opening `https://vvorski.github.io/suti-view-2026/?geometric=shards&mix=
+   screen` in a browser ends on the new URL **with both parameters intact** and
+   the app running Shards on screen blend. Checked by loading it, not by
+   reading the redirect's source — a redirect that drops the query looks
+   identical to one that keeps it until you follow it.
+3. `grep -rn 'suti-view-2026' . --exclude-dir=node_modules --exclude-dir=.git`
+   returns only: `docs/built.md`, `src/shaders/circles.frag.glsl:3`,
+   `deploy/deploy.sh`'s explanatory comment, and `deploy/redirect-stub/`.
+   Nothing else.
+4. A phone with settings stored against the old github.io path still has them
+   on the new one — same origin, so this should cost nothing, and confirming it
+   is how you find out it did.
+5. `curl -sI 'https://suti-view-2026.pages.dev/?x=1'` returns a 301 to the new
+   URL. **If the Cloudflare step has not been run when the rest lands, this is
+   a partial ship**: disclose it in the commit and on this entry's `status:`
+   line, and write the follow-up entry before marking this one done —
+   CLAUDE.md's *Shipping part of an entry*, condition 3.
+
+**Verify** — `pnpm build`, `pnpm lint`, and one full green `pages.yml` run under
+the new repository name (the rename is exactly the kind of change that breaks
+CI silently). `pnpm probe:fullscreen` as the standing gate. Look at the stub
+page itself at 320×568: it is one sentence and a link, and it must not need
+horizontal scroll or leave a blank white screen if the script is blocked.
+
+**Hard stops** — prefs **no**: `STORE_KEY` is untouched and old and new share
+an origin, so nothing migrates · url **no as to parameters** — every `?`
+parameter keeps its name and meaning; what moves is the origin and path, which
+is the thing entry 63 declined and which Victor has approved in this request
+(*"we're going to do it"*), with a redirect standing in place of the link rot
+63 was avoiding · capture **no** · dependency **no**.

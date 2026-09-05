@@ -5664,7 +5664,7 @@ covers the state machine and the phone covers the behaviour.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 63. The app is called kiyo · plays
-`status: done` · added 2026-08-30 · shipped at build 219 · verified at build 356
+`status: done` · added 2026-08-30 · shipped at build 219 · verified at build 356 · the “repository and both URLs do not move” bullet is overturned by entry 142
 
 **Build note** — every listed site changed exactly as specified: `index.html`
 (`<title>`, the `<h1>` wordmark with its hairspace-flanked middot),
@@ -5770,6 +5770,8 @@ url no · capture no (the filename changes, the capture path does not) ·
 dependency no.
 
 **Verification note — `/ccc` at build 356.** Verified against its own grep, which is what makes this entry checkable at all: `grep -ril suti src/ index.html public/` returns exactly `prefs.ts` and `circles.frag.glsl` and nothing else — the two files Decided allows, one holding the storage key that must not change and one a comment about the project's origins. Screenshots save as `kiyo-<build>-<release>-<stamp>.png`.
+
+**Partly superseded by entry 142 (2026-09-05).** Only the *“the repository and both URLs do not move”* bullet, and not its reasoning, which was right: a Pages project site genuinely is not redirected by a repo rename. Entry 142 pays that cost rather than avoiding it — `vvorski/suti-view-2026` becomes `vvorski/kiyo-plays`, and a stub repository at the freed old name keeps the old Pages URL answering, query string intact. Everything else decided here stands, `STORE_KEY` above all.
 ### 64. In daylight the picture is ink, not light
 `status: superseded by 68` · added 2026-08-30 · verified at build 356
 
