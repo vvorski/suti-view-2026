@@ -63,8 +63,8 @@ check("Alt+d does nothing", keyAction(d({ altKey: true })) === null, String(keyA
 //    the seed as a side effect of someone changing input language, because
 //    the space binding had no modifier guard at all.
 check(
-  'Space still re-rolls the seed',
-  keyAction(space()) === 'randomise',
+  'Space is still the shake binding',
+  keyAction(space()) === 'shake',
   String(keyAction(space())),
 )
 check(

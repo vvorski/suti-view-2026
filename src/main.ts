@@ -14,6 +14,7 @@ import { createHud, TAP_SLOP_PX } from './hud'
 import {
   CHARGE_TIME,
   createHoverState,
+  createSynthShake,
   createTouchField,
   hoverLeft,
   MAPPINGS,
@@ -21,8 +22,10 @@ import {
   pointerAction,
   PRESS_SHAKE_PASSTHROUGH,
   shouldRaiseCamera,
+  startSynthShake,
   toShaderUv,
   updateHover,
+  updateSynthShake,
   type Mapping,
   type MappingName,
   type VisualParams,
@@ -746,6 +749,14 @@ async function main(): Promise<void> {
   // audio.dt for this once the real render loop takes over below.
   let lastGateShakeAt = idleStart
 
+  // docs/todo.md entry 126 — the space bar's own synthetic shake. `held` is
+  // set by keydown/keyup/blur (bindKeyboard below); `synthShake` is the pure
+  // state `updateSynthShake` advances once a frame, in the same render loop
+  // that calls `shake.frame()`, so a synthesised sample reaches this frame's
+  // `Tumble.advance()` the same way a real `devicemotion` sample would.
+  let spaceHeld = false
+  const synthShake = createSynthShake()
+
   // The powder easter egg — docs/todo.md entry 46. Wired here, before Start,
   // since the entry's whole point is a secret found on the screen everyone
   // sees first, not a mode reachable only after the app has already started.
@@ -1231,7 +1242,19 @@ async function main(): Promise<void> {
   }, new URLSearchParams(window.location.search).has('debug'))
 
   bindKeyboard({
-    onRandomise: () => visualiser.randomise(),
+    // docs/todo.md entry 126 — `visualiser.randomise()` used to be called
+    // directly here; it is now reached *through* the shake, same as a real
+    // one, because a held space bar re-seeds by shaking hard enough for
+    // long enough, exactly like a hand would. Starting the gesture rolls a
+    // fresh bearing (see synth-shake.ts) so a second tap does not inherit
+    // the first's fading direction.
+    onShakeStart: () => {
+      spaceHeld = true
+      startSynthShake(synthShake)
+    },
+    onShakeEnd: () => {
+      spaceHeld = false
+    },
     // docs/todo.md entry 116 — the same one path the `num` chip takes, not a
     // second implementation of it.
     onToggleStats: () => panel.toggleStats(),
@@ -1912,6 +1935,15 @@ async function main(): Promise<void> {
         if (next) panel.adopt(next, COLOUR_RAMP_DIRECTOR_S)
       }
 
+      // docs/todo.md entry 126 — pushed before shake.frame() reads the
+      // Tumble it feeds, same as a real devicemotion sample already would
+      // have arrived by the time this frame calls frame(). `null` (space
+      // not held, and any release tail fully decayed) pushes nothing, which
+      // is the identity case: a `Tumble` that receives nothing behaves
+      // exactly as it did before this entry.
+      const synthSample = updateSynthShake(synthShake, audio.dt, spaceHeld)
+      if (synthSample) shake.pushSample(synthSample, audio.dt)
+
       latestShake = shake.frame(audio.dt)
       visualiser.setTumble(latestShake.tumble, prefs.gravity ? shake.gravity() : undefined)
       // docs/todo.md entry 102 — the same chip, the same gate, a second
@@ -1986,6 +2018,11 @@ async function main(): Promise<void> {
         ...visualiser.stats(),
         disturb: latestShake.disturb,
         ...shake.diagnostics(),
+        // docs/todo.md entry 126 — this frame's own push, not `spaceHeld`:
+        // the release tail keeps feeding samples for a moment after the key
+        // comes up, and the readout should say so for exactly as long as it
+        // is actually true.
+        synthActive: synthSample !== null,
         // Reported whether or not autopilot is on, so the readout answers
         // "why has nothing changed" in both cases: off, or on and waiting.
         director: director.status(),

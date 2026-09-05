@@ -830,13 +830,16 @@ export const STILL: TumbleState = {
   accelY: 0,
 }
 
-/** docs/todo.md entry 86 — the refused/unavailable `ShakeSensor`'s own
- *  `frame()` reading: no tilt, no disturb, `STILL`'s own tumble, no events,
- *  ever. One frozen instance shared by every call — nothing in it ever
- *  changes, so there is nothing a fresh object would buy per frame.
- *  Exported so a caller that needs a placeholder before its first real
- *  `frame()` call (main.ts, for the snapshot the powder reads pre-Start)
- *  can reuse this rather than hand-rolling an equivalent empty frame. */
+/** docs/todo.md entry 86 — an empty `ShakeFrame`: no tilt, no disturb,
+ *  `STILL`'s own tumble, no events. One frozen instance shared by every
+ *  call — nothing in it ever changes, so there is nothing a fresh object
+ *  would buy per frame. Exported so a caller that needs a placeholder before
+ *  its first real `frame()` call (main.ts, for the snapshot the powder reads
+ *  pre-Start) can reuse this rather than hand-rolling an equivalent empty
+ *  frame. Entry 126 stopped this being what a refused/unavailable
+ *  `ShakeSensor` returns forever — that sensor now holds a real `Tumble` too,
+ *  for the space bar's synthetic feed — but an *unfed* one reports exactly
+ *  this, so the value nothing here changes. */
 export const STILL_FRAME: ShakeFrame = Object.freeze({
   tilt: Object.freeze({ x: 0, y: 0 }),
   disturb: 0,
@@ -956,35 +959,46 @@ export interface ShakeSensor {
    * this when it is built rather than growing its own.
    */
   hasMotionData(): boolean
+  /**
+   * Feed one synthetic sample straight into the real `Tumble` — docs/todo.md
+   * entry 126, the space bar's own injection point. `dt` is the caller's,
+   * same as `frame()`'s: this file keeps no clock of its own for a source
+   * that arrives once a rendered frame rather than at a sensor's own
+   * irregular cadence. Deliberately not routed through `onMotion` below and
+   * does not set the flag `hasMotionData()` reads — a synthetic sample must
+   * never tell entry 110's Strata or entry 116's camera-arm that a desktop
+   * has an accelerometer; see `hasMotionData`'s own comment.
+   */
+  pushSample(s: MotionSample, dt: number): void
   close(): void
 }
 
 /**
- * Start listening. Returns a sensor that reports STILL forever if the device
- * has no accelerometer or access was refused, so callers need no branch.
+ * Start listening. The `Tumble` is built unconditionally — docs/todo.md
+ * entry 126 needs one to feed even where `granted` is false, since a desktop
+ * without motion permission is exactly where the space bar's synthetic feed
+ * matters — only the *listener* is conditional on it. Every real consumer of
+ * `frame()`/`gravity()`/`tilt()` is unaffected: with nothing ever pushed into
+ * it, an unattached `Tumble` reports precisely what `STILL_FRAME` always did.
  */
 export function startShake(granted: boolean): ShakeSensor {
   const tumble = new Tumble()
+  const hasWindow = typeof window !== 'undefined'
 
-  if (!granted || typeof window === 'undefined') {
-    // Reports zero samples forever, which is exactly the reading that says
-    // "refused or unavailable" rather than "not shaken hard enough".
-    return {
-      frame: () => STILL_FRAME,
-      gravity: () => ({ x: 0, y: 0 }),
-      tilt: () => ({ x: 0, y: 0 }),
-      diagnostics: () => ({ samples: 0, peak: 0, bar: STRONG_UP_CALM, rejected: 0 }),
-      hasMotionData: () => false,
-      close: () => {},
-    }
-  }
-
-  let last = performance.now()
+  // docs/todo.md entry 126 — set only inside `onMotion` below, never by
+  // `pushSample`. `tumble.diagnostics().samples` (what `hasMotionData` read
+  // before) counts every sample either path feeds it, so a held space bar
+  // would have told entry 110's Strata and entry 116's camera-arm that a
+  // desktop has an accelerometer, which is exactly backwards: those two ask
+  // this question to tell "lying flat" from "there is no sensor here", and a
+  // synthesised shake is neither.
+  let realMotionSeen = false
   /** Events that arrived but carried nothing usable. Counted separately from
    *  Tumble's own sample count, because "no events at all" and "events with
    *  empty payloads" are different faults with different fixes and both
    *  present as a shake that does nothing. */
   let rejected = 0
+  let last = hasWindow ? performance.now() : 0
 
   const onMotion = (e: DeviceMotionEvent): void => {
     // accelerationIncludingGravity first, since the gravity estimator wants
@@ -1003,6 +1017,7 @@ export function startShake(granted: boolean): ShakeSensor {
       return
     }
 
+    realMotionSeen = true
     const now = performance.now()
     // Clamp: a backgrounded tab can deliver a sample after a long gap, and an
     // enormous dt would drive the gravity filter straight to the new reading
@@ -1020,7 +1035,10 @@ export function startShake(granted: boolean): ShakeSensor {
     )
   }
 
-  window.addEventListener('devicemotion', onMotion)
+  // Only the listener is conditional. The `Tumble` above is built either way
+  // — see this function's own comment — so `pushSample` below works whether
+  // or not a real sensor is also attached.
+  if (granted && hasWindow) window.addEventListener('devicemotion', onMotion)
 
   return {
     frame: (dt) => {
@@ -1051,7 +1069,10 @@ export function startShake(granted: boolean): ShakeSensor {
     gravity: () => tumble.gravity(),
     tilt: () => tumble.tilt(),
     diagnostics: () => ({ ...tumble.diagnostics(), rejected }),
-    hasMotionData: () => tumble.diagnostics().samples > 0,
-    close: () => window.removeEventListener('devicemotion', onMotion),
+    hasMotionData: () => realMotionSeen,
+    pushSample: (s, dt) => tumble.sample(s, dt),
+    close: () => {
+      if (granted && hasWindow) window.removeEventListener('devicemotion', onMotion)
+    },
   }
 }

@@ -37,6 +37,10 @@
  *   camera-arm.ts  how long armed camera mode stays armed, read from
  *                posture and tilt rather than a wall clock — docs/todo.md
  *                entry 109.
+ *   synth-shake.ts  a held space bar, synthesised into the same `MotionSample`
+ *                shape `shake.ts`'s real `devicemotion` listener produces —
+ *                docs/todo.md entry 126. The one motion source that starts
+ *                from a key rather than a sensor.
  *
  * This became a directory when the slow tier arrived. Before that there was one
  * interpretation of the captured audio living behind an interface, which is a
@@ -116,3 +120,6 @@ export type { RaiseCameraInput } from './raise-camera.ts'
 
 export { celestialFor, CELESTIAL_IDENTITY } from './celestial.ts'
 export type { CelestialInfluence } from './celestial.ts'
+
+export { createSynthShake, startSynthShake, updateSynthShake } from './synth-shake.ts'
+export type { SynthShakeState } from './synth-shake.ts'

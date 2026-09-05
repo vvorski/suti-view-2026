@@ -13,6 +13,7 @@
     "probe:mapping": "node --experimental-strip-types scripts/probe-mapping.ts",
     "probe:idle": "node --experimental-strip-types scripts/probe-idle.ts",
     "probe:shake": "node --experimental-strip-types scripts/probe-shake.ts",
+    "probe:synth-shake": "node --experimental-strip-types scripts/probe-synth-shake.ts",
     "probe:slow": "node --experimental-strip-types scripts/probe-slow.ts",
     "probe:fullscreen": "node --experimental-strip-types --import ./scripts/dir-import-hook.mjs scripts/probe-fullscreen.ts",
     "probe:haptics": "node --experimental-strip-types scripts/probe-haptics.ts",

@@ -2447,7 +2447,7 @@ is the HUD's and already wraps.
 **Hard stops** — prefs no · url no · capture no · dependency no.
 
 ### 125. The menu is a double tap again, and no gesture fires while the phone is moving
-`status: done` · added 2026-09-05 · build 415 · **swaps the two assignments entry 115 shipped at build 407** · the calm gate is unverifiable off a phone — see build note
+`status: done` · added 2026-09-05 · build 415 · **swaps the two assignments entry 115 shipped at build 407** · the calm gate is unverifiable off a phone — see build note · **Identity paragraph corrected by 126, build 450** — the gate is no longer permanently open on desktop
 
 **Do** — put the menu back on the double tap, move camera arming to the still
 hold, delete the two-finger opener, and refuse both gestures while the phone is
@@ -2533,11 +2533,17 @@ the choice on either side of it rather than a reversal of a settled one.
 
 **Identity when off** — on a still phone `disturb` is 0, because `FLOOR` in
 `shake.ts` is 1.2 m/s² and a phone at rest reads under it, so the gate is open
-and both gestures behave exactly as they do today apart from the swap. **A
-machine with no accelerometer reports `disturb` 0 forever**, so the gate is
-permanently open on desktop and entry 117's mouse map pays nothing for this
-existing — the guard is invisible everywhere it is not needed, and that falls
-out of what a missing sensor already reports rather than from a platform check.
+and both gestures behave exactly as they do today apart from the swap. ~~A
+machine with no accelerometer reports `disturb` 0 forever, so the gate is
+permanently open on desktop~~ — **corrected by entry 126, which this
+paragraph's own instruction asked for:** a desktop with no accelerometer now
+also has a real `Tumble`, fed by the space bar rather than a sensor, so a
+*held* space bar saturates `disturb` exactly as a real shake does and this
+gate closes on desktop too while it is held — correctly, since a held space
+bar is the desktop's own version of "the phone is being shaken". It clears
+again the same 0.4s after release that it does on a phone. Entry 117's mouse
+map still pays nothing for this existing, because a mouse produces no
+`devicemotion` and drives no synthetic feed either — only the keyboard does.
 
 **Lands in** — `src/main.ts`: `HOLD_MENU_S`/`HOLD_MENU_SLOP_PX` renamed, and
 their `panel.open()` at `:1561` becomes `enterCameraMode()`; the double-tap
@@ -2573,7 +2579,7 @@ calm gate, so a photograph becomes strictly harder to reach than it is at build
 limit, the 15s quiet disarm, the five-minute ceiling · dependency no.
 
 ### 126. The space bar is a shake, and holding it is a shake that keeps going
-`status: building` · added 2026-09-05 · started 2026-09-05 · replaces the space bar's direct re-seed · interacts with 125 — see Decided
+`status: done` · added 2026-09-05 · build 450 · replaces the space bar's direct re-seed · interacts with 125 — see Decided (corrected there) · **"holding scrambles repeatedly" and Done-when's "at least three in two seconds" do not hold against the real Tumble — see build note and follow-up entry 143**
 
 **Do** — make the space bar synthesise accelerometer samples into the real
 `Tumble`, so it tumbles, disperses and re-seeds exactly as a shake does; held
@@ -4389,3 +4395,69 @@ parameter keeps its name and meaning; what moves is the origin and path, which
 is the thing entry 63 declined and which Victor has approved in this request
 (*"we're going to do it"*), with a redirect standing in place of the link rot
 63 was avoiding · capture **no** · dependency **no**.
+
+### 143. A held space bar fires one shake, not a repeating one — is that the price?
+`status: blocked` · added 2026-09-05 · found while building 126 · needs Victor
+
+**Do** — decide whether a continuously held space bar should keep re-seeding
+for as long as it is held, or whether firing once per unbroken press (settling,
+then needing a real release-and-repress, or a stop-start hand tremor, to fire
+again) is the correct reading of "repeating hard shake" after all.
+
+**Why** — entry 126 built the space bar as a real synthetic shake, fed straight
+into `shake.ts`'s existing `Tumble`. Its own Decided section reasoned that "a
+continuous 26 m/s² at 5Hz *is* a repeating hard shake, and how often it
+re-seeds is then governed by `shake.ts`'s existing cooldown and double-window
+rather than by a new rate limit invented here" — and its Done-when asked for
+"two seconds held produces at least three [shake events]". Measured against
+the real `Tumble` (`pnpm probe:synth-shake`, section 2, and reproduced
+independently against `probe-shake.ts`'s own hand-authored sine, not anything
+entry 126 built), that figure does not hold: a smooth, unbroken oscillation —
+synthetic or a hand-authored sine, it makes no difference — never produces a
+contiguous 0.15s dip below `currentStrongDown()`, so `shake.ts`'s own
+`QUIET_GAP` guard (added specifically to stop "one long shake tripping the
+reversal counter over and over inside the cooldown", per its own comment — a
+real, measured bug at the time) never lets `armedForDouble` become true, and
+the reversal counter's own escalation resets `cooldown`/`doubleWindow` to their
+full values every time it completes three crossings (~0.6s at 5Hz) whether or
+not anything fires. A continuous, unbroken press therefore produces **exactly
+one** shake event, held for one second or a hundred, and does not re-seed again
+without an actual pause.
+
+**What this is not** — a bug in entry 126's synthesis, or a flaw in `QUIET_GAP`.
+Both are working exactly as designed and as a real phone's accelerometer would
+also behave under the identical mechanism: `probe:synth-shake`'s own comment
+walks through the arithmetic, and its assertions pass against both the
+synthesised signal and an independent hand-authored one. Entry 126 shipped
+everything it could verify — the tumble, the RGB slip's held direction, the
+gravity-free feed, `hasMotionData()` staying false, one strong per tap — and
+left this one figure as a finding rather than forcing a change to `QUIET_GAP`
+to manufacture it: CLAUDE.md's own "a reasoned comment outranks an entry that
+did not know about it."
+
+**Decided** — nothing yet; this is the fork itself.
+- A held space bar could re-seed on a timer of its own (say, once every N
+  seconds while `held` stays true) — new logic this entry's own Decided
+  explicitly declined to add, and a real accelerometer has no equivalent, so
+  desktop would behave *unlike* a phone rather than standing in for one.
+- Or "one shake per unbroken press" could simply be the answer, matching what
+  a real continuous shake already does against this exact mechanism, in which
+  case Decided's "holding scrambles repeatedly" sentence and Done-when's "at
+  least three" figure are both quietly wrong and want correcting in entry 126's
+  own text — a small edit, not a rebuild.
+- Or `QUIET_GAP`/the escalation logic could be revisited specifically for
+  intentional, deliberate re-triggering (a policy question about what "held"
+  should mean generally, on a phone as much as a desktop) — the largest of the
+  three options, and the one most likely to reopen a decision that fixed a
+  real bug for a real reason.
+
+**Lands in** — whichever of the three, `docs/todo.md`'s entry 126 (the
+Decided bullet and the Done-when figure), and possibly `src/shake.ts` if the
+third option is chosen.
+**Done when** — Victor has picked one of the three (or named a fourth), and
+whichever entry builds it corrects entry 126's own text to match rather than
+leaving two entries quietly disagreeing about what a held space bar does.
+
+**Verify** — n/a until answered.
+
+**Hard stops** — prefs no · url no · capture no · dependency no.

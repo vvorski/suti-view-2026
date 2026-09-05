@@ -143,6 +143,13 @@ export interface Hud {
       bar?: number
       /** Motion events that arrived carrying no usable acceleration. */
       rejected?: number
+      /** docs/todo.md entry 126 — whether the space bar's synthetic shake is
+       *  currently feeding the same samples this line's own counts include.
+       *  CLAUDE.md's own two-identical-symptoms rule: "the space bar does
+       *  nothing" would otherwise be indistinguishable from "the samples
+       *  arrive but never clear the bar", and `samples`/`peak` alone cannot
+       *  tell a synthesised shake from a real one. */
+      synthActive?: boolean
       /** What the autopilot is waiting for. See Director.status(). */
       director?: {
         suspended: number
@@ -1430,7 +1437,8 @@ export function createHud(prefs: Prefs, handlers: Handlers, debugFromUrl = false
           ? []
           : [
               `motion ${s.samples} ev  peak ${(s.peak ?? 0).toFixed(1)}/18  bar ${(s.bar ?? 0).toFixed(1)}` +
-                (s.rejected ? `  drop ${s.rejected}` : ''),
+                (s.rejected ? `  drop ${s.rejected}` : '') +
+                (s.synthActive ? '  key' : ''),
             ]),
         // Why the autopilot has not done anything. Without this the restraint
         // rules in director.ts are indistinguishable from a broken feature.
